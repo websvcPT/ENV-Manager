@@ -48,6 +48,7 @@ class Project(Base):
     """A group of deployments with its own access."""
 
     __tablename__ = "projects"
+    __table_args__ = ({"sqlite_autoincrement": True},)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100), unique=True)
@@ -59,7 +60,10 @@ class Deployment(Base):
     """One Compose deployment on a host path, with the default deploy policies."""
 
     __tablename__ = "deployments"
-    __table_args__ = (UniqueConstraint("project_id", "name", name="uq_deployments_project_name"),)
+    __table_args__ = (
+        UniqueConstraint("project_id", "name", name="uq_deployments_project_name"),
+        {"sqlite_autoincrement": True},
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     project_id: Mapped[int] = mapped_column(
@@ -86,6 +90,7 @@ class Service(Base):
     __tablename__ = "services"
     __table_args__ = (
         UniqueConstraint("deployment_id", "name", name="uq_services_deployment_name"),
+        {"sqlite_autoincrement": True},
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -120,7 +125,10 @@ class Environment(Base):
     """One text file under version control with a target path inside its deployment root."""
 
     __tablename__ = "environments"
-    __table_args__ = (UniqueConstraint("service_id", "name", name="uq_environments_service_name"),)
+    __table_args__ = (
+        UniqueConstraint("service_id", "name", name="uq_environments_service_name"),
+        {"sqlite_autoincrement": True},
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     service_id: Mapped[int] = mapped_column(

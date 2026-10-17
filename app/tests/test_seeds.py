@@ -18,6 +18,9 @@ from app.core.migrations import migrate_database
 from app.core.passwords import verify_password
 from app.models import (
     AccessGrant,
+    ApiToken,
+    ApiTokenRestriction,
+    DeployRun,
     Environment,
     EnvironmentVersion,
     LoginCounter,
@@ -25,7 +28,7 @@ from app.models import (
     User,
 )
 from app.models.types import utc_now
-from app.seeds import DEV_PASSWORD, DEV_TOTP_SECRET, SeedData, SeedError, seed
+from app.seeds import DEV_PASSWORD, DEV_TOTP_SECRET, SeedData, SeedError, ensure_activity, seed
 from app.services import totp
 from app.tests.auth_helpers import make_user
 
@@ -215,3 +218,22 @@ def test_reset_lockouts_clears_counters_and_refuses_production(
     get_settings.cache_clear()
     refused = runner.invoke(app, ["dev", "reset-lockouts"])
     assert refused.exit_code == 1 and "only allowed" in refused.output
+
+
+async def test_activity_is_added_to_an_older_seeded_database_once(
+    seeded_database: AsyncEngine, seed_data: SeedData
+) -> None:
+    """Deploy runs and the restricted token are created when missing and never duplicated."""
+    async with create_session_factory(seeded_database)() as db:
+        await db.execute(delete(DeployRun))
+        await db.execute(delete(ApiToken))
+        await db.commit()
+        for _ in range(2):
+            await ensure_activity(db)
+            await db.commit()
+        runs = (await db.execute(select(func.count()).select_from(DeployRun))).scalar_one()
+        tokens = (await db.execute(select(func.count()).select_from(ApiToken))).scalar_one()
+        restrictions = (
+            await db.execute(select(func.count()).select_from(ApiTokenRestriction))
+        ).scalar_one()
+    assert (runs, tokens, restrictions) == (3, 1, 1)

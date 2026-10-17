@@ -1,16 +1,26 @@
 import { request, type FullConfig } from '@playwright/test';
 
-const STORAGE_STATE = '.auth/superadmin.json';
+export const SUPERADMIN_STATE = '.auth/superadmin.json';
 
-/**
- * Sign in as the seeded superadmin through the real login route and store the session, so every
- * spec starts authenticated. The development dataset is seeded by `make e2e` before this runs.
- */
-export default async function globalSetup(config: FullConfig): Promise<void> {
-  const baseURL = config.projects[0].use.baseURL;
-  const identifier = process.env.E2E_USER ?? 'root';
-  const password = process.env.E2E_PASSWORD ?? 'dev-only-password';
+/** Seeded users that get their own stored session, by the file the specs load. */
+export const SESSION_USERS = {
+  admin: 'admin',
+  viewer: 'viewer',
+  deploymentAdmin: 'deployment_admin',
+  envScopedViewer: 'env_scoped_viewer',
+  ungrantedAdmin: 'ungranted_admin',
+} as const;
 
+export function stateFile(user: keyof typeof SESSION_USERS): string {
+  return `.auth/${SESSION_USERS[user]}.json`;
+}
+
+async function signInAndStore(
+  baseURL: string | undefined,
+  identifier: string,
+  password: string,
+  path: string,
+): Promise<void> {
   const context = await request.newContext({ baseURL });
   await context.get('/healthz');
   const issued = await context.storageState();
@@ -25,6 +35,21 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
   if (response.status() !== 303) {
     throw new Error(`login as ${identifier} failed with status ${response.status()}`);
   }
-  await context.storageState({ path: STORAGE_STATE });
+  await context.storageState({ path });
   await context.dispose();
+}
+
+/**
+ * Sign in through the real login route and store the sessions, so every spec starts
+ * authenticated: the superadmin for every spec by default, plus one stored session per other
+ * seeded role for the specs that check what each role sees. The development dataset is seeded
+ * by `make e2e` before this runs.
+ */
+export default async function globalSetup(config: FullConfig): Promise<void> {
+  const baseURL = config.projects[0].use.baseURL;
+  const password = process.env.E2E_PASSWORD ?? 'dev-only-password';
+  await signInAndStore(baseURL, process.env.E2E_USER ?? 'root', password, SUPERADMIN_STATE);
+  for (const user of Object.keys(SESSION_USERS) as Array<keyof typeof SESSION_USERS>) {
+    await signInAndStore(baseURL, SESSION_USERS[user], password, stateFile(user));
+  }
 }

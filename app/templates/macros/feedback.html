@@ -32,8 +32,9 @@
 <div role="note" class="flex items-start gap-3 rounded-btn px-4 py-3 text-[13px] font-semibold {{ tone_classes }}">{{ icon(icon_name, "size-[18px] mt-px", "2.2") }}<p class="text-ink">{{ message }}</p></div>
 {%- endmacro %}
 
+{#- The optional call block adds an action under the message. -#}
 {% macro empty_state(title, message, icon_name="layers") -%}
-<div data-fragment="empty-state" class="flex flex-col items-center gap-3 border-t border-line px-6 py-12 text-center"><span class="flex size-12 items-center justify-center rounded-full bg-mute-bg text-mute-fg">{{ icon(icon_name, "size-6", "1.8") }}</span><p class="text-base font-bold">{{ title }}</p><p class="max-w-md text-ink2">{{ message }}</p></div>
+<div data-fragment="empty-state" class="flex flex-col items-center gap-3 border-t border-line px-6 py-12 text-center"><span class="flex size-12 items-center justify-center rounded-full bg-mute-bg text-mute-fg">{{ icon(icon_name, "size-6", "1.8") }}</span><p class="text-base font-bold">{{ title }}</p><p class="max-w-md text-ink2">{{ message }}</p>{% if caller is defined %}{{ caller() }}{% endif %}</div>
 {%- endmacro %}
 
 {#- Failed swap: the previous content stays, this explains and offers Retry. Pass the request

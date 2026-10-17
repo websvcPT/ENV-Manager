@@ -38,6 +38,28 @@ def _upgrade(connection: Connection) -> None:
     command.upgrade(build_config(connection), "head")
 
 
+async def _upgrade_with_foreign_keys_off(engine: AsyncEngine) -> None:
+    """Upgrade on one connection with foreign key enforcement off, then check and restore it.
+
+    Rebuilding a table that other tables reference would cascade deletes into them while
+    enforcement is on, and the setting cannot change inside a transaction, so it is switched
+    before the first statement. Leftover violations fail the upgrade and roll it back.
+    """
+    async with engine.connect() as connection:
+        await connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
+        try:
+            await connection.run_sync(_upgrade)
+            violations = (await connection.exec_driver_sql("PRAGMA foreign_key_check")).all()
+            if violations:
+                raise RuntimeError(f"{len(violations)} foreign key violations after migrating")
+            await connection.commit()
+        except BaseException:
+            await connection.rollback()
+            raise
+        finally:
+            await connection.exec_driver_sql("PRAGMA foreign_keys=ON")
+
+
 async def migrate_database(engine: AsyncEngine, database_path: Path, backup_dir: Path) -> None:
     """Bring the schema to head, backing up an existing database before changing it."""
     async with engine.connect() as connection:
@@ -47,6 +69,5 @@ async def migrate_database(engine: AsyncEngine, database_path: Path, backup_dir:
     if current is not None and database_path.exists():
         backup = await create_backup(database_path, backup_dir, "pre-migration")
         log.info("database backed up to %s before migration", backup.name)
-    async with engine.begin() as connection:
-        await connection.run_sync(_upgrade)
+    await _upgrade_with_foreign_keys_off(engine)
     log.info("database migrated from %s to %s", current, head)

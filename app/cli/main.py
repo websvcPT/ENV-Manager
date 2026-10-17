@@ -20,6 +20,7 @@ from app.seeds import (
     TOTP_ALT_USER_NAME,
     TOTP_USER_NAME,
     SeedError,
+    ensure_activity,
     ensure_totp_user,
 )
 from app.seeds import seed as seed_data
@@ -163,7 +164,8 @@ def _require_development_environment(action: str) -> None:
 def seed_dataset() -> None:
     """Create the development dataset with its fixed dev-only passwords.
 
-    An already seeded database is left alone except for users added to the dataset later.
+    An already seeded database is left alone except for users, deploy runs and tokens that
+    were added to the dataset later.
     """
     _require_development_environment("seeding")
 
@@ -175,6 +177,7 @@ def seed_dataset() -> None:
         except SeedError:
             for name in (TOTP_USER_NAME, TOTP_ALT_USER_NAME):
                 await ensure_totp_user(db, crypto, name)
+            await ensure_activity(db)
             await db.commit()
             raise
 

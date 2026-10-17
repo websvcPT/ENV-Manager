@@ -11,6 +11,7 @@ from app.core.crypto import CryptoService
 from app.core.sessions import SESSION_COOKIE_NAME
 from app.models import User, UserGroup, UserSession
 from app.services.auth_policy import AuthPolicy
+from app.services.permissions import AccessScope, Capability, load_user_scope
 from app.services.sessions import resolve_session
 
 
@@ -82,6 +83,32 @@ def require_group(*groups: UserGroup) -> Callable[..., Awaitable[AuthContext]]:
 
     async def check(context: Annotated[AuthContext, Depends(require_auth)]) -> AuthContext:
         if context.user.group not in groups:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "not permitted")
+        return context
+
+    return check
+
+
+async def get_scope(
+    context: Annotated[AuthContext, Depends(require_auth)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> AccessScope:
+    """What the signed-in user may reach, loaded fresh so grant changes apply at once."""
+    return await load_user_scope(db, context.user)
+
+
+def require_capability(capability: Capability) -> Callable[..., Awaitable[AuthContext]]:
+    """A dependency that admits only callers whose group holds a capability without a target.
+
+    Used for superadmin-only structure changes, user and settings management and similar
+    actions. Answers 403 otherwise, after authentication has already proved who is asking.
+    """
+
+    async def check(
+        context: Annotated[AuthContext, Depends(require_auth)],
+        scope: Annotated[AccessScope, Depends(get_scope)],
+    ) -> AuthContext:
+        if not scope.can(capability):
             raise HTTPException(status.HTTP_403_FORBIDDEN, "not permitted")
         return context
 

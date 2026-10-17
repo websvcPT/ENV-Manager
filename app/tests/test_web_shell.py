@@ -53,7 +53,7 @@ async def test_projects_page_renders_the_shell(web_client: httpx.AsyncClient) ->
     for marker in (
         "data-nav",
         'data-fragment="page-header"',
-        'data-fragment="empty-state"',
+        'data-fragment="projects-table"',
         'data-fragment="banner-area"',
         'id="mobile-menu"',
         'data-status="superadmin"',

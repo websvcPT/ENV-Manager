@@ -4,6 +4,7 @@ import sqlite3
 from pathlib import Path
 
 import pytest
+from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.runtime.migration import MigrationContext
 from sqlalchemy import Connection, text
@@ -11,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.core.crypto import CryptoService, KeyMismatchError, generate_master_key, parse_master_key
 from app.core.db import create_engine, create_session_factory
-from app.core.migrations import migrate_database
+from app.core.migrations import build_config, migrate_database
 from app.models import AppSetting, Base
 from app.models.app_setting import KEY_CHECK_SETTING
 from app.services.backup import create_backup
@@ -122,3 +123,77 @@ async def test_session_commit_persists_rows(engine: AsyncEngine) -> None:
     assert stored is not None
     assert stored.value == "1"
     assert stored.updated_at is not None
+
+
+TREE_STATEMENTS = (
+    'INSERT INTO users (id, name, email, password_hash, "group", is_active, totp_enabled,'
+    " created_at, updated_at) VALUES (1, 'u', 'u@example.test', 'x', 'admin', 1, 0,"
+    " '2026-01-01', '2026-01-01')",
+    "INSERT INTO projects (id, name, created_at, updated_at)"
+    " VALUES (1, 'p', '2026-01-01', '2026-01-01')",
+    "INSERT INTO deployments (id, project_id, name, root_path, dist_missing_policy,"
+    " drift_policy, missing_target_policy, created_at, updated_at)"
+    " VALUES (1, 1, 'd', '/x', 'block', 'halt', 'create', '2026-01-01', '2026-01-01')",
+    "INSERT INTO services (id, deployment_id, name, created_at, updated_at)"
+    " VALUES (1, 1, 's', '2026-01-01', '2026-01-01')",
+    "INSERT INTO environments (id, service_id, name, target_path, created_at, updated_at)"
+    " VALUES (1, 1, 'e', 'e', '2026-01-01', '2026-01-01')",
+    "INSERT INTO environment_versions (id, environment_id, number, content_encrypted,"
+    " content_hash, created_at) VALUES (1, 1, 1, 'c', 'h', '2026-01-01')",
+    "INSERT INTO access_grants (id, user_id, level, project_id, created_at)"
+    " VALUES (1, 1, 'project', 1, '2026-01-01')",
+)
+CHILD_TABLES = (
+    "projects",
+    "deployments",
+    "services",
+    "environments",
+    "environment_versions",
+    "access_grants",
+)
+
+
+async def test_autoincrement_migration_keeps_children_and_stops_id_reuse(
+    database_path: Path, backup_dir: Path
+) -> None:
+    """Rebuilding the structure tables over several revisions keeps every row and child.
+
+    The upgrade starts two revisions earlier than the rebuild so the migration connection has
+    already written to the database before it, and foreign keys must still be off for the
+    rebuild and back on afterwards.
+    """
+    engine = create_engine(database_path)
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(lambda sync: command.upgrade(build_config(sync), "0004"))
+            for statement in TREE_STATEMENTS:
+                await connection.execute(text(statement))
+        await migrate_database(engine, database_path, backup_dir)
+        async with engine.connect() as connection:
+            counts = [
+                (await connection.execute(text(f"SELECT count(*) FROM {table}"))).scalar_one()  # noqa: S608
+                for table in CHILD_TABLES
+            ]
+            sequence_rows = await connection.execute(text("SELECT name, seq FROM sqlite_sequence"))
+            sequences: dict[str, int] = dict(sequence_rows.all())
+            violations = (await connection.execute(text("PRAGMA foreign_key_check"))).all()
+            enforcement = (await connection.execute(text("PRAGMA foreign_keys"))).scalar_one()
+        assert counts == [1] * len(CHILD_TABLES)
+        assert sequences["projects"] == 1
+        assert violations == []
+        assert enforcement == 1
+        async with engine.begin() as connection:
+            await connection.execute(text("DELETE FROM projects WHERE id = 1"))
+            await connection.execute(
+                text(
+                    "INSERT INTO projects (name, created_at, updated_at)"
+                    " VALUES ('q', '2026-01-01', '2026-01-01')"
+                )
+            )
+            new_id = (await connection.execute(text("SELECT id FROM projects"))).scalar_one()
+            leftover = await connection.execute(text("SELECT count(*) FROM services"))
+            remaining = leftover.scalar_one()
+        assert new_id == 2
+        assert remaining == 0
+    finally:
+        await engine.dispose()

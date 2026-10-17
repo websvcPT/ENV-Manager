@@ -1,7 +1,8 @@
 /* ENV Manager page behaviour. Vanilla JS in an external file (strict CSP, no inline scripts).
    Handlers are delegated from the document so content swapped in by htmx works without rebinding.
    Behaviours: theme toggle, dialogs, sidebar collapse, reveal timer, row toggle, tree toggle,
-   copy, dismiss, history back, and a toast when an htmx request fails. */
+   copy, dismiss, history back, closing dialogs when the server asks, and a toast when an htmx
+   request fails. */
 (function () {
   'use strict';
 
@@ -165,6 +166,13 @@
     var ctx = event.detail && event.detail.ctx;
     var status = ctx && ctx.response ? ctx.response.status : 0;
     if (status >= 500 || status === 403 || status === 404) { showErrorToast(); }
+  });
+  /* A response header event (HX-Trigger: close-dialogs) closes open dialogs after a form
+     succeeded. */
+  document.addEventListener('close-dialogs', function () {
+    document.querySelectorAll('dialog[open]').forEach(function (dialog) {
+      dialog.close();
+    });
   });
   document.addEventListener('htmx:error', showErrorToast);
   document.addEventListener('htmx:after:swap', syncThemeLabels);

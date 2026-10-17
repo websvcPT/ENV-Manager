@@ -26,7 +26,7 @@ test.describe('layout', () => {
   test('renders the shell for a signed-in user', async ({ page }) => {
     await page.goto('/projects');
     await expect(page.locator('[data-fragment="page-header"] h1')).toBeVisible();
-    await expect(page.locator('[data-fragment="empty-state"]')).toBeVisible();
+    await expect(page.locator('[data-fragment="projects-table"]')).toBeVisible();
     await expect(page.locator('[data-fragment="banner-area"]')).toHaveCount(1);
     await expect(page.locator('a[href="/projects"][aria-current="page"]').first()).toBeAttached();
     await expect(page.locator('header [data-js="theme-toggle"]')).toBeVisible();
@@ -54,7 +54,7 @@ test.describe('layout', () => {
     await page.goto('/projects');
     await page.evaluate(() => window.htmx.ajax('GET', '/does-not-exist', '#projects-table'));
     await expect(page.locator('[data-fragment="toast"][role="alert"]')).toBeVisible();
-    await expect(page.locator('#projects-table [data-fragment="empty-state"]')).toBeVisible();
+    await expect(page.locator('#projects-table table')).toBeVisible();
     await page.locator('[data-fragment="toast"] [data-js="dismiss"]').click();
     await expect(page.locator('[data-fragment="toast"]')).toHaveCount(0);
   });

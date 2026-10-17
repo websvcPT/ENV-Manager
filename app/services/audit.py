@@ -17,6 +17,10 @@ async def record_audit(
     target_type: str | None = None,
     target_id: int | None = None,
     target_name: str | None = None,
+    project_id: int | None = None,
+    deployment_id: int | None = None,
+    service_id: int | None = None,
+    environment_id: int | None = None,
     details: dict[str, object] | None = None,
 ) -> AuditEntry:
     """Add an audit entry to the session. The caller commits it with its own change."""
@@ -30,6 +34,10 @@ async def record_audit(
         target_type=target_type,
         target_id=target_id,
         target_name=target_name,
+        project_id=project_id,
+        deployment_id=deployment_id,
+        service_id=service_id,
+        environment_id=environment_id,
         details=details or {},
     )
     db.add(entry)

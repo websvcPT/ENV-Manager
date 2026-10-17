@@ -1,10 +1,14 @@
 {% extends "layouts/app.html" %}
-{% from "macros/feedback.html" import empty_state %}
+{% from "macros/buttons.html" import button %}
+{% from "macros/dialogs.html" import dialog %}
+{% from "macros/icons.html" import icon %}
 {% from "macros/panels.html" import page_header %}
 {% set active_nav = "projects" %}
 {% set breadcrumbs = [("Projects", none)] %}
 {% block title %}Projects{% endblock %}
 {% block content %}
-{{ page_header("Projects", "All projects.") }}
-<section data-fragment="projects-table" id="projects-table" aria-label="Projects" class="rounded-panel border border-line bg-surface shadow-panel overflow-hidden">{{ empty_state("No projects assigned", "You do not have access to any project yet. Ask a superadmin to grant you access to a project, deployment or environment.") }}</section>
+{% set header_actions %}<form role="search" action="/projects" method="get" class="relative w-full md:w-72"><label class="sr-only" for="ps">Search projects</label>{{ icon("search", "pointer-events-none absolute left-3 top-3 size-4 text-ink3", "2") }}<input id="ps" name="q" type="search" value="{{ query }}" placeholder="Search projects" hx-get="/projects/table" hx-trigger="input changed delay:300ms, search" hx-target="#projects-table" hx-swap="outerHTML" hx-status:503="swap:outerHTML target:#projects-table" class="h-10 w-full rounded-full border border-line-strong bg-surface2 pl-9 pr-3 text-sm text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"></form>{% if can_create %}{{ button("New project", kind="primary", icon_name="plus", icon_stroke="2.2", data_js="dialog-open", data_target="project-new", aria_haspopup="dialog") }}{% endif %}{% endset %}
+{{ page_header("Projects", "All projects." if can_create else "Projects you have access to.", actions=header_actions) }}
+{% include "fragments/projects_table.html" %}
+{% if can_create %}{% call dialog("project-new", "New project", "Superadmin only") %}{% include "fragments/project_new_form.html" %}{% endcall %}{% endif %}
 {% endblock %}
