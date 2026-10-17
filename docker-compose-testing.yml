@@ -1,0 +1,13 @@
+# Isolated test run (`make tests-docker`): builds the image with dev dependencies, runs the
+# suite and exits. Needs no running stack, network or dev data.
+name: env-manager-testing
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: test
+    environment:
+      ENVMANAGER_ENVIRONMENT: testing
+    command: ["sh", "scripts/test.sh"]

@@ -1,0 +1,56 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ENV Manager design tokens. Tailwind v4 (CSS-first config).
+   Theme values live in :root and .dark with identical names; @theme inline exposes them as utilities
+   (bg-surface, text-ink2, border-line, ring/outline-focus, rounded-panel, shadow-panel ...). */
+:root {
+  --bg:#eef3f8; --surface:#ffffff; --surface2:#f6f9fc; --line:#dde5ee; --line-strong:#b9c7d6;
+  --ink:#0f2538; --ink2:#41556a; --ink3:#566a7f; --link:#1d5fb8;
+  --nav:#0f2538; --nav-ink:#c4d2e0; --nav-active:#ffffff; --nav-active-ink:#0f2538;
+  --accent:#f5a623; --accent-ink:#1a1203; --accent-soft:#fff6e3;
+  --head:#0f2538; --head-ink:#e6edf5; --code:#0f2538; --code-ink:#dbe6f1; --focus:#1d6fd8;
+  --danger:#b42318; --danger-soft:#fff1f0;
+  --ok-bg:#dcf5e5; --ok-fg:#14602f; --warn-bg:#fdeccd; --warn-fg:#7a4a00;
+  --err-bg:#fde0de; --err-fg:#9b1c1c; --info-bg:#dbeafe; --info-fg:#1e4f9c; --mute-bg:#e8edf3; --mute-fg:#3d4f62;
+  --scrim:rgb(10 21 32 / .62);
+  --shadow-panel:0 1px 2px rgb(15 37 56 / .06), 0 6px 18px rgb(15 37 56 / .05);
+  --shadow-dialog:0 24px 70px rgb(0 0 0 / .4);
+}
+.dark {
+  --bg:#0a1520; --surface:#112030; --surface2:#172a3c; --line:#223a4f; --line-strong:#3a566f;
+  --ink:#e9f0f7; --ink2:#adbfd0; --ink3:#93a8bc; --link:#8dbcff;
+  --nav:#060d15; --nav-ink:#b6c6d6; --nav-active:#e9f0f7; --nav-active-ink:#0a1520;
+  --accent:#f5a623; --accent-ink:#1a1203; --accent-soft:#2a2110;
+  --head:#0a1520; --head-ink:#cfdce9; --code:#060d15; --code-ink:#cfdce9; --focus:#6cb0ff;
+  --danger:#ff8a80; --danger-soft:#2e1616;
+  --ok-bg:#12331f; --ok-fg:#86dba6; --warn-bg:#3a2a0a; --warn-fg:#f6c768;
+  --err-bg:#3d1a1a; --err-fg:#ffa39b; --info-bg:#14284a; --info-fg:#a3c8ff; --mute-bg:#1d2f40; --mute-fg:#b4c3d2;
+  --scrim:rgb(0 0 0 / .66);
+  --shadow-panel:0 1px 2px rgb(0 0 0 / .4);
+  --shadow-dialog:0 24px 70px rgb(0 0 0 / .6);
+}
+@theme inline {
+  --color-*: initial;
+  --color-white:#fff; --color-transparent:transparent; --color-current:currentColor;
+  --color-bg:var(--bg); --color-surface:var(--surface); --color-surface2:var(--surface2);
+  --color-line:var(--line); --color-line-strong:var(--line-strong);
+  --color-ink:var(--ink); --color-ink2:var(--ink2); --color-ink3:var(--ink3); --color-link:var(--link);
+  --color-nav:var(--nav); --color-nav-ink:var(--nav-ink); --color-nav-active:var(--nav-active); --color-nav-active-ink:var(--nav-active-ink);
+  --color-accent:var(--accent); --color-accent-ink:var(--accent-ink); --color-accent-soft:var(--accent-soft);
+  --color-head:var(--head); --color-head-ink:var(--head-ink); --color-code:var(--code); --color-code-ink:var(--code-ink);
+  --color-focus:var(--focus); --color-danger:var(--danger); --color-danger-soft:var(--danger-soft);
+  --color-ok-bg:var(--ok-bg); --color-ok-fg:var(--ok-fg); --color-warn-bg:var(--warn-bg); --color-warn-fg:var(--warn-fg);
+  --color-err-bg:var(--err-bg); --color-err-fg:var(--err-fg); --color-info-bg:var(--info-bg); --color-info-fg:var(--info-fg);
+  --color-mute-bg:var(--mute-bg); --color-mute-fg:var(--mute-fg); --color-scrim:var(--scrim);
+  --font-sans:ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --radius-ctl:8px; --radius-btn:10px; --radius-panel:14px; --radius-dialog:16px;
+  --shadow-panel:var(--shadow-panel); --shadow-dialog:var(--shadow-dialog);
+  --spacing:4px;
+}
+@layer base {
+  *, ::before, ::after { border-color: var(--line); }
+  body { background: var(--bg); color: var(--ink); font-family: var(--font-sans); }
+  dialog { color: inherit; }
+}

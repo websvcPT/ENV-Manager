@@ -1,0 +1,24 @@
+.venv/
+__pycache__/
+*.pyc
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Secrets and runtime data
+.env
+*.key
+*.pem
+data/
+dev/data/
+dev/keys/
+
+# Build outputs
+app/static/style.css
+scripts/bin/
+node_modules/
+playwright/test-results/
+playwright/playwright-report/

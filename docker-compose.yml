@@ -1,0 +1,35 @@
+# Development stack: `make up`. The repository is bind mounted at /app; the virtualenv lives in
+# a named volume so no root-owned files appear in the working tree.
+name: env-manager
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      args:
+        APP_UID: ${APP_UID:-1000}
+        APP_GID: ${APP_GID:-1000}
+    hostname: app
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      TZ: Europe/Lisbon
+      ENVMANAGER_ENVIRONMENT: development
+      ENVMANAGER_LOG_LEVEL: debug
+      ENVMANAGER_CSRF_SECRET: dev-not-secret-change-me-0123456789abcdef
+      UVICORN_OPTS: --reload
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./:/app
+      - venv:/opt/venv
+      - uv-cache:/opt/uv-cache
+      - ./dev/data:/data
+      - ./dev/deployments:/srv/deployments
+    command: sh -c "uv sync --frozen && sh /app/start.sh"
+
+volumes:
+  venv:
+  uv-cache:
