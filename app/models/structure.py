@@ -57,7 +57,11 @@ class Project(Base):
 
 
 class Deployment(Base):
-    """One Compose deployment on a host path, with the default deploy policies."""
+    """One Compose deployment on a host path, with the default deploy policies and file defaults.
+
+    ``file_mode`` is the octal mode written files get, ``file_owner`` and ``file_group`` the names
+    (or numeric ids) they are given; both are empty when the files keep the app user.
+    """
 
     __tablename__ = "deployments"
     __table_args__ = (
@@ -80,6 +84,9 @@ class Deployment(Base):
     missing_target_policy: Mapped[MissingTargetPolicy] = mapped_column(
         _policy_column(MissingTargetPolicy, 10), default=MissingTargetPolicy.CREATE
     )
+    file_mode: Mapped[str] = mapped_column(String(4), default="0600", server_default="0600")
+    file_owner: Mapped[str | None] = mapped_column(String(64), default=None)
+    file_group: Mapped[str | None] = mapped_column(String(64), default=None)
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utc_now, onupdate=utc_now)
 

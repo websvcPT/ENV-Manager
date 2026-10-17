@@ -16,11 +16,15 @@ Structure (project, deployment, service, environments):
       main (/opt/billing/main)
         api: .env.api
         worker: .env.worker
+      legacy (/srv/old/legacy, outside the allowed paths)
+        cron: no environments
 
-Allowed paths: /opt/rentals and /opt/billing (the deployment roots lie under them).
+Allowed paths: /opt/rentals and /opt/billing (the deployment roots lie under them, except legacy).
 
-Deploy runs: rentals/prod web succeeded (by admin), then mysql failed (by root, the newest run of
-the project); billing/main has only a dry run, so it counts as never deployed.
+Deploy runs: rentals/prod web succeeded (by admin, post-deploy ran), then mysql failed (by root,
+post-deploy skipped, the newest run of the project); billing/main has only a dry run, so it counts
+as never deployed. Each run has per-environment results. The prod deployment writes files as
+www-data:www-data.
 
 Audit history: deploy entries for rentals prod web (success) and mysql (failure), and file saves
 of .env.db and billing .env.api, each with the scope ids of its item.
@@ -64,12 +68,15 @@ from app.models import (
     AuditEntry,
     AuditResult,
     Deployment,
+    DeployResult,
+    DeployResultStatus,
     DeployRun,
     DeployStatus,
     DeployTrigger,
     Environment,
     EnvironmentVersion,
     GrantLevel,
+    PostDeployStatus,
     Project,
     RestrictionLevel,
     Service,
@@ -88,6 +95,9 @@ DEV_PASSWORD = "dev-only-password"  # noqa: S105
 DEV_TOTP_SECRET = "JBSWY3DPEHPK3PXP"  # noqa: S105
 TOTP_USER_NAME = "totp_user"
 TOTP_ALT_USER_NAME = "totp_user_alt"
+
+# Root of the seeded deployment that lies outside every allowed path.
+LEGACY_ROOT = "/srv/old/legacy"
 
 
 class SeedError(Exception):
@@ -125,6 +135,7 @@ class SeedDeployments:
     rentals_prod: Deployment
     rentals_staging: Deployment
     billing_main: Deployment
+    billing_legacy: Deployment
 
 
 @dataclass(frozen=True)
@@ -136,6 +147,7 @@ class SeedServices:
     staging_web: Service
     api: Service
     worker: Service
+    cron: Service
 
 
 @dataclass(frozen=True)
@@ -393,6 +405,115 @@ async def ensure_activity(db: AsyncSession) -> tuple[tuple[DeployRun, ...], tupl
     return runs, (token,)
 
 
+async def ensure_deployment_history(db: AsyncSession) -> None:
+    """The legacy deployment, per-environment deploy results and post-deploy outcomes of the runs.
+
+    Separate from the full dataset so a database seeded before they existed can get them without
+    being reseeded. Looks the runs and environments up by name and only fills what is missing.
+    The caller commits.
+    """
+    billing = (
+        await db.execute(select(Project).where(Project.name == "billing"))
+    ).scalar_one_or_none()
+    if billing is not None:
+        legacy = (
+            await db.execute(
+                select(Deployment).where(
+                    Deployment.project_id == billing.id, Deployment.name == "legacy"
+                )
+            )
+        ).scalar_one_or_none()
+        if legacy is None:
+            legacy = Deployment(project_id=billing.id, name="legacy", root_path=LEGACY_ROOT)
+            db.add(legacy)
+            await db.flush()
+            db.add(Service(deployment_id=legacy.id, name="cron"))
+    prod = (
+        await db.execute(select(Deployment).where(Deployment.name == "prod"))
+    ).scalar_one_or_none()
+    if prod is not None and prod.file_owner is None:
+        prod.file_owner = prod.file_group = "www-data"
+
+    environments = {
+        (deployment, name): environment_id
+        for environment_id, deployment, name in (
+            await db.execute(
+                select(Environment.id, Deployment.name, Environment.name)
+                .join(Service, Service.id == Environment.service_id)
+                .join(Deployment, Deployment.id == Service.deployment_id)
+            )
+        ).all()
+    }
+    versions = {
+        (environment_id, number): (version_id, number)
+        for version_id, environment_id, number in (
+            await db.execute(
+                select(
+                    EnvironmentVersion.id,
+                    EnvironmentVersion.environment_id,
+                    EnvironmentVersion.number,
+                )
+            )
+        ).all()
+    }
+    written, failed, planned = (
+        DeployResultStatus.WRITTEN,
+        DeployResultStatus.FAILED,
+        DeployResultStatus.WOULD_WRITE,
+    )
+    outcomes = {
+        ("prod", "web"): (
+            PostDeployStatus.RAN,
+            0,
+            "web recreated",
+            None,
+            (("prod", ".env.web", 1, written),),
+        ),
+        ("prod", "mysql"): (
+            PostDeployStatus.SKIPPED,
+            None,
+            None,
+            "deploy did not finish",
+            (("prod", ".env.db", 2, failed), ("prod", ".env.db.secrets", 1, failed)),
+        ),
+        ("main", "api"): (
+            PostDeployStatus.NONE,
+            None,
+            None,
+            None,
+            (("main", ".env.api", 1, planned),),
+        ),
+    }
+    runs = (await db.execute(select(DeployRun))).scalars().all()
+    have_results = set((await db.execute(select(DeployResult.run_id))).scalars())
+    for run in runs:
+        outcome = outcomes.get((run.deployment_name, run.service_name))
+        if outcome is None:
+            continue
+        post_status, exit_code, output, reason, results = outcome
+        if run.post_deploy_status is PostDeployStatus.NONE:
+            run.post_deploy_status = post_status
+            run.post_deploy_exit_code = exit_code
+            run.post_deploy_output = output
+            run.post_deploy_reason = reason
+        if run.id in have_results:
+            continue
+        for deployment, name, number, status in results:
+            environment_id = environments[(deployment, name)]
+            version_id, _number = versions[(environment_id, number)]
+            db.add(
+                DeployResult(
+                    run_id=run.id,
+                    environment_id=environment_id,
+                    environment_name=name,
+                    version_id=version_id,
+                    target_path=f"environments/{name}",
+                    status=status,
+                )
+            )
+    await db.flush()
+
+
 async def seed(db: AsyncSession, crypto: CryptoService) -> SeedData:
     """Create the dataset in a migrated database and return named references.
 
@@ -431,6 +552,9 @@ async def seed(db: AsyncSession, crypto: CryptoService) -> SeedData:
         billing_main=Deployment(
             project_id=projects.billing.id, name="main", root_path="/opt/billing/main"
         ),
+        billing_legacy=Deployment(
+            project_id=projects.billing.id, name="legacy", root_path=LEGACY_ROOT
+        ),
     )
     db.add_all(vars(deployments).values())
     await db.flush()
@@ -441,6 +565,7 @@ async def seed(db: AsyncSession, crypto: CryptoService) -> SeedData:
         staging_web=Service(deployment_id=deployments.rentals_staging.id, name="web"),
         api=Service(deployment_id=deployments.billing_main.id, name="api"),
         worker=Service(deployment_id=deployments.billing_main.id, name="worker"),
+        cron=Service(deployment_id=deployments.billing_legacy.id, name="cron"),
     )
     db.add_all(vars(services).values())
     await db.flush()
@@ -497,6 +622,7 @@ async def seed(db: AsyncSession, crypto: CryptoService) -> SeedData:
     ):
         db.add(AccessGrant(user_id=user.id, level=level, **{f"{level.value}_id": target.id}))
     deploy_runs, tokens = await ensure_activity(db)
+    await ensure_deployment_history(db)
     await db.commit()
     return SeedData(
         users=users,

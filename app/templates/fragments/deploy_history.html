@@ -1,0 +1,26 @@
+{#- The deploy history panel of a deployment across its services. Context: deployment,
+    can_view_output. -#}
+{% from "macros/badges.html" import deploy_status_badge, post_deploy_badge %}
+{% from "macros/feedback.html" import empty_state %}
+{% from "macros/icons.html" import icon %}
+{% from "macros/panels.html" import panel, table %}
+{% call panel("Deploy history", "history-title", fragment="deploy-history", id="hist", hx_get="/deployments/" ~ deployment.id ~ "/history", hx_trigger="deploy-finished from:body", hx_swap="outerHTML") %}
+{%- if deployment.history -%}
+{% call table("Deploy history across services", ["Time", "Service", "Who", "Environments", "Result", "Post-deploy", '<span class="sr-only">Details</span>'|safe], min_width_class="min-w-[820px]") %}
+{%- for row in deployment.history %}
+<tr data-fragment="history-row"><td class="border-t border-line px-4 py-3.5 whitespace-nowrap">{{ row.started_at.strftime("%Y-%m-%d %H:%M") }}</td>
+<td class="border-t border-line px-4 py-3.5"><span class="font-mono text-[13px]">{{ row.service }}</span></td>
+<td class="border-t border-line px-4 py-3.5 text-ink2">{{ row.who }}</td>
+<td class="border-t border-line px-4 py-3.5"><span class="font-mono text-[13px]">{% for name, number in row.environments %}{{ name }}{% if number is not none %} v{{ number }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</span></td>
+<td class="border-t border-line px-4 py-3.5">{{ deploy_status_badge(row.status.value) }}</td>
+<td class="border-t border-line px-4 py-3.5">{{ post_deploy_badge(row.post_deploy.value) }}</td>
+<td class="border-t border-line px-4 py-3.5"><button type="button" data-js="row-toggle" aria-controls="history-{{ row.id }}" aria-expanded="{{ 'true' if loop.first else 'false' }}" aria-label="Show details" class="inline-flex size-10 shrink-0 items-center justify-center rounded-full border border-line-strong text-ink hover:bg-surface2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus size-8 rounded-ctl">{{ icon("chevron-down", "size-3.5", "2.4") }}</button></td></tr>
+<tr id="history-{{ row.id }}"{% if not loop.first %} class="hidden"{% endif %}><td colspan="7" class="border-t border-line bg-surface2 px-5 py-4"><div class="flex flex-col gap-3 text-[13px]"><p class="text-xs font-bold uppercase tracking-wide text-ink3">Details</p>
+<p>{% for name, number in row.environments %}<span class="font-mono text-[13px]">{{ name }}{% if number is not none %} v{{ number }}{% endif %}</span> {% endfor %}{{ "written." if row.status.value == "success" else "see result." }}</p>
+{% if can_view_output %}<p class="text-ink2">Post-deploy exit code {{ row.exit_code if row.exit_code is not none else "n/a" }}, output truncated.</p>{% endif %}</div></td></tr>
+{%- endfor %}
+{% endcall %}
+{%- else -%}
+{{ empty_state("No deploys yet", "Deploys of the services of this deployment will be listed here.", "clock") }}
+{%- endif -%}
+{% endcall %}

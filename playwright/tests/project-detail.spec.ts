@@ -289,12 +289,19 @@ test.describe('admin', () => {
 test.describe('viewer', () => {
   test.use({ storageState: stateFile('viewer') });
 
-  test('reads deployments and activity with no edit actions', async ({ page, browser }) => {
+  test('reads deployments with no edit actions and no activity tab', async ({ page, browser }) => {
     const rentals = await projectId(browser, 'rentals');
     await page.goto(`/projects/${rentals}`);
-    await expect(tabs(page)).toHaveText(['Deployments', 'Activity']);
+    await expect(tabs(page)).toHaveText(['Deployments']);
     await expect(deploymentNames(page)).toHaveText(['prod', 'staging']);
     await expect(page.getByRole('link', { name: 'New deployment' })).toHaveCount(0);
+  });
+
+  test('is refused the activity tab', async ({ page, browser }) => {
+    const rentals = await projectId(browser, 'rentals');
+    const response = await page.goto(`/projects/${rentals}/activity`);
+    expect(response?.status()).toBe(403);
+    await expect(page.locator('main')).toContainText('No access');
   });
 
   test('cannot open a project outside the grants', async ({ page, browser }) => {

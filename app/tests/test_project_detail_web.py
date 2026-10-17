@@ -88,10 +88,10 @@ async def test_admin_has_two_tabs_and_no_structure_actions(
 async def test_viewer_sees_the_same_read_only_page(
     web_client: httpx.AsyncClient, ids: ProjectIds
 ) -> None:
-    """A viewer reads deployments and activity only."""
+    """A viewer reads deployments only: the audit log is not open to viewers."""
     await sign_in(web_client, "viewer")
     page = (await web_client.get(f"/projects/{ids.rentals}")).text
-    assert tab_labels(page) == ["Deployments", "Activity"]
+    assert tab_labels(page) == ["Deployments"]
     assert row_names(page) == ["prod", "staging"]
     assert "New deployment" not in page
 
@@ -195,6 +195,17 @@ async def test_activity_for_a_scoped_user_leaves_out_other_items(
     page = (await web_client.get(f"/projects/{ids.rentals}/activity")).text
     assert "file_save" in page
     assert ">deploy<" not in page
+
+
+@pytest.mark.parametrize("user", ["viewer", "env_scoped_viewer"])
+async def test_activity_is_forbidden_for_viewers(
+    web_client: httpx.AsyncClient, ids: ProjectIds, user: str
+) -> None:
+    """The project activity follows the audit log rule: viewers get no tab and a 403."""
+    await sign_in(web_client, user)
+    assert (await web_client.get(f"/projects/{ids.rentals}/activity")).status_code == 403
+    page = (await web_client.get(f"/projects/{ids.rentals}")).text
+    assert "/activity" not in page
 
 
 async def test_activity_empty_state(web_client: httpx.AsyncClient, web_app: FastAPI) -> None:

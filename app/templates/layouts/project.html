@@ -1,6 +1,6 @@
 {#- Shared frame of the project detail tabs: page header with the project figures and actions,
     then the section tabs. Pages extend this and fill the `tab` block. Context: project (a
-    ProjectDetail), tab (the open tab key), can_manage_structure, can_manage_grants. -#}
+    ProjectDetail), tab (the open tab key), can_manage_structure, can_manage_grants, can_view_audit. -#}
 {% extends "layouts/app.html" %}
 {% from "macros/badges.html" import badge %}
 {% from "macros/buttons.html" import button %}
@@ -22,7 +22,7 @@
 {{ tabs(
   [{"label": "Deployments", "href": base_href}]
   + ([{"label": "Members and access", "href": base_href ~ "/members", "superadmin": true}] if can_manage_grants else [])
-  + [{"label": "Activity", "href": base_href ~ "/activity"}]
+  + ([{"label": "Activity", "href": base_href ~ "/activity"}] if can_view_audit else [])
   + ([{"label": "Settings", "href": base_href ~ "/settings", "superadmin": true}] if can_manage_structure else []),
   base_href ~ ("" if tab == "deployments" else "/" ~ tab)
 ) }}

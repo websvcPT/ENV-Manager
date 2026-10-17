@@ -1,0 +1,42 @@
+{#- Deployment detail: header, scope note, section links, status strip, services, deploy history
+    and policies. Context: deployment (a DeploymentDetail), can_manage_structure,
+    can_view_output. -#}
+{% extends "layouts/app.html" %}
+{% from "macros/badges.html" import badge, deploy_status_badge, post_deploy_badge %}
+{% from "macros/buttons.html" import button %}
+{% from "macros/feedback.html" import note %}
+{% from "macros/panels.html" import page_header, panel, tabs, text_link %}
+{% set active_nav = "projects" %}
+{% set breadcrumbs = [("Projects", "/projects"), (deployment.project_name, "/projects/" ~ deployment.project_id), (deployment.name, none)] %}
+{% set run = deployment.last_run %}
+{% set drift_labels = {"halt": "Halt", "overwrite": "Overwrite", "backup_overwrite": "Back up, then overwrite"} %}
+{% set dist_labels = {"block": "Block", "warn": "Warn and continue"} %}
+{% set target_labels = {"create": "Create", "halt": "Halt"} %}
+{% block title %}{{ deployment.name }}{% endblock %}
+{% block content %}
+{% set header_badges %}{% for flag in deployment.flags %}{{ deploy_status_badge(flag.value) }}{% endfor %}{% endset %}
+{% set subtitle %}Project {% if deployment.full %}<strong class="text-ink">{{ deployment.project_name }}</strong> · <span class="font-mono text-[13px] text-ink2">{{ deployment.root_path }}</span>{% else %}{{ deployment.project_name }}{% endif %}{% endset %}
+{% set header_actions %}{% if deployment.can_check_dist %}{{ button("Check dist", href=none if deployment.outside_allowed else "/deployments/" ~ deployment.id ~ "/dist", icon_name="check", icon_stroke="2.4", disabled=deployment.outside_allowed) }}{% endif %}{% if can_manage_structure %}{{ button("Edit", href="/deployments/" ~ deployment.id ~ "/edit") }}{% endif %}{% endset %}
+{{ page_header(deployment.name, subtitle, mono=true, badges=header_badges, actions=header_actions) }}
+{% if deployment.outside_allowed %}{{ note("This deployment is outside the allowed paths. It cannot be deployed or checked until the path is allowed again or the deployment is moved.", tone="warn") }}{% elif not deployment.full %}{{ note("You have access to " ~ ("one environment" if deployment.services | map(attribute="environments") | sum == 1 else "selected environments") ~ " of this deployment. Only " ~ ("its service is" if deployment.services | length == 1 else "their services are") ~ " shown.") }}{% endif %}
+{{ tabs([{"label": "Services", "href": "#services"}, {"label": "Deploy history", "href": "#hist"}], "#services") }}
+<section aria-label="Status" data-fragment="status-strip" class="grid divide-line overflow-hidden rounded-panel border border-line bg-surface shadow-panel sm:grid-cols-2 lg:grid-cols-4">
+<div class="flex flex-col gap-1.5 border-b border-line p-4 sm:border-r lg:border-b-0"><p class="text-xs font-bold uppercase tracking-wide text-ink3">Last deploy</p><div class="flex flex-wrap items-center gap-2">{% if run %}{{ deploy_status_badge(run.status.value) }}<span class="text-[13px] text-ink2">{{ run.started_at.strftime("%Y-%m-%d %H:%M") }} · {{ run.who }}</span>{% else %}{{ badge("never") }}{% endif %}</div></div>
+<div class="flex flex-col gap-1.5 border-b border-line p-4 sm:border-r lg:border-b-0"><p class="text-xs font-bold uppercase tracking-wide text-ink3">Drift state</p><div class="flex flex-wrap items-center gap-2">{{ badge("unchanged", "Not checked yet") }}</div></div>
+<div class="flex flex-col gap-1.5 border-b border-line p-4 sm:border-r lg:border-b-0"><p class="text-xs font-bold uppercase tracking-wide text-ink3">Dist check</p><div class="flex flex-wrap items-center gap-2">{{ badge("unchanged", "Not checked yet") }}</div></div>
+<div class="flex flex-col gap-1.5 border-b border-line p-4 sm:border-r lg:border-b-0"><p class="text-xs font-bold uppercase tracking-wide text-ink3">Post-deploy</p><div class="flex flex-wrap items-center gap-2">{% if run %}{{ post_deploy_badge(run.post_deploy.value) }}<span class="text-[13px] text-ink2">{{ run.service }}</span>{% else %}<span class="text-[13px] text-ink2">No deploys yet</span>{% endif %}</div></div>
+</section>
+{% include "fragments/services_table.html" %}
+{% include "fragments/deploy_history.html" %}
+{% if deployment.policies %}
+{% set policy_note %}{% if can_manage_structure %}{{ text_link("Edit policies", "/deployments/" ~ deployment.id ~ "/edit") }}{% else %}<span class="text-[13px] text-ink2">Read-only</span>{% endif %}{% endset %}
+{% call panel("Policies", "policies-title", fragment="policies-panel", actions=policy_note) %}
+<div class="px-4 pb-5 md:px-5"><dl class="grid gap-x-8 gap-y-3.5 text-[13px] sm:grid-cols-2 lg:grid-cols-4">
+<div><dt class="text-xs font-bold uppercase tracking-wide text-ink3">Dist keys missing</dt><dd class="mt-0.5 break-all">{{ dist_labels[deployment.policies.dist_missing.value] }}</dd></div>
+<div><dt class="text-xs font-bold uppercase tracking-wide text-ink3">Drift</dt><dd class="mt-0.5 break-all">{{ drift_labels[deployment.policies.drift.value] }}</dd></div>
+<div><dt class="text-xs font-bold uppercase tracking-wide text-ink3">Target missing</dt><dd class="mt-0.5 break-all">{{ target_labels[deployment.policies.missing_target.value] }}</dd></div>
+<div><dt class="text-xs font-bold uppercase tracking-wide text-ink3">Default file mode, owner</dt><dd class="mt-0.5 break-all font-mono">{{ deployment.policies.file_mode }}, {% if deployment.policies.file_owner or deployment.policies.file_group %}{{ deployment.policies.file_owner or "" }}:{{ deployment.policies.file_group or "" }}{% else %}app user{% endif %}</dd></div>
+</dl></div>
+{% endcall %}
+{% endif %}
+{% endblock %}

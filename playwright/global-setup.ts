@@ -9,6 +9,7 @@ export const SESSION_USERS = {
   admin: 'admin',
   viewer: 'viewer',
   deploymentAdmin: 'deployment_admin',
+  envScopedAdmin: 'env_scoped_admin',
   envScopedViewer: 'env_scoped_viewer',
   ungrantedAdmin: 'ungranted_admin',
 } as const;

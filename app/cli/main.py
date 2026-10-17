@@ -21,6 +21,7 @@ from app.seeds import (
     TOTP_USER_NAME,
     SeedError,
     ensure_activity,
+    ensure_deployment_history,
     ensure_totp_user,
 )
 from app.seeds import seed as seed_data
@@ -178,6 +179,7 @@ def seed_dataset() -> None:
             for name in (TOTP_USER_NAME, TOTP_ALT_USER_NAME):
                 await ensure_totp_user(db, crypto, name)
             await ensure_activity(db)
+            await ensure_deployment_history(db)
             await db.commit()
             raise
 

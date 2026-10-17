@@ -17,7 +17,7 @@
     zero-based indexes to right align. The call block supplies the body rows. Wide tables
     scroll inside their wrapper. -#}
 {% macro table(caption, columns, right_columns=[], min_width_class="") -%}
-<div class="overflow-x-auto"><table class="w-full text-left{% if min_width_class %} {{ min_width_class }}{% endif %}"><caption class="sr-only">{{ caption }}</caption><thead><tr>{% for column in columns %}<th scope="col" class="bg-head px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-head-ink{% if loop.index0 in right_columns %} text-right{% endif %}">{{ column }}</th>{% endfor %}</tr></thead><tbody>{{ caller() }}</tbody></table></div>
+<div class="relative overflow-x-auto"><table class="w-full text-left{% if min_width_class %} {{ min_width_class }}{% endif %}"><caption class="sr-only">{{ caption }}</caption><thead><tr>{% for column in columns %}<th scope="col" class="bg-head px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-head-ink{% if loop.index0 in right_columns %} text-right{% endif %}">{{ column }}</th>{% endfor %}</tr></thead><tbody>{{ caller() }}</tbody></table></div>
 {%- endmacro %}
 
 {% macro row_header(content, mono=true) -%}

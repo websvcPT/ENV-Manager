@@ -8,6 +8,7 @@ from app.seeds.dataset import (
     SeedData,
     SeedError,
     ensure_activity,
+    ensure_deployment_history,
     ensure_totp_user,
     seed,
 )
@@ -20,6 +21,7 @@ __all__ = [
     "SeedData",
     "SeedError",
     "ensure_activity",
+    "ensure_deployment_history",
     "ensure_totp_user",
     "seed",
 ]

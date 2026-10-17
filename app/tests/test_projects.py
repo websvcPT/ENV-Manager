@@ -56,7 +56,7 @@ async def test_superadmin_sees_every_project_with_counts(
     rows = await _rows(db, seed_data.users.superadmin)
     assert list(rows) == ["billing", "rentals"]
     rentals, billing = rows["rentals"], rows["billing"]
-    assert (rentals.deployments, billing.deployments) == (2, 1)
+    assert (rentals.deployments, billing.deployments) == (2, 2)
     assert rentals.limited_to == ()
     assert (rentals.members, billing.members) == (6, 2)
     assert rentals.last_deploy is not None
@@ -185,7 +185,7 @@ async def test_delete_project_removes_the_tree_and_keeps_history(
     remaining = (await db.execute(select(Project.name))).scalars().all()
     assert remaining == ["billing"]
     deployments = (await db.execute(select(func.count()).select_from(Deployment))).scalar_one()
-    assert deployments == 1
+    assert deployments == 2
     (entry,) = await _audit(db, "project.delete")
     assert (entry.result, entry.project_id, entry.details) == (
         AuditResult.SUCCESS,

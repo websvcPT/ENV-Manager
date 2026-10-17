@@ -75,8 +75,10 @@ ALL_RENTALS = {
 ALL_BILLING = {
     "project:billing",
     "deployment:main",
+    "deployment:legacy",
     "service:api",
     "service:worker",
+    "service:cron",
     "environment:api",
     "environment:worker",
 }
@@ -165,6 +167,7 @@ def tree(seed_data: SeedData) -> Tree:
             "rentals_prod": "prod",
             "rentals_staging": "staging",
             "billing_main": "main",
+            "billing_legacy": "legacy",
         },
         "service": {
             "mysql": "mysql",
@@ -172,6 +175,7 @@ def tree(seed_data: SeedData) -> Tree:
             "staging_web": "staging_web",
             "api": "api",
             "worker": "worker",
+            "cron": "cron",
         },
         "environment": {
             "db": "db",

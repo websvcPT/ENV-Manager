@@ -178,10 +178,22 @@ async def test_autoincrement_migration_keeps_children_and_stops_id_reuse(
             sequences: dict[str, int] = dict(sequence_rows.all())
             violations = (await connection.execute(text("PRAGMA foreign_key_check"))).all()
             enforcement = (await connection.execute(text("PRAGMA foreign_keys"))).scalar_one()
+            deployment_sql = (
+                await connection.execute(
+                    text("SELECT sql FROM sqlite_master WHERE name = 'deployments'")
+                )
+            ).scalar_one()
+            file_defaults = (
+                await connection.execute(
+                    text("SELECT file_mode, file_owner, file_group FROM deployments")
+                )
+            ).one()
         assert counts == [1] * len(CHILD_TABLES)
         assert sequences["projects"] == 1
         assert violations == []
         assert enforcement == 1
+        assert "AUTOINCREMENT" in deployment_sql
+        assert tuple(file_defaults) == ("0600", None, None)
         async with engine.begin() as connection:
             await connection.execute(text("DELETE FROM projects WHERE id = 1"))
             await connection.execute(

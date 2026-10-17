@@ -1,0 +1,26 @@
+{#- The services panel of a deployment and its empty state. Context: deployment,
+    can_manage_structure. -#}
+{% from "macros/badges.html" import badge, deploy_status_badge, post_deploy_badge %}
+{% from "macros/buttons.html" import button %}
+{% from "macros/feedback.html" import empty_state %}
+{% from "macros/icons.html" import icon %}
+{% from "macros/panels.html" import panel, table, text_link %}
+{% set add_service %}{% if can_manage_structure %}{{ button("Add service", href="/deployments/" ~ deployment.id ~ "/services/new", icon_name="plus", icon_stroke="2.2") }}{% endif %}{% endset %}
+{% call panel("Services", "services-title", fragment="services-table", actions=add_service, id="services", hx_get="/deployments/" ~ deployment.id ~ "/services", hx_trigger="deploy-finished from:body", hx_swap="outerHTML") %}
+{%- if deployment.services -%}
+{% call table("Services", ["Service", "Environments in your scope" if not deployment.full else "Environments", "Last deploy", "Post-deploy", "State flags", "Actions"], right_columns=[5], min_width_class="min-w-[860px]") %}
+{%- for row in deployment.services %}
+<tr data-fragment="service-row"><th scope="row" class="border-t border-line px-4 py-3.5 text-left font-semibold"><a href="/services/{{ row.id }}" class="font-semibold text-link hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus font-mono text-ink">{{ row.name }}</a></th>
+<td class="border-t border-line px-4 py-3.5">{{ row.environments }}</td>
+<td class="border-t border-line px-4 py-3.5">{% if row.last_deploy %}{{ deploy_status_badge(row.last_deploy.status.value) }}<span class="mt-1 block text-xs text-ink2">{{ row.last_deploy.started_at.strftime("%Y-%m-%d %H:%M") }}{% if row.last_deploy.actor %} · {{ row.last_deploy.actor }}{% endif %}</span>{% else %}{{ badge("never", "No deploys yet") }}{% endif %}</td>
+<td class="border-t border-line px-4 py-3.5">{% if row.post_deploy %}{{ post_deploy_badge(row.post_deploy.value) }}{% else %}<span class="text-ink3">None</span>{% endif %}</td>
+<td class="border-t border-line px-4 py-3.5">{% if row.flags %}<span class="flex flex-wrap gap-1.5">{% for flag in row.flags %}{{ deploy_status_badge(flag.value) }}{% endfor %}</span>{% else %}<span class="inline-flex items-center gap-1.5 text-[13px] text-ink2">{{ icon("check", "size-3.5", "2.4") }}No flags</span>{% endif %}</td>
+<td class="border-t border-line px-4 py-3.5 whitespace-nowrap text-right"><span class="inline-flex gap-4">{{ text_link("Open", "/services/" ~ row.id) }}{% if row.can_deploy and not deployment.outside_allowed %}{{ text_link("Deploy", "/services/" ~ row.id ~ "#deploy") }}{% endif %}</span></td></tr>
+{%- endfor %}
+{% endcall %}
+{%- elif can_manage_structure -%}
+{% call empty_state("No services yet", "A service groups the environments that feed one workload. Deploys run per service.") %}{{ button("Add service", kind="primary", href="/deployments/" ~ deployment.id ~ "/services/new", icon_name="plus", icon_stroke="2.2") }}{% endcall %}
+{%- else -%}
+{{ empty_state("No services yet", "A service groups the environments that feed one workload. Deploys run per service.") }}
+{%- endif -%}
+{% endcall %}

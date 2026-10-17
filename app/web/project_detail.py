@@ -86,6 +86,7 @@ def _page_context(access: ProjectContext, tab: str, **extra: Any) -> dict[str, A
         "tab": tab,
         "can_manage_structure": access.scope.can(Capability.MANAGE_STRUCTURE),
         "can_manage_grants": access.scope.can(Capability.MANAGE_GRANTS),
+        "can_view_audit": access.scope.can(Capability.VIEW_AUDIT),
         **extra,
     }
 
@@ -109,10 +110,10 @@ async def deployments_table(
 @router.get("/projects/{project_id:int}/activity", include_in_schema=False)
 async def activity_tab(
     request: Request,
-    access: Annotated[ProjectContext, Depends(project_access())],
+    access: Annotated[ProjectContext, Depends(project_access(Capability.VIEW_AUDIT))],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Response:
-    """The Activity tab: the project's newest audit entries inside the caller's scope."""
+    """The Activity tab: the project's newest audit entries in the caller's scope, admins only."""
     rows = await list_activity(db, access.scope, access.project.id)
     context = _page_context(access, "activity", rows=rows)
     return render(request, "pages/project_activity.html", context)

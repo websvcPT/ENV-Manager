@@ -47,3 +47,12 @@
 {% macro deploy_status_badge(status) -%}
 {{ badge(DEPLOY_BADGES[status]) }}
 {%- endmacro %}
+
+{#- Badge for a post-deploy outcome value (ran, skipped, failed); `none` means no command ran. -#}
+{% macro post_deploy_badge(status) -%}
+{%- if status == "none" -%}
+<span class="text-ink3">None</span>
+{%- else -%}
+{{ badge(status) }}
+{%- endif -%}
+{%- endmacro %}
