@@ -7,8 +7,9 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.core.crypto import CryptoService, generate_master_key, parse_master_key
-from app.core.db import create_engine
+from app.core.db import create_engine, create_session_factory
 from app.core.migrations import migrate_database
+from app.seeds import SeedData, seed
 
 
 @pytest.fixture
@@ -36,3 +37,16 @@ async def engine(database_path: Path, backup_dir: Path) -> AsyncIterator[AsyncEn
 def crypto() -> CryptoService:
     """A crypto service on a fresh random key."""
     return CryptoService(parse_master_key(generate_master_key()))
+
+
+@pytest.fixture
+async def seed_data(engine: AsyncEngine, crypto: CryptoService) -> SeedData:
+    """The seed dataset created in the temporary database, with named references."""
+    async with create_session_factory(engine)() as session:
+        return await seed(session, crypto)
+
+
+@pytest.fixture
+async def seeded_database(engine: AsyncEngine, seed_data: SeedData) -> AsyncEngine:
+    """The temporary database engine after the seed dataset has been created."""
+    return engine

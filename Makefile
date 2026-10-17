@@ -1,5 +1,5 @@
 .PHONY: up up-app upforce up-bg stop destroy logs app app-logs lint format tests tests-docker \
-	migrate revision e2e frontend-build tailwind-download tailwind-build tailwind-watch \
+	migrate revision seed e2e frontend-build tailwind-download tailwind-build tailwind-watch \
 	static-fetch help
 
 TAILWIND_VERSION ?= 4.3.3
@@ -67,6 +67,9 @@ tests-docker: ## Run tests in an isolated container
 	docker compose -f docker-compose-testing.yml down --remove-orphans --rmi local -v || true
 	docker compose -f docker-compose-testing.yml up --force-recreate --build --abort-on-container-exit --exit-code-from app
 	docker compose -f docker-compose-testing.yml down --remove-orphans --rmi local -v || true
+
+seed: ## Load the development dataset into the running app (dev-only passwords)
+	docker compose exec -T app envmanager dev seed
 
 e2e: ## Run Playwright specs against the running stack
 	@test -d playwright || { echo "playwright project does not exist yet"; exit 1; }

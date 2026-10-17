@@ -10,14 +10,20 @@ import typer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.core.crypto import build_crypto_service
 from app.core.db import create_engine, create_session_factory
 from app.core.migrations import migrate_database
 from app.models import AuditActorType, UserGroup
+from app.seeds import DEV_PASSWORD, SeedError
+from app.seeds import seed as seed_data
 from app.services import users as user_service
 
 app = typer.Typer(help="ENV Manager administration.", no_args_is_help=True, add_completion=False)
 user_app = typer.Typer(help="Manage users.", no_args_is_help=True)
 app.add_typer(user_app, name="user")
+dev_app = typer.Typer(help="Development helpers.", no_args_is_help=True)
+app.add_typer(dev_app, name="dev")
+SEED_ENVIRONMENTS = {"development", "testing"}
 
 
 @asynccontextmanager
@@ -132,3 +138,29 @@ def reset_user_password(name: Annotated[str, typer.Argument(help="Sign-in name."
     typer.echo(f"password reset for {name.strip()}")
     typer.echo(f"password: {password}")
     typer.echo("This password is shown once and cannot be recovered.")
+
+
+@dev_app.command("seed")
+def seed_dataset() -> None:
+    """Create the development dataset with its fixed dev-only passwords."""
+    environment = get_settings().environment
+    if environment not in SEED_ENVIRONMENTS:
+        typer.echo(
+            f"error: seeding is only allowed when ENVMANAGER_ENVIRONMENT is one of "
+            f"{', '.join(sorted(SEED_ENVIRONMENTS))}, not {environment!r}",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    async def operation(db: AsyncSession) -> None:
+        settings = get_settings()
+        crypto = build_crypto_service(settings.key, settings.key_file)
+        await seed_data(db, crypto)
+
+    try:
+        run_command(operation)
+    except SeedError as error:
+        typer.echo(f"error: {error}", err=True)
+        raise typer.Exit(code=1) from error
+    typer.echo("seeded the development dataset")
+    typer.echo(f"every seeded user signs in with the dev-only password {DEV_PASSWORD}")
