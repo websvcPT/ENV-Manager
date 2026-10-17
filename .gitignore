@@ -23,3 +23,7 @@ node_modules/
 playwright/test-results/
 playwright/playwright-report/
 playwright/.auth/
+
+# Local Claude Code settings and hooks
+.claude/settings.local.json
+.claude/hooks/
