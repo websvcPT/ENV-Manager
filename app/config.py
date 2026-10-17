@@ -2,12 +2,13 @@
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Self
 
-from pydantic import SecretStr, field_validator
+from pydantic import SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 LOG_LEVELS = {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"}
+MIN_CSRF_SECRET = 32
 
 
 def _split_csv(value: object) -> object:
@@ -49,6 +50,26 @@ class Settings(BaseSettings):
     def _parse_list(cls, value: object) -> object:
         """Accept comma separated lists from the environment."""
         return _split_csv(value)
+
+    @field_validator("cors_origins")
+    @classmethod
+    def _check_cors_origins(cls, value: list[str]) -> list[str]:
+        """Refuse wildcard origins and anything that is not an http(s) origin."""
+        for origin in value:
+            if origin == "*" or not origin.startswith(("http://", "https://")):
+                raise ValueError("CORS origins must be explicit http or https origins")
+        return value
+
+    @model_validator(mode="after")
+    def _require_csrf_secret(self) -> Self:
+        """Require a long CSRF secret everywhere except the testing environment."""
+        if self.environment == "testing":
+            return self
+        if self.csrf_secret is None or len(self.csrf_secret.get_secret_value()) < MIN_CSRF_SECRET:
+            raise ValueError(
+                f"ENVMANAGER_CSRF_SECRET must be set to at least {MIN_CSRF_SECRET} characters"
+            )
+        return self
 
     @field_validator("log_level")
     @classmethod

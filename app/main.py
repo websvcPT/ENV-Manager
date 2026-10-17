@@ -5,11 +5,14 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app import VERSION
 from app.config import get_settings
 from app.core.crypto import CryptoError, build_crypto_service
 from app.core.db import create_engine, create_session_factory
 from app.core.log import configure_logging, get_logger
+from app.core.middleware import install_middleware
 from app.core.migrations import migrate_database
+from app.core.observability import configure_otel, init_sentry
 from app.services.key_check import ensure_key_check
 
 log = get_logger("main")
@@ -52,13 +55,17 @@ def create_app() -> FastAPI:
     """Build the FastAPI application."""
     settings = get_settings()
     configure_logging(settings.log_level)
+    init_sentry(settings)
+    configure_otel(settings)
     application = FastAPI(
         title="ENV Manager",
+        version=VERSION,
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
         lifespan=lifespan,
     )
+    install_middleware(application, settings)
 
     @application.get("/healthz", include_in_schema=False)
     async def healthz() -> dict[str, str]:
