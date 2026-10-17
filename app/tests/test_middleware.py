@@ -11,7 +11,14 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from app.config import Settings
 from app.core.cors import ApiCorsMiddleware
-from app.core.csrf import CSRF_COOKIE_NAME, CSRF_HEADER_NAME, LoggingCSRFMiddleware
+from app.core.csrf import (
+    CSRF_COOKIE_NAME,
+    CSRF_FORM_FIELD,
+    CSRF_HEADER_NAME,
+    CSRFMiddleware,
+    generate_token,
+    is_valid_token,
+)
 from app.core.middleware import install_middleware
 from app.core.security_headers import CONTENT_SECURITY_POLICY, SecurityHeadersMiddleware
 from app.core.sessions import SESSION_COOKIE_NAME
@@ -33,6 +40,15 @@ def build_app(**overrides: Any) -> FastAPI:
     @application.post("/change")
     async def change() -> dict[str, str]:
         return {"changed": "yes"}
+
+    @application.get("/token")
+    async def token(request: Request) -> dict[str, str]:
+        return {"token": request.state.csrf_token}
+
+    @application.post("/form")
+    async def form(request: Request) -> dict[str, str]:
+        data = await request.form()
+        return {key: str(value) for key, value in data.items() if key != CSRF_FORM_FIELD}
 
     @application.post("/login")
     async def login() -> dict[str, str]:
@@ -77,14 +93,14 @@ def test_middleware_order_is_headers_cors_csrf() -> None:
         ProxyHeadersMiddleware,
         SecurityHeadersMiddleware,
         ApiCorsMiddleware,
-        LoggingCSRFMiddleware,
+        CSRFMiddleware,
     ]
 
 
 def test_cors_and_proxy_middleware_absent_when_unconfigured() -> None:
     """With no origins and no proxies only security headers and CSRF are installed."""
     order: list[object] = [entry.cls for entry in build_app().user_middleware]
-    assert order == [SecurityHeadersMiddleware, LoggingCSRFMiddleware]
+    assert order == [SecurityHeadersMiddleware, CSRFMiddleware]
 
 
 async def test_security_headers_on_success(client: httpx.AsyncClient) -> None:
@@ -217,6 +233,128 @@ async def test_csrf_required_on_login_without_session(client: httpx.AsyncClient)
     token = client.cookies[CSRF_COOKIE_NAME]
     accepted = await client.post("/login", headers={CSRF_HEADER_NAME: token})
     assert accepted.status_code == 200
+
+
+async def session_client_with_token(client: httpx.AsyncClient) -> str:
+    """Give the client a session cookie and a CSRF cookie, returning the token."""
+    await client.get("/page")
+    client.cookies.set(SESSION_COOKIE_NAME, "abc")
+    return client.cookies[CSRF_COOKIE_NAME]
+
+
+async def test_csrf_accepts_urlencoded_form_field_and_replays_body(
+    client: httpx.AsyncClient,
+) -> None:
+    """The hidden field passes and the application still reads the whole form."""
+    token = await session_client_with_token(client)
+    response = await client.post("/form", data={CSRF_FORM_FIELD: token, "name": "value"})
+    assert response.status_code == 200
+    assert response.json() == {"name": "value"}
+
+
+async def test_csrf_accepts_multipart_form_field_and_replays_files(
+    client: httpx.AsyncClient,
+) -> None:
+    """A multipart body is verified from its field and replayed intact."""
+    token = await session_client_with_token(client)
+    response = await client.post(
+        "/form",
+        data={CSRF_FORM_FIELD: token, "name": "value"},
+        files={"upload": ("a.env", b"KEY=1\n", "text/plain")},
+    )
+    assert response.status_code == 200
+    assert response.json()["name"] == "value"
+    assert "upload" in response.json()
+
+
+async def test_csrf_rejects_wrong_or_missing_form_field(client: httpx.AsyncClient) -> None:
+    """A forged or absent field is rejected, for both form encodings."""
+    await session_client_with_token(client)
+    forged = await client.post("/form", data={CSRF_FORM_FIELD: "forged", "name": "x"})
+    assert forged.status_code == 403
+    missing = await client.post("/form", data={"name": "x"})
+    assert missing.status_code == 403
+    multipart = await client.post(
+        "/form", data={CSRF_FORM_FIELD: "forged"}, files={"upload": ("a", b"b", "text/plain")}
+    )
+    assert multipart.status_code == 403
+
+
+async def test_csrf_form_field_works_on_login_without_session(client: httpx.AsyncClient) -> None:
+    """The login form submits the token as a hidden field."""
+    await client.get("/page")
+    token = client.cookies[CSRF_COOKIE_NAME]
+    response = await client.post("/login", data={CSRF_FORM_FIELD: token})
+    assert response.status_code == 200
+
+
+async def test_csrf_rejects_validly_signed_token_not_matching_cookie(
+    client: httpx.AsyncClient,
+) -> None:
+    """A correctly signed token that is not the cookie token is rejected."""
+    await session_client_with_token(client)
+    other = generate_token(SECRET)
+    response = await client.post("/change", headers={CSRF_HEADER_NAME: other})
+    assert response.status_code == 403
+
+
+async def test_csrf_rejects_oversized_form_body() -> None:
+    """A form body over the bound is refused before it is buffered or parsed."""
+    application = FastAPI()
+    application.add_middleware(CSRFMiddleware, secret=SECRET, max_body_bytes=64)
+
+    @application.post("/form")
+    async def form() -> dict[str, str]:
+        return {"ok": "yes"}
+
+    async with await client_for(application) as http_client:
+        await http_client.get("/form")
+        token = http_client.cookies[CSRF_COOKIE_NAME]
+        http_client.cookies.set(SESSION_COOKIE_NAME, "abc")
+        declared = await http_client.post("/form", data={CSRF_FORM_FIELD: token, "pad": "x" * 200})
+        assert declared.status_code == 413
+
+        async def chunks() -> AsyncIterator[bytes]:
+            yield f"{CSRF_FORM_FIELD}={token}&pad=".encode()
+            yield b"x" * 200
+
+        streamed = await http_client.post(
+            "/form",
+            content=chunks(),
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        assert streamed.status_code == 413
+
+
+async def test_csrf_token_exposed_to_request_and_matches_cookie(
+    client: httpx.AsyncClient,
+) -> None:
+    """The first render sees the token that the response then sets as the cookie."""
+    first = await client.get("/token")
+    assert first.json()["token"] == client.cookies[CSRF_COOKIE_NAME]
+    second = await client.get("/token")
+    assert second.json()["token"] == first.json()["token"]
+
+
+async def test_csrf_cookie_attributes_and_reissue_of_invalid_cookie(
+    client: httpx.AsyncClient,
+) -> None:
+    """The cookie is HttpOnly and strict, and an unsigned cookie value is replaced."""
+    first = await client.get("/page")
+    header = first.headers["set-cookie"]
+    assert "HttpOnly" in header and "SameSite=Strict" in header and "Secure" not in header
+    assert is_valid_token(SECRET, client.cookies[CSRF_COOKIE_NAME])
+    client.cookies.clear()
+    reissued = await client.get("/page", headers={"Cookie": f"{CSRF_COOKIE_NAME}=not-signed"})
+    assert CSRF_COOKIE_NAME in reissued.headers["set-cookie"]
+    assert is_valid_token(SECRET, client.cookies[CSRF_COOKIE_NAME])
+
+
+async def test_csrf_cookie_secure_on_https_base_url() -> None:
+    """An https base URL marks the token cookie Secure."""
+    async with await client_for(build_app(base_url="https://env.example")) as http_client:
+        response = await http_client.get("/page")
+        assert "Secure" in response.headers["set-cookie"]
 
 
 async def test_csrf_exempts_api_prefix(client: httpx.AsyncClient) -> None:

@@ -5,7 +5,7 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from app.config import Settings
 from app.core.cors import ApiCorsMiddleware
-from app.core.csrf import LoggingCSRFMiddleware, csrf_options
+from app.core.csrf import CSRFMiddleware
 from app.core.security_headers import SecurityHeadersMiddleware
 
 
@@ -19,9 +19,9 @@ def install_middleware(application: FastAPI, settings: Settings) -> None:
     if settings.csrf_secret is None:
         raise RuntimeError("the CSRF secret is not configured")
     application.add_middleware(
-        LoggingCSRFMiddleware,
+        CSRFMiddleware,
         secret=settings.csrf_secret.get_secret_value(),
-        **csrf_options(secure_cookie=settings.base_url.startswith("https://")),
+        cookie_secure=settings.base_url.startswith("https://"),
     )
     if settings.cors_origins:
         application.add_middleware(ApiCorsMiddleware, allowed_origins=settings.cors_origins)
