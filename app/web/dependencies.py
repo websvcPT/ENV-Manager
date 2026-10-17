@@ -1,0 +1,70 @@
+"""Request dependencies: database session, authenticated user and group checks."""
+
+from collections.abc import AsyncIterator, Awaitable, Callable
+from dataclasses import dataclass
+from typing import Annotated
+
+from fastapi import Depends, HTTPException, Request, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.crypto import CryptoService
+from app.core.sessions import SESSION_COOKIE_NAME
+from app.models import User, UserGroup, UserSession
+from app.services.auth_policy import AuthPolicy
+from app.services.sessions import resolve_session
+
+
+@dataclass(frozen=True)
+class AuthContext:
+    """The signed-in user and the session that proved it."""
+
+    user: User
+    session: UserSession
+
+
+async def get_db(request: Request) -> AsyncIterator[AsyncSession]:
+    """One database session per request."""
+    async with request.app.state.session_factory() as db:
+        yield db
+
+
+def get_crypto(request: Request) -> CryptoService:
+    """The application crypto service."""
+    crypto: CryptoService = request.app.state.crypto
+    return crypto
+
+
+def get_auth_policy(request: Request) -> AuthPolicy:
+    """The active authentication thresholds."""
+    policy: AuthPolicy = request.app.state.auth_policy
+    return policy
+
+
+async def require_auth(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    policy: Annotated[AuthPolicy, Depends(get_auth_policy)],
+) -> AuthContext:
+    """Resolve the session cookie to a signed-in user, or answer 401.
+
+    Every route declares this dependency (directly or through ``require_group``) unless it is on
+    the explicit public list; a test fails when a route has neither.
+    """
+    token = request.cookies.get(SESSION_COOKIE_NAME)
+    resolved = await resolve_session(db, token, policy) if token else None
+    if resolved is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "authentication required")
+    context = AuthContext(user=resolved[1], session=resolved[0])
+    request.state.auth = context
+    return context
+
+
+def require_group(*groups: UserGroup) -> Callable[..., Awaitable[AuthContext]]:
+    """A dependency that admits only users in one of the given groups, else answers 403."""
+
+    async def check(context: Annotated[AuthContext, Depends(require_auth)]) -> AuthContext:
+        if context.user.group not in groups:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "not permitted")
+        return context
+
+    return check

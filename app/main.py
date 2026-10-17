@@ -13,7 +13,9 @@ from app.core.log import configure_logging, get_logger
 from app.core.middleware import install_middleware
 from app.core.migrations import migrate_database
 from app.core.observability import configure_otel, init_sentry
+from app.services.auth_policy import AuthPolicy
 from app.services.key_check import ensure_key_check
+from app.web.auth import router as auth_router
 
 log = get_logger("main")
 
@@ -44,6 +46,7 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         if created:
             log.info("key check record created for a new database")
         application.state.crypto = crypto
+        application.state.auth_policy = AuthPolicy()
         application.state.engine = engine
         application.state.session_factory = session_factory
         yield
@@ -66,6 +69,7 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
     install_middleware(application, settings)
+    application.include_router(auth_router)
 
     @application.get("/healthz", include_in_schema=False)
     async def healthz() -> dict[str, str]:
