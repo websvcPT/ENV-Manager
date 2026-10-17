@@ -22,6 +22,12 @@ services:
       # Development only key, not a secret. Real deployments mount a key file.
       ENVMANAGER_KEY: ${ENVMANAGER_KEY:-ZGV2LW9ubHktZW52LW1hbmFnZXIta2V5LTAxMjM0NTY=}
       UVICORN_OPTS: --reload
+    # Browser specs reach the app under this name; a bare `app` host is treated as the
+    # HSTS-preloaded `.app` top-level domain by Chromium and forced to https.
+    networks:
+      default:
+        aliases:
+          - envmanager
     ports:
       - "8080:8080"
     volumes:

@@ -1,0 +1,35 @@
+{#- Native dialogs opened by data-js="dialog-open" (data-target is the dialog id) and closed by
+    data-js="dialog-close". Content swaps happen inside the `data-fragment` wrapper. -#}
+{% from "macros/buttons.html" import button, icon_button %}
+{% from "macros/icons.html" import icon %}
+
+{% set DIALOG_WIDTHS = {
+  "560": "w-[560px]",
+  "640": "w-[640px]",
+  "720": "w-[720px]",
+  "820": "w-[820px]"
+} %}
+
+{#- Dialog shell and header. The call block holds `dialog_body` and `dialog_footer`. -#}
+{% macro dialog(id, title, subtitle=none, width="640") -%}
+<dialog id="{{ id }}" aria-labelledby="{{ id }}-t" class="m-auto max-h-[92vh] {{ DIALOG_WIDTHS[width] }} max-w-[calc(100%_-_1.5rem)] overflow-auto rounded-dialog bg-surface p-0 text-ink shadow-dialog backdrop:bg-scrim"><div data-fragment="{{ id }}"><div class="flex items-center gap-4 border-b border-line px-5 py-4 md:px-6"><div class="min-w-0 flex-1"><h2 id="{{ id }}-t" class="text-xl font-bold">{{ title }}</h2>{% if subtitle %}<p class="text-[13px] text-ink2">{{ subtitle }}</p>{% endif %}</div>{{ icon_button("Close", "close", shape="square", data_js="dialog-close") }}</div>{{ caller() }}</div></dialog>
+{%- endmacro %}
+
+{% macro dialog_body() -%}
+<div class="flex flex-col gap-5 p-5 md:p-6">{{ caller() }}</div>
+{%- endmacro %}
+
+{% macro dialog_footer() -%}
+<div class="flex flex-wrap items-center justify-end gap-3 rounded-b-dialog border-t border-line bg-surface2 px-5 py-4 md:px-6">{{ caller() }}</div>
+{%- endmacro %}
+
+{#- Confirmation for a destructive or overriding action: states the effect, Cancel first and
+    the danger button last. Request attributes for the confirm button (hx_post, hx_target) come
+    in as keyword arguments. -#}
+{% macro confirm_dialog(id, title, message, confirm_label, width="560") -%}
+{%- set confirm_attrs = kwargs -%}
+{% call dialog(id, title, width=width) %}
+{% call dialog_body() %}<div class="flex items-start gap-3.5"><span class="flex size-10 shrink-0 items-center justify-center rounded-full bg-danger-soft text-danger">{{ icon("warning", "size-5", "2.2") }}</span><p class="text-[15px] text-ink">{{ message }}</p></div>{% endcall %}
+{% call dialog_footer() %}{{ button("Cancel", extra_class="h-11", data_js="dialog-close") }}{{ button(confirm_label, kind="danger", extra_class="h-11 text-[15px]", **confirm_attrs) }}{% endcall %}
+{% endcall %}
+{%- endmacro %}

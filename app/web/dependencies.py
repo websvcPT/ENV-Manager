@@ -59,6 +59,24 @@ async def require_auth(
     return context
 
 
+async def resolve_optional_auth(request: Request) -> AuthContext | None:
+    """The signed-in user when the request carries a live session, else None.
+
+    Used by error pages for routes that never ran authentication (an unknown path). Any
+    failure to look the session up counts as anonymous.
+    """
+    token = request.cookies.get(SESSION_COOKIE_NAME)
+    if not token:
+        return None
+    try:
+        policy: AuthPolicy = request.app.state.auth_policy
+        async with request.app.state.session_factory() as db:
+            resolved = await resolve_session(db, token, policy)
+    except Exception:
+        return None
+    return AuthContext(user=resolved[1], session=resolved[0]) if resolved else None
+
+
 def require_group(*groups: UserGroup) -> Callable[..., Awaitable[AuthContext]]:
     """A dependency that admits only users in one of the given groups, else answers 403."""
 

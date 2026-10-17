@@ -1,0 +1,36 @@
+{#- Status and role badges. Icon plus label always; the status key picks tone, icon and the
+    default label from the shared vocabulary. `label` overrides the text, for example a count. -#}
+{% from "macros/icons.html" import icon %}
+
+{% set BADGES = {
+  "deployed": ("bg-ok-bg text-ok-fg", "check", "Deployed"),
+  "success": ("bg-ok-bg text-ok-fg", "check", "Success"),
+  "ran": ("bg-ok-bg text-ok-fg", "check", "Ran"),
+  "proceed": ("bg-ok-bg text-ok-fg", "check", "Will proceed"),
+  "pending": ("bg-info-bg text-info-fg", "clock", "Pending"),
+  "drift": ("bg-warn-bg text-warn-fg", "warning", "Drift"),
+  "warnout": ("bg-warn-bg text-warn-fg", "warning", "Will warn"),
+  "halted": ("bg-warn-bg text-warn-fg", "pause", "Halted"),
+  "halt": ("bg-warn-bg text-warn-fg", "pause", "Will halt"),
+  "blocked": ("bg-err-bg text-err-fg", "ban", "Blocked"),
+  "block": ("bg-err-bg text-err-fg", "ban", "Will block"),
+  "failed": ("bg-err-bg text-err-fg", "close", "Failed"),
+  "postfailed": ("bg-err-bg text-err-fg", "close", "Post-deploy failed"),
+  "never": ("bg-mute-bg text-mute-fg", "circle-minus", "Never deployed"),
+  "notwritten": ("bg-mute-bg text-mute-fg", "circle-minus", "Not written"),
+  "unchanged": ("bg-mute-bg text-mute-fg", "circle-minus", "Unchanged"),
+  "skipped": ("bg-mute-bg text-mute-fg", "skip", "Skipped"),
+  "superadmin": ("bg-ink text-surface", "shield", "Superadmin"),
+  "admin": ("bg-info-bg text-info-fg", "user", "Admin"),
+  "viewer": ("bg-mute-bg text-mute-fg", "eye", "Viewer")
+} %}
+
+{% macro badge(status, label=none) -%}
+{%- set tone, icon_name, default_label = BADGES[status] -%}
+<span class="inline-flex h-6 items-center gap-1.5 whitespace-nowrap rounded-full pl-2 pr-2.5 text-xs font-semibold {{ tone }}" data-status="{{ status }}">{{ icon(icon_name, "size-3", "2.6") }}{{ label if label is not none else default_label }}</span>
+{%- endmacro %}
+
+{#- Role badge for a user group value (superadmin, admin or viewer). -#}
+{% macro role_badge(group) -%}
+{{ badge(group) }}
+{%- endmacro %}

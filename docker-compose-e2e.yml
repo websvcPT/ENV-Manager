@@ -1,0 +1,46 @@
+# Browser specs (`make e2e`): the official Playwright image runs the specs in `playwright/`
+# against the development stack (`make up-bg`) over its Compose network. The image tag must
+# match the exact @playwright/test version in playwright/package.json.
+name: env-manager-e2e
+
+services:
+  node-modules-owner:
+    image: mcr.microsoft.com/playwright:v1.64.1-noble
+    user: "0:0"
+    volumes:
+      - node-modules:/node_modules
+    command: chown ${APP_UID:-1000}:${APP_GID:-1000} /node_modules
+
+  playwright:
+    image: mcr.microsoft.com/playwright:v1.64.1-noble
+    user: "${APP_UID:-1000}:${APP_GID:-1000}"
+    init: true
+    ipc: host
+    working_dir: /e2e
+    depends_on:
+      node-modules-owner:
+        condition: service_completed_successfully
+    environment:
+      HOME: /tmp
+      E2E_BASE_URL: http://envmanager:8080
+      # Development dataset login, development and testing only.
+      E2E_USER: root
+      E2E_PASSWORD: dev-only-password
+    volumes:
+      - ./playwright:/e2e
+      # Dependencies install to /node_modules, a named volume outside the repository, so no
+      # root-owned or generated files land in the working tree.
+      - ./playwright/package.json:/package.json:ro
+      - ./playwright/package-lock.json:/package-lock.json:ro
+      - node-modules:/node_modules
+    command: sh -c "npm ci --prefix / --no-audit --no-fund && /node_modules/.bin/playwright test"
+    networks:
+      - default
+
+volumes:
+  node-modules:
+
+networks:
+  default:
+    external: true
+    name: env-manager_default

@@ -1,0 +1,53 @@
+{#- Messages and states: toast, banner, scope note, empty state, inline error, skeleton. State
+    is always icon plus text, never colour alone. -#}
+{% from "macros/attrs.html" import attrs %}
+{% from "macros/buttons.html" import button, icon_button %}
+{% from "macros/icons.html" import icon %}
+
+{% set TONES = {
+  "success": ("bg-ok-bg text-ok-fg", "check", "Success", "status"),
+  "error": ("bg-err-bg text-err-fg", "close", "Error", "alert"),
+  "warning": ("bg-warn-bg text-warn-fg", "warning", "Warning", "status"),
+  "info": ("bg-info-bg text-info-fg", "info", "Notice", "status")
+} %}
+
+{#- A dismissible result message. `floating` pins it to the bottom right of the viewport. -#}
+{% macro toast(tone, message, title=none, floating=false) -%}
+{%- set tone_classes, icon_name, default_title, live_role = TONES[tone] -%}
+<div role="{{ live_role }}" data-fragment="toast" class="{% if floating %}fixed bottom-4 right-4 z-50 {% endif %}flex w-[380px] max-w-[calc(100%_-_2rem)] items-start gap-3 rounded-panel border border-line bg-surface p-3.5 shadow-dialog"><span class="flex size-8 shrink-0 items-center justify-center rounded-full {{ tone_classes }}">{{ icon(icon_name, "size-4", "2.4") }}</span><div class="min-w-0 flex-1"><p class="text-[13px] font-bold">{{ title if title else default_title }}</p><p class="text-[13px] text-ink2">{{ message }}</p></div>{{ icon_button("Dismiss", "close", shape="plain", data_js="dismiss") }}</div>
+{%- endmacro %}
+
+{#- One superadmin banner: warn tone, one line, one action link. -#}
+{% macro banner(message, action_label, action_href) -%}
+<div role="status" class="flex items-center gap-3 bg-warn-bg px-4 py-2.5 text-sm font-semibold text-warn-fg md:px-8">{{ icon("warning", "size-4", "2") }}<span class="flex-1">{{ message }}</span><a href="{{ action_href }}" class="underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ action_label }}</a></div>
+{%- endmacro %}
+
+{#- Tells a scoped user what they see without naming what they may not. `tone` is info or warn. -#}
+{% macro note(message, tone="info") -%}
+{%- set tones = {
+  "info": ("bg-info-bg text-info-fg", "info"),
+  "warn": ("bg-warn-bg text-warn-fg", "warning")
+} -%}
+{%- set tone_classes, icon_name = tones[tone] -%}
+<div role="note" class="flex items-start gap-3 rounded-btn px-4 py-3 text-[13px] font-semibold {{ tone_classes }}">{{ icon(icon_name, "size-[18px] mt-px", "2.2") }}<p class="text-ink">{{ message }}</p></div>
+{%- endmacro %}
+
+{% macro empty_state(title, message, icon_name="layers") -%}
+<div data-fragment="empty-state" class="flex flex-col items-center gap-3 border-t border-line px-6 py-12 text-center"><span class="flex size-12 items-center justify-center rounded-full bg-mute-bg text-mute-fg">{{ icon(icon_name, "size-6", "1.8") }}</span><p class="text-base font-bold">{{ title }}</p><p class="max-w-md text-ink2">{{ message }}</p></div>
+{%- endmacro %}
+
+{#- Failed swap: the previous content stays, this explains and offers Retry. Pass the request
+    attributes for the retry (hx_get, hx_target, hx_swap). -#}
+{% macro inline_error(title, message) -%}
+<div role="alert" data-fragment="inline-error" class="flex flex-wrap items-start gap-3 border-t border-line bg-err-bg p-4 text-err-fg md:px-5">{{ icon("warning", "size-5 mt-0.5", "2.2") }}<div class="min-w-0 flex-1"><p class="font-bold">{{ title }}</p><p class="text-ink">{{ message }}</p></div>{{ button("Retry", **kwargs) }}</div>
+{%- endmacro %}
+
+{#- In-flight placeholder rows for a table or list. -#}
+{% macro skeleton(rows=3) -%}
+<div aria-busy="true" data-fragment="skeleton" class="flex flex-col gap-0"><p class="sr-only" role="status">Loading</p>{% for _ in range(rows) %}<div class="flex items-center gap-4 border-t border-line px-5 py-4 motion-safe:animate-pulse"><span class="h-4 w-40 rounded bg-mute-bg"></span><span class="h-4 flex-1 rounded bg-mute-bg"></span><span class="h-6 w-24 rounded-full bg-mute-bg"></span><span class="hidden h-4 w-20 rounded bg-mute-bg md:block"></span></div>{% endfor %}</div>
+{%- endmacro %}
+
+{#- Command text, output and examples; focusable so keyboards can scroll it. -#}
+{% macro code_block(text) -%}
+<pre tabindex="0" class="overflow-auto rounded-ctl bg-code p-3.5 font-mono text-[13px] leading-relaxed text-code-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ text }}</pre>
+{%- endmacro %}

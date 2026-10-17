@@ -1,0 +1,29 @@
+{#- Buttons. One primary per view; danger only for destructive or overriding actions, always
+    behind a confirm dialog. With `href` the control renders as a link with the same classes.
+    Extra attributes come in as keyword arguments (hx_post="/x", data_js="dialog-open"). -#}
+{% from "macros/attrs.html" import attrs %}
+{% from "macros/icons.html" import icon %}
+
+{% macro button(label, kind="secondary", href=none, type="button", icon_name=none, icon_stroke="2", extra_class="", disabled=false) -%}
+{%- set kinds = {
+  "primary": "inline-flex h-11 items-center justify-center gap-2 rounded-btn bg-accent px-5 text-base font-bold text-accent-ink hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
+  "secondary": "inline-flex h-10 items-center justify-center gap-2 rounded-btn border border-line-strong bg-surface px-4 text-sm font-semibold text-ink hover:bg-surface2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
+  "danger": "inline-flex h-10 items-center justify-center gap-2 rounded-btn border border-danger bg-danger-soft px-4 text-sm font-bold text-danger hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+} -%}
+{%- set classes = kinds[kind] ~ (" " ~ extra_class if extra_class else "") ~ (" disabled:cursor-not-allowed disabled:opacity-60" if disabled else "") -%}
+{%- if href -%}
+<a href="{{ href }}" class="{{ classes }}"{{ attrs(kwargs) }}>{% if icon_name %}{{ icon(icon_name, "size-4", icon_stroke) }}{% endif %}{{ label }}</a>
+{%- else -%}
+<button type="{{ type }}"{% if disabled %} disabled{% endif %} class="{{ classes }}"{{ attrs(kwargs) }}>{% if icon_name %}{{ icon(icon_name, "size-4", icon_stroke) }}{% endif %}{{ label }}</button>
+{%- endif -%}
+{%- endmacro %}
+
+{#- Icon-only button; the label becomes the accessible name. -#}
+{% macro icon_button(label, icon_name, shape="round", icon_classes="size-4", icon_stroke="2") -%}
+{%- set shapes = {
+  "round": "inline-flex size-10 shrink-0 items-center justify-center rounded-full border border-line-strong text-ink hover:bg-surface2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
+  "square": "inline-flex size-9 items-center justify-center rounded-ctl border border-line-strong text-ink hover:bg-surface2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
+  "plain": "inline-flex size-8 shrink-0 items-center justify-center rounded-ctl text-ink2 hover:bg-surface2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+} -%}
+<button type="button" aria-label="{{ label }}" class="{{ shapes[shape] }}"{{ attrs(kwargs) }}>{{ icon(icon_name, icon_classes, icon_stroke) }}</button>
+{%- endmacro %}

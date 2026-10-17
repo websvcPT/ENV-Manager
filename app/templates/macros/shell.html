@@ -1,0 +1,12 @@
+{#- Pieces of the application shell shared by the sidebar and the mobile menu. -#}
+{% from "macros/icons.html" import icon %}
+
+{% macro logo_mark(size_class) -%}
+<span class="{{ size_class }} flex shrink-0 items-center justify-center rounded-btn bg-accent font-mono font-extrabold text-accent-ink" aria-hidden="true">E</span>
+{%- endmacro %}
+
+{#- One navigation link. `collapsible` adds the sidebar variants that hide the label and
+    centre the icon when the sidebar is collapsed. -#}
+{% macro nav_link(item, active_nav, collapsible=false) -%}
+<li><a href="{{ item.href }}" title="{{ item.label }}"{% if item.key == active_nav %} aria-current="page"{% endif %} class="flex h-11 items-center gap-3 whitespace-nowrap rounded-btn px-3 text-sm font-semibold text-nav-ink hover:brightness-125 aria-[current=page]:bg-nav-active aria-[current=page]:text-nav-active-ink {% if collapsible %}group-data-[collapsed=true]:justify-center {% endif %}focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ icon(item.icon, "size-5", "1.9") }}<span{% if collapsible %} class="group-data-[collapsed=true]:hidden"{% endif %}>{{ item.label }}</span></a></li>
+{%- endmacro %}

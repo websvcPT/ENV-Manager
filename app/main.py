@@ -2,8 +2,11 @@
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app import VERSION
 from app.config import get_settings
@@ -16,8 +19,12 @@ from app.core.observability import configure_otel, init_sentry
 from app.services.auth_policy import AuthPolicy
 from app.services.key_check import ensure_key_check
 from app.web.auth import router as auth_router
+from app.web.errors import http_error_handler, unhandled_error_handler
+from app.web.projects import router as projects_router
 
 log = get_logger("main")
+
+STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
 @asynccontextmanager
@@ -69,7 +76,11 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
     install_middleware(application, settings)
+    application.add_exception_handler(StarletteHTTPException, http_error_handler)
+    application.add_exception_handler(Exception, unhandled_error_handler)
+    application.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     application.include_router(auth_router)
+    application.include_router(projects_router)
 
     @application.get("/healthz", include_in_schema=False)
     async def healthz() -> dict[str, str]:

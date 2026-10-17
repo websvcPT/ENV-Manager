@@ -1,0 +1,10 @@
+{% extends "layouts/app.html" %}
+{% from "macros/feedback.html" import empty_state %}
+{% from "macros/panels.html" import page_header %}
+{% set active_nav = "projects" %}
+{% set breadcrumbs = [("Projects", none)] %}
+{% block title %}Projects{% endblock %}
+{% block content %}
+{{ page_header("Projects", "All projects.") }}
+<section data-fragment="projects-table" id="projects-table" aria-label="Projects" class="rounded-panel border border-line bg-surface shadow-panel overflow-hidden">{{ empty_state("No projects assigned", "You do not have access to any project yet. Ask a superadmin to grant you access to a project, deployment or environment.") }}</section>
+{% endblock %}

@@ -1,0 +1,45 @@
+{#- Page structure: page header, panels, tables, tabs, breadcrumb. -#}
+{% from "macros/attrs.html" import attrs %}
+{% from "macros/icons.html" import icon %}
+
+{#- `badges` and `actions` are optional pre-rendered blocks (`{% set x %}...{% endset %}`). -#}
+{% macro page_header(title, subtitle=none, mono=false, badges=none, actions=none) -%}
+<section data-fragment="page-header" class="flex flex-col gap-3 md:flex-row md:items-start md:gap-6"><div class="min-w-0 flex-1"><div class="flex flex-wrap items-center gap-3"><h1 class="{% if mono %}font-mono {% endif %}text-[26px] font-bold leading-tight md:text-3xl">{{ title }}</h1>{% if badges %}{{ badges }}{% endif %}</div>{% if subtitle %}<p class="mt-1.5 text-ink2">{{ subtitle }}</p>{% endif %}</div>{% if actions %}<div class="flex flex-wrap items-center gap-2.5">{{ actions }}</div>{% endif %}</section>
+{%- endmacro %}
+
+{#- A titled panel; the call block is the body. `fragment` names the swappable unit, and
+    extra keyword arguments (hx_get, hx_trigger, hx_swap, id) go on the section. -#}
+{% macro panel(title, title_id, fragment=none, actions=none) -%}
+<section aria-labelledby="{{ title_id }}"{% if fragment %} data-fragment="{{ fragment }}"{% endif %}{{ attrs(kwargs) }} class="rounded-panel border border-line bg-surface shadow-panel overflow-hidden"><div class="flex flex-wrap items-center gap-3 px-4 py-4 md:px-5"><h2 id="{{ title_id }}" class="flex-1 text-lg font-bold">{{ title }}</h2>{% if actions %}{{ actions }}{% endif %}</div>{{ caller() }}</section>
+{%- endmacro %}
+
+{#- A table with the navy header row. `columns` is a list of labels and `right_columns` the
+    zero-based indexes to right align. The call block supplies the body rows. Wide tables
+    scroll inside their wrapper. -#}
+{% macro table(caption, columns, right_columns=[], min_width_class="") -%}
+<div class="overflow-x-auto"><table class="w-full text-left{% if min_width_class %} {{ min_width_class }}{% endif %}"><caption class="sr-only">{{ caption }}</caption><thead><tr>{% for column in columns %}<th scope="col" class="bg-head px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-head-ink{% if loop.index0 in right_columns %} text-right{% endif %}">{{ column }}</th>{% endfor %}</tr></thead><tbody>{{ caller() }}</tbody></table></div>
+{%- endmacro %}
+
+{% macro row_header(content, mono=true) -%}
+<th scope="row" class="border-t border-line px-4 py-3.5 text-left{% if mono %} font-mono{% endif %} text-sm font-semibold">{{ content }}</th>
+{%- endmacro %}
+
+{% macro cell(align="left") -%}
+<td class="border-t border-line px-4 py-3.5{% if align == 'right' %} text-right{% endif %}">{{ caller() }}</td>
+{%- endmacro %}
+
+{#- Link styled for table actions and inline navigation. -#}
+{% macro text_link(label, href) -%}
+<a href="{{ href }}" class="font-semibold text-link hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus text-sm"{{ attrs(kwargs) }}>{{ label }}</a>
+{%- endmacro %}
+
+{#- Link tabs for sections that are separate URLs. `tabs` is a list of dicts with label, href,
+    optional count and superadmin flag; `current` is the href of the open tab. -#}
+{% macro tabs(items, current) -%}
+<nav aria-label="Sections" class="-mt-1 flex gap-6 overflow-x-auto overflow-y-hidden border-b border-line md:gap-7">{% for item in items %}<a href="{{ item.href }}"{% if item.href == current %} aria-current="page"{% endif %} class="whitespace-nowrap border-b-[3px] border-transparent py-3 font-semibold text-ink2 hover:text-ink aria-[current=page]:border-accent aria-[current=page]:font-bold aria-[current=page]:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ item.label }}{% if item.count is defined and item.count is not none %} <span class="font-semibold text-ink3">{{ item.count }}</span>{% endif %}{% if item.superadmin is defined and item.superadmin %}<span class="ml-1.5 rounded-md bg-mute-bg px-1.5 py-px text-[11px] font-semibold text-mute-fg">Superadmin</span>{% endif %}</a>{% endfor %}</nav>
+{%- endmacro %}
+
+{#- Breadcrumb trail for the top bar: a list of (label, href) pairs, the last without a link. -#}
+{% macro breadcrumb(items) -%}
+<nav aria-label="Breadcrumb" class="hidden min-w-0 flex-1 md:block"><ol class="flex list-none items-center gap-2 overflow-hidden whitespace-nowrap text-sm text-ink3">{% for label, href in items %}{% if not loop.first %}<li aria-hidden="true">/</li>{% endif %}{% if loop.last %}<li aria-current="page" class="font-semibold text-ink">{{ label }}</li>{% else %}<li><a href="{{ href }}" class="hover:text-ink hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ label }}</a></li>{% endif %}{% endfor %}</ol></nav>
+{%- endmacro %}

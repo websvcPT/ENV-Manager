@@ -1,0 +1,42 @@
+{#- Form controls. Every control has a visible label; a hint or an error (icon plus text,
+    role=alert) is tied to the control with aria-describedby. Monospace is for paths, keys and
+    versions. -#}
+{% from "macros/attrs.html" import attrs %}
+{% from "macros/icons.html" import icon %}
+
+{#- Hidden CSRF field for plain (non-htmx) forms; htmx requests carry the header from body. -#}
+{% macro csrf_field(token) -%}
+<input type="hidden" name="csrf_token" value="{{ token }}">
+{%- endmacro %}
+
+{% macro field_message(id, hint, error) -%}
+{%- if error -%}
+<p id="{{ id }}-e" role="alert" class="flex items-center gap-1.5 text-[13px] font-semibold text-danger">{{ icon("warning", "size-3.5", "2.4") }}{{ error }}</p>
+{%- elif hint -%}
+<p id="{{ id }}-h" class="text-xs text-ink2">{{ hint }}</p>
+{%- endif -%}
+{%- endmacro %}
+
+{% macro field(id, label, name=none, type="text", value="", placeholder="", hint=none, error=none, mono=false, disabled=false, extra_class="") -%}
+<div class="flex flex-col gap-1.5{% if extra_class %} {{ extra_class }}{% endif %}"><label for="{{ id }}" class="text-[13px] font-semibold">{{ label }}</label><input id="{{ id }}" name="{{ name if name else id }}" type="{{ type }}" value="{{ value }}" placeholder="{{ placeholder }}"{% if error %} aria-describedby="{{ id }}-e" aria-invalid="true"{% elif hint %} aria-describedby="{{ id }}-h"{% endif %}{% if disabled %} disabled{% endif %}{{ attrs(kwargs) }} class="h-10 w-full rounded-ctl border border-line-strong bg-surface px-3 text-sm text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus{% if mono %} font-mono text-[13px]{% endif %}{% if error %} border-danger{% endif %} disabled:cursor-not-allowed disabled:opacity-60 placeholder:text-ink3">{{ field_message(id, hint, error) }}</div>
+{%- endmacro %}
+
+{#- `options` is a list of (value, label) pairs. -#}
+{% macro select_field(id, label, options, selected=none, name=none, hint=none, error=none) -%}
+<div class="flex flex-col gap-1.5"><label for="{{ id }}" class="text-[13px] font-semibold">{{ label }}</label><select id="{{ id }}" name="{{ name if name else id }}"{% if error %} aria-describedby="{{ id }}-e" aria-invalid="true"{% elif hint %} aria-describedby="{{ id }}-h"{% endif %}{{ attrs(kwargs) }} class="h-10 w-full rounded-ctl border border-line-strong bg-surface px-3 text-sm text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus{% if error %} border-danger{% endif %} disabled:cursor-not-allowed disabled:opacity-60 placeholder:text-ink3">{% for option_value, option_label in options %}<option value="{{ option_value }}"{% if option_value == selected %} selected{% endif %}>{{ option_label }}</option>{% endfor %}</select>{{ field_message(id, hint, error) }}</div>
+{%- endmacro %}
+
+{% macro checkbox(name, label, checked=false, disabled=false, value=none) -%}
+<label class="flex items-start gap-2.5 text-[13px] font-semibold"><input type="checkbox" name="{{ name }}"{% if value is not none %} value="{{ value }}"{% endif %}{% if checked %} checked{% endif %}{% if disabled %} disabled{% endif %}{{ attrs(kwargs) }} class="mt-0.5 size-[18px] shrink-0 accent-accent"><span>{{ label }}</span></label>
+{%- endmacro %}
+
+{#- One radio option inside a fieldset; the selected option takes the soft accent fill. -#}
+{% macro radio_option(name, value, label, description=none, checked=false) -%}
+<label class="flex cursor-pointer items-start gap-2.5 rounded-btn border border-line p-3 text-[13px] {{ 'bg-accent-soft' if checked else 'bg-surface' }}"><input type="radio" name="{{ name }}" value="{{ value }}"{% if checked %} checked{% endif %}{{ attrs(kwargs) }} class="mt-0.5 size-4 shrink-0 accent-accent"><span><span class="font-semibold">{{ label }}</span>{% if description %}<span class="block text-ink2">{{ description }}</span>{% endif %}</span></label>
+{%- endmacro %}
+
+{#- A flag that bypasses a policy: red border and fill, warning icon, one sentence on exactly
+    what is overridden. -#}
+{% macro dangerous_option(name, title, description, checked=false) -%}
+<label class="flex cursor-pointer items-start gap-3.5 rounded-panel border-2 border-danger bg-danger-soft p-4"><input type="checkbox" name="{{ name }}"{% if checked %} checked{% endif %}{{ attrs(kwargs) }} class="mt-0.5 size-5 shrink-0 accent-danger"><span><span class="flex items-center gap-2 font-bold text-danger">{{ icon("warning", "size-4", "2") }}{{ title }}</span><span class="mt-1 block text-ink">{{ description }}</span></span></label>
+{%- endmacro %}

@@ -1,0 +1,8 @@
+{#- Render extra HTML attributes from keyword arguments. Underscores in names become dashes
+    (hx_post is hx-post). True renders a bare attribute; false and none are omitted. Values are
+    escaped by autoescape. -#}
+{% macro attrs(values) -%}
+{%- for key, value in values.items() if value is not none and value is not false -%}
+{{ " " }}{{ key|replace("_", "-") }}{% if value is not true %}="{{ value }}"{% endif %}
+{%- endfor -%}
+{%- endmacro %}

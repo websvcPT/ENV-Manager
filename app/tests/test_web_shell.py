@@ -1,0 +1,222 @@
+"""Page shell, error pages and static assets, on the seeded application."""
+
+import html
+import json
+import re
+from pathlib import Path
+
+import httpx
+import pytest
+from fastapi import Depends, FastAPI
+
+from app.core.csrf import CSRF_COOKIE_NAME
+from app.core.security_headers import CONTENT_SECURITY_POLICY
+from app.models import UserGroup
+from app.tests.conftest import sign_in
+from app.web.dependencies import require_auth, require_group
+
+NAV_PATTERN = re.compile(r'<nav aria-label="Primary".*?</nav>', re.DOTALL)
+TEMPLATES = Path(__file__).resolve().parent.parent / "templates"
+STATIC = Path(__file__).resolve().parent.parent / "static"
+
+
+def sidebar_links(page: str) -> list[str]:
+    """The hrefs in the primary navigation, in order."""
+    match = NAV_PATTERN.search(page)
+    assert match is not None
+    return re.findall(r'<a href="([^"]+)"', match.group(0))
+
+
+@pytest.mark.parametrize(
+    ("user", "expected"),
+    [
+        ("root", ["/projects", "/audit", "/tokens", "/users", "/settings"]),
+        ("admin", ["/projects", "/audit", "/tokens"]),
+        ("viewer", ["/projects"]),
+    ],
+)
+async def test_sidebar_items_follow_the_group(
+    web_client: httpx.AsyncClient, user: str, expected: list[str]
+) -> None:
+    """Each group sees only its own navigation entries."""
+    await sign_in(web_client, user)
+    response = await web_client.get("/projects")
+    assert response.status_code == 200
+    assert sidebar_links(response.text) == expected
+
+
+async def test_projects_page_renders_the_shell(web_client: httpx.AsyncClient) -> None:
+    """The page has sidebar, top bar, page header, empty state, mobile menu and role badge."""
+    await sign_in(web_client, "root")
+    response = await web_client.get("/projects")
+    page = response.text
+    for marker in (
+        "data-nav",
+        'data-fragment="page-header"',
+        'data-fragment="empty-state"',
+        'data-fragment="banner-area"',
+        'id="mobile-menu"',
+        'data-status="superadmin"',
+        'data-js="theme-toggle"',
+        'data-js="nav-toggle"',
+        'aria-current="page"',
+        "Account menu, root",
+    ):
+        assert marker in page
+    assert response.headers["cache-control"] == "no-store"
+    assert "HX-Request" in response.headers["vary"]
+    assert response.headers["content-security-policy"] == CONTENT_SECURITY_POLICY
+
+
+async def test_home_redirects_a_signed_in_user_to_projects(
+    web_client: httpx.AsyncClient,
+) -> None:
+    """Login lands on `/`, which forwards to the projects page."""
+    await sign_in(web_client, "root")
+    response = await web_client.get("/")
+    assert (response.status_code, response.headers["location"]) == (303, "/projects")
+
+
+async def test_body_carries_the_csrf_header_for_htmx(web_client: httpx.AsyncClient) -> None:
+    """htmx requests inherit the token header, and it equals the token cookie."""
+    await sign_in(web_client, "viewer")
+    page = (await web_client.get("/projects")).text
+    match = re.search(r"<body[^>]*hx-headers:inherited='([^']*)'", page)
+    assert match is not None
+    assert json.loads(html.unescape(match.group(1))) == {
+        "X-CSRFToken": web_client.cookies[CSRF_COOKIE_NAME]
+    }
+
+
+async def test_head_configures_htmx_and_loads_only_local_assets(
+    web_client: httpx.AsyncClient,
+) -> None:
+    """The htmx config meta precedes the vendored script, and every asset is served."""
+    await sign_in(web_client, "root")
+    page = (await web_client.get("/projects")).text
+    config = re.search(r'<meta name="htmx-config" content=\'([^\']*)\'', page)
+    assert config is not None
+    assert json.loads(config.group(1))["mode"] == "same-origin"
+    assert page.index('name="htmx-config"') < page.index("/static/htmx/htmx-")
+    sources = re.findall(r'(?:src|href)="(/static/[^"]+)"', page)
+    assert "/static/app.js" in sources and "/static/style.css" in sources
+    for source in sources:
+        assert (await web_client.get(source)).status_code == 200
+
+
+async def test_rendered_page_has_no_inline_script_or_style(web_client: httpx.AsyncClient) -> None:
+    """The strict CSP forbids inline script, inline style and event handler attributes."""
+    await sign_in(web_client, "root")
+    page = (await web_client.get("/projects")).text
+    assert not re.search(r"<script(?![^>]*\ssrc=)", page)
+    assert not re.search(r"\sstyle=|\sonclick=|javascript:", page)
+
+
+async def test_unknown_path_renders_the_not_found_page_inside_the_shell(
+    web_client: httpx.AsyncClient,
+) -> None:
+    """A signed-in browser gets the 404 page with navigation."""
+    await sign_in(web_client, "admin")
+    response = await web_client.get("/does-not-exist")
+    assert response.status_code == 404
+    assert 'data-fragment="system-state"' in response.text
+    assert "Not found" in response.text
+    assert sidebar_links(response.text) == ["/projects", "/audit", "/tokens"]
+    assert response.headers["content-security-policy"] == CONTENT_SECURITY_POLICY
+
+
+async def test_anonymous_not_found_page_has_no_navigation(web_client: httpx.AsyncClient) -> None:
+    """Without a session the 404 page renders without the shell."""
+    response = await web_client.get("/does-not-exist")
+    assert response.status_code == 404
+    assert "Not found" in response.text
+    assert "data-nav" not in response.text
+
+
+async def test_not_found_stays_json_for_api_and_non_browser_clients(
+    web_client: httpx.AsyncClient,
+) -> None:
+    """The API prefix and clients that do not ask for HTML keep the JSON error shape."""
+    api = await web_client.get("/api/v1/nothing")
+    assert api.status_code == 404
+    assert api.json() == {"detail": "Not Found"}
+    plain = await web_client.get("/does-not-exist", headers={"Accept": "*/*"})
+    assert plain.json() == {"detail": "Not Found"}
+
+
+async def test_failed_htmx_request_is_not_swapped(web_client: httpx.AsyncClient) -> None:
+    """An htmx request to a missing page gets an empty answer that htmx must not swap."""
+    response = await web_client.get("/does-not-exist", headers={"HX-Request": "true"})
+    assert response.status_code == 404
+    assert response.content == b""
+    assert response.headers["hx-reswap"] == "none"
+
+
+async def test_unauthenticated_page_request_keeps_the_json_401(
+    web_client: httpx.AsyncClient,
+) -> None:
+    """Authentication failures are not turned into error pages."""
+    response = await web_client.get("/projects")
+    assert response.status_code == 401
+    assert response.json() == {"detail": "authentication required"}
+
+
+async def test_forbidden_page_for_a_user_without_the_group(
+    web_app: FastAPI, web_client: httpx.AsyncClient
+) -> None:
+    """A group check failure renders the 403 page inside the shell."""
+
+    @web_app.get("/superadmin-only", dependencies=[Depends(require_group(UserGroup.SUPERADMIN))])
+    async def superadmin_only() -> dict[str, str]:
+        return {}
+
+    await sign_in(web_client, "viewer")
+    response = await web_client.get("/superadmin-only")
+    assert response.status_code == 403
+    assert "No access" in response.text
+    assert sidebar_links(response.text) == ["/projects"]
+
+
+async def test_unhandled_error_page_hides_details_and_keeps_security_headers(
+    web_app: FastAPI, web_client: httpx.AsyncClient
+) -> None:
+    """The 500 page shows a request id, never the exception text, and carries the CSP."""
+
+    @web_app.get("/boom", dependencies=[Depends(require_auth)])
+    async def boom() -> dict[str, str]:
+        raise RuntimeError("secret-value-in-message")
+
+    await sign_in(web_client, "root")
+    page = await web_client.get("/boom")
+    assert page.status_code == 500
+    assert "Something went wrong" in page.text
+    assert re.search(r"Request id [0-9a-f]{8}", page.text)
+    assert "secret-value-in-message" not in page.text
+    assert page.headers["content-security-policy"] == CONTENT_SECURITY_POLICY
+    assert page.headers["cache-control"] == "no-store"
+    api = await web_client.get("/boom", headers={"Accept": "application/json"})
+    assert api.status_code == 500
+    assert set(api.json()) == {"detail", "request_id"}
+    assert "secret-value-in-message" not in api.text
+
+
+def is_emoji(character: str) -> bool:
+    """Whether a character is in the emoji and pictograph blocks."""
+    code = ord(character)
+    return code >= 0x1F000 or 0x2600 <= code <= 0x27BF
+
+
+def template_files() -> list[Path]:
+    """Every template and the page script."""
+    return [*sorted(TEMPLATES.rglob("*.html")), STATIC / "app.js"]
+
+
+@pytest.mark.parametrize("path", template_files(), ids=lambda path: path.name)
+def test_sources_follow_the_content_rules(path: Path) -> None:
+    """No em-dash, emoji, inline style, inline script, inline handler or script URL."""
+    text = path.read_text(encoding="utf-8")
+    assert chr(0x2014) not in text
+    assert not any(is_emoji(character) for character in text)
+    if path.suffix == ".html":
+        assert not re.search(r"\sstyle=|\sonclick=|javascript:", text)
+        assert not re.search(r"<script(?![^>]*\ssrc=)", text)

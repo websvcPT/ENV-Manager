@@ -1,9 +1,12 @@
 .PHONY: up up-app upforce up-bg stop destroy logs app app-logs lint format tests tests-docker \
-	migrate revision seed e2e frontend-build tailwind-download tailwind-build tailwind-watch \
+	migrate revision seed e2e e2e-lock frontend-build tailwind-download tailwind-build tailwind-watch \
 	static-fetch help
 
 TAILWIND_VERSION ?= 4.3.3
 HTMX_VERSION ?= 4.0.0
+# Must equal the @playwright/test pin in playwright/package.json and the image tag in
+# docker-compose-e2e.yml.
+PLAYWRIGHT_VERSION ?= 1.64.1
 TAILWIND_CLI := ./scripts/bin/tailwindcss
 TAILWIND_INPUT := ./app/assets/app.css
 TAILWIND_OUTPUT := ./app/static/style.css
@@ -71,9 +74,16 @@ tests-docker: ## Run tests in an isolated container
 seed: ## Load the development dataset into the running app (dev-only passwords)
 	docker compose exec -T app envmanager dev seed
 
-e2e: ## Run Playwright specs against the running stack
-	@test -d playwright || { echo "playwright project does not exist yet"; exit 1; }
-	docker compose -f docker-compose-e2e.yml up --build --abort-on-container-exit --exit-code-from playwright
+e2e: ## Seed the dev dataset and run the Playwright specs against the running stack
+	@docker compose ps --status running --services | grep -qx app \
+		|| { echo "the development stack is not running; run make up-bg"; exit 1; }
+	sh scripts/e2e-seed.sh
+	docker compose -f docker-compose-e2e.yml run --rm playwright
+
+e2e-lock: ## Regenerate playwright/package-lock.json after changing playwright/package.json
+	docker run --rm --user $(USER_IDS) -e HOME=/tmp -v "$(CURDIR)/playwright":/e2e -w /e2e \
+		mcr.microsoft.com/playwright:v$(PLAYWRIGHT_VERSION)-noble \
+		npm install --package-lock-only --no-audit --no-fund
 
 # --- Alembic migrations ---
 migrate: ## Run migrations up
