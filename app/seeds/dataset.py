@@ -19,6 +19,10 @@ Structure (project, deployment, service, environments):
 
 Allowed paths: /opt/rentals and /opt/billing (the deployment roots lie under them).
 
+Dist links: .env.db and .env.web (rentals prod) point at environments/.env.db-dist and
+environments/.env.web-dist below their deployment root; the files themselves are created by the
+tests that need them.
+
 Access:
 
     superadmin            every project, no grants needed
@@ -150,9 +154,15 @@ async def _environment(
     name: str,
     contents: list[str],
     author: User,
+    dist_path: str | None = None,
 ) -> Environment:
     """An environment with one saved version per content, oldest first."""
-    environment = Environment(service_id=service.id, name=name, target_path=f"environments/{name}")
+    environment = Environment(
+        service_id=service.id,
+        name=name,
+        target_path=f"environments/{name}",
+        dist_path=dist_path,
+    )
     db.add(environment)
     await db.flush()
     for number, content in enumerate(contents, start=1):
@@ -228,11 +238,20 @@ async def seed(db: AsyncSession, crypto: CryptoService) -> SeedData:
             ".env.db",
             ["DB_HOST=db\n", "DB_HOST=db\nDB_PORT=3306\n"],
             author,
+            dist_path="environments/.env.db-dist",
         ),
         db_secrets=await _environment(
             db, crypto, services.mysql, ".env.db.secrets", ["DB_PASSWORD=seed-secret\n"], author
         ),
-        web=await _environment(db, crypto, services.web, ".env.web", ["APP_ENV=prod\n"], author),
+        web=await _environment(
+            db,
+            crypto,
+            services.web,
+            ".env.web",
+            ["APP_ENV=prod\n"],
+            author,
+            dist_path="environments/.env.web-dist",
+        ),
         staging_web=await _environment(
             db, crypto, services.staging_web, ".env.web", ["APP_ENV=staging\n"], author
         ),
