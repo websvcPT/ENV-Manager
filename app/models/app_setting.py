@@ -1,18 +1,14 @@
 """Key/value application settings stored in the database."""
 
-from datetime import UTC, datetime
+from datetime import datetime
 
 from sqlalchemy import DateTime, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
+from app.models.types import utc_now
 
 KEY_CHECK_SETTING = "key_check"
-
-
-def utc_now() -> datetime:
-    """Current time as an aware UTC datetime."""
-    return datetime.now(UTC)
 
 
 class AppSetting(Base):
