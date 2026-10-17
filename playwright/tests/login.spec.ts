@@ -6,6 +6,7 @@ import { totpCode } from './totp';
 const PASSWORD = 'dev-only-password';
 const TOTP_SECRET = 'JBSWY3DPEHPK3PXP';
 const SESSION_COOKIE = 'envmanager_session';
+const PENDING_COOKIE = 'envmanager_pending_login';
 
 test.use({ storageState: { cookies: [], origins: [] } });
 
@@ -93,10 +94,18 @@ test.describe('sign in page', () => {
   });
 });
 
+// Each project signs in with its own second factor user, so the two projects running in
+// parallel never present the same authenticator code (an accepted code cannot be reused).
+function totpUser(projectName: string): string {
+  return projectName === 'phone' ? 'totp_user_alt' : 'totp_user';
+}
+
 test.describe('second factor step', () => {
-  test('asks for a code, reports a wrong one and signs in with the right one', async ({ page }) => {
+  test('asks for a code, reports a wrong one and signs in with the right one', async ({
+    page,
+  }, testInfo) => {
     await page.goto('/login');
-    await signIn(page, 'totp_user', PASSWORD);
+    await signIn(page, totpUser(testInfo.project.name), PASSWORD);
 
     const code = page.locator('#code');
     await expect(code).toBeVisible();
@@ -113,9 +122,55 @@ test.describe('second factor step', () => {
     await expect(page).toHaveURL(/\/projects$/);
   });
 
-  test('back to sign in returns to the credentials form', async ({ page }) => {
+  test('an empty code asks for it again', async ({ page }, testInfo) => {
     await page.goto('/login');
-    await signIn(page, 'totp_user', PASSWORD);
+    await signIn(page, totpUser(testInfo.project.name), PASSWORD);
+    await expect(page.locator('#code')).toBeVisible();
+    await page.locator('#login-card button[type="submit"]').click();
+    await expect(page.locator('#code-e')).toContainText('6-digit');
+    await expect(page.locator('#code')).toBeVisible();
+  });
+
+  test('the code step carries no credentials and keeps the pending login in a cookie', async ({
+    page,
+    context,
+  }, testInfo) => {
+    await page.goto('/login');
+    await signIn(page, totpUser(testInfo.project.name), PASSWORD);
+    await expect(page.locator('#code')).toBeVisible();
+
+    await expect(page.locator('#login-card input[type="hidden"][name="identifier"]')).toHaveCount(0);
+    await expect(page.locator('#login-card input[type="hidden"][name="password"]')).toHaveCount(0);
+    expect(await page.locator('#login-card').innerHTML()).not.toContain(PASSWORD);
+
+    const pending = (await context.cookies()).find((cookie) => cookie.name === PENDING_COOKIE);
+    expect(pending?.httpOnly).toBe(true);
+    expect(pending?.sameSite).toBe('Strict');
+    expect(pending?.path).toBe('/login');
+  });
+
+  test('a lost pending login returns to the password form with a message', async ({
+    page,
+    context,
+  }, testInfo) => {
+    await page.goto('/login');
+    await signIn(page, totpUser(testInfo.project.name), PASSWORD);
+    await expect(page.locator('#code')).toBeVisible();
+
+    await context.clearCookies({ name: PENDING_COOKIE });
+    await page.locator('#code').fill(totpCode(TOTP_SECRET));
+    await page.locator('#login-card button[type="submit"]').click();
+
+    const message = page.locator('[data-fragment="login-message"]');
+    await expect(message).toHaveAttribute('role', 'status');
+    await expect(message).toContainText('Verification expired');
+    await expect(page.locator('#user')).toBeEnabled();
+    await expect(page.locator('#code')).toHaveCount(0);
+  });
+
+  test('back to sign in returns to the credentials form', async ({ page }, testInfo) => {
+    await page.goto('/login');
+    await signIn(page, totpUser(testInfo.project.name), PASSWORD);
     await page.locator('#login-card a[href="/login"]').click();
     await expect(page.locator('#user')).toBeVisible();
   });

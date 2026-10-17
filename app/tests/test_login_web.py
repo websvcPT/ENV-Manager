@@ -7,7 +7,7 @@ import pyotp
 from fastapi import FastAPI
 
 from app.core.csrf import CSRF_COOKIE_NAME
-from app.core.sessions import SESSION_COOKIE_NAME
+from app.core.sessions import PENDING_LOGIN_COOKIE_NAME, SESSION_COOKIE_NAME
 from app.seeds import DEV_PASSWORD, DEV_TOTP_SECRET
 from app.tests.conftest import sign_in
 
@@ -111,37 +111,107 @@ async def test_successful_login_redirects(web_client: httpx.AsyncClient) -> None
     assert (await web_client.get("/projects")).status_code == 200
 
 
-async def test_second_factor_step(web_client: httpx.AsyncClient) -> None:
-    """The password asks for a code; a wrong code is a field error; the right code signs in."""
-    credentials = {"identifier": "totp_user", "password": DEV_PASSWORD}
-    asked = await post_form(web_client, "/login", credentials, htmx=True)
-    assert asked.status_code == 200
-    assert 'action="/login/totp"' in asked.text
-    assert 'name="identifier" value="totp_user"' in asked.text
-    assert SESSION_COOKIE_NAME not in web_client.cookies
+CREDENTIALS = {"identifier": "totp_user", "password": DEV_PASSWORD}
 
-    wrong = await post_form(web_client, "/login/totp", {**credentials, "code": "000000"}, htmx=True)
+
+async def ask_for_code(http: httpx.AsyncClient) -> httpx.Response:
+    """Send the password of the second factor user and return the code card answer."""
+    asked = await post_form(http, "/login", CREDENTIALS, htmx=True)
+    assert asked.status_code == 200 and 'action="/login/totp"' in asked.text
+    return asked
+
+
+async def test_second_factor_step_carries_no_credentials(web_client: httpx.AsyncClient) -> None:
+    """The code card holds neither name nor password; a hardened cookie holds the pending login."""
+    asked = await ask_for_code(web_client)
+    assert 'name="identifier"' not in asked.text and 'name="password"' not in asked.text
+    assert DEV_PASSWORD not in asked.text
+    assert SESSION_COOKIE_NAME not in web_client.cookies
+    cookie = next(
+        value
+        for value in asked.headers.get_list("set-cookie")
+        if value.startswith(PENDING_LOGIN_COOKIE_NAME)
+    ).lower()
+    assert "httponly" in cookie and "samesite=strict" in cookie
+    assert "path=/login" in cookie and "max-age=300" in cookie
+
+
+async def test_second_factor_step(web_client: httpx.AsyncClient) -> None:
+    """A wrong code is a field error with a fresh pending login; the right code signs in."""
+    await ask_for_code(web_client)
+    first = web_client.cookies[PENDING_LOGIN_COOKIE_NAME]
+
+    wrong = await post_form(web_client, "/login/totp", {"code": "000000"}, htmx=True)
     assert wrong.status_code == 401
     assert "The code is incorrect or expired." in wrong.text
     assert 'role="alert"' in wrong.text and 'id="code-e"' in wrong.text
+    second = web_client.cookies[PENDING_LOGIN_COOKIE_NAME]
+    assert second != first
 
-    empty = await post_form(web_client, "/login/totp", {**credentials, "code": ""}, htmx=True)
+    empty = await post_form(web_client, "/login/totp", {"code": ""}, htmx=True)
     assert empty.status_code == 422
     assert "Enter the 6-digit code." in empty.text
+    assert web_client.cookies[PENDING_LOGIN_COOKIE_NAME] not in (first, second)
 
     code = pyotp.TOTP(DEV_TOTP_SECRET).now()
-    done = await post_form(web_client, "/login/totp", {**credentials, "code": code}, htmx=True)
+    done = await post_form(web_client, "/login/totp", {"code": code}, htmx=True)
     assert (done.status_code, done.headers["hx-redirect"]) == (200, "/")
+    assert PENDING_LOGIN_COOKIE_NAME not in web_client.cookies
+    assert (await web_client.get("/projects")).status_code == 200
+
+
+async def test_second_factor_plain_post_redirects(web_client: httpx.AsyncClient) -> None:
+    """Without htmx the answers are whole pages and the success is a 303."""
+    asked = await post_form(web_client, "/login", CREDENTIALS)
+    assert asked.status_code == 200 and "<html" in asked.text
+    code = pyotp.TOTP(DEV_TOTP_SECRET).now()
+    done = await post_form(web_client, "/login/totp", {"code": code})
+    assert (done.status_code, done.headers["location"]) == (303, "/")
+
+
+async def test_pending_login_is_required_and_single_use(web_client: httpx.AsyncClient) -> None:
+    """No cookie, a made-up cookie or a used token all send the person back to the password."""
+    code = pyotp.TOTP(DEV_TOTP_SECRET).now()
+    missing = await post_form(web_client, "/login/totp", {"code": code}, htmx=True)
+    assert missing.status_code == 401
+    assert "Verification expired" in missing.text and 'id="user"' in missing.text
+    assert SESSION_COOKIE_NAME not in web_client.cookies
+
+    web_client.cookies.set(PENDING_LOGIN_COOKIE_NAME, "made-up", path="/login")
+    forged = await post_form(web_client, "/login/totp", {"code": code}, htmx=True)
+    assert forged.status_code == 401 and "Verification expired" in forged.text
+    web_client.cookies.delete(PENDING_LOGIN_COOKIE_NAME)
+
+    await ask_for_code(web_client)
+    used = web_client.cookies[PENDING_LOGIN_COOKIE_NAME]
+    await post_form(web_client, "/login/totp", {"code": "000000"}, htmx=True)
+    web_client.cookies.delete(PENDING_LOGIN_COOKIE_NAME)
+    web_client.cookies.set(PENDING_LOGIN_COOKIE_NAME, used, path="/login")
+    again = await post_form(web_client, "/login/totp", {"code": code}, htmx=True)
+    assert again.status_code == 401 and "Verification expired" in again.text
+
+
+async def test_second_factor_code_cannot_be_replayed(web_client: httpx.AsyncClient) -> None:
+    """A code that signed in once is refused on the next sign in, with the generic message."""
+    code = pyotp.TOTP(DEV_TOTP_SECRET).now()
+    await ask_for_code(web_client)
+    done = await post_form(web_client, "/login/totp", {"code": code}, htmx=True)
+    assert done.status_code == 200
+    await post_form(web_client, "/logout", {})
+    await ask_for_code(web_client)
+    replay = await post_form(web_client, "/login/totp", {"code": code}, htmx=True)
+    assert replay.status_code == 401
+    assert "The code is incorrect or expired." in replay.text
 
 
 async def test_second_factor_failures_count_toward_lockout(web_client: httpx.AsyncClient) -> None:
-    credentials = {"identifier": "totp_user", "password": DEV_PASSWORD}
+    """Five wrong codes lock the name; the locked card replaces the code card."""
+    await ask_for_code(web_client)
     for _ in range(5):
-        response = await post_form(
-            web_client, "/login/totp", {**credentials, "code": "000000"}, htmx=True
-        )
+        response = await post_form(web_client, "/login/totp", {"code": "000000"}, htmx=True)
     assert response.status_code == 429
     assert "Account temporarily locked" in response.text
+    assert PENDING_LOGIN_COOKIE_NAME not in web_client.cookies
 
 
 async def test_page_request_without_a_session_redirects_to_login(

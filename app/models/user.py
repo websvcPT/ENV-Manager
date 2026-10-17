@@ -40,6 +40,7 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     totp_secret: Mapped[str | None] = mapped_column(Text, default=None)
     totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    totp_last_step: Mapped[int | None] = mapped_column(Integer, default=None)
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utc_now, onupdate=utc_now)
     last_login_at: Mapped[datetime | None] = mapped_column(UtcDateTime, default=None)
@@ -74,3 +75,19 @@ class LoginCounter(Base):
     failures: Mapped[int] = mapped_column(Integer, default=0)
     window_started_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utc_now)
     locked_until: Mapped[datetime | None] = mapped_column(UtcDateTime, default=None)
+
+
+class PendingLogin(Base):
+    """A password-verified login waiting for its second factor code.
+
+    Single use and short lived. Only the hash of the opaque token (held in its own cookie) is
+    stored, so the credentials never travel through the code step.
+    """
+
+    __tablename__ = "pending_logins"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utc_now)
+    expires_at: Mapped[datetime] = mapped_column(UtcDateTime)

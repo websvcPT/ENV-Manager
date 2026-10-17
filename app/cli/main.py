@@ -7,15 +7,21 @@ from datetime import datetime
 from typing import Annotated
 
 import typer
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.core.crypto import build_crypto_service
 from app.core.db import create_engine, create_session_factory
 from app.core.migrations import migrate_database
-from app.models import AuditActorType, LoginCounter, UserGroup
-from app.seeds import DEV_PASSWORD, SeedError, ensure_totp_user
+from app.models import AuditActorType, LoginCounter, User, UserGroup
+from app.seeds import (
+    DEV_PASSWORD,
+    TOTP_ALT_USER_NAME,
+    TOTP_USER_NAME,
+    SeedError,
+    ensure_totp_user,
+)
 from app.seeds import seed as seed_data
 from app.services import users as user_service
 
@@ -167,7 +173,8 @@ def seed_dataset() -> None:
         try:
             await seed_data(db, crypto)
         except SeedError:
-            await ensure_totp_user(db, crypto)
+            for name in (TOTP_USER_NAME, TOTP_ALT_USER_NAME):
+                await ensure_totp_user(db, crypto, name)
             await db.commit()
             raise
 
@@ -182,12 +189,13 @@ def seed_dataset() -> None:
 
 @dev_app.command("reset-lockouts")
 def reset_lockouts() -> None:
-    """Clear every failed login counter and lockout, so browser specs start from a clean slate."""
+    """Clear failed login counters, lockouts and second factor replay marks for browser specs."""
     _require_development_environment("resetting lockouts")
 
     async def operation(db: AsyncSession) -> int:
         count = (await db.execute(select(func.count()).select_from(LoginCounter))).scalar_one()
         await db.execute(delete(LoginCounter))
+        await db.execute(update(User).values(totp_last_step=None))
         await db.commit()
         return count
 

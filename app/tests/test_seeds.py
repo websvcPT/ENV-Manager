@@ -27,6 +27,7 @@ from app.models import (
 from app.models.types import utc_now
 from app.seeds import DEV_PASSWORD, DEV_TOTP_SECRET, SeedData, SeedError, seed
 from app.services import totp
+from app.tests.auth_helpers import make_user
 
 runner = CliRunner()
 
@@ -36,7 +37,7 @@ async def test_seed_creates_the_dataset(
 ) -> None:
     async with create_session_factory(seeded_database)() as db:
         users = list((await db.execute(select(User))).scalars())
-        assert len(users) == 9
+        assert len(users) == 10
         assert all(verify_password(DEV_PASSWORD, user.password_hash)[0] for user in users)
         assert (await db.execute(select(func.count()).select_from(AccessGrant))).scalar_one() == 8
         assert (await db.execute(select(func.count()).select_from(Environment))).scalar_one() == 6
@@ -98,7 +99,7 @@ def test_dev_seed_command_seeds_in_allowed_environments(
     result = runner.invoke(app, ["dev", "seed"])
     assert result.exit_code == 0, result.output
     assert DEV_PASSWORD in result.output
-    assert _user_count(cli_environment) == 9
+    assert _user_count(cli_environment) == 10
     again = runner.invoke(app, ["dev", "seed"])
     assert again.exit_code == 1
     assert "already seeded" in again.output
@@ -147,16 +148,16 @@ def test_dev_seed_command_adds_the_second_factor_user_to_an_older_database(
             await engine.dispose()
 
     asyncio.run(remove_totp_user())
-    assert _user_count(cli_environment) == 8
+    assert _user_count(cli_environment) == 9
     again = runner.invoke(app, ["dev", "seed"])
     assert again.exit_code == 1 and "already seeded" in again.output
-    assert _user_count(cli_environment) == 9
+    assert _user_count(cli_environment) == 10
 
 
 def test_reset_lockouts_clears_counters_and_refuses_production(
     cli_environment: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The dev helper removes failed login counters, and only runs in development or testing."""
+    """The dev helper clears counters and replay marks, and only runs in development or testing."""
     monkeypatch.setenv("ENVMANAGER_ENVIRONMENT", "testing")
     get_settings.cache_clear()
 
@@ -167,6 +168,9 @@ def test_reset_lockouts_clears_counters_and_refuses_production(
                 engine, cli_environment / "envmanager.db", cli_environment / "backups"
             )
             async with create_session_factory(engine)() as db:
+                user = make_user()
+                user.totp_last_step = 5
+                db.add(user)
                 db.add(
                     LoginCounter(
                         kind=LoginCounterKind.IP,
@@ -189,12 +193,22 @@ def test_reset_lockouts_clears_counters_and_refuses_production(
         finally:
             await engine.dispose()
 
+    async def last_steps() -> list[int | None]:
+        engine = create_engine(cli_environment / "envmanager.db")
+        try:
+            async with create_session_factory(engine)() as db:
+                return list((await db.execute(select(User.totp_last_step))).scalars())
+        finally:
+            await engine.dispose()
+
     cli_environment.mkdir(parents=True, exist_ok=True)
     asyncio.run(add_counter())
     assert asyncio.run(counters()) == 1
+    assert asyncio.run(last_steps()) == [5]
     result = runner.invoke(app, ["dev", "reset-lockouts"])
     assert result.exit_code == 0 and "cleared 1 login counters" in result.output
     assert asyncio.run(counters()) == 0
+    assert asyncio.run(last_steps()) == [None]
 
     monkeypatch.setenv("ENVMANAGER_ENVIRONMENT", "production")
     monkeypatch.setenv("ENVMANAGER_CSRF_SECRET", "x" * 40)

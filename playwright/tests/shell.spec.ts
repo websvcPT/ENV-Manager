@@ -29,7 +29,7 @@ test.describe('layout', () => {
     await expect(page.locator('[data-fragment="empty-state"]')).toBeVisible();
     await expect(page.locator('[data-fragment="banner-area"]')).toHaveCount(1);
     await expect(page.locator('a[href="/projects"][aria-current="page"]').first()).toBeAttached();
-    await expect(page.locator('[data-js="theme-toggle"]')).toBeVisible();
+    await expect(page.locator('header [data-js="theme-toggle"]')).toBeVisible();
 
     if (isWide(page)) {
       await expect(page.locator('[data-nav]')).toBeVisible();
@@ -72,7 +72,7 @@ test.describe('theme', () => {
   test('toggle persists across reloads', async ({ page }) => {
     await page.goto('/projects');
     const root = page.locator('html');
-    const toggle = page.locator('[data-js="theme-toggle"]');
+    const toggle = page.locator('header [data-js="theme-toggle"]');
     await expect(root).not.toHaveClass(/dark/);
 
     await toggle.click();
@@ -127,8 +127,8 @@ test.describe('security policy', () => {
     for (const path of ['/projects', '/does-not-exist']) {
       const response = await page.goto(path);
       expect(response?.headers()['content-security-policy']).toContain("default-src 'self'");
-      await page.locator('[data-js="theme-toggle"]').click();
-      await page.locator('[data-js="theme-toggle"]').click();
+      await page.locator('header [data-js="theme-toggle"]').click();
+      await page.locator('header [data-js="theme-toggle"]').click();
       expect(await page.evaluate(() => window.cspViolations), path).toEqual([]);
     }
     expect(consoleViolations).toEqual([]);
@@ -143,6 +143,80 @@ test.describe('error pages', () => {
     await expect(state).toBeVisible();
     await expect(state.locator('h1')).toBeVisible();
     await expect(state.locator('a[href="/projects"]').first()).toBeVisible();
-    await expect(page.locator('[data-js="theme-toggle"]')).toBeVisible();
+    await expect(page.locator('header [data-js="theme-toggle"]')).toBeVisible();
+  });
+});
+
+test.describe('account menu', () => {
+  test('opens from the top bar button and lists account, theme and log out', async ({ page }) => {
+    await page.goto('/projects');
+    const menu = page.locator('#account-menu');
+    await expect(menu).toBeHidden();
+
+    await page.locator('header [data-target="account-menu"]').click();
+    await expect(menu).toBeVisible();
+    await expect(menu.locator('a[href="/account"]')).toBeVisible();
+    await expect(menu.locator('[data-js="theme-toggle"]')).toBeVisible();
+    await expect(menu.locator('form[action="/logout"] button[type="submit"]')).toBeVisible();
+    await expect(menu.locator('form[action="/logout"] input[name="csrf_token"]')).toHaveCount(1);
+    expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+
+    const box = await menu.boundingBox();
+    const viewport = page.viewportSize();
+    expect(box).not.toBeNull();
+    expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(viewport?.width ?? 0);
+    expect(box?.x ?? -1).toBeGreaterThanOrEqual(0);
+    for (const control of await menu.locator('a, button').all()) {
+      expect((await control.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(40);
+    }
+
+    await page.keyboard.press('Escape');
+    await expect(menu).toBeHidden();
+  });
+
+  test('closes on a click outside the menu', async ({ page }) => {
+    await page.goto('/projects');
+    await page.locator('header [data-target="account-menu"]').click();
+    await expect(page.locator('#account-menu')).toBeVisible();
+    await page.mouse.click(5, 5);
+    await expect(page.locator('#account-menu')).toBeHidden();
+  });
+
+  test('the theme row switches the theme', async ({ page }) => {
+    await page.goto('/projects');
+    const root = page.locator('html');
+    await expect(root).not.toHaveClass(/dark/);
+    await page.locator('header [data-target="account-menu"]').click();
+    await page.locator('#account-menu [data-js="theme-toggle"]').click();
+    await expect(root).toHaveClass(/dark/);
+    await page.locator('#account-menu [data-js="theme-toggle"]').click();
+    await expect(root).not.toHaveClass(/dark/);
+  });
+
+  test('the account link leads to the account page address', async ({ page }) => {
+    await page.goto('/projects');
+    await page.locator('header [data-target="account-menu"]').click();
+    await page.locator('#account-menu a[href="/account"]').click();
+    await expect(page).toHaveURL(/\/account$/);
+  });
+});
+
+test.describe('log out', () => {
+  test.use({ storageState: { cookies: [], origins: [] } });
+
+  test('ends the session and returns to sign in', async ({ page }) => {
+    await page.goto('/login');
+    await page.locator('#user').fill('viewer');
+    await page.locator('#pw').fill('dev-only-password');
+    await page.locator('#login-card button[type="submit"]').click();
+    await expect(page).toHaveURL(/\/projects$/);
+
+    await page.locator('header [data-target="account-menu"]').click();
+    await page.locator('#account-menu form[action="/logout"] button[type="submit"]').click();
+    await expect(page).toHaveURL(/\/login$/);
+    await expect(page.locator('#user')).toBeVisible();
+
+    await page.goto('/projects');
+    await expect(page).toHaveURL(/\/login$/);
   });
 });

@@ -8,12 +8,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.core.crypto import CryptoService
-from app.core.sessions import SESSION_COOKIE_NAME
+from app.core.sessions import PENDING_LOGIN_COOKIE_NAME, SESSION_COOKIE_NAME
 from app.core.templating import render
 from app.models import AuditActorType, AuditResult
 from app.services.audit import record_audit
 from app.services.auth_policy import AuthPolicy
-from app.services.login import LoginResult, LoginStatus, authenticate
+from app.services.login import LoginResult, LoginStatus, authenticate, complete_totp_login
 from app.services.sessions import revoke_session
 from app.web.dependencies import (
     AuthContext,
@@ -81,45 +81,69 @@ def _locked(request: Request, result: LoginResult) -> Response:
     return _card(request, context, 429, {"Retry-After": str(seconds)})
 
 
-async def _attempt(
+def _set_pending_cookie(response: Response, token: str, policy: AuthPolicy) -> None:
+    """Hand the single-use pending login token to the browser, scoped to the code step."""
+    response.set_cookie(
+        PENDING_LOGIN_COOKIE_NAME,
+        token,
+        max_age=int(policy.pending_login_timeout.total_seconds()),
+        httponly=True,
+        secure=get_settings().base_url.startswith("https://"),
+        samesite="strict",
+        path="/login",
+    )
+
+
+def _code_card(
     request: Request,
-    db: AsyncSession,
-    crypto: CryptoService,
     policy: AuthPolicy,
-    *,
-    identifier: str,
-    password: str,
-    totp_code: str,
-    code_step: bool,
+    token: str,
+    status_code: int = 200,
+    code_error: str | None = None,
 ) -> Response:
-    """Run one login attempt and answer with the card state that matches its outcome."""
+    """The second factor card, with the fresh pending login token in its cookie."""
+    context: dict[str, Any] = {"state": "totp"}
+    if code_error:
+        context["code_error"] = code_error
+    response = _card(request, context, status_code)
+    _set_pending_cookie(response, token, policy)
+    return response
+
+
+def _clear_pending(response: Response) -> Response:
+    """Drop the pending login cookie once its token is used up or refused."""
+    response.delete_cookie(PENDING_LOGIN_COOKIE_NAME, path="/login")
+    return response
+
+
+@router.post("/login", include_in_schema=False)
+async def login(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    crypto: Annotated[CryptoService, Depends(get_crypto)],
+    policy: Annotated[AuthPolicy, Depends(get_auth_policy)],
+    identifier: Annotated[str, Form()] = "",
+    password: Annotated[str, Form()] = "",
+) -> Response:
+    """Sign in with a name or email and password; a second factor user is asked for a code.
+
+    Public by design: this route is on the default-deny allow list.
+    """
     result = await authenticate(
         db,
         crypto,
         policy,
         identifier=identifier,
         password=password,
-        totp_code=totp_code,
         ip_address=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
     if result.status is LoginStatus.SUCCESS and result.token:
-        return _signed_in(request, result.token, policy)
+        return _clear_pending(_signed_in(request, result.token, policy))
     if result.status is LoginStatus.LOCKED:
         return _locked(request, result)
-    if result.status is LoginStatus.TOTP_REQUIRED or code_step:
-        context: dict[str, Any] = {
-            "state": "totp",
-            "identifier": identifier,
-            "password": password,
-        }
-        if code_step and result.status is LoginStatus.INVALID:
-            context["code_error"] = "The code is incorrect or expired."
-            return _card(request, context, 401)
-        if code_step:
-            context["code_error"] = "Enter the 6-digit code."
-            return _card(request, context, 422)
-        return _card(request, context, 200)
+    if result.status is LoginStatus.TOTP_REQUIRED and result.pending_token:
+        return _code_card(request, policy, result.pending_token)
     return _card(request, {"state": "invalid", "identifier": identifier}, 401)
 
 
@@ -143,57 +167,41 @@ async def session_expired_page(request: Request) -> Response:
     return render(request, "pages/session_expired.html")
 
 
-@router.post("/login", include_in_schema=False)
-async def login(
-    request: Request,
-    db: Annotated[AsyncSession, Depends(get_db)],
-    crypto: Annotated[CryptoService, Depends(get_crypto)],
-    policy: Annotated[AuthPolicy, Depends(get_auth_policy)],
-    identifier: Annotated[str, Form()] = "",
-    password: Annotated[str, Form()] = "",
-) -> Response:
-    """Sign in with a name or email and password; a second factor user is asked for a code.
-
-    Public by design: this route is on the default-deny allow list.
-    """
-    return await _attempt(
-        request,
-        db,
-        crypto,
-        policy,
-        identifier=identifier,
-        password=password,
-        totp_code="",
-        code_step=False,
-    )
-
-
 @router.post("/login/totp", include_in_schema=False)
 async def login_totp(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     crypto: Annotated[CryptoService, Depends(get_crypto)],
     policy: Annotated[AuthPolicy, Depends(get_auth_policy)],
-    identifier: Annotated[str, Form()] = "",
-    password: Annotated[str, Form()] = "",
     code: Annotated[str, Form()] = "",
 ) -> Response:
     """Complete a sign in with the authenticator code.
 
-    The form carries the name and password again, so the credentials and the code are verified
-    together and failures count against the same lockout counters.
+    The pending login from the password step arrives only as an HttpOnly cookie, so the name
+    and password are never sent again. The token is single use: a wrong or empty code is
+    answered with a fresh one. Failures share the lockout counters with wrong passwords.
     Public by design: this route is on the default-deny allow list.
     """
-    return await _attempt(
-        request,
+    result = await complete_totp_login(
         db,
         crypto,
         policy,
-        identifier=identifier,
-        password=password,
-        totp_code=code,
-        code_step=True,
+        pending_token=request.cookies.get(PENDING_LOGIN_COOKIE_NAME, ""),
+        code=code,
+        ip_address=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
     )
+    if result.status is LoginStatus.SUCCESS and result.token:
+        return _clear_pending(_signed_in(request, result.token, policy))
+    if result.status is LoginStatus.LOCKED:
+        return _clear_pending(_locked(request, result))
+    if result.pending_token and result.status is LoginStatus.INVALID:
+        return _code_card(
+            request, policy, result.pending_token, 401, "The code is incorrect or expired."
+        )
+    if result.pending_token:
+        return _code_card(request, policy, result.pending_token, 422, "Enter the 6-digit code.")
+    return _clear_pending(_card(request, {"state": "pending_invalid"}, 401))
 
 
 @router.post("/logout")

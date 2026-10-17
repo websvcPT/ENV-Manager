@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from app.core.crypto import CryptoService, generate_master_key, parse_master_key
 from app.core.db import create_session_factory
 from app.models import User
+from app.models.types import utc_now
 from app.services import totp
 from app.tests.auth_helpers import make_user
 
@@ -71,3 +72,32 @@ def test_disable_discards_the_secret(crypto: CryptoService) -> None:
     user.totp_enabled = True
     totp.disable(user)
     assert (user.totp_secret, user.totp_enabled) == (None, False)
+
+
+def test_matching_step_reports_the_time_step_inside_the_window(crypto: CryptoService) -> None:
+    """The current and adjacent steps match and name their step; others and junk do not."""
+    user = make_user()
+    user.id = 1
+    secret = totp.generate_secret()
+    totp.store_secret(user, secret, crypto)
+    generator = pyotp.TOTP(secret)
+    moment = utc_now()
+    current = generator.timecode(moment)
+    assert totp.matching_step(user, generator.generate_otp(current), crypto, now=moment) == current
+    for neighbour in (current - 1, current + 1):
+        code = generator.generate_otp(neighbour)
+        assert totp.matching_step(user, code, crypto, now=moment) == neighbour
+    assert totp.matching_step(user, generator.generate_otp(current + 2), crypto, now=moment) is None
+    assert totp.matching_step(user, "abcdef", crypto, now=moment) is None
+
+
+def test_enable_marks_the_confirmation_code_as_used(crypto: CryptoService) -> None:
+    """The code that turned the factor on is recorded; storing or removing a secret clears it."""
+    user = make_user()
+    user.id = 1
+    secret = totp.generate_secret()
+    totp.store_secret(user, secret, crypto)
+    assert totp.enable(user, pyotp.TOTP(secret).now(), crypto) is True
+    assert user.totp_last_step == pyotp.TOTP(secret).timecode(utc_now())
+    totp.disable(user)
+    assert user.totp_last_step is None

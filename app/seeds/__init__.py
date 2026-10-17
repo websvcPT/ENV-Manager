@@ -3,6 +3,8 @@
 from app.seeds.dataset import (
     DEV_PASSWORD,
     DEV_TOTP_SECRET,
+    TOTP_ALT_USER_NAME,
+    TOTP_USER_NAME,
     SeedData,
     SeedError,
     ensure_totp_user,
@@ -12,6 +14,8 @@ from app.seeds.dataset import (
 __all__ = [
     "DEV_PASSWORD",
     "DEV_TOTP_SECRET",
+    "TOTP_ALT_USER_NAME",
+    "TOTP_USER_NAME",
     "SeedData",
     "SeedError",
     "ensure_totp_user",

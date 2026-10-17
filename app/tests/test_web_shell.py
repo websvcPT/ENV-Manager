@@ -211,3 +211,32 @@ def test_sources_follow_the_content_rules(path: Path) -> None:
     if path.suffix == ".html":
         assert not re.search(r"\sstyle=|\sonclick=|javascript:", text)
         assert not re.search(r"<script(?![^>]*\ssrc=)", text)
+
+
+async def test_account_menu_has_account_theme_and_logout(web_client: httpx.AsyncClient) -> None:
+    """The top bar button opens a menu with the account link and a CSRF protected log out."""
+    await sign_in(web_client, "admin")
+    page = (await web_client.get("/projects")).text
+    assert 'data-js="dialog-open" data-target="account-menu"' in page
+    menu = re.search(r'<dialog id="account-menu".*?</dialog>', page, re.DOTALL)
+    assert menu is not None
+    body = menu.group(0)
+    assert 'href="/account"' in body
+    assert 'data-js="theme-toggle"' in body
+    assert "admin@example.test" in body
+    form = re.search(r'<form method="post" action="/logout".*?</form>', body, re.DOTALL)
+    assert form is not None and 'name="csrf_token"' in form.group(0)
+    assert "Log out" in form.group(0)
+
+
+async def test_logout_form_ends_the_session(web_client: httpx.AsyncClient) -> None:
+    """The menu form with its CSRF field signs the user out; a forged field is refused."""
+    await sign_in(web_client, "viewer")
+    page = (await web_client.get("/projects")).text
+    token = re.search(r'name="csrf_token" value="([^"]+)"', page)
+    assert token is not None
+    refused = await web_client.post("/logout", data={"csrf_token": "forged"})
+    assert refused.status_code == 403
+    done = await web_client.post("/logout", data={"csrf_token": token.group(1)})
+    assert (done.status_code, done.headers["location"]) == (303, "/login")
+    assert (await web_client.get("/projects")).status_code == 303

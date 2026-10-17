@@ -9,11 +9,19 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.core.crypto import CryptoService
 from app.core.db import create_engine, create_session_factory
-from app.models import AuditEntry, AuditResult, LoginCounter, User, UserGroup, UserSession
+from app.models import (
+    AuditEntry,
+    AuditResult,
+    LoginCounter,
+    PendingLogin,
+    User,
+    UserGroup,
+    UserSession,
+)
 from app.models.types import utc_now
 from app.services import totp
 from app.services.auth_policy import AuthPolicy
-from app.services.login import LoginResult, LoginStatus, authenticate
+from app.services.login import LoginResult, LoginStatus, authenticate, complete_totp_login
 from app.tests.auth_helpers import PASSWORD, make_user
 
 POLICY = AuthPolicy(user_max_failures=3, ip_max_failures=5, lockout_duration=timedelta(minutes=10))
@@ -36,7 +44,6 @@ async def _login(
     crypto: CryptoService,
     identifier: str = "alice",
     password: str = PASSWORD,
-    totp_code: str | None = None,
     ip_address: str | None = None,
     now: datetime | None = None,
 ) -> LoginResult:
@@ -48,7 +55,6 @@ async def _login(
             POLICY,
             identifier=identifier,
             password=password,
-            totp_code=totp_code,
             ip_address=ip_address,
             now=now,
         )
@@ -186,24 +192,155 @@ async def test_disabled_user_cannot_sign_in(engine: AsyncEngine, crypto: CryptoS
     assert (await _audit(engine))[0].details == {"reason": "user_disabled"}
 
 
-async def test_second_factor_step(engine: AsyncEngine, crypto: CryptoService) -> None:
-    """With TOTP enabled the password alone asks for a code, and the code completes the login."""
-    user = make_user(group=UserGroup.SUPERADMIN)
-    await _seed(engine, user)
+async def _enrol_totp(engine: AsyncEngine, crypto: CryptoService) -> str:
+    """Give the stored user a second factor and return its secret."""
     secret = totp.generate_secret()
     async with create_session_factory(engine)() as db:
         stored = (await db.execute(select(User))).scalar_one()
         totp.store_secret(stored, secret, crypto)
         stored.totp_enabled = True
         await db.commit()
+    return secret
+
+
+async def _complete(
+    engine: AsyncEngine,
+    crypto: CryptoService,
+    pending_token: str | None,
+    code: str,
+    ip_address: str | None = None,
+    now: datetime | None = None,
+) -> LoginResult:
+    """One second factor attempt on its own database session."""
+    async with create_session_factory(engine)() as db:
+        return await complete_totp_login(
+            db,
+            crypto,
+            POLICY,
+            pending_token=pending_token or "",
+            code=code,
+            ip_address=ip_address,
+            now=now,
+        )
+
+
+async def test_second_factor_step(engine: AsyncEngine, crypto: CryptoService) -> None:
+    """The password alone yields a pending login; the code completes it into a session."""
+    await _seed(engine, make_user(group=UserGroup.SUPERADMIN))
+    secret = await _enrol_totp(engine, crypto)
 
     asked = await _login(engine, crypto)
     assert asked.status is LoginStatus.TOTP_REQUIRED and asked.token is None
+    assert asked.pending_token
     assert await _audit(engine) == []
 
-    wrong = await _login(engine, crypto, totp_code="000000")
+    done = await _complete(engine, crypto, asked.pending_token, pyotp.TOTP(secret).now())
+    assert done.status is LoginStatus.SUCCESS and done.token
+    assert [entry.action for entry in await _audit(engine)] == ["login.success"]
+    async with create_session_factory(engine)() as db:
+        assert (await db.execute(select(PendingLogin))).scalars().all() == []
+
+
+async def test_pending_login_is_single_use(engine: AsyncEngine, crypto: CryptoService) -> None:
+    """A wrong code consumes the pending login and hands back a fresh one."""
+    await _seed(engine)
+    secret = await _enrol_totp(engine, crypto)
+    asked = await _login(engine, crypto)
+    assert asked.pending_token
+
+    wrong = await _complete(engine, crypto, asked.pending_token, "000000")
     assert wrong.status is LoginStatus.INVALID
+    assert wrong.pending_token and wrong.pending_token != asked.pending_token
     assert (await _audit(engine))[0].details == {"reason": "invalid_totp_code"}
 
-    done = await _login(engine, crypto, totp_code=pyotp.TOTP(secret).now())
-    assert done.status is LoginStatus.SUCCESS and done.token
+    stale = await _complete(engine, crypto, asked.pending_token, pyotp.TOTP(secret).now())
+    assert stale.status is LoginStatus.PENDING_INVALID and stale.token is None
+
+    done = await _complete(engine, crypto, wrong.pending_token, pyotp.TOTP(secret).now())
+    assert done.status is LoginStatus.SUCCESS
+
+
+async def test_empty_code_is_not_a_failure(engine: AsyncEngine, crypto: CryptoService) -> None:
+    """An empty code asks again with a fresh pending login and counts nothing."""
+    await _seed(engine)
+    await _enrol_totp(engine, crypto)
+    asked = await _login(engine, crypto)
+    again = await _complete(engine, crypto, asked.pending_token, "  ")
+    assert again.status is LoginStatus.TOTP_REQUIRED and again.pending_token
+    assert await _audit(engine) == []
+    async with create_session_factory(engine)() as db:
+        assert (await db.execute(select(LoginCounter))).scalars().all() == []
+
+
+async def test_pending_login_expires_and_unknown_tokens_are_refused(
+    engine: AsyncEngine, crypto: CryptoService
+) -> None:
+    """Past the timeout, or with a made-up or missing token, the code step has no login."""
+    await _seed(engine)
+    secret = await _enrol_totp(engine, crypto)
+    start = utc_now()
+    asked = await _login(engine, crypto, now=start)
+    code = pyotp.TOTP(secret).now()
+
+    late = await _complete(
+        engine, crypto, asked.pending_token, code, now=start + POLICY.pending_login_timeout
+    )
+    assert late.status is LoginStatus.PENDING_INVALID
+    for token in ("made-up", None):
+        refused = await _complete(engine, crypto, token, code)
+        assert refused.status is LoginStatus.PENDING_INVALID
+    async with create_session_factory(engine)() as db:
+        assert (await db.execute(select(UserSession))).scalars().all() == []
+
+
+async def test_pending_login_of_a_disabled_user_is_refused(
+    engine: AsyncEngine, crypto: CryptoService
+) -> None:
+    """A user disabled between the two steps does not get a session."""
+    await _seed(engine)
+    secret = await _enrol_totp(engine, crypto)
+    asked = await _login(engine, crypto)
+    async with create_session_factory(engine)() as db:
+        (await db.execute(select(User))).scalar_one().is_active = False
+        await db.commit()
+    result = await _complete(engine, crypto, asked.pending_token, pyotp.TOTP(secret).now())
+    assert result.status is LoginStatus.PENDING_INVALID
+
+
+async def test_code_failures_lock_the_name(engine: AsyncEngine, crypto: CryptoService) -> None:
+    """Wrong codes share the counters of wrong passwords and end with a lockout."""
+    await _seed(engine)
+    await _enrol_totp(engine, crypto)
+    asked = await _login(engine, crypto, ip_address=IP)
+    token = asked.pending_token
+    for _ in range(POLICY.user_max_failures):
+        result = await _complete(engine, crypto, token, "000000", IP)
+        token = result.pending_token
+    assert result.status is LoginStatus.LOCKED and result.pending_token is None
+
+    blocked = await _login(engine, crypto, ip_address=IP)
+    assert blocked.status is LoginStatus.LOCKED
+    assert [entry.action for entry in await _audit(engine)].count("login.lockout") >= 1
+
+
+async def test_accepted_code_cannot_be_replayed(engine: AsyncEngine, crypto: CryptoService) -> None:
+    """A code that signed in once is refused again, even through a new pending login."""
+    await _seed(engine)
+    secret = await _enrol_totp(engine, crypto)
+    code = pyotp.TOTP(secret).now()
+    first = await _login(engine, crypto)
+    assert (await _complete(engine, crypto, first.pending_token, code)).status is (
+        LoginStatus.SUCCESS
+    )
+
+    second = await _login(engine, crypto)
+    replay = await _complete(engine, crypto, second.pending_token, code)
+    assert replay.status is LoginStatus.INVALID
+    assert (await _audit(engine))[-1].details == {"reason": "reused_totp_code"}
+
+    older = pyotp.TOTP(secret).at(utc_now() - timedelta(seconds=30))
+    assert (await _complete(engine, crypto, replay.pending_token, older)).status is (
+        LoginStatus.INVALID
+    )
+    async with create_session_factory(engine)() as db:
+        assert (await db.execute(select(User))).scalar_one().totp_last_step is not None

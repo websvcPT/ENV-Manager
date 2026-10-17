@@ -31,7 +31,14 @@ from app.models.structure import (
     Service,
     ServiceHook,
 )
-from app.models.user import LoginCounter, LoginCounterKind, User, UserGroup, UserSession
+from app.models.user import (
+    LoginCounter,
+    LoginCounterKind,
+    PendingLogin,
+    User,
+    UserGroup,
+    UserSession,
+)
 
 __all__ = [
     "AccessGrant",
@@ -61,6 +68,7 @@ __all__ = [
     "LoginCounter",
     "LoginCounterKind",
     "MissingTargetPolicy",
+    "PendingLogin",
     "PostDeployStatus",
     "Project",
     "RestrictionLevel",

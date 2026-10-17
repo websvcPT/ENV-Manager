@@ -16,3 +16,4 @@ class AuthPolicy:
     ip_max_failures: int = 20
     failure_window: timedelta = timedelta(minutes=15)
     lockout_duration: timedelta = timedelta(minutes=15)
+    pending_login_timeout: timedelta = timedelta(minutes=5)
