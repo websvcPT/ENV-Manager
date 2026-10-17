@@ -1,0 +1,43 @@
+{#- The post-deploy panel of a service: the last run (status for everyone, output for the groups
+    that may read it) and, for the superadmin, the stored command shown read-only. Context:
+    service, post_deploy, is_viewer. -#}
+{% from "macros/badges.html" import badge %}
+{% from "macros/feedback.html" import code_block, note %}
+{% set run = post_deploy.last %}
+{% set hook = post_deploy.hook %}
+{% set wide = service.can_view_command %}
+<section aria-labelledby="postdeploy-title" data-fragment="postdeploy-panel" id="postdeploy" hx-get="/services/{{ service.id }}/postdeploy" hx-trigger="deploy-finished from:body" hx-swap="outerHTML" class="rounded-panel border border-line bg-surface shadow-panel overflow-hidden"><div class="flex flex-wrap items-center gap-3 px-4 py-4 md:px-5"><h2 id="postdeploy-title" class="flex-1 text-lg font-bold">Post-deploy command</h2></div>
+<div class="grid{% if wide %} md:grid-cols-2{% endif %}"><div class="flex min-w-0 flex-col gap-3.5 p-4 md:p-5{% if wide %} md:border-r md:border-line{% endif %}"><h3 class="text-xs font-bold uppercase tracking-wide text-ink3">Last run</h3>
+{%- if run is none %}
+<p class="text-ink2">No deploys yet.</p>
+{%- elif run.status.value == "none" %}
+<p class="flex flex-wrap items-center gap-3"><span class="text-ink3">None</span><span>{{ run.started_at.strftime("%Y-%m-%d %H:%M") }}{% if service.can_view_output %} · by {{ run.who }}{% endif %}</span></p><p class="text-[13px] text-ink2">No command ran in the latest deploy.</p>
+{%- else %}
+<p class="flex flex-wrap items-center gap-3">{{ badge(run.status.value) }}<span>{{ run.started_at.strftime("%Y-%m-%d %H:%M") }}{% if service.can_view_output %} · by {{ run.who }}{% if run.reason %} · {{ run.reason }}{% endif %}{% if run.exit_code is not none %} · exit code {{ run.exit_code }}{% endif %}{% endif %}</span></p>
+{%- if service.can_view_output and run.output %}
+<div hx-ignore><p class="mb-1.5 text-[13px] text-ink2">Output, truncated (admins in scope and the superadmin)</p>{{ code_block(run.output) }}</div>
+{%- elif is_viewer %}
+<p class="text-[13px] text-ink2">Output and command text are not available for the Viewer group.</p>
+{%- endif %}
+{%- endif %}
+{%- if service.hidden_environments %}
+<p class="text-[13px] text-ink2">This service also loads environments outside your access. The command restarts the service once and leaves those files untouched.</p>
+{%- endif %}
+{%- if not wide and not is_viewer %}
+<p class="text-[13px] text-ink2">Command text and settings are visible to the superadmin only.</p>
+{%- endif %}
+</div>
+{%- if wide %}
+<div data-fragment="postdeploy-settings" class="flex min-w-0 flex-col gap-3.5 border-t border-line p-4 md:border-t-0 md:p-5"><div class="flex items-center gap-2"><h3 class="text-xs font-bold uppercase tracking-wide text-ink3">Command settings</h3>{{ badge("superadmin") }}</div>
+{%- if hook is none %}
+<p class="text-ink2">No post-deploy command is set for this service.</p>
+{%- else %}
+<dl class="flex flex-col gap-3 text-[13px]"><div><dt class="text-[13px] font-semibold">Working directory</dt><dd class="mt-1 break-all font-mono text-[13px] text-ink2">{{ hook.working_directory or (service.root_path ~ " (deployment root)") }}</dd></div>
+<div hx-ignore><dt class="mb-1.5 text-[13px] font-semibold">Commands, one per line</dt><dd>{{ code_block(hook.commands) }}</dd></div>
+<div><dt class="text-[13px] font-semibold">Timeout</dt><dd class="mt-1 font-mono text-[13px] text-ink2">{{ hook.timeout_seconds }}s</dd></div>
+<div><dt class="text-[13px] font-semibold">Run only if at least one environment changed</dt><dd class="mt-1 text-ink2">{{ "Yes" if hook.run_only_if_changed else "No" }}</dd></div></dl>
+{%- endif %}
+{{ note("Command settings are shown read-only for now. They cannot be edited from this page yet.") }}
+</div>
+{%- endif %}
+</div></section>

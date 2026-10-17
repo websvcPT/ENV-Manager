@@ -23,6 +23,7 @@ from app.seeds import (
     ensure_activity,
     ensure_deployment_history,
     ensure_dev_host_paths,
+    ensure_service_figures,
     ensure_totp_user,
 )
 from app.seeds import seed as seed_data
@@ -183,6 +184,7 @@ def seed_dataset() -> None:
                 await ensure_totp_user(db, crypto, name)
             await ensure_activity(db)
             await ensure_deployment_history(db)
+            await ensure_service_figures(db, crypto)
             await ensure_dev_host_paths(db)
             await db.commit()
             raise

@@ -167,7 +167,7 @@ async def load_deployment_detail(
         for item in await load_items(db, ItemLevel.ENVIRONMENT)
         if item.deployment_id == deployment_id and scope.can(Capability.DEPLOY, item)
     }
-    history = await _history(db, service_ids, visible_environments, full)
+    history = await load_history(db, service_ids, visible_environments, full)
     latest = await latest_runs(db, service_ids)
     service_rows: list[ServiceRow] = []
     for service in services:
@@ -219,7 +219,7 @@ async def load_deployment_detail(
     )
 
 
-async def _history(
+async def load_history(
     db: AsyncSession,
     service_ids: set[int],
     visible_environments: frozenset[int] | set[int],

@@ -8,9 +8,11 @@ from app.seeds.dataset import (
     TOTP_USER_NAME,
     SeedData,
     SeedError,
+    SeedServiceFigures,
     ensure_activity,
     ensure_deployment_history,
     ensure_dev_host_paths,
+    ensure_service_figures,
     ensure_totp_user,
     seed,
 )
@@ -23,9 +25,11 @@ __all__ = [
     "TOTP_USER_NAME",
     "SeedData",
     "SeedError",
+    "SeedServiceFigures",
     "ensure_activity",
     "ensure_deployment_history",
     "ensure_dev_host_paths",
+    "ensure_service_figures",
     "ensure_totp_user",
     "seed",
 ]

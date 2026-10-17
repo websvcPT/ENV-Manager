@@ -76,10 +76,12 @@ from app.models import (
     Environment,
     EnvironmentVersion,
     GrantLevel,
+    HookType,
     PostDeployStatus,
     Project,
     RestrictionLevel,
     Service,
+    ServiceHook,
     User,
     UserGroup,
 )
@@ -166,6 +168,15 @@ class SeedEnvironments:
 
 
 @dataclass(frozen=True)
+class SeedServiceFigures:
+    """The staging web environments that cover every status: pending, blocked and never deployed."""
+
+    tuning: Environment
+    replica: Environment
+    ca: Environment
+
+
+@dataclass(frozen=True)
 class SeedData:
     """Named references to everything the seed created."""
 
@@ -174,6 +185,7 @@ class SeedData:
     deployments: SeedDeployments
     services: SeedServices
     envs: SeedEnvironments
+    figures: SeedServiceFigures
     allowed_paths: tuple[AllowedPath, ...]
     deploy_runs: tuple[DeployRun, ...]
     tokens: tuple[ApiToken, ...]
@@ -517,6 +529,123 @@ async def ensure_deployment_history(db: AsyncSession) -> None:
     await db.flush()
 
 
+async def ensure_service_figures(
+    db: AsyncSession, crypto: CryptoService
+) -> SeedServiceFigures | None:
+    """Environments in every status and a post-deploy command on the staging web service.
+
+    The staging `web` service gets a deployed file (the existing one), one saved again after its
+    deploy (pending), one whose only attempt was blocked and one never deployed, plus a stored
+    post-deploy command. Separate from the full dataset so a database seeded before it existed
+    can get it; does nothing when the staging service is missing and returns the environments
+    that were created or found. The caller commits.
+    """
+    service = (
+        await db.execute(
+            select(Service)
+            .join(Deployment, Deployment.id == Service.deployment_id)
+            .where(Deployment.name == "staging", Service.name == "web")
+        )
+    ).scalar_one_or_none()
+    root = (await db.execute(select(User).where(User.name == "root"))).scalar_one_or_none()
+    admin = (await db.execute(select(User).where(User.name == "admin"))).scalar_one_or_none()
+    if service is None or root is None or admin is None:
+        return None
+    found = {
+        environment.name: environment
+        for environment in (
+            await db.execute(select(Environment).where(Environment.service_id == service.id))
+        ).scalars()
+    }
+    if ".env.web.tuning" in found:
+        return SeedServiceFigures(
+            tuning=found[".env.web.tuning"],
+            replica=found[".env.web.replica"],
+            ca=found["web-ca.pem"],
+        )
+    web = (
+        await db.execute(
+            select(Environment).where(
+                Environment.service_id == service.id, Environment.name == ".env.web"
+            )
+        )
+    ).scalar_one()
+    tuning = await _environment(
+        db, crypto, service, ".env.web.tuning", ["WORKERS=2\n", "WORKERS=4\n"], root
+    )
+    replica = await _environment(db, crypto, service, ".env.web.replica", ["REPLICA=on\n"], root)
+    ca = await _environment(
+        db,
+        crypto,
+        service,
+        "web-ca.pem",
+        ["-----BEGIN CERTIFICATE-----\nc2VlZA==\n-----END CERTIFICATE-----\n"],
+        root,
+    )
+    db.add(
+        ServiceHook(
+            service_id=service.id,
+            type=HookType.POST_DEPLOY,
+            commands="docker compose up -d --no-deps {service_name}",
+        )
+    )
+    await db.flush()
+    version_ids = {
+        (environment_id, number): version_id
+        for version_id, environment_id, number in (
+            await db.execute(
+                select(
+                    EnvironmentVersion.id,
+                    EnvironmentVersion.environment_id,
+                    EnvironmentVersion.number,
+                ).where(EnvironmentVersion.environment_id.in_([web.id, tuning.id, replica.id]))
+            )
+        ).all()
+    }
+    blocked_run = _run(
+        service.id,
+        service.name,
+        "staging",
+        root,
+        DeployStatus.BLOCKED,
+        _at(2026, 10, 13, 10, 0),
+        False,
+    )
+    written_run = _run(
+        service.id,
+        service.name,
+        "staging",
+        admin,
+        DeployStatus.SUCCESS,
+        _at(2026, 10, 15, 9, 0),
+        False,
+    )
+    written_run.post_deploy_status = PostDeployStatus.RAN
+    written_run.post_deploy_exit_code = 0
+    written_run.post_deploy_output = "web recreated"
+    blocked_run.post_deploy_status = PostDeployStatus.SKIPPED
+    blocked_run.post_deploy_reason = "deploy did not finish"
+    db.add_all((blocked_run, written_run))
+    await db.flush()
+    for run, environment, number, status in (
+        (blocked_run, replica, 1, DeployResultStatus.BLOCKED),
+        (written_run, web, 1, DeployResultStatus.WRITTEN),
+        (written_run, tuning, 1, DeployResultStatus.WRITTEN),
+    ):
+        db.add(
+            DeployResult(
+                run_id=run.id,
+                environment_id=environment.id,
+                environment_name=environment.name,
+                version_id=version_ids[(environment.id, number)],
+                target_path=environment.target_path,
+                status=status,
+            )
+        )
+    await db.flush()
+    return SeedServiceFigures(tuning=tuning, replica=replica, ca=ca)
+
+
 async def ensure_dev_host_paths(db: AsyncSession) -> None:
     """Allow the directory the development stack mounts, so the deployment form has real folders.
 
@@ -641,6 +770,9 @@ async def seed(db: AsyncSession, crypto: CryptoService) -> SeedData:
         db.add(AccessGrant(user_id=user.id, level=level, **{f"{level.value}_id": target.id}))
     deploy_runs, tokens = await ensure_activity(db)
     await ensure_deployment_history(db)
+    figures = await ensure_service_figures(db, crypto)
+    if figures is None:
+        raise SeedError("the staging web service was not created")
     await db.commit()
     return SeedData(
         users=users,
@@ -648,6 +780,7 @@ async def seed(db: AsyncSession, crypto: CryptoService) -> SeedData:
         deployments=deployments,
         services=services,
         envs=envs,
+        figures=figures,
         allowed_paths=allowed_paths,
         deploy_runs=deploy_runs,
         tokens=tokens,

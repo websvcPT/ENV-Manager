@@ -1,0 +1,24 @@
+{#- Service detail: header, section links, explanation, environments, post-deploy panel and
+    deploy history. Context: service (a ServiceHeader), environments, pending, history,
+    post_deploy, can_manage_structure, is_viewer. -#}
+{% extends "layouts/app.html" %}
+{% from "macros/badges.html" import badge %}
+{% from "macros/feedback.html" import note %}
+{% from "macros/icons.html" import icon %}
+{% from "macros/panels.html" import page_header, tabs %}
+{% set active_nav = "projects" %}
+{% set breadcrumbs = [("Projects", "/projects"), (service.project_name, "/projects/" ~ service.project_id), (service.deployment_name, "/deployments/" ~ service.deployment_id), (service.name, none)] %}
+{% block title %}{{ service.name }}{% endblock %}
+{% block content %}
+<nav aria-label="Breadcrumb" class="-mb-2 md:hidden"><a href="/deployments/{{ service.deployment_id }}" class="inline-flex min-h-11 items-center gap-1 text-ink2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ icon("chevron-left", "size-4", "2.2") }}{{ service.project_name }} / {{ service.deployment_name }}</a></nav>
+{% set header_badges %}<span class="text-xs font-bold uppercase tracking-wide text-ink3">Service</span>{% if pending %}{{ badge("pending", pending ~ " pending") }}{% endif %}{% endset %}
+{% set subtitle %}Deployment <strong class="text-ink">{{ service.deployment_name }}</strong> in {{ service.project_name }}{% if service.root_path %} · <span class="font-mono text-[13px] break-all text-ink2">{{ service.root_path }}</span>{% endif %}{% endset %}
+{{ page_header(service.name, subtitle, mono=true, badges=header_badges) }}
+{{ tabs([{"label": "Environments", "href": "#environments", "count": environments | length}, {"label": "Deploy history", "href": "#hist"}], "#environments") }}
+{% if is_viewer %}{{ note("Read-only view. Editing and deploying are not available for the Viewer group.") }}{% endif %}
+{% if service.hidden_environments %}{{ note("You see " ~ (environments | length) ~ (" environment" if environments | length == 1 else " environments") ~ " of this service. Deploys write only the environments you can see.") }}{% endif %}
+{% include "fragments/service_explainer.html" %}
+{% include "fragments/service_environments.html" %}
+{% include "fragments/service_postdeploy.html" %}
+{% include "fragments/service_history.html" %}
+{% endblock %}

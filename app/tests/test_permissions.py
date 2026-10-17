@@ -71,6 +71,9 @@ ALL_RENTALS = {
     "environment:db_secrets",
     "environment:web",
     "environment:staging_web",
+    "environment:staging_tuning",
+    "environment:staging_replica",
+    "environment:staging_ca",
 }
 ALL_BILLING = {
     "project:billing",
@@ -189,6 +192,10 @@ def tree(seed_data: SeedData) -> Tree:
     for level, names in labels.items():
         for attribute, label in names.items():
             built.ids[f"{level}:{label}"] = seeded[level][attribute].id
+    figures = seed_data.figures
+    built.ids["environment:staging_tuning"] = figures.tuning.id
+    built.ids["environment:staging_replica"] = figures.replica.id
+    built.ids["environment:staging_ca"] = figures.ca.id
     return built
 
 
@@ -425,7 +432,15 @@ VISIBILITY_TABLE = [
     ),
     pytest.param(
         ("environment:db", "deployment:staging"),
-        {"environment:db", "deployment:staging", "service:staging_web", "environment:staging_web"},
+        {
+            "environment:db",
+            "deployment:staging",
+            "service:staging_web",
+            "environment:staging_web",
+            "environment:staging_tuning",
+            "environment:staging_replica",
+            "environment:staging_ca",
+        },
         {"project:rentals", "deployment:prod", "service:mysql"},
         id="mixed-levels",
     ),
@@ -679,7 +694,7 @@ async def test_permitted_environments_for_a_service(db: AsyncSession, tree: Tree
     assert (
         await permitted_environment_ids(db, viewer_scope, Capability.DEPLOY, service_id=mysql) == []
     )
-    assert len(await permitted_environment_ids(db, viewer_scope, Capability.VIEW)) == 4
+    assert len(await permitted_environment_ids(db, viewer_scope, Capability.VIEW)) == 7
 
 
 # Audit entries are in scope when their most specific id is in scope.

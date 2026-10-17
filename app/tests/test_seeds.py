@@ -22,11 +22,13 @@ from app.models import (
     ApiToken,
     ApiTokenRestriction,
     AuditEntry,
+    DeployResult,
     DeployRun,
     Environment,
     EnvironmentVersion,
     LoginCounter,
     LoginCounterKind,
+    ServiceHook,
     User,
 )
 from app.models.types import utc_now
@@ -37,6 +39,7 @@ from app.seeds import (
     SeedData,
     SeedError,
     ensure_activity,
+    ensure_service_figures,
     seed,
 )
 from app.services import totp
@@ -53,7 +56,7 @@ async def test_seed_creates_the_dataset(
         assert len(users) == 10
         assert all(verify_password(DEV_PASSWORD, user.password_hash)[0] for user in users)
         assert (await db.execute(select(func.count()).select_from(AccessGrant))).scalar_one() == 8
-        assert (await db.execute(select(func.count()).select_from(Environment))).scalar_one() == 6
+        assert (await db.execute(select(func.count()).select_from(Environment))).scalar_one() == 9
         versions = (
             (
                 await db.execute(
@@ -312,3 +315,36 @@ def test_dev_seed_allows_the_mounted_deployments_directory_once(
     assert _allowed_paths(cli_environment).count(DEV_ALLOWED_ROOT) == 1
     assert runner.invoke(app, ["dev", "seed"]).exit_code == 1
     assert _allowed_paths(cli_environment).count(DEV_ALLOWED_ROOT) == 1
+
+
+async def test_service_figures_are_added_once_and_content_is_ciphertext(
+    seeded_database: AsyncEngine, seed_data: SeedData, crypto: CryptoService
+) -> None:
+    """The staging web files, runs and hook exist once, and the stored content is encrypted."""
+    async with create_session_factory(seeded_database)() as db:
+        before = [
+            (await db.execute(select(func.count()).select_from(table))).scalar_one()
+            for table in (Environment, DeployRun, DeployResult, ServiceHook)
+        ]
+        again = await ensure_service_figures(db, crypto)
+        await db.commit()
+        after = [
+            (await db.execute(select(func.count()).select_from(table))).scalar_one()
+            for table in (Environment, DeployRun, DeployResult, ServiceHook)
+        ]
+        stored = (
+            (
+                await db.execute(
+                    select(EnvironmentVersion).where(
+                        EnvironmentVersion.environment_id == seed_data.figures.tuning.id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    assert again is not None and again.tuning.id == seed_data.figures.tuning.id
+    assert before == after == [9, 5, 7, 1]
+    assert [version.number for version in stored] == [1, 2]
+    assert all("WORKERS" not in version.content_encrypted for version in stored)
+    assert crypto.decrypt_text(stored[1].content_encrypted) == "WORKERS=4\n"

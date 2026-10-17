@@ -1,0 +1,255 @@
+import type { Browser, Page } from '@playwright/test';
+
+import { expect, test } from '@playwright/test';
+
+import { deploymentId } from '../deployments-api';
+import { stateFile } from '../global-setup';
+import { serviceId } from '../services-api';
+
+const MD_BREAKPOINT = 768;
+const LG_BREAKPOINT = 1024;
+
+function width(page: Page): number {
+  return page.viewportSize()?.width ?? 0;
+}
+
+async function horizontalOverflow(page: Page): Promise<number> {
+  return page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+}
+
+function stagingWeb(browser: Browser): Promise<number> {
+  return serviceId(browser, 'rentals', 'staging', 'web');
+}
+
+function prodMysql(browser: Browser): Promise<number> {
+  return serviceId(browser, 'rentals', 'prod', 'mysql');
+}
+
+function header(page: Page) {
+  return page.locator('[data-fragment="page-header"]');
+}
+
+function environmentsPanel(page: Page) {
+  return page.locator('#environments');
+}
+
+/** Environment rows of whichever layout is visible: the table from md up, the list below. */
+function visibleRows(page: Page) {
+  const selector = width(page) >= MD_BREAKPOINT ? 'tr[data-env]' : 'li[data-fragment="env-row"]';
+  return environmentsPanel(page).locator(selector);
+}
+
+function statuses(page: Page) {
+  return environmentsPanel(page).locator(
+    width(page) >= MD_BREAKPOINT ? 'tr[data-env] [data-status]' : 'li [data-status]',
+  );
+}
+
+async function expectLayout(page: Page): Promise<void> {
+  const wide = width(page) >= MD_BREAKPOINT;
+  const table = environmentsPanel(page).locator('table');
+  if (wide) {
+    await expect(table).toBeVisible();
+  } else {
+    await expect(table).toBeHidden();
+  }
+  const explainer = page.locator('section[data-fragment="service-explainer"]');
+  const details = page.locator('details[data-fragment="service-explainer"]');
+  if (width(page) >= LG_BREAKPOINT) {
+    await expect(explainer).toBeVisible();
+    await expect(details).toBeHidden();
+  } else {
+    await expect(explainer).toBeHidden();
+    await expect(details).toBeVisible();
+  }
+  expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+}
+
+test.describe('superadmin', () => {
+  test('shows the header, every status, the read-only command and the history', async ({
+    page,
+    browser,
+  }) => {
+    const id = await stagingWeb(browser);
+    await page.goto(`/services/${id}`);
+
+    await expect(header(page).locator('h1')).toHaveText('web');
+    await expect(header(page)).toContainText('Service');
+    await expect(header(page).locator('[data-status]')).toHaveText(['1 pending']);
+    await expect(header(page).locator('p')).toContainText('Deployment staging in rentals');
+    await expect(header(page).locator('p')).toContainText('/opt/rentals/staging');
+    await expect(page.locator('nav[aria-label="Sections"] a')).toHaveText([
+      'Environments 4',
+      'Deploy history',
+    ]);
+    await expect(page.locator('nav[aria-label="Breadcrumb"] li')).toHaveText([
+      'Projects',
+      '/',
+      'rentals',
+      '/',
+      'staging',
+      '/',
+      'web',
+    ]);
+    await expectLayout(page);
+
+    await expect(visibleRows(page)).toHaveCount(4);
+    await expect(statuses(page)).toHaveText(['Deployed', 'Blocked', 'Pending', 'Never deployed']);
+    await expect(environmentsPanel(page).getByRole('link', { name: 'Add environment' })).toHaveAttribute(
+      'href',
+      `/services/${id}/environments/new`,
+    );
+    await expect(
+      environmentsPanel(page).getByRole('link', { name: 'Compare to dist' }).first(),
+    ).toBeVisible();
+
+    const postDeploy = page.locator('#postdeploy');
+    await expect(postDeploy).toContainText('by admin · exit code 0');
+    await expect(postDeploy.locator('pre').first()).toHaveText('web recreated');
+    await expect(postDeploy.locator('[data-fragment="postdeploy-settings"]')).toContainText(
+      'docker compose up -d --no-deps {service_name}',
+    );
+    await expect(postDeploy.getByRole('button')).toHaveCount(0);
+
+    await expect(page.locator('#hist [data-fragment="history-row"]')).toHaveCount(2);
+  });
+
+  test('is reached from the deployment page and lists a failed run', async ({ page, browser }) => {
+    const deployment = await deploymentId(browser, 'rentals', 'prod');
+    await page.goto(`/deployments/${deployment}`);
+    await page.locator('#services').getByRole('link', { name: 'Open' }).first().click();
+    await expect(page).toHaveURL(/\/services\/\d+$/);
+    await expect(header(page).locator('h1')).toHaveText('mysql');
+    await expect(statuses(page)).toHaveText(['Failed', 'Failed']);
+    await expect(page.locator('#postdeploy')).toContainText('Skipped');
+    await expect(page.locator('#postdeploy')).toContainText('deploy did not finish');
+    await expectLayout(page);
+  });
+
+  test('shows the empty states of a service without files or runs', async ({ page, browser }) => {
+    const id = await serviceId(browser, 'billing', 'legacy', 'cron');
+    await page.goto(`/services/${id}`);
+    await expect(environmentsPanel(page).locator('[data-fragment="empty-state"]')).toContainText(
+      'No environments yet',
+    );
+    await expect(
+      environmentsPanel(page).getByRole('link', { name: 'Add environment' }),
+    ).toHaveCount(2);
+    await expect(page.locator('#hist [data-fragment="empty-state"]')).toContainText('No deploys yet');
+    await expect(page.locator('#postdeploy')).toContainText('No deploys yet.');
+    await expect(page.locator('#postdeploy')).toContainText('No post-deploy command is set');
+    expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+  });
+
+  test('the panels refresh from their own fragment URLs', async ({ page, browser }) => {
+    const id = await stagingWeb(browser);
+    await page.goto(`/services/${id}`);
+    for (const [name, fragment] of [
+      ['environments', 'environments-table'],
+      ['postdeploy', 'postdeploy-panel'],
+      ['history', 'deploy-history'],
+    ]) {
+      const response = await page.request.get(`/services/${id}/${name}`, {
+        headers: { 'HX-Request': 'true' },
+      });
+      expect(response.status()).toBe(200);
+      expect(response.headers()['cache-control']).toBe('no-store');
+      expect(await response.text()).toContain(`data-fragment="${fragment}"`);
+    }
+  });
+});
+
+test.describe('admin', () => {
+  test.use({ storageState: stateFile('admin') });
+
+  test('edits, checks dist and reads output but sees no command or structure actions', async ({
+    page,
+    browser,
+  }) => {
+    const id = await stagingWeb(browser);
+    await page.goto(`/services/${id}`);
+    await expectLayout(page);
+    await expect(visibleRows(page)).toHaveCount(4);
+    await expect(environmentsPanel(page).getByRole('link', { name: 'Edit' }).first()).toBeVisible();
+    await expect(environmentsPanel(page).getByRole('link', { name: 'Compare to dist' }).first()).toBeVisible();
+    await expect(environmentsPanel(page).getByRole('link', { name: 'Add environment' })).toHaveCount(0);
+    const postDeploy = page.locator('#postdeploy');
+    await expect(postDeploy.locator('pre')).toHaveText('web recreated');
+    await expect(postDeploy).toContainText('Command text and settings are visible to the superadmin only.');
+    await expect(page.locator('[data-fragment="postdeploy-settings"]')).toHaveCount(0);
+  });
+});
+
+test.describe('viewer', () => {
+  test.use({ storageState: stateFile('viewer') });
+
+  test('is read only: view and history, status only post-deploy', async ({ page, browser }) => {
+    const id = await stagingWeb(browser);
+    await page.goto(`/services/${id}`);
+    await expectLayout(page);
+    await expect(page.locator('[role="note"]').first()).toContainText(
+      'Read-only view. Editing and deploying are not available for the Viewer group.',
+    );
+    const panel = environmentsPanel(page);
+    await expect(panel.getByRole('link', { name: 'View' }).first()).toBeVisible();
+    await expect(panel.getByRole('link', { name: 'History' }).first()).toBeVisible();
+    for (const absent of ['Edit', 'Compare to dist', 'Add environment']) {
+      await expect(panel.getByRole('link', { name: absent })).toHaveCount(0);
+    }
+    const postDeploy = page.locator('#postdeploy');
+    await expect(postDeploy).toContainText('Output and command text are not available for the Viewer group.');
+    await expect(postDeploy.locator('pre')).toHaveCount(0);
+    await expect(postDeploy).not.toContainText('by admin');
+  });
+});
+
+test.describe('environment grant', () => {
+  test.use({ storageState: stateFile('envScopedAdmin') });
+
+  test('sees one file, notes the limit and never names the others', async ({ page, browser }) => {
+    const id = await prodMysql(browser);
+    await page.goto(`/services/${id}`);
+    await expectLayout(page);
+    await expect(visibleRows(page)).toHaveCount(1);
+    await expect(page.locator('nav[aria-label="Sections"] a').first()).toHaveText('Environments 1');
+    await expect(page.locator('main')).toContainText(
+      'You see 1 environment of this service. Deploys write only the environments you can see.',
+    );
+    await expect(page.locator('#postdeploy')).toContainText(
+      'This service also loads environments outside your access.',
+    );
+    await expect(header(page).locator('p')).not.toContainText('/opt/rentals');
+    await expect(page.locator('main')).not.toContainText('.env.db.secrets');
+  });
+});
+
+test.describe('deployment grant', () => {
+  test.use({ storageState: stateFile('deploymentAdmin') });
+
+  test('sees the root path and every file of the service', async ({ page, browser }) => {
+    const id = await prodMysql(browser);
+    await page.goto(`/services/${id}`);
+    await expect(header(page).locator('p')).toContainText('/opt/rentals/prod');
+    await expect(visibleRows(page)).toHaveCount(2);
+    await expect(page.locator('[role="note"]')).toHaveCount(0);
+  });
+});
+
+test.describe('no access', () => {
+  test.use({ storageState: stateFile('ungrantedAdmin') });
+
+  test('a service outside the scope answers 404 on the page and every panel', async ({
+    page,
+    browser,
+  }) => {
+    const id = await prodMysql(browser);
+    for (const suffix of ['', '/environments', '/postdeploy', '/history']) {
+      const response = await page.request.get(`/services/${id}${suffix}`, {
+        headers: suffix ? { 'HX-Request': 'true' } : {},
+      });
+      expect(response.status()).toBe(404);
+    }
+  });
+});

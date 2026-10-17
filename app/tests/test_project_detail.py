@@ -43,7 +43,10 @@ async def test_superadmin_sees_every_deployment_with_state(
     assert prod.last_deploy.status is DeployStatus.FAILED
     assert prod.last_deploy.actor == "root"
     assert prod.flags == (DeployStatus.FAILED,)
-    assert staging.last_deploy is None and staging.flags == ()
+    assert staging.files == 4
+    assert staging.last_deploy is not None
+    assert staging.last_deploy.status is DeployStatus.SUCCESS
+    assert staging.flags == ()
     assert detail.attention == 1
     assert detail.members == 6
     assert detail.limited_to == ()
