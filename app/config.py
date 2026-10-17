@@ -22,6 +22,7 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="ENVMANAGER_", extra="ignore")
 
+    key: SecretStr | None = None
     key_file: Path | None = None
     base_url: str = "http://localhost:8080"
     port: int = 8080
