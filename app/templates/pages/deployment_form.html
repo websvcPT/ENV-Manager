@@ -1,0 +1,13 @@
+{#- Deployment create and edit page: heading, the form and the root path picker dialog.
+    Context: title, project_id, project_name, the form fragment context and picker. -#}
+{% extends "layouts/app.html" %}
+{% from "macros/panels.html" import page_header %}
+{% set active_nav = "projects" %}
+{% set breadcrumbs = [("Projects", "/projects"), (project_name, "/projects/" ~ project_id), (title, none)] %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+{% set superadmin_tag %}<span class="rounded-md bg-mute-bg px-1.5 py-px text-[11px] font-semibold text-mute-fg">Superadmin</span>{% endset %}
+{{ page_header(title, "Post-deploy commands are configured per service, not here.", badges=superadmin_tag) }}
+{% include "fragments/deployment_form.html" %}
+<dialog id="path-picker" aria-labelledby="path-picker-t" class="m-auto max-h-[92vh] w-[640px] max-w-[calc(100%_-_1.5rem)] overflow-auto rounded-dialog bg-surface p-0 text-ink shadow-dialog backdrop:bg-scrim">{% include "fragments/path_picker.html" %}</dialog>
+{% endblock %}

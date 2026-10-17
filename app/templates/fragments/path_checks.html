@@ -1,0 +1,11 @@
+{#- The lines under the root path field: a hint, or one line per check with icon plus text.
+    Context: root_check (a RootCheck or none) and root_error (optional message shown when there
+    are no check lines). Swapped into the field's message list while the person types. -#}
+{% from "macros/icons.html" import icon %}
+{% if root_check and root_check.lines %}
+{% for line in root_check.lines %}<li class="flex items-center gap-2 text-[13px] {{ 'text-ok-fg' if line.ok else 'font-semibold text-err-fg' }}">{{ icon("check" if line.ok else "close", "size-3.5", "2.6") }}<span class="text-ink">{{ line.text }}</span></li>{% endfor %}
+{% elif root_error | default(none) %}
+<li class="flex items-center gap-2 text-[13px] font-semibold text-err-fg">{{ icon("close", "size-3.5", "2.6") }}<span class="text-ink">{{ root_error }}</span></li>
+{% else %}
+<li class="text-[13px] text-ink2">Choose a path under an allowed path. It is validated as you type.</li>
+{% endif %}

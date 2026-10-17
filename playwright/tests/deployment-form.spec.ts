@@ -1,0 +1,340 @@
+import type { Browser, Page } from '@playwright/test';
+
+import { deploymentId } from '../deployments-api';
+import { stateFile, SUPERADMIN_STATE } from '../global-setup';
+import { listProjects } from '../projects-api';
+import { expect, test } from './scratch-project';
+
+const ALLOWED_ROOT = '/srv/deployments';
+const SAMPLE_A = `${ALLOWED_ROOT}/sample-a`;
+const SAMPLE_B = `${ALLOWED_ROOT}/sample-b`;
+const WIDE_BREAKPOINT = 768;
+
+function isWide(page: Page): boolean {
+  return (page.viewportSize()?.width ?? 0) >= WIDE_BREAKPOINT;
+}
+
+async function horizontalOverflow(page: Page): Promise<number> {
+  return page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+}
+
+async function seededProjectId(browser: Browser, name: string): Promise<number> {
+  const context = await browser.newContext({ storageState: SUPERADMIN_STATE });
+  try {
+    const found = (await listProjects(context.request, name)).find(([, listed]) => listed === name);
+    if (!found) {
+      throw new Error(`seeded project ${name} is missing`);
+    }
+    return found[0];
+  } finally {
+    await context.close();
+  }
+}
+
+function form(page: Page) {
+  return page.locator('#deployment-form');
+}
+
+function rootLines(page: Page) {
+  return page.locator('#root-v li');
+}
+
+function picker(page: Page) {
+  return page.locator('#path-picker');
+}
+
+async function fillCreateForm(page: Page, name: string, root: string): Promise<void> {
+  await page.locator('#name').fill(name);
+  await page.locator('#root').fill(root);
+}
+
+async function createDeployment(page: Page, projectId: number, name: string, root: string) {
+  await page.goto(`/projects/${projectId}/deployments/new`);
+  await fillCreateForm(page, name, root);
+  await form(page).getByRole('button', { name: 'Create deployment' }).click();
+  await expect(page).toHaveURL(/\/deployments\/\d+$/);
+  return Number(page.url().split('/').pop());
+}
+
+function fillOf(page: Page, radioName: string, value: string) {
+  return page
+    .locator(`input[name="${radioName}"][value="${value}"]`)
+    .locator('xpath=ancestor::label')
+    .evaluate((label) => getComputedStyle(label).backgroundColor);
+}
+
+test.describe('superadmin create', () => {
+  test('shows the empty form with its sections, defaults and picker entry', async ({
+    page,
+    scratch,
+  }) => {
+    await page.goto(`/projects/${scratch.id}/deployments/new`);
+    await expect(page.locator('[data-fragment="page-header"] h1')).toHaveText('New deployment');
+    await expect(page.locator('[data-fragment="page-header"] p')).toHaveText(
+      'Post-deploy commands are configured per service, not here.',
+    );
+    await expect(page.locator('nav[aria-label="Breadcrumb"] li')).toHaveText([
+      'Projects',
+      '/',
+      scratch.name,
+      '/',
+      'New deployment',
+    ]);
+    await expect(form(page)).toHaveAttribute('hx-post', `/projects/${scratch.id}/deployments`);
+    await expect(form(page).locator('[data-fragment="form-section"] h2')).toHaveText([
+      'General',
+      'Deploy policies',
+      'File defaults',
+    ]);
+    await expect(page.locator('#name')).toHaveValue('');
+    await expect(page.locator('#root')).toHaveValue('');
+    await expect(page.locator('#mode')).toHaveValue('0600');
+    await expect(page.locator('input[name="dist_missing_policy"]:checked')).toHaveValue('block');
+    await expect(page.locator('input[name="drift_policy"]:checked')).toHaveValue('halt');
+    await expect(page.locator('input[name="missing_target_policy"]:checked')).toHaveValue('create');
+    await expect(rootLines(page)).toHaveText([
+      'Choose a path under an allowed path. It is validated as you type.',
+    ]);
+    await expect(page.getByRole('link', { name: 'Cancel' })).toHaveAttribute(
+      'href',
+      `/projects/${scratch.id}`,
+    );
+    if (!isWide(page)) {
+      expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+    }
+  });
+
+  test('validates the root path as the person types', async ({ page, scratch }) => {
+    await page.goto(`/projects/${scratch.id}/deployments/new`);
+    const root = page.locator('#root');
+
+    await root.fill('/etc');
+    await expect(rootLines(page)).toHaveCount(1);
+    await expect(rootLines(page).first()).toContainText('Path is outside the allowed paths (');
+    await expect(rootLines(page).first()).toContainText(ALLOWED_ROOT);
+    await expect(rootLines(page).first()).not.toContainText('exist');
+    await expect(rootLines(page).first()).toHaveClass(/text-err-fg/);
+
+    await root.fill(SAMPLE_A);
+    await expect(rootLines(page)).toHaveText([
+      `Inside allowed path ${ALLOWED_ROOT}`,
+      'Exists, mounted and writable',
+    ]);
+    await expect(rootLines(page).first()).toHaveClass(/text-ok-fg/);
+
+    await root.fill(`${ALLOWED_ROOT}/missing-folder`);
+    await expect(rootLines(page)).toHaveText([
+      `Inside allowed path ${ALLOWED_ROOT}`,
+      'Path does not exist.',
+    ]);
+
+    await root.fill(`${ALLOWED_ROOT}/plain-file.txt`);
+    await expect(rootLines(page)).toHaveText([
+      `Inside allowed path ${ALLOWED_ROOT}`,
+      'Path is not a directory.',
+    ]);
+
+    await root.fill('relative/path');
+    await expect(rootLines(page)).toHaveText(['Path must be absolute.']);
+
+    await root.fill('');
+    await expect(rootLines(page)).toHaveText([
+      'Choose a path under an allowed path. It is validated as you type.',
+    ]);
+  });
+
+  test('browses inside the allowed paths only and fills the field', async ({ page, scratch }) => {
+    await page.goto(`/projects/${scratch.id}/deployments/new`);
+    await page.getByRole('button', { name: 'Browse…' }).click();
+    await expect(picker(page)).toBeVisible();
+    await expect(picker(page).locator('h2')).toHaveText('Choose root path');
+    const entries = picker(page).locator('nav[aria-label="Allowed paths"] li button');
+    await expect(entries.filter({ hasText: ALLOWED_ROOT }).first()).toContainText('allowed root');
+    await expect(entries.filter({ hasText: SAMPLE_A })).toHaveCount(1);
+    await expect(entries.filter({ hasText: SAMPLE_B })).toHaveCount(1);
+    await expect(entries.filter({ hasText: 'plain-file.txt' })).toHaveCount(0);
+    await expect(picker(page).getByRole('button', { name: 'Use this path' })).toBeDisabled();
+
+    await entries.filter({ hasText: SAMPLE_A }).click();
+    await expect(picker(page).locator('[data-fragment="path-picker"]')).toContainText(
+      `Folder ${SAMPLE_A}`,
+    );
+    await expect(entries.filter({ hasText: `${SAMPLE_A}/nested` })).toHaveCount(1);
+    await expect(entries.filter({ hasText: 'Up one level' })).toHaveCount(1);
+
+    await entries.filter({ hasText: `${SAMPLE_A}/nested` }).click();
+    await expect(picker(page)).toContainText('No folders inside this one.');
+    await entries.filter({ hasText: 'Up one level' }).click();
+    await expect(picker(page)).toContainText(`Folder ${SAMPLE_A}`);
+
+    await picker(page).getByRole('button', { name: 'Use this path' }).click();
+    await expect(picker(page)).toBeHidden();
+    await expect(page.locator('#root')).toHaveValue(SAMPLE_A);
+    await expect(rootLines(page)).toHaveText([
+      `Inside allowed path ${ALLOWED_ROOT}`,
+      'Exists, mounted and writable',
+    ]);
+
+    await page.getByRole('button', { name: 'Browse…' }).click();
+    await picker(page).getByRole('button', { name: 'Cancel' }).click();
+    await expect(picker(page)).toBeHidden();
+    await expect(page.locator('#root')).toHaveValue(SAMPLE_A);
+    if (!isWide(page)) {
+      expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+    }
+  });
+
+  test('policy choice moves the highlighted option', async ({ page, scratch }) => {
+    await page.goto(`/projects/${scratch.id}/deployments/new`);
+    const selected = await fillOf(page, 'drift_policy', 'halt');
+    const plain = await fillOf(page, 'drift_policy', 'overwrite');
+    expect(selected).not.toBe(plain);
+    await page.getByLabel('Back up, then overwrite').check();
+    expect(await fillOf(page, 'drift_policy', 'halt')).toBe(plain);
+    expect(await fillOf(page, 'drift_policy', 'backup_overwrite')).toBe(selected);
+  });
+
+  test('creates a deployment and lands on its page', async ({ page, scratch }) => {
+    await page.goto(`/projects/${scratch.id}/deployments/new`);
+    await fillCreateForm(page, 'created-one', SAMPLE_A);
+    await page.locator('input[name="drift_policy"][value="overwrite"]').check();
+    await page.getByLabel('Warn and continue').check();
+    await page.locator('#mode').fill('640');
+    await page.locator('#owner').fill('www-data');
+    await page.locator('#group').fill('www-data');
+    await form(page).getByRole('button', { name: 'Create deployment' }).click();
+
+    await expect(page).toHaveURL(/\/deployments\/\d+$/);
+    await expect(page.locator('[data-fragment="page-header"] h1')).toHaveText('created-one');
+    await expect(page.locator('[data-fragment="page-header"] p')).toContainText(
+      `Project ${scratch.name} · ${SAMPLE_A}`,
+    );
+    const policies = page.locator('[data-fragment="policies-panel"]');
+    await expect(policies).toContainText('Warn and continue');
+    await expect(policies).toContainText('Overwrite');
+    await expect(policies).toContainText('0640, www-data:www-data');
+    await page.goto(`/projects/${scratch.id}`);
+    await expect(
+      page.locator('#deployments-table [data-fragment="deployment-row"] th[scope="row"] a'),
+    ).toHaveText(['created-one']);
+  });
+
+  test('refuses bad values with every message and keeps what was typed', async ({
+    page,
+    scratch,
+  }) => {
+    await createDeployment(page, scratch.id, 'taken-name', SAMPLE_A);
+    await page.goto(`/projects/${scratch.id}/deployments/new`);
+    await fillCreateForm(page, 'taken-name', '/etc');
+    await page.locator('#mode').fill('12');
+    await form(page).getByRole('button', { name: 'Create deployment' }).click();
+
+    await expect(page).toHaveURL(`/projects/${scratch.id}/deployments/new`);
+    await expect(page.locator('#name-e')).toHaveText(
+      'A deployment named taken-name already exists in this project.',
+    );
+    await expect(page.locator('#name')).toHaveValue('taken-name');
+    await expect(page.locator('#root')).toHaveValue('/etc');
+    await expect(page.locator('#root')).toHaveAttribute('aria-invalid', 'true');
+    await expect(rootLines(page)).toHaveCount(1);
+    await expect(rootLines(page).first()).toContainText('Path is outside the allowed paths');
+    await expect(page.locator('#mode-e')).toHaveText('Use an octal mode such as 0600.');
+
+    await page.locator('#name').fill('');
+    await page.locator('#root').fill('');
+    await page.locator('#mode').fill('0600');
+    await form(page).getByRole('button', { name: 'Create deployment' }).click();
+    await expect(page.locator('#name-e')).toHaveText('Enter a deployment name.');
+    await expect(rootLines(page)).toHaveText(['Enter a root path.']);
+    await expect(page.locator('#deployment-form')).toHaveCount(1);
+  });
+});
+
+test.describe('superadmin edit', () => {
+  test('opens prefilled with the root checks and saves the changes', async ({ page, scratch }) => {
+    const id = await createDeployment(page, scratch.id, 'edit-me', SAMPLE_A);
+    await page.goto(`/deployments/${id}/edit`);
+    await expect(page.locator('[data-fragment="page-header"] h1')).toHaveText('Edit edit-me');
+    await expect(page.locator('nav[aria-label="Breadcrumb"] li').last()).toHaveText('Edit edit-me');
+    await expect(form(page)).toHaveAttribute('hx-post', `/deployments/${id}/edit`);
+    await expect(page.locator('#name')).toHaveValue('edit-me');
+    await expect(page.locator('#root')).toHaveValue(SAMPLE_A);
+    await expect(rootLines(page)).toHaveText([
+      `Inside allowed path ${ALLOWED_ROOT}`,
+      'Exists, mounted and writable',
+    ]);
+    await expect(page.locator('input[name="drift_policy"]:checked')).toHaveValue('halt');
+    await expect(form(page).getByRole('button', { name: 'Save deployment' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Cancel' })).toHaveAttribute(
+      'href',
+      `/deployments/${id}`,
+    );
+
+    await page.locator('#name').fill('edited-name');
+    await page.locator('#root').fill(SAMPLE_B);
+    await page.getByLabel('Back up, then overwrite').check();
+    await page.locator('#group').fill('deploy');
+    await form(page).getByRole('button', { name: 'Save deployment' }).click();
+
+    await expect(page).toHaveURL(`/deployments/${id}?saved=true`);
+    await expect(page.locator('[data-fragment="toast"]')).toContainText('Deployment saved');
+    await expect(page.locator('[data-fragment="page-header"] h1')).toHaveText('edited-name');
+    await expect(page.locator('[data-fragment="page-header"] p')).toContainText(SAMPLE_B);
+    await expect(page.locator('[data-fragment="policies-panel"]')).toContainText(
+      'Back up, then overwrite',
+    );
+    await expect(page.locator('[data-fragment="policies-panel"]')).toContainText(':deploy');
+  });
+
+  test('refuses an edit that leaves the allowed paths', async ({ page, scratch }) => {
+    const id = await createDeployment(page, scratch.id, 'stay-inside', SAMPLE_A);
+    await page.goto(`/deployments/${id}/edit`);
+    await page.locator('#root').fill('/etc');
+    await form(page).getByRole('button', { name: 'Save deployment' }).click();
+    await expect(page).toHaveURL(`/deployments/${id}/edit`);
+    await expect(rootLines(page)).toHaveCount(1);
+    await expect(rootLines(page).first()).toContainText('Path is outside the allowed paths');
+    await page.goto(`/deployments/${id}`);
+    await expect(page.locator('[data-fragment="page-header"] p')).toContainText(SAMPLE_A);
+  });
+
+  test('a deployment outside the allowed paths shows its error and must move', async ({
+    page,
+    browser,
+  }) => {
+    const legacy = await deploymentId(browser, 'billing', 'legacy');
+    await page.goto(`/deployments/${legacy}/edit`);
+    await expect(page.locator('#root')).toHaveValue('/srv/old/legacy');
+    await expect(rootLines(page)).toHaveCount(1);
+    await expect(rootLines(page).first()).toContainText('Path is outside the allowed paths');
+    await expect(page.locator('#root')).not.toHaveAttribute('aria-invalid', 'true');
+    await form(page).getByRole('button', { name: 'Save deployment' }).click();
+    await expect(page).toHaveURL(`/deployments/${legacy}/edit`);
+    await expect(page.locator('#root')).toHaveAttribute('aria-invalid', 'true');
+  });
+});
+
+for (const user of ['admin', 'viewer'] as const) {
+  test.describe(`${user} is refused`, () => {
+    test.use({ storageState: stateFile(user) });
+
+    test('the form pages and the path helpers answer 403', async ({
+      page,
+      browser,
+      request,
+    }) => {
+      const rentals = await seededProjectId(browser, 'rentals');
+      const prod = await deploymentId(browser, 'rentals', 'prod');
+      for (const url of [`/projects/${rentals}/deployments/new`, `/deployments/${prod}/edit`]) {
+        const response = await page.goto(url);
+        expect(response?.status()).toBe(403);
+      }
+      expect((await request.get('/paths/validate?root=/etc')).status()).toBe(403);
+      expect((await request.get('/paths/browse')).status()).toBe(403);
+      await page.goto(`/projects/${rentals}`);
+      await expect(page.getByRole('link', { name: 'New deployment' })).toHaveCount(0);
+    });
+  });
+}

@@ -1,8 +1,8 @@
 /* ENV Manager page behaviour. Vanilla JS in an external file (strict CSP, no inline scripts).
    Handlers are delegated from the document so content swapped in by htmx works without rebinding.
    Behaviours: theme toggle, dialogs, sidebar collapse, reveal timer, row toggle, tree toggle,
-   copy, dismiss, history back, closing dialogs when the server asks, and a toast when an htmx
-   request fails. */
+   copy, dismiss, history back, picking a path into a field, closing dialogs when the server
+   asks, and a toast when an htmx request fails. */
 (function () {
   'use strict';
 
@@ -130,6 +130,16 @@
       applyTree();
     },
     'copy': copySecret,
+    'pick-path': function (control) {
+      var input = document.getElementById(control.getAttribute('data-target'));
+      var path = control.getAttribute('data-path');
+      var dialog = control.closest('dialog');
+      if (!input || !path) { return; }
+      input.value = path;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      if (dialog) { dialog.close(); }
+      input.focus();
+    },
     'dismiss': function (button) {
       var toast = button.closest('[data-fragment=toast]');
       if (toast) { toast.remove(); }

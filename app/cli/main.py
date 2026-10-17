@@ -22,6 +22,7 @@ from app.seeds import (
     SeedError,
     ensure_activity,
     ensure_deployment_history,
+    ensure_dev_host_paths,
     ensure_totp_user,
 )
 from app.seeds import seed as seed_data
@@ -166,7 +167,7 @@ def seed_dataset() -> None:
     """Create the development dataset with its fixed dev-only passwords.
 
     An already seeded database is left alone except for users, deploy runs and tokens that
-    were added to the dataset later.
+    were added to the dataset later, and it always allows the development deployments directory.
     """
     _require_development_environment("seeding")
 
@@ -175,11 +176,14 @@ def seed_dataset() -> None:
         crypto = build_crypto_service(settings.key, settings.key_file)
         try:
             await seed_data(db, crypto)
+            await ensure_dev_host_paths(db)
+            await db.commit()
         except SeedError:
             for name in (TOTP_USER_NAME, TOTP_ALT_USER_NAME):
                 await ensure_totp_user(db, crypto, name)
             await ensure_activity(db)
             await ensure_deployment_history(db)
+            await ensure_dev_host_paths(db)
             await db.commit()
             raise
 

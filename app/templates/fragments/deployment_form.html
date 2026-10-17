@@ -1,0 +1,42 @@
+{#- The deployment form, shared by create and edit. A refused submit swaps this form again with
+    the messages. Context: form (DeploymentForm), errors (field name to message), root_check,
+    action, submit_label and cancel_href. -#}
+{% from "macros/buttons.html" import button %}
+{% from "macros/forms.html" import field, radio_option %}
+{% from "macros/panels.html" import panel %}
+{% set policy_groups = [
+  ("dist_missing_policy", "Dist keys missing from environment", form.dist_missing_policy, [
+    ("block", "Block", "Stop the deploy."),
+    ("warn", "Warn and continue", "Deploy and report.")]),
+  ("drift_policy", "Target changed outside the app (drift)", form.drift_policy, [
+    ("halt", "Halt", "Stop and show drift."),
+    ("overwrite", "Overwrite", "Replace the target."),
+    ("backup_overwrite", "Back up, then overwrite", "Keep a copy next to it.")]),
+  ("missing_target_policy", "Target file does not exist", form.missing_target_policy, [
+    ("create", "Create", "Write the new file."),
+    ("halt", "Halt", "Stop the deploy.")])
+] %}
+<form hx-post="{{ action }}" hx-target="#deployment-form" hx-swap="outerHTML" hx-status:422="swap:outerHTML target:#deployment-form" id="deployment-form" data-fragment="deployment-form" class="flex max-w-3xl flex-col gap-5">
+{% call panel("General", "deployment-general-title", fragment="form-section") %}
+<div class="flex flex-col gap-4 px-4 pb-5 md:px-5">
+{{ field("name", "Name", name="name", value=form.name, placeholder="deployment-a", error=errors.get("name"), extra_class="max-w-md", autocomplete="off", maxlength="100") }}
+<div class="flex flex-col gap-1.5"><label for="root" class="text-[13px] font-semibold">Root path</label><div class="flex gap-2"><input id="root" name="root" type="text" value="{{ form.root }}" placeholder="/var/www/vhosts/…" aria-describedby="root-v"{% if errors.get("root") %} aria-invalid="true"{% endif %} autocomplete="off" spellcheck="false" class="h-10 w-full rounded-ctl border {{ "border-danger" if errors.get("root") else "border-line-strong" }} bg-surface px-3 text-sm text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus font-mono text-[13px]">{{ button("Browse…", data_js="dialog-open", data_target="path-picker", aria_haspopup="dialog") }}</div>
+<ul id="root-v" class="m-0 flex list-none flex-col gap-1" hx-get="/paths/validate" hx-trigger="input changed delay:400ms from:#root" hx-include="#root" hx-swap="innerHTML" aria-live="polite">{% with root_error = errors.get("root") %}{% include "fragments/path_checks.html" %}{% endwith %}</ul></div>
+</div>
+{% endcall %}
+{% call panel("Deploy policies", "deployment-policies-title", fragment="form-section") %}
+<div class="grid gap-5 px-4 pb-5 md:px-5 lg:grid-cols-3">
+{% for name, legend, current, options in policy_groups %}<fieldset class="min-w-0"><legend class="mb-2 text-[13px] font-semibold">{{ legend }}</legend><div class="flex flex-col gap-2">{% for value, label, description in options %}{{ radio_option(name, value, label, description, checked=(value == current)) }}{% endfor %}</div></fieldset>{% endfor %}
+</div>
+{% if errors.get("policies") %}<p role="alert" class="px-4 pb-4 text-[13px] font-semibold text-danger md:px-5">{{ errors.get("policies") }}</p>{% endif %}
+<p class="px-4 pb-4 text-[13px] text-ink2 md:px-5">Each environment can override these policies.</p>
+{% endcall %}
+{% call panel("File defaults", "deployment-files-title", fragment="form-section") %}
+<div class="grid gap-4 px-4 pb-5 md:px-5 sm:grid-cols-3">
+{{ field("mode", "Default file mode", name="file_mode", value=form.file_mode, mono=true, error=errors.get("file_mode"), autocomplete="off", maxlength="4") }}
+{{ field("owner", "Owner", name="file_owner", value=form.file_owner, mono=true, placeholder="app user", error=errors.get("file_owner"), autocomplete="off", maxlength="64") }}
+{{ field("group", "Group", name="file_group", value=form.file_group, mono=true, placeholder="app user", error=errors.get("file_group"), autocomplete="off", maxlength="64") }}
+</div>
+{% endcall %}
+<div class="flex flex-wrap gap-3">{{ button(submit_label, kind="primary", type="submit") }}{{ button("Cancel", href=cancel_href, extra_class="h-11") }}</div>
+</form>

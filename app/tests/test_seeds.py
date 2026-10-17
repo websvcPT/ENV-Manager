@@ -18,6 +18,7 @@ from app.core.migrations import migrate_database
 from app.core.passwords import verify_password
 from app.models import (
     AccessGrant,
+    AllowedPath,
     ApiToken,
     ApiTokenRestriction,
     AuditEntry,
@@ -29,7 +30,15 @@ from app.models import (
     User,
 )
 from app.models.types import utc_now
-from app.seeds import DEV_PASSWORD, DEV_TOTP_SECRET, SeedData, SeedError, ensure_activity, seed
+from app.seeds import (
+    DEV_ALLOWED_ROOT,
+    DEV_PASSWORD,
+    DEV_TOTP_SECRET,
+    SeedData,
+    SeedError,
+    ensure_activity,
+    seed,
+)
 from app.services import totp
 from app.tests.auth_helpers import make_user
 
@@ -262,3 +271,44 @@ async def test_audit_history_is_added_once_with_scope_ids(
     assert file_save.deployment_id == seed_data.deployments.rentals_prod.id
     assert file_save.service_id == seed_data.services.mysql.id
     assert file_save.environment_id == seed_data.envs.db.id
+
+
+def _allowed_paths(data_path: Path) -> list[str]:
+    """Allowed path entries in the CLI's database, sorted."""
+
+    async def read() -> list[str]:
+        engine = create_engine(data_path / "envmanager.db")
+        try:
+            async with create_session_factory(engine)() as db:
+                rows = await db.execute(select(AllowedPath.path).order_by(AllowedPath.path))
+                return list(rows.scalars())
+        finally:
+            await engine.dispose()
+
+    return asyncio.run(read())
+
+
+def test_dev_seed_allows_the_mounted_deployments_directory_once(
+    cli_environment: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The command adds the directory the dev stack mounts, also to an already seeded database."""
+    monkeypatch.setenv("ENVMANAGER_ENVIRONMENT", "development")
+    get_settings.cache_clear()
+    assert runner.invoke(app, ["dev", "seed"]).exit_code == 0
+    assert DEV_ALLOWED_ROOT in _allowed_paths(cli_environment)
+
+    async def forget() -> None:
+        engine = create_engine(cli_environment / "envmanager.db")
+        try:
+            async with create_session_factory(engine)() as db:
+                await db.execute(delete(AllowedPath).where(AllowedPath.path == DEV_ALLOWED_ROOT))
+                await db.commit()
+        finally:
+            await engine.dispose()
+
+    asyncio.run(forget())
+    assert DEV_ALLOWED_ROOT not in _allowed_paths(cli_environment)
+    assert runner.invoke(app, ["dev", "seed"]).exit_code == 1
+    assert _allowed_paths(cli_environment).count(DEV_ALLOWED_ROOT) == 1
+    assert runner.invoke(app, ["dev", "seed"]).exit_code == 1
+    assert _allowed_paths(cli_environment).count(DEV_ALLOWED_ROOT) == 1

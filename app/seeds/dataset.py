@@ -99,6 +99,9 @@ TOTP_ALT_USER_NAME = "totp_user_alt"
 # Root of the seeded deployment that lies outside every allowed path.
 LEGACY_ROOT = "/srv/old/legacy"
 
+# Directory the development compose file mounts for deployments; the development seed allows it.
+DEV_ALLOWED_ROOT = "/srv/deployments"
+
 
 class SeedError(Exception):
     """The dataset cannot be created."""
@@ -512,6 +515,21 @@ async def ensure_deployment_history(db: AsyncSession) -> None:
                 )
             )
     await db.flush()
+
+
+async def ensure_dev_host_paths(db: AsyncSession) -> None:
+    """Allow the directory the development stack mounts, so the deployment form has real folders.
+
+    Used by the development seed command only: the test dataset has no host directory to
+    point at. The caller commits.
+    """
+    existing = (
+        await db.execute(select(AllowedPath).where(AllowedPath.path == DEV_ALLOWED_ROOT))
+    ).scalar_one_or_none()
+    if existing is not None:
+        return
+    superadmin = (await db.execute(select(User).where(User.name == "root"))).scalar_one_or_none()
+    db.add(AllowedPath(path=DEV_ALLOWED_ROOT, created_by_id=superadmin.id if superadmin else None))
 
 
 async def seed(db: AsyncSession, crypto: CryptoService) -> SeedData:

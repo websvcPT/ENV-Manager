@@ -80,10 +80,12 @@ def _page_context(access: DeploymentContext, **extra: Any) -> dict[str, Any]:
 
 @router.get("/deployments/{deployment_id:int}", include_in_schema=False)
 async def deployment_page(
-    request: Request, access: Annotated[DeploymentContext, Depends(deployment_access())]
+    request: Request,
+    access: Annotated[DeploymentContext, Depends(deployment_access())],
+    saved: bool = False,
 ) -> Response:
-    """The deployment detail page."""
-    return render(request, "pages/deployment.html", _page_context(access))
+    """The deployment detail page; ``saved`` shows the toast after the edit form saved."""
+    return render(request, "pages/deployment.html", _page_context(access, saved=saved))
 
 
 @router.get("/deployments/{deployment_id:int}/services", include_in_schema=False)

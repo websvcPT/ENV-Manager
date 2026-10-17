@@ -1,10 +1,10 @@
 {#- Deployment detail: header, scope note, section links, status strip, services, deploy history
-    and policies. Context: deployment (a DeploymentDetail), can_manage_structure,
+    and policies. Context: deployment (a DeploymentDetail), saved (optional), can_manage_structure,
     can_view_output. -#}
 {% extends "layouts/app.html" %}
 {% from "macros/badges.html" import badge, deploy_status_badge, post_deploy_badge %}
 {% from "macros/buttons.html" import button %}
-{% from "macros/feedback.html" import note %}
+{% from "macros/feedback.html" import note, toast %}
 {% from "macros/panels.html" import page_header, panel, tabs, text_link %}
 {% set active_nav = "projects" %}
 {% set breadcrumbs = [("Projects", "/projects"), (deployment.project_name, "/projects/" ~ deployment.project_id), (deployment.name, none)] %}
@@ -39,4 +39,5 @@
 </dl></div>
 {% endcall %}
 {% endif %}
+{% if saved | default(false) %}{{ toast("success", "The changes to " ~ deployment.name ~ " are saved.", "Deployment saved", floating=true) }}{% endif %}
 {% endblock %}

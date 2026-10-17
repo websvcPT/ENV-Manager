@@ -1,0 +1,22 @@
+{#- The contents of the root path picker dialog. Browsing is limited to the allowed paths: the
+    top list shows each allowed root with its folders, and choosing a folder lists the folders
+    inside it. Context: picker (a BrowseView) and picker_error (optional). -#}
+{% from "macros/buttons.html" import button, icon_button %}
+{% from "macros/dialogs.html" import dialog_body, dialog_footer %}
+{% from "macros/icons.html" import icon %}
+{% set row_class = "flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-surface2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus" %}
+<div id="path-picker-content" data-fragment="path-picker">
+<div class="flex items-center gap-4 border-b border-line px-5 py-4 md:px-6"><div class="min-w-0 flex-1"><h2 id="path-picker-t" class="text-xl font-bold">Choose root path</h2><p class="text-[13px] text-ink2">Browsing is limited to allowed paths</p></div>{{ icon_button("Close", "close", shape="square", data_js="dialog-close") }}</div>
+{% call dialog_body() %}
+{% if picker_error | default(none) %}<p role="alert" class="flex items-center gap-1.5 text-[13px] font-semibold text-danger">{{ icon("warning", "size-3.5", "2.4") }}{{ picker_error }}</p>{% endif %}
+{% if picker.current %}<p class="text-[13px] text-ink2">Folder <span class="break-all font-mono text-ink">{{ picker.current }}</span></p>{% endif %}
+<nav aria-label="Allowed paths"><ul class="m-0 list-none divide-y divide-line overflow-hidden rounded-panel border border-line">
+{% if picker.current %}<li><button type="button" hx-get="/paths/browse{% if picker.parent %}?path={{ picker.parent | urlencode }}{% endif %}" hx-target="#path-picker-content" hx-swap="outerHTML" class="{{ row_class }}">{{ icon("chevron-left", "size-4", "2") }}<span class="text-[13px] font-semibold">{% if picker.parent %}Up one level{% else %}All allowed paths{% endif %}</span></button></li>{% endif %}
+{% for entry in picker.entries %}<li><button type="button" hx-get="/paths/browse?path={{ entry.path | urlencode }}" hx-target="#path-picker-content" hx-swap="outerHTML" class="{{ row_class }}">{{ icon("layers", "size-4", "2") }}<span class="break-all font-mono text-[13px]">{{ entry.path }}</span>{% if entry.is_root %}<span class="ml-auto shrink-0 text-xs text-ink2">allowed root</span>{% endif %}</button></li>
+{% else %}<li class="px-4 py-3 text-[13px] text-ink2">{% if picker.current %}No folders inside this one.{% else %}No allowed paths are configured. Add one in Settings first.{% endif %}</li>
+{% endfor %}
+</ul></nav>
+{% if picker.truncated %}<p class="text-[13px] text-ink2">Only the first folders are listed. Type the path to use a folder that is not shown.</p>{% endif %}
+{% endcall %}
+{% call dialog_footer() %}{{ button("Cancel", extra_class="h-11", data_js="dialog-close") }}{{ button("Use this path", kind="primary", data_js="pick-path", data_target="root", data_path=picker.current, disabled=not picker.current) }}{% endcall %}
+</div>
