@@ -60,7 +60,7 @@ COPY --from=docker:29.9.1-cli /usr/local/libexec/docker/cli-plugins/docker-compo
 COPY --from=deps /opt/venv /opt/venv
 WORKDIR /app
 COPY app ./app
-COPY start.sh ./
+COPY start.sh alembic.ini ./
 COPY --from=assets /build/app/static/style.css ./app/static/style.css
 USER app
 VOLUME /data

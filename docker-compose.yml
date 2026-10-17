@@ -19,6 +19,8 @@ services:
       ENVMANAGER_ENVIRONMENT: development
       ENVMANAGER_LOG_LEVEL: debug
       ENVMANAGER_CSRF_SECRET: dev-not-secret-change-me-0123456789abcdef
+      # Development only key, not a secret. Real deployments mount a key file.
+      ENVMANAGER_KEY: ${ENVMANAGER_KEY:-ZGV2LW9ubHktZW52LW1hbmFnZXIta2V5LTAxMjM0NTY=}
       UVICORN_OPTS: --reload
     ports:
       - "8080:8080"

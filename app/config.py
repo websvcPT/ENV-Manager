@@ -34,6 +34,16 @@ class Settings(BaseSettings):
     sentry_dsn: SecretStr | None = None
     environment: str = "production"
 
+    @property
+    def database_path(self) -> Path:
+        """Location of the SQLite database file inside the data volume."""
+        return self.data_path / "envmanager.db"
+
+    @property
+    def backup_path(self) -> Path:
+        """Folder inside the data volume that holds database backups."""
+        return self.data_path / "backups"
+
     @field_validator("trusted_proxies", "cors_origins", mode="before")
     @classmethod
     def _parse_list(cls, value: object) -> object:
