@@ -189,7 +189,7 @@ def _enum_value[ChoiceT: (DistMissingPolicy, DriftPolicy, MissingTargetPolicy)](
         return None
 
 
-def _account(raw: str, label: str, errors: dict[str, str], key: str) -> str | None:
+def parse_account(raw: str, label: str, errors: dict[str, str], key: str) -> str | None:
     """A trimmed owner or group name, None when empty, with an error recorded when invalid."""
     value = raw.strip()
     if not value:
@@ -245,8 +245,8 @@ async def validate_deployment(
         errors["file_mode"] = "Use an octal mode such as 0600."
     else:
         mode = mode.zfill(4)
-    owner = _account(form.file_owner, "Owner", errors, "file_owner")
-    group = _account(form.file_group, "Group", errors, "file_group")
+    owner = parse_account(form.file_owner, "Owner", errors, "file_owner")
+    group = parse_account(form.file_group, "Group", errors, "file_group")
 
     real_path = root_check.real_path
     if errors or real_path is None or policies is None:

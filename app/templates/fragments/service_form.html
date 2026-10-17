@@ -1,0 +1,15 @@
+{#- The add service form. A refused name swaps this form again with the reason. Context:
+    deployment (a DeploymentDetail), name and error. -#}
+{% from "macros/buttons.html" import button %}
+{% from "macros/feedback.html" import note %}
+{% from "macros/forms.html" import field %}
+{% from "macros/panels.html" import panel %}
+<form hx-post="/deployments/{{ deployment.id }}/services/new" hx-target="#service-form" hx-swap="outerHTML" hx-status:422="swap:outerHTML target:#service-form" id="service-form" data-fragment="service-form" class="flex max-w-3xl flex-col gap-5">
+{% call panel("Service", "service-form-title", fragment="form-section") %}
+<div class="flex flex-col gap-4 px-4 pb-5 md:px-5">
+{{ note("A service groups the environments that feed one workload, for example one Compose service that loads several env files. Deploys run per service, and the service holds the post-deploy command.") }}
+{{ field("svc-name", "Service name", name="name", value=name, placeholder="e.g. redis", hint="Use the Compose service name.", error=error, extra_class="max-w-md", autocomplete="off", maxlength="100") }}
+</div>
+{% endcall %}
+<div class="flex flex-wrap gap-3">{{ button("Add service", kind="primary", type="submit") }}{{ button("Cancel", href="/deployments/" ~ deployment.id, extra_class="h-11") }}</div>
+</form>

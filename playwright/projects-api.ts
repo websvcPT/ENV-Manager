@@ -2,7 +2,7 @@ import type { APIRequestContext } from '@playwright/test';
 
 const PROJECT_LINK = /<a href="\/projects\/(\d+)"[^>]*>([^<]+)<\/a>/g;
 
-async function csrfHeaders(request: APIRequestContext): Promise<Record<string, string>> {
+export async function csrfHeaders(request: APIRequestContext): Promise<Record<string, string>> {
   const state = await request.storageState();
   const token = state.cookies.find((cookie) => cookie.name === 'csrftoken')?.value ?? '';
   return { 'HX-Request': 'true', 'X-CSRFToken': token };

@@ -1,0 +1,5 @@
+{#- The line under the target path field of the add environment form: where the path resolves,
+    or why it cannot be used. Context: hint (text, ok) and an optional error that wins. -#}
+{% from "macros/icons.html" import icon %}
+{% set message = error | default(none) %}
+{% if message or not hint.ok %}<p id="tp-e" role="alert" class="flex items-center gap-1.5 text-[13px] font-semibold text-danger">{{ icon("warning", "size-3.5", "2.4") }}{{ message or hint.text }}</p>{% else %}<p id="tp-h" class="text-xs text-ink2 break-all">{{ hint.text }}</p>{% endif %}

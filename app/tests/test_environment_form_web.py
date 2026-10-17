@@ -1,0 +1,473 @@
+"""Add service and add environment forms on the seeded application."""
+
+import re
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
+from pathlib import Path
+
+import httpx
+import pytest
+from fastapi import FastAPI
+from sqlalchemy import select
+
+from app.core.csrf import CSRF_COOKIE_NAME
+from app.models import (
+    AllowedPath,
+    AuditEntry,
+    Deployment,
+    Environment,
+    EnvironmentVersion,
+    Service,
+)
+from app.tests.conftest import sign_in
+
+HTMX = {"HX-Request": "true"}
+
+
+@dataclass(frozen=True)
+class Layout:
+    """A real deployment folder under an allowed host directory, with ids of seeded rows."""
+
+    host: Path
+    deploy: Path
+    deployment: int
+    mysql: int
+    web: int
+    legacy: int
+    cron: int
+
+
+@pytest.fixture
+async def layout(web_app: FastAPI, tmp_path: Path) -> Layout:
+    """Allow a temporary host directory and move the seeded prod deployment into it."""
+    host = (tmp_path / "vhosts").resolve()
+    deploy = host / "prod"
+    (deploy / "environments").mkdir(parents=True)
+    async with web_app.state.session_factory() as db:
+        db.add(AllowedPath(path=str(host)))
+        deployments = dict((await db.execute(select(Deployment.name, Deployment))).all())
+        deployments["prod"].root_path = str(deploy)
+        services = {
+            (service.deployment_id, service.name): service.id
+            for service in (await db.execute(select(Service))).scalars()
+        }
+        await db.commit()
+        prod, legacy = deployments["prod"].id, deployments["legacy"].id
+    return Layout(
+        host=host,
+        deploy=deploy,
+        deployment=prod,
+        mysql=services[(prod, "mysql")],
+        web=services[(prod, "web")],
+        legacy=legacy,
+        cron=services[(legacy, "cron")],
+    )
+
+
+def env_data(layout: Layout, **overrides: str) -> dict[str, str]:
+    """Valid add environment values for a paste into the seeded mysql service."""
+    values = {
+        "service": str(layout.mysql),
+        "new_service": "",
+        "name": ".env.cache",
+        "target_path": "environments/.env.cache",
+        "dist_path": "",
+        "file_mode": "",
+        "file_owner": "",
+        "file_group": "",
+        "source": "paste",
+        "content": "CACHE_HOST=cache\r\nCACHE_PORT=6379",
+    }
+    return {**values, **overrides}
+
+
+async def post(
+    http: httpx.AsyncClient,
+    url: str,
+    data: dict[str, str],
+    files: dict[str, tuple[str, bytes]] | None = None,
+) -> httpx.Response:
+    """Submit a form the way htmx does, with the CSRF header."""
+    await http.get("/healthz")
+    return await http.post(
+        url,
+        data=data,
+        files=files,
+        headers={**HTMX, "X-CSRFToken": http.cookies[CSRF_COOKIE_NAME]},
+    )
+
+
+async def environment_names(web_app: FastAPI) -> set[str]:
+    """Names of every stored environment."""
+    async with web_app.state.session_factory() as db:
+        return set((await db.execute(select(Environment.name))).scalars())
+
+
+async def test_new_environment_page_has_every_field(
+    web_client: httpx.AsyncClient, layout: Layout
+) -> None:
+    await sign_in(web_client, "root")
+    response = await web_client.get(f"/services/{layout.mysql}/environments/new")
+    page = response.text
+    assert response.status_code == 200 and response.headers["cache-control"] == "no-store"
+    assert ">Add environment</h1>" in page and ">Superadmin</span>" in page
+    assert "Superadmin only." in page
+    assert f'hx-post="/services/{layout.mysql}/environments/new"' in page
+    assert 'enctype="multipart/form-data"' in page
+    assert 'id="env-form"' in page and 'data-fragment="environment-form"' in page
+    assert page.count('data-fragment="form-section"') == 3
+    for field_id in ("svc", "nsvc", "en", "tp", "dp", "m", "o", "g", "content", "upload"):
+        assert f'id="{field_id}"' in page
+    assert f'<option value="{layout.mysql}" selected>mysql</option>' in page
+    assert f'<option value="{layout.web}">web</option>' in page
+    assert '<option value="new">Create a new service…</option>' in page
+    assert "A service is required to create an environment." in page
+    assert 'placeholder="0600"' in page and 'placeholder="www-data"' in page
+    assert f"Resolves to {layout.deploy}/" in page
+    assert f'hx-get="/services/{layout.mysql}/environments/target-check"' in page
+    for source in ("paste", "upload", "import"):
+        assert f'id="src-{source}"' in page
+    assert re.search(r'name="source" value="paste" checked', page)
+    assert "Reads the file from the target and saves it as version 1." in page
+    assert ">Add environment</button>" in page
+    assert f'href="/services/{layout.mysql}"' in page and ">Cancel</a>" in page
+    crumbs = re.search(r'aria-label="Breadcrumb".*?</nav>', page, re.DOTALL)
+    assert crumbs is not None
+    assert f'href="/services/{layout.mysql}"' in crumbs.group(0)
+    assert 'aria-current="page" class="font-semibold text-ink">Add environment' in crumbs.group(0)
+
+
+async def test_the_form_page_loads_for_a_deployment_outside_the_allowed_paths(
+    web_client: httpx.AsyncClient, layout: Layout
+) -> None:
+    await sign_in(web_client, "root")
+    response = await web_client.get(f"/services/{layout.cron}/environments/new")
+    assert response.status_code == 200
+    hint = await web_client.get(
+        f"/services/{layout.cron}/environments/target-check", params={"target_path": "x"}
+    )
+    assert "The deployment root is outside the allowed paths." in hint.text
+
+
+@pytest.mark.parametrize("user", ["admin", "viewer", "deployment_admin", "env_scoped_admin"])
+async def test_other_groups_are_refused_everywhere(
+    web_client: httpx.AsyncClient, layout: Layout, web_app: FastAPI, user: str
+) -> None:
+    await sign_in(web_client, user)
+    url = f"/services/{layout.mysql}/environments/new"
+    refused = {403, 404}
+    assert (await web_client.get(url)).status_code in refused
+    assert (
+        await web_client.get(
+            f"/services/{layout.mysql}/environments/target-check", params={"target_path": "x"}
+        )
+    ).status_code in refused
+    assert (await post(web_client, url, env_data(layout))).status_code in refused
+    service_url = f"/deployments/{layout.deployment}/services/new"
+    assert (await web_client.get(service_url)).status_code in refused
+    assert (await post(web_client, service_url, {"name": "extra"})).status_code in refused
+    assert ".env.cache" not in await environment_names(web_app)
+    async with web_app.state.session_factory() as db:
+        assert "extra" not in set((await db.execute(select(Service.name))).scalars())
+
+
+async def test_outside_the_scope_is_404(web_client: httpx.AsyncClient, layout: Layout) -> None:
+    await sign_in(web_client, "ungranted_admin")
+    assert (await web_client.get(f"/services/{layout.mysql}/environments/new")).status_code == 404
+    assert (
+        await web_client.get(f"/deployments/{layout.deployment}/services/new")
+    ).status_code == 404
+
+
+async def test_signed_out_requests_are_refused(
+    web_client: httpx.AsyncClient, layout: Layout
+) -> None:
+    for url in (
+        f"/services/{layout.mysql}/environments/new",
+        f"/services/{layout.mysql}/environments/target-check",
+        f"/deployments/{layout.deployment}/services/new",
+    ):
+        response = await web_client.get(url, follow_redirects=False)
+        assert response.status_code in (303, 401), url
+    unsigned = await post(
+        web_client, f"/services/{layout.mysql}/environments/new", env_data(layout)
+    )
+    assert unsigned.status_code in (303, 401)
+
+
+async def test_target_check_fragment_states(web_client: httpx.AsyncClient, layout: Layout) -> None:
+    await sign_in(web_client, "root")
+    url = f"/services/{layout.mysql}/environments/target-check"
+    good = await web_client.get(url, params={"target_path": "environments/.env.cache"})
+    assert f"Resolves to {layout.deploy}/environments/.env.cache" in good.text
+    assert 'id="tp-h"' in good.text and good.headers["cache-control"] == "no-store"
+    bad = await web_client.get(url, params={"target_path": "../../etc/cache.env"})
+    assert 'role="alert"' in bad.text and "Resolves outside the deployment root" in bad.text
+    empty = await web_client.get(url)
+    assert f"Resolves to {layout.deploy}/" in empty.text
+
+
+async def test_paste_creates_the_environment_with_version_one(
+    web_client: httpx.AsyncClient, layout: Layout, web_app: FastAPI
+) -> None:
+    await sign_in(web_client, "root")
+    response = await post(
+        web_client, f"/services/{layout.mysql}/environments/new", env_data(layout)
+    )
+    assert response.status_code == 200
+    assert response.headers["hx-redirect"] == f"/services/{layout.mysql}?added=environment"
+    async with web_app.state.session_factory() as db:
+        environment = (
+            await db.execute(select(Environment).where(Environment.name == ".env.cache"))
+        ).scalar_one()
+        version = (
+            await db.execute(
+                select(EnvironmentVersion).where(
+                    EnvironmentVersion.environment_id == environment.id
+                )
+            )
+        ).scalar_one()
+        assert environment.target_path == "environments/.env.cache"
+        assert environment.file_mode is None and environment.dist_path is None
+        assert version.number == 1 and "CACHE_HOST" not in version.content_encrypted
+        text = web_app.state.crypto.decrypt_text(version.content_encrypted)
+        assert text == "CACHE_HOST=cache\nCACHE_PORT=6379"
+        entry = (
+            await db.execute(
+                select(AuditEntry).where(
+                    AuditEntry.action == "environment.create",
+                    AuditEntry.environment_id == environment.id,
+                )
+            )
+        ).scalar_one()
+        assert entry.actor_name == "root" and entry.version_ids == [version.id]
+        assert "CACHE_HOST" not in str(entry.details)
+    landed = await web_client.get(response.headers["hx-redirect"])
+    assert "Environment added" in landed.text and ".env.cache" in landed.text
+
+
+async def test_a_new_service_is_created_with_the_environment(
+    web_client: httpx.AsyncClient, layout: Layout, web_app: FastAPI
+) -> None:
+    await sign_in(web_client, "root")
+    data = env_data(layout, service="new", new_service="redis", name="redis.conf")
+    response = await post(web_client, f"/services/{layout.mysql}/environments/new", data)
+    created = re.fullmatch(r"/services/(\d+)\?added=environment", response.headers["hx-redirect"])
+    assert created is not None and int(created.group(1)) not in (layout.mysql, layout.web)
+    async with web_app.state.session_factory() as db:
+        service = (await db.execute(select(Service).where(Service.name == "redis"))).scalar_one()
+        assert service.id == int(created.group(1)) and service.deployment_id == layout.deployment
+        actions = set(
+            (
+                await db.execute(
+                    select(AuditEntry.action).where(AuditEntry.service_id == service.id)
+                )
+            ).scalars()
+        )
+        assert actions == {"service.create", "environment.create"}
+
+
+async def test_upload_creates_the_environment_from_the_file(
+    web_client: httpx.AsyncClient, layout: Layout, web_app: FastAPI
+) -> None:
+    await sign_in(web_client, "root")
+    response = await post(
+        web_client,
+        f"/services/{layout.mysql}/environments/new",
+        env_data(layout, source="upload", content="ignored"),
+        files={"upload": ("cache.env", b"UPLOADED=1\r\n")},
+    )
+    assert response.status_code == 200
+    async with web_app.state.session_factory() as db:
+        content = (
+            await db.execute(
+                select(EnvironmentVersion.content_encrypted)
+                .join(Environment, Environment.id == EnvironmentVersion.environment_id)
+                .where(Environment.name == ".env.cache")
+            )
+        ).scalar_one()
+    assert web_app.state.crypto.decrypt_text(content) == "UPLOADED=1\r\n"
+
+
+async def test_upload_refusals_swap_the_form(
+    web_client: httpx.AsyncClient, layout: Layout, web_app: FastAPI
+) -> None:
+    await sign_in(web_client, "root")
+    url = f"/services/{layout.mysql}/environments/new"
+    data = env_data(layout, source="upload")
+    none = await post(web_client, url, data)
+    assert none.status_code == 422 and "Choose a text file to upload." in none.text
+    assert re.search(r'name="source" value="upload" checked', none.text)
+    binary = await post(web_client, url, data, files={"upload": ("x", b"\xff\xfe")})
+    assert binary.status_code == 422 and "The file is not valid UTF-8 text." in binary.text
+    assert ".env.cache" not in await environment_names(web_app)
+
+
+async def test_import_reads_the_target_file_and_refuses_an_escaping_symlink(
+    web_client: httpx.AsyncClient, layout: Layout, web_app: FastAPI, tmp_path: Path
+) -> None:
+    await sign_in(web_client, "root")
+    url = f"/services/{layout.mysql}/environments/new"
+    (layout.deploy / "environments" / ".env.cache").write_text("LIVE=1\n")
+    created = await post(web_client, url, env_data(layout, source="import"))
+    assert created.status_code == 200
+    secret = tmp_path / "secret.txt"
+    secret.write_text("SECRET=1\n")
+    (layout.deploy / "environments" / "linked").symlink_to(secret)
+    refused = await post(
+        web_client,
+        url,
+        env_data(layout, source="import", name="linked", target_path="environments/linked"),
+    )
+    assert refused.status_code == 422
+    assert "Resolves outside the deployment root and the allowed paths." in refused.text
+    assert "SECRET" not in refused.text
+    async with web_app.state.session_factory() as db:
+        content = (
+            await db.execute(
+                select(EnvironmentVersion.content_encrypted)
+                .join(Environment, Environment.id == EnvironmentVersion.environment_id)
+                .where(Environment.name == ".env.cache")
+            )
+        ).scalar_one()
+        assert web_app.state.crypto.decrypt_text(content) == "LIVE=1\n"
+    assert "linked" not in await environment_names(web_app)
+
+
+async def test_refused_values_swap_the_form_with_messages_and_keep_input(
+    web_client: httpx.AsyncClient, layout: Layout, web_app: FastAPI
+) -> None:
+    await sign_in(web_client, "root")
+    data = env_data(
+        layout,
+        name="bad name",
+        target_path="../../etc/cache.env",
+        dist_path="environments/.env.cache",
+        file_mode="999",
+        content="KEEP_ME=1\r\nSECOND=2",
+    )
+    response = await post(web_client, f"/services/{layout.mysql}/environments/new", data)
+    page = response.text
+    assert response.status_code == 422 and "<html" not in page
+    assert page.lstrip().startswith("<form") and 'id="env-form"' in page
+    assert "Use 1 to 100 letters" in page
+    assert "Resolves outside the deployment root and the allowed paths." in page
+    assert "Use an octal mode such as 0600." in page
+    assert 'aria-invalid="true"' in page and "border-danger" in page
+    assert 'value="bad name"' in page and 'value="../../etc/cache.env"' in page
+    assert "KEEP_ME=1" in page and response.headers["cache-control"] == "no-store"
+    assert "bad name" not in await environment_names(web_app)
+
+
+async def test_content_is_escaped_in_the_swapped_form(
+    web_client: httpx.AsyncClient, layout: Layout
+) -> None:
+    await sign_in(web_client, "root")
+    data = env_data(layout, name="", content="</textarea><script>alert(1)</script>")
+    response = await post(web_client, f"/services/{layout.mysql}/environments/new", data)
+    assert response.status_code == 422
+    assert "<script>" not in response.text and "&lt;/textarea&gt;" in response.text
+
+
+async def test_a_duplicate_name_or_target_is_refused(
+    web_client: httpx.AsyncClient, layout: Layout
+) -> None:
+    await sign_in(web_client, "root")
+    url = f"/services/{layout.mysql}/environments/new"
+    duplicate = await post(web_client, url, env_data(layout, name=".env.db"))
+    assert "This service already has a file named .env.db." in duplicate.text
+    shared = await post(web_client, url, env_data(layout, target_path="environments/.env.db"))
+    assert "Another file of this deployment already uses this target path." in shared.text
+
+
+async def test_an_oversized_form_is_refused_before_it_is_parsed(
+    web_client: httpx.AsyncClient, layout: Layout, web_app: FastAPI
+) -> None:
+    await sign_in(web_client, "root")
+    response = await post(
+        web_client,
+        f"/services/{layout.mysql}/environments/new",
+        env_data(layout, content="A" * (2 * 1024 * 1024)),
+    )
+    assert response.status_code == 422 and "The form is larger than 1024 KiB." in response.text
+    assert ".env.cache" not in await environment_names(web_app)
+
+
+async def test_a_body_without_a_length_is_refused(
+    web_client: httpx.AsyncClient, layout: Layout
+) -> None:
+    await sign_in(web_client, "root")
+    await web_client.get("/healthz")
+
+    async def chunks() -> AsyncIterator[bytes]:
+        yield b"name=x"
+
+    response = await web_client.post(
+        f"/services/{layout.mysql}/environments/new",
+        content=chunks(),
+        headers={
+            **HTMX,
+            "X-CSRFToken": web_client.cookies[CSRF_COOKIE_NAME],
+            "Content-Type": "application/x-www-form-urlencoded",
+        },
+    )
+    assert response.status_code == 411
+
+
+async def test_service_page_toasts_follow_the_added_flag(
+    web_client: httpx.AsyncClient, layout: Layout
+) -> None:
+    await sign_in(web_client, "root")
+    base = f"/services/{layout.mysql}"
+    assert "Environment added" in (await web_client.get(f"{base}?added=environment")).text
+    assert "Service added" in (await web_client.get(f"{base}?added=service")).text
+    plain = await web_client.get(f"{base}?added=anything")
+    assert "Service added" not in plain.text and "Environment added" not in plain.text
+    assert "Environment added" not in (await web_client.get(base)).text
+
+
+async def test_new_service_page_and_create(
+    web_client: httpx.AsyncClient, layout: Layout, web_app: FastAPI
+) -> None:
+    await sign_in(web_client, "root")
+    page = await web_client.get(f"/deployments/{layout.deployment}/services/new")
+    assert page.status_code == 200 and page.headers["cache-control"] == "no-store"
+    assert ">Add service</h1>" in page.text and "Superadmin only." in page.text
+    assert f'hx-post="/deployments/{layout.deployment}/services/new"' in page.text
+    assert 'id="service-form"' in page.text and 'id="svc-name"' in page.text
+    assert "Use the Compose service name." in page.text
+    assert f'href="/deployments/{layout.deployment}"' in page.text
+    created = await post(
+        web_client, f"/deployments/{layout.deployment}/services/new", {"name": " redis "}
+    )
+    assert created.status_code == 200
+    async with web_app.state.session_factory() as db:
+        service = (await db.execute(select(Service).where(Service.name == "redis"))).scalar_one()
+        assert created.headers["hx-redirect"] == f"/services/{service.id}?added=service"
+        entry = (
+            await db.execute(
+                select(AuditEntry).where(
+                    AuditEntry.action == "service.create", AuditEntry.service_id == service.id
+                )
+            )
+        ).scalar_one()
+        assert entry.actor_name == "root" and entry.deployment_id == layout.deployment
+
+
+@pytest.mark.parametrize(
+    ("name", "message"),
+    [
+        ("", "Enter a service name."),
+        ("Bad Name", "Use 1 to 100 lowercase letters"),
+        ("mysql", "A service named mysql already exists in this deployment."),
+    ],
+)
+async def test_new_service_refusals_swap_the_form(
+    web_client: httpx.AsyncClient, layout: Layout, name: str, message: str
+) -> None:
+    await sign_in(web_client, "root")
+    response = await post(
+        web_client, f"/deployments/{layout.deployment}/services/new", {"name": name}
+    )
+    assert response.status_code == 422 and message in response.text
+    assert response.text.lstrip().startswith("<form") and 'aria-invalid="true"' in response.text

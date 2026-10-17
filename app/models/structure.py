@@ -129,7 +129,11 @@ class ServiceHook(Base):
 
 
 class Environment(Base):
-    """One text file under version control with a target path inside its deployment root."""
+    """One text file under version control with a target path inside its deployment root.
+
+    ``file_mode``, ``file_owner`` and ``file_group`` override the deployment's file defaults;
+    None means the deployment default applies.
+    """
 
     __tablename__ = "environments"
     __table_args__ = (
@@ -153,6 +157,9 @@ class Environment(Base):
     missing_target_policy: Mapped[MissingTargetPolicy | None] = mapped_column(
         _policy_column(MissingTargetPolicy, 10), default=None
     )
+    file_mode: Mapped[str | None] = mapped_column(String(4), default=None)
+    file_owner: Mapped[str | None] = mapped_column(String(64), default=None)
+    file_group: Mapped[str | None] = mapped_column(String(64), default=None)
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utc_now, onupdate=utc_now)
 

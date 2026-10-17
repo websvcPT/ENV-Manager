@@ -7,15 +7,15 @@ only, never values. Files that are not env format (certificates, free text) are 
 
 from dataclasses import dataclass
 from enum import StrEnum
-from pathlib import Path, PurePosixPath
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.crypto import CryptoService
 from app.models import Deployment, Environment, EnvironmentVersion, Service
+from app.services.confined_read import ConfinedReadError, read_confined_text
 from app.services.env_parser import ParsedEnv, parse_env
-from app.services.paths import AllowedPaths, PathValidationError, is_within, resolve_real_path
+from app.services.paths import AllowedPaths
 
 MAX_DIST_BYTES = 1024 * 1024
 
@@ -66,40 +66,18 @@ def compare_text_to_dist(environment_text: str, dist_text: str) -> DistReport:
 
 
 def read_dist_file(allowed: AllowedPaths, deployment_root: str, dist_path: str) -> str:
-    """Read the dist file at ``dist_path`` below the deployment root, as text.
+    """Read the dist file at `dist_path` below the deployment root, as text.
 
-    The deployment root and the dist file are resolved to real paths now; the file must lie
-    inside the real deployment root and inside the allowed paths, so neither a symlink nor
-    ``..`` can lead the read elsewhere. Raises ``DistError`` for every failure.
+    The deployment root and the dist file are resolved to real paths now and the opened file is
+    checked again, so neither a symlink nor `..` can lead the read outside the deployment root
+    and the allowed paths. Raises `DistError` for every failure.
     """
-    relative = PurePosixPath(dist_path.strip())
-    if not dist_path.strip() or relative.is_absolute() or ".." in relative.parts:
-        raise DistError("dist path must be a relative path inside the deployment")
     try:
-        root = allowed.resolve(deployment_root)
-        real_path = allowed.resolve(root / relative)
-    except PathValidationError as error:
+        return read_confined_text(
+            allowed, deployment_root, dist_path, label="dist", max_bytes=MAX_DIST_BYTES
+        )
+    except ConfinedReadError as error:
         raise DistError(str(error)) from error
-    if not is_within(real_path, resolve_real_path(root)):
-        raise DistError("dist path leaves the deployment root")
-    return _read_text(real_path)
-
-
-def _read_text(real_path: Path) -> str:
-    """Read a regular UTF-8 file of bounded size."""
-    if not real_path.is_file():
-        raise DistError("dist file does not exist or is not a regular file")
-    try:
-        with real_path.open("rb") as handle:
-            data = handle.read(MAX_DIST_BYTES + 1)
-    except OSError as error:
-        raise DistError("dist file cannot be read") from error
-    if len(data) > MAX_DIST_BYTES:
-        raise DistError("dist file is too large")
-    try:
-        return data.decode("utf-8")
-    except UnicodeDecodeError as error:
-        raise DistError("dist file is not valid UTF-8 text") from error
 
 
 async def check_environment_dist(

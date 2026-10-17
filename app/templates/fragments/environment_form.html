@@ -1,0 +1,45 @@
+{#- The add environment form. A refused submit swaps this form again with the messages.
+    Context: service (a ServiceHeader), form (EnvironmentForm), errors (field name to message),
+    services (id and name pairs), deployment (file defaults for placeholders), hint (target
+    path line), action and cancel_href. -#}
+{% from "macros/buttons.html" import button %}
+{% from "macros/feedback.html" import note %}
+{% from "macros/forms.html" import field, field_message, radio_option, select_field %}
+{% from "macros/icons.html" import icon %}
+{% from "macros/panels.html" import panel %}
+{% set service_options = services + [("new", "Create a new service…")] %}
+{% set target_error = errors.get("target_path") %}
+<form hx-post="{{ action }}" hx-target="#env-form" hx-swap="outerMorph" hx-status:422="swap:outerMorph target:#env-form" enctype="multipart/form-data" id="env-form" data-fragment="environment-form" class="flex max-w-3xl flex-col gap-5">
+{% call panel("Service", "env-service-title", fragment="form-section") %}
+<div class="flex flex-col gap-4 px-4 pb-5 md:px-5">
+{{ note("A service groups the environments that feed one workload, for example one Compose service that loads several env files. Deploys run per service, and the service holds the post-deploy command. A service is required to create an environment.") }}
+{{ select_field("svc", "Service", service_options, selected=form.service, name="service", error=errors.get("service"), extra_class="max-w-md") }}
+<div class="flex flex-col gap-3 rounded-btn border border-dashed border-line-strong p-3.5"><p class="text-xs font-bold uppercase tracking-wide text-ink3">Or create a new service</p>
+{{ field("nsvc", "New service name", name="new_service", value=form.new_service, placeholder="e.g. redis", hint="Use the Compose service name.", error=errors.get("new_service"), extra_class="max-w-md", autocomplete="off", maxlength="100") }}</div>
+</div>
+{% endcall %}
+{% call panel("File", "env-file-title", fragment="form-section") %}
+<div class="flex flex-col gap-4 px-4 pb-5 md:px-5">
+{{ field("en", "Name", name="name", value=form.name, mono=true, error=errors.get("name"), extra_class="max-w-md", autocomplete="off", spellcheck="false", maxlength="100") }}
+<div class="flex flex-col gap-1.5 max-w-xl"><label for="tp" class="text-[13px] font-semibold">Target path, relative to the deployment root</label><input id="tp" name="target_path" type="text" value="{{ form.target_path }}" aria-describedby="tp-m"{% if target_error %} aria-invalid="true"{% endif %} autocomplete="off" spellcheck="false" class="h-10 w-full rounded-ctl border {{ "border-danger" if target_error else "border-line-strong" }} bg-surface px-3 text-sm text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus font-mono text-[13px]"><div id="tp-m" hx-get="/services/{{ service.id }}/environments/target-check" hx-trigger="input changed delay:400ms from:#tp" hx-include="#tp" hx-swap="innerHTML" aria-live="polite">{% with error = target_error %}{% include "fragments/target_hint.html" %}{% endwith %}</div></div>
+{{ field("dp", "Dist file path (optional)", name="dist_path", value=form.dist_path, mono=true, hint="Read from the target for comparison. Never written.", error=errors.get("dist_path"), extra_class="max-w-xl", autocomplete="off", spellcheck="false") }}
+<div class="grid gap-4 sm:grid-cols-3">
+{{ field("m", "Mode", name="file_mode", value=form.file_mode, placeholder=deployment.file_mode, mono=true, error=errors.get("file_mode"), autocomplete="off", maxlength="4") }}
+{{ field("o", "Owner", name="file_owner", value=form.file_owner, placeholder=deployment.file_owner or "app user", mono=true, error=errors.get("file_owner"), autocomplete="off", maxlength="64") }}
+{{ field("g", "Group", name="file_group", value=form.file_group, placeholder=deployment.file_group or "app user", mono=true, error=errors.get("file_group"), autocomplete="off", maxlength="64") }}
+</div>
+</div>
+{% endcall %}
+{% call panel("Initial content", "env-content-title", fragment="form-section") %}
+<div class="group flex flex-col gap-4 px-4 pb-5 md:px-5">
+<fieldset class="min-w-0"><legend class="mb-2 text-[13px] font-semibold">Source of version 1</legend><div class="flex flex-col gap-2">
+{{ radio_option("source", "paste", "Paste text", checked=(form.source == "paste"), id="src-paste") }}
+{{ radio_option("source", "upload", "Upload a text file", checked=(form.source == "upload"), id="src-upload") }}
+{{ radio_option("source", "import", "Import the current target file", "Reads the file from the target and saves it as version 1.", checked=(form.source == "import"), id="src-import") }}
+</div>{% if errors.get("source") %}<p role="alert" class="mt-2 flex items-center gap-1.5 text-[13px] font-semibold text-danger">{{ icon("warning", "size-3.5", "2.4") }}{{ errors.get("source") }}</p>{% endif %}</fieldset>
+<div id="content-field" hx-ignore class="flex flex-col gap-1.5 group-has-[#src-upload:checked]:hidden group-has-[#src-import:checked]:hidden"><label for="content" class="text-[13px] font-semibold">Content</label><textarea id="content" name="content" rows="6" aria-describedby="content-{{ "e" if errors.get("content") else "h" }}"{% if errors.get("content") %} aria-invalid="true"{% endif %} spellcheck="false" class="h-auto w-full rounded-ctl border {{ "border-danger" if errors.get("content") else "border-line-strong" }} bg-surface px-3 py-2.5 font-mono text-[13px] leading-relaxed text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ form.content }}</textarea>{{ field_message("content", "Values are masked in the editor after saving.", errors.get("content")) }}</div>
+<div id="upload-field" class="hidden flex-col gap-1.5 group-has-[#src-upload:checked]:flex"><label for="upload" class="text-[13px] font-semibold">Text file</label><input id="upload" name="upload" type="file"{% if errors.get("upload") %} aria-describedby="upload-e" aria-invalid="true"{% else %} aria-describedby="upload-h"{% endif %} class="w-full max-w-xl text-sm text-ink file:mr-3 file:h-10 file:cursor-pointer file:rounded-btn file:border file:border-line-strong file:bg-surface file:px-4 file:text-sm file:font-semibold file:text-ink hover:file:bg-surface2">{{ field_message("upload", "A UTF-8 text file up to 256 KiB.", errors.get("upload")) }}</div>
+</div>
+{% endcall %}
+<div class="flex flex-wrap gap-3">{{ button("Add environment", kind="primary", type="submit") }}{{ button("Cancel", href=cancel_href, extra_class="h-11") }}</div>
+</form>

@@ -1,7 +1,7 @@
-import type { Browser } from '@playwright/test';
+import type { APIRequestContext, Browser } from '@playwright/test';
 
 import { SUPERADMIN_STATE } from './global-setup';
-import { listProjects } from './projects-api';
+import { csrfHeaders, listProjects } from './projects-api';
 
 const DEPLOYMENT_LINK = /<a href="\/deployments\/(\d+)"[^>]*>([^<]+)<\/a>/g;
 
@@ -34,4 +34,35 @@ export async function deploymentId(
   } finally {
     await context.close();
   }
+}
+
+/**
+ * Create a deployment in a project through the same form post the page sends, as the caller of
+ * `request` (the superadmin), and return its id.
+ */
+export async function createDeployment(
+  request: APIRequestContext,
+  projectId: number,
+  name: string,
+  root: string,
+): Promise<number> {
+  const response = await request.post(`/projects/${projectId}/deployments`, {
+    form: {
+      name,
+      root,
+      dist_missing_policy: 'block',
+      drift_policy: 'halt',
+      missing_target_policy: 'create',
+      file_mode: '0600',
+      file_owner: '',
+      file_group: '',
+    },
+    headers: await csrfHeaders(request),
+  });
+  const target = response.headers()['hx-redirect'] ?? '';
+  const found = /^\/deployments\/(\d+)$/.exec(target);
+  if (!response.ok() || !found) {
+    throw new Error(`creating deployment ${name} failed with status ${response.status()}`);
+  }
+  return Number(found[1]);
 }

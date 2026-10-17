@@ -35,6 +35,7 @@ router = APIRouter()
 ENVIRONMENTS_FRAGMENT = "fragments/service_environments.html"
 POST_DEPLOY_FRAGMENT = "fragments/service_postdeploy.html"
 HISTORY_FRAGMENT = "fragments/service_history.html"
+ADDED_TOASTS = ("service", "environment")
 
 
 @dataclass(frozen=True)
@@ -94,8 +95,12 @@ async def service_page(
     request: Request,
     access: Annotated[ServiceContext, Depends(service_access())],
     db: Annotated[AsyncSession, Depends(get_db)],
+    added: str = "",
 ) -> Response:
-    """The service page: header, explanation, environments, post-deploy panel and history."""
+    """The service page: header, explanation, environments, post-deploy panel and history.
+
+    ``added`` (service or environment) shows the toast after the add forms redirect here.
+    """
     rows = await load_environment_rows(db, access.scope, access.service)
     history = await load_service_history(db, access.service)
     post_deploy = await load_post_deploy(db, access.service, history)
@@ -108,6 +113,7 @@ async def service_page(
             "pending": sum(1 for row in rows if row.status == "pending"),
             "history": history,
             "post_deploy": post_deploy,
+            "added": added if added in ADDED_TOASTS else "",
         },
     )
 

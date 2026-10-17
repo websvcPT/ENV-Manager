@@ -1,7 +1,8 @@
-import type { Browser } from '@playwright/test';
+import type { APIRequestContext, Browser } from '@playwright/test';
 
 import { deploymentId } from './deployments-api';
 import { SUPERADMIN_STATE } from './global-setup';
+import { csrfHeaders } from './projects-api';
 
 const SERVICE_LINK = /<a href="\/services\/(\d+)"[^>]*>([^<]+)<\/a>/g;
 
@@ -30,4 +31,24 @@ export async function serviceId(
   } finally {
     await context.close();
   }
+}
+
+/**
+ * Create a service in a deployment through the same form post the page sends, as the caller of
+ * `request` (the superadmin), and return its id.
+ */
+export async function createService(
+  request: APIRequestContext,
+  deployment: number,
+  name: string,
+): Promise<number> {
+  const response = await request.post(`/deployments/${deployment}/services/new`, {
+    form: { name },
+    headers: await csrfHeaders(request),
+  });
+  const found = /^\/services\/(\d+)\?added=service$/.exec(response.headers()['hx-redirect'] ?? '');
+  if (!response.ok() || !found) {
+    throw new Error(`creating service ${name} failed with status ${response.status()}`);
+  }
+  return Number(found[1]);
 }

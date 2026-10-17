@@ -229,6 +229,7 @@ test.describe('superadmin create', () => {
     await page.goto(`/projects/${scratch.id}/deployments/new`);
     await fillCreateForm(page, 'taken-name', '/etc');
     await page.locator('#mode').fill('12');
+    await page.locator('input[name="drift_policy"][value="overwrite"]').check();
     await form(page).getByRole('button', { name: 'Create deployment' }).click();
 
     await expect(page).toHaveURL(`/projects/${scratch.id}/deployments/new`);
@@ -241,6 +242,9 @@ test.describe('superadmin create', () => {
     await expect(rootLines(page)).toHaveCount(1);
     await expect(rootLines(page).first()).toContainText('Path is outside the allowed paths');
     await expect(page.locator('#mode-e')).toHaveText('Use an octal mode such as 0600.');
+    await expect(page.locator('input[name="drift_policy"]:checked')).toHaveValue('overwrite');
+    await expect(page.locator('input[name="dist_missing_policy"]:checked')).toHaveValue('block');
+    await expect(page.locator('input[name="missing_target_policy"]:checked')).toHaveValue('create');
 
     await page.locator('#name').fill('');
     await page.locator('#root').fill('');

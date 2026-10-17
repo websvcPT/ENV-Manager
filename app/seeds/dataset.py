@@ -87,6 +87,7 @@ from app.models import (
 )
 from app.services import totp
 from app.services.audit import record_audit
+from app.services.versions import create_version
 
 # Fixed password of every seeded user. Development and testing only: the seed command refuses
 # to run in any other environment and nothing else may reference this value.
@@ -245,15 +246,8 @@ async def _environment(
     db.add(environment)
     await db.flush()
     for number, content in enumerate(contents, start=1):
-        db.add(
-            EnvironmentVersion(
-                environment_id=environment.id,
-                number=number,
-                content_encrypted=crypto.encrypt(content),
-                content_hash=crypto.content_hash(content),
-                comment=f"seed version {number}",
-                author_id=author.id,
-            )
+        await create_version(
+            db, crypto, environment.id, content, author=author, comment=f"seed version {number}"
         )
     return environment
 

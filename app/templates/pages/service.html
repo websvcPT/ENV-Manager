@@ -1,9 +1,9 @@
 {#- Service detail: header, section links, explanation, environments, post-deploy panel and
     deploy history. Context: service (a ServiceHeader), environments, pending, history,
-    post_deploy, can_manage_structure, is_viewer. -#}
+    post_deploy, can_manage_structure, is_viewer, added (service or environment, optional). -#}
 {% extends "layouts/app.html" %}
 {% from "macros/badges.html" import badge %}
-{% from "macros/feedback.html" import note %}
+{% from "macros/feedback.html" import note, toast %}
 {% from "macros/icons.html" import icon %}
 {% from "macros/panels.html" import page_header, tabs %}
 {% set active_nav = "projects" %}
@@ -21,4 +21,5 @@
 {% include "fragments/service_environments.html" %}
 {% include "fragments/service_postdeploy.html" %}
 {% include "fragments/service_history.html" %}
+{% if added == "environment" %}{{ toast("success", "The file was added with its first version.", "Environment added", floating=true) }}{% elif added == "service" %}{{ toast("success", service.name ~ " was added. Add its first environment below.", "Service added", floating=true) }}{% endif %}
 {% endblock %}
