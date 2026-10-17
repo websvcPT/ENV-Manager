@@ -1,14 +1,10 @@
 {#- The projects list panel and its states: rows, no match for a search, empty, and a failed load.
     Context: rows, query, can_create, show_members, load_failed (optional). -#}
-{% from "macros/badges.html" import badge %}
+{% from "macros/badges.html" import badge, deploy_status_badge %}
 {% from "macros/buttons.html" import button %}
 {% from "macros/feedback.html" import empty_state, inline_error %}
 {% from "macros/icons.html" import icon %}
 {% from "macros/panels.html" import table %}
-{% set status_badges = {
-  "success": "success", "halted": "halted", "blocked": "blocked",
-  "failed": "failed", "post_deploy_failed": "postfailed"
-} %}
 <section data-fragment="projects-table" id="projects-table" aria-label="Projects" hx-get="/projects/table" hx-include="#ps" hx-trigger="project-changed from:body" hx-swap="outerHTML" hx-status:503="swap:outerHTML target:#projects-table" class="rounded-panel border border-line bg-surface shadow-panel overflow-hidden">
 {%- if load_failed | default(false) -%}
 {{ inline_error("Could not load projects", "The server did not respond. Your data is unchanged.", hx_get="/projects/table", hx_target="#projects-table", hx_swap="outerHTML", hx_include="#ps", **{"hx-status:503": "swap:outerHTML target:#projects-table"}) }}
@@ -18,7 +14,7 @@
 {%- for row in rows %}
 <tr data-fragment="project-row"><th scope="row" class="border-t border-line px-4 py-3.5 text-left font-semibold"><a href="/projects/{{ row.id }}" class="font-semibold text-link hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus text-sm">{{ row.name }}</a>{% if row.limited_to %}<span class="mt-0.5 block text-xs font-normal text-ink2">Access limited to {{ row.limited_to | join(", ") }}</span>{% endif %}</th>
 <td class="border-t border-line px-4 py-3.5">{{ row.deployments }}{% if row.limited_to %} <span class="text-ink2">of your scope</span>{% endif %}</td>
-<td class="border-t border-line px-4 py-3.5">{% if row.last_deploy %}{{ badge(status_badges[row.last_deploy.status.value]) }}<span class="mt-1 block text-xs text-ink2">{{ row.last_deploy.started_at.strftime("%Y-%m-%d %H:%M") }}{% if row.last_deploy.actor %} · {{ row.last_deploy.actor }}{% endif %}</span>{% else %}{{ badge("never", "No deploys yet") }}{% endif %}</td>
+<td class="border-t border-line px-4 py-3.5">{% if row.last_deploy %}{{ deploy_status_badge(row.last_deploy.status.value) }}<span class="mt-1 block text-xs text-ink2">{{ row.last_deploy.started_at.strftime("%Y-%m-%d %H:%M") }}{% if row.last_deploy.actor %} · {{ row.last_deploy.actor }}{% endif %}</span>{% else %}{{ badge("never", "No deploys yet") }}{% endif %}</td>
 {%- if show_members %}
 <td class="border-t border-line px-4 py-3.5">{{ row.members }}</td>
 {%- endif %}

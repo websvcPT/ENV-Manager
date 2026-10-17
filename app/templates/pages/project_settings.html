@@ -1,0 +1,12 @@
+{% extends "layouts/project.html" %}
+{% from "macros/buttons.html" import button %}
+{% from "macros/dialogs.html" import dialog %}
+{% from "macros/feedback.html" import toast %}
+{% block tab %}
+{% include "fragments/project_rename.html" %}
+<section aria-labelledby="delete-zone-title" class="rounded-panel border-2 border-danger bg-danger-soft p-5"><h2 id="delete-zone-title" class="mb-1 text-lg font-bold text-danger">Delete project</h2>
+<p class="mb-3.5 max-w-2xl text-ink">Deletes the project with all deployments, services, environments and versions. Deployed files stay on the hosts.</p>
+{{ button("Delete project…", kind="danger", icon_name="warning", data_js="dialog-open", data_target="delete-project", aria_haspopup="dialog") }}</section>
+{% call dialog("delete-project", "Delete project " ~ project.name) %}{% include "fragments/project_delete_form.html" %}{% endcall %}
+{% if renamed %}{{ toast("success", "The project is now called " ~ project.name ~ ".", "Project renamed", floating=true) }}{% endif %}
+{% endblock %}

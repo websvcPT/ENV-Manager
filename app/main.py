@@ -20,6 +20,7 @@ from app.services.auth_policy import AuthPolicy
 from app.services.key_check import ensure_key_check
 from app.web.auth import router as auth_router
 from app.web.errors import http_error_handler, unhandled_error_handler
+from app.web.project_detail import router as project_detail_router
 from app.web.projects import router as projects_router
 
 log = get_logger("main")
@@ -81,6 +82,7 @@ def create_app() -> FastAPI:
     application.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     application.include_router(auth_router)
     application.include_router(projects_router)
+    application.include_router(project_detail_router)
 
     @application.get("/healthz", include_in_schema=False)
     async def healthz() -> dict[str, str]:

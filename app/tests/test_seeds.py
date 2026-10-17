@@ -20,6 +20,7 @@ from app.models import (
     AccessGrant,
     ApiToken,
     ApiTokenRestriction,
+    AuditEntry,
     DeployRun,
     Environment,
     EnvironmentVersion,
@@ -237,3 +238,27 @@ async def test_activity_is_added_to_an_older_seeded_database_once(
             await db.execute(select(func.count()).select_from(ApiTokenRestriction))
         ).scalar_one()
     assert (runs, tokens, restrictions) == (3, 1, 1)
+
+
+async def test_audit_history_is_added_once_with_scope_ids(
+    seeded_database: AsyncEngine, seed_data: SeedData
+) -> None:
+    """Deploy and file save entries carry the ids of their item and are never duplicated."""
+    async with create_session_factory(seeded_database)() as db:
+        await db.execute(delete(AuditEntry))
+        await db.commit()
+        for _ in range(2):
+            await ensure_activity(db)
+            await db.commit()
+        entries = (await db.execute(select(AuditEntry).order_by(AuditEntry.id))).scalars().all()
+    assert [(entry.action, entry.target_name) for entry in entries] == [
+        ("deploy", "web"),
+        ("deploy", "mysql"),
+        ("file_save", ".env.db"),
+        ("file_save", ".env.api"),
+    ]
+    file_save = entries[2]
+    assert file_save.project_id == seed_data.projects.rentals.id
+    assert file_save.deployment_id == seed_data.deployments.rentals_prod.id
+    assert file_save.service_id == seed_data.services.mysql.id
+    assert file_save.environment_id == seed_data.envs.db.id

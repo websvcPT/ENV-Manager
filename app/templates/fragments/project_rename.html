@@ -1,0 +1,11 @@
+{#- The rename form panel. A refused name swaps this panel again with the reason.
+    Context: project, form_value and form_error (both optional). -#}
+{% from "macros/buttons.html" import button %}
+{% from "macros/forms.html" import field %}
+{% from "macros/panels.html" import panel %}
+{% call panel("Rename", "rename-title", fragment="project-rename", id="project-rename") %}
+<form hx-post="/projects/{{ project.id }}/rename" hx-target="#project-rename" hx-swap="outerHTML" hx-status:422="swap:outerHTML target:#project-rename" class="flex flex-col gap-4 px-4 pb-5 md:px-5">
+{{ field("rn", "Project name", name="name", value=form_value | default(project.name), error=form_error | default(none), extra_class="max-w-md", autocomplete="off", maxlength="100", required=true) }}
+<div>{{ button("Save name", kind="primary-sm", type="submit") }}</div>
+</form>
+{% endcall %}

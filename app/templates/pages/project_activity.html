@@ -1,0 +1,18 @@
+{% extends "layouts/project.html" %}
+{% from "macros/badges.html" import badge %}
+{% from "macros/feedback.html" import empty_state %}
+{% from "macros/panels.html" import panel, table %}
+{% set result_badges = {"success": "success", "failure": "failed", "blocked": "blocked", "halted": "halted"} %}
+{% block tab %}
+{% call panel("Activity", "activity-title", fragment="activity-table") %}
+{%- if rows -%}
+{% call table("Project activity", ["Time", "Actor", "Action", "Object", "Result"], min_width_class="min-w-[640px]") %}
+{%- for row in rows %}
+<tr><td class="border-t border-line px-4 py-3.5">{{ row.created_at.strftime("%Y-%m-%d %H:%M") }}</td><td class="border-t border-line px-4 py-3.5">{{ row.actor }}</td><td class="border-t border-line px-4 py-3.5"><span class="font-mono text-[13px]">{{ row.action }}</span></td><td class="border-t border-line px-4 py-3.5">{{ row.target }}</td><td class="border-t border-line px-4 py-3.5">{{ badge(result_badges[row.result]) }}</td></tr>
+{%- endfor %}
+{% endcall %}
+{%- else -%}
+{{ empty_state("No activity yet", "Changes, deploys and access checks of this project will be listed here.", "clock") }}
+{%- endif -%}
+{% endcall %}
+{% endblock %}

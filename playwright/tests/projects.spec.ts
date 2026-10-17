@@ -1,6 +1,7 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
 
 import { stateFile } from '../global-setup';
+import { deleteProject, listProjects } from '../projects-api';
 
 const WIDE_BREAKPOINT = 768;
 
@@ -95,14 +96,22 @@ test.describe('superadmin', () => {
     await expect(dialog.locator('#pn-e[role="alert"]')).toContainText('already exists');
 
     const name = `e2e-${Date.now()}-${test.info().project.name}`;
-    await dialog.locator('#pn').fill(name);
-    await dialog.getByRole('button', { name: 'Create project' }).click();
-    await expect(page.locator('#project-new[open]')).toHaveCount(0);
-    await expect(rowNames(page).filter({ hasText: new RegExp(`^${name}$`) })).toBeVisible();
+    try {
+      await dialog.locator('#pn').fill(name);
+      await dialog.getByRole('button', { name: 'Create project' }).click();
+      await expect(page.locator('#project-new[open]')).toHaveCount(0);
+      await expect(rowNames(page).filter({ hasText: new RegExp(`^${name}$`) })).toBeVisible();
 
-    await page.locator('[data-js="dialog-open"][data-target="project-new"]').first().click();
-    await expect(page.locator('#project-new #pn')).toHaveValue('');
-    await expect(page.locator('#project-new #pn-e')).toHaveCount(0);
+      await page.locator('[data-js="dialog-open"][data-target="project-new"]').first().click();
+      await expect(page.locator('#project-new #pn')).toHaveValue('');
+      await expect(page.locator('#project-new #pn-e')).toHaveCount(0);
+    } finally {
+      for (const [id, listed] of await listProjects(page.request, name)) {
+        if (listed === name) {
+          await deleteProject(page.request, id, name);
+        }
+      }
+    }
   });
 
   test('swaps in the error panel on a failed load and recovers with Retry', async ({ page }) => {

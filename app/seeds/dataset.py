@@ -22,6 +22,9 @@ Allowed paths: /opt/rentals and /opt/billing (the deployment roots lie under the
 Deploy runs: rentals/prod web succeeded (by admin), then mysql failed (by root, the newest run of
 the project); billing/main has only a dry run, so it counts as never deployed.
 
+Audit history: deploy entries for rentals prod web (success) and mysql (failure), and file saves
+of .env.db and billing .env.api, each with the scope ids of its item.
+
 API tokens: billing-ci, owned by admin, restricted to the billing .env.api environment.
 
 Dist links: .env.db and .env.web (rentals prod) point at environments/.env.db-dist and
@@ -57,6 +60,9 @@ from app.models import (
     AllowedPath,
     ApiToken,
     ApiTokenRestriction,
+    AuditActorType,
+    AuditEntry,
+    AuditResult,
     Deployment,
     DeployRun,
     DeployStatus,
@@ -71,6 +77,7 @@ from app.models import (
     UserGroup,
 )
 from app.services import totp
+from app.services.audit import record_audit
 
 # Fixed password of every seeded user. Development and testing only: the seed command refuses
 # to run in any other environment and nothing else may reference this value.
@@ -252,8 +259,83 @@ def _run(
     )
 
 
+async def _ensure_audit_history(db: AsyncSession, users: dict[str, User]) -> None:
+    """Audit entries of the dataset's history (deploys and file saves), created when missing.
+
+    Entries carry the scope ids of the item they concern, so scoped users see only their part.
+    """
+    already = (
+        await db.execute(
+            select(func.count())
+            .select_from(AuditEntry)
+            .where(AuditEntry.action.in_(["deploy", "file_save"]))
+        )
+    ).scalar_one()
+    if already:
+        return
+    services = {
+        (deployment, service): (service_id, deployment_id, project_id)
+        for service_id, deployment, service, deployment_id, project_id in (
+            await db.execute(
+                select(
+                    Service.id, Deployment.name, Service.name, Deployment.id, Deployment.project_id
+                ).join(Deployment, Deployment.id == Service.deployment_id)
+            )
+        ).all()
+    }
+    environments = {
+        (deployment, name): environment_id
+        for environment_id, deployment, name in (
+            await db.execute(
+                select(Environment.id, Deployment.name, Environment.name)
+                .join(Service, Service.id == Environment.service_id)
+                .join(Deployment, Deployment.id == Service.deployment_id)
+            )
+        ).all()
+    }
+    history = (
+        ("deploy", "admin", AuditResult.SUCCESS, _at(2026, 10, 16, 9, 42), "prod", "web", None),
+        ("deploy", "root", AuditResult.FAILURE, _at(2026, 10, 17, 10, 5), "prod", "mysql", None),
+        (
+            "file_save",
+            "root",
+            AuditResult.SUCCESS,
+            _at(2026, 10, 15, 17, 40),
+            "prod",
+            "mysql",
+            ".env.db",
+        ),
+        (
+            "file_save",
+            "root",
+            AuditResult.SUCCESS,
+            _at(2026, 10, 14, 8, 15),
+            "main",
+            "api",
+            ".env.api",
+        ),
+    )
+    for action, actor, result, at, deployment, service, environment in history:
+        service_id, deployment_id, project_id = services[(deployment, service)]
+        entry = await record_audit(
+            db,
+            action=action,
+            result=result,
+            actor_type=AuditActorType.USER,
+            actor_user=users[actor],
+            target_type="environment" if environment else "service",
+            target_name=environment if environment else service,
+            project_id=project_id,
+            deployment_id=deployment_id,
+            service_id=service_id,
+            environment_id=environments[(deployment, environment)] if environment else None,
+        )
+        entry.created_at = at
+    await db.flush()
+
+
 async def ensure_activity(db: AsyncSession) -> tuple[tuple[DeployRun, ...], tuple[ApiToken, ...]]:
-    """Deploy runs and the restricted API token of the dataset, created when missing.
+    """Deploy runs, audit history and the restricted API token, created when missing.
 
     Separate from the full dataset so a database seeded before they existed can get them without
     being reseeded. Looks the users, services and environment up by name. The caller commits.
@@ -306,6 +388,7 @@ async def ensure_activity(db: AsyncSession) -> tuple[tuple[DeployRun, ...], tupl
                 environment_id=api_environment_id,
             )
         )
+    await _ensure_audit_history(db, users)
     await db.flush()
     return runs, (token,)
 

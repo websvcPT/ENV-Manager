@@ -22,7 +22,15 @@
   "skipped": ("bg-mute-bg text-mute-fg", "skip", "Skipped"),
   "superadmin": ("bg-ink text-surface", "shield", "Superadmin"),
   "admin": ("bg-info-bg text-info-fg", "user", "Admin"),
-  "viewer": ("bg-mute-bg text-mute-fg", "eye", "Viewer")
+  "viewer": ("bg-mute-bg text-mute-fg", "eye", "Viewer"),
+  "direct": ("bg-ok-bg text-ok-fg", "check", "Direct"),
+  "inherited": ("bg-info-bg text-info-fg", "arrow-right", "Inherited")
+} %}
+
+{#- Deploy run outcomes (the `DeployStatus` values) mapped to badge keys. -#}
+{% set DEPLOY_BADGES = {
+  "success": "success", "halted": "halted", "blocked": "blocked",
+  "failed": "failed", "post_deploy_failed": "postfailed"
 } %}
 
 {% macro badge(status, label=none) -%}
@@ -33,4 +41,9 @@
 {#- Role badge for a user group value (superadmin, admin or viewer). -#}
 {% macro role_badge(group) -%}
 {{ badge(group) }}
+{%- endmacro %}
+
+{#- Badge for a deploy run outcome value such as `success` or `post_deploy_failed`. -#}
+{% macro deploy_status_badge(status) -%}
+{{ badge(DEPLOY_BADGES[status]) }}
 {%- endmacro %}

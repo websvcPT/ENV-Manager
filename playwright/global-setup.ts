@@ -1,5 +1,7 @@
 import { request, type FullConfig } from '@playwright/test';
 
+import { removeProjectsMatching } from './projects-api';
+
 export const SUPERADMIN_STATE = '.auth/superadmin.json';
 
 /** Seeded users that get their own stored session, by the file the specs load. */
@@ -39,6 +41,13 @@ async function signInAndStore(
   await context.dispose();
 }
 
+/** Projects that specs create are named e2e-...; remove those an interrupted run left behind. */
+async function removeLeftoverProjects(baseURL: string | undefined): Promise<void> {
+  const context = await request.newContext({ baseURL, storageState: SUPERADMIN_STATE });
+  await removeProjectsMatching(context, 'e2e-', /^e2e-(detail-)?\d+-/);
+  await context.dispose();
+}
+
 /**
  * Sign in through the real login route and store the sessions, so every spec starts
  * authenticated: the superadmin for every spec by default, plus one stored session per other
@@ -52,4 +61,5 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
   for (const user of Object.keys(SESSION_USERS) as Array<keyof typeof SESSION_USERS>) {
     await signInAndStore(baseURL, SESSION_USERS[user], password, stateFile(user));
   }
+  await removeLeftoverProjects(baseURL);
 }

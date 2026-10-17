@@ -1,0 +1,30 @@
+{#- Shared frame of the project detail tabs: page header with the project figures and actions,
+    then the section tabs. Pages extend this and fill the `tab` block. Context: project (a
+    ProjectDetail), tab (the open tab key), can_manage_structure, can_manage_grants. -#}
+{% extends "layouts/app.html" %}
+{% from "macros/badges.html" import badge %}
+{% from "macros/buttons.html" import button %}
+{% from "macros/panels.html" import page_header, tabs %}
+{% set active_nav = "projects" %}
+{% set breadcrumbs = [("Projects", "/projects"), (project.name, none)] %}
+{% block title %}{{ project.name }}{% endblock %}
+{% block content %}
+{% set base_href = "/projects/" ~ project.id %}
+{% set header_badges %}{% if project.partial %}{% elif not project.deployments %}{{ badge("drift", "Empty") }}{% elif project.attention %}{{ badge("drift", project.attention ~ (" needs attention" if project.attention == 1 else " need attention")) }}{% endif %}{% endset %}
+{% set header_actions %}{% if can_manage_structure %}{{ button("New deployment", kind="primary", href=base_href ~ "/deployments/new", icon_name="plus", icon_stroke="2.2") }}{% endif %}{% endset %}
+{%- if project.partial -%}
+{%- set summary = "Your access is limited to " ~ ("one deployment" if project.deployments | length == 1 else (project.deployments | length) ~ " deployments") ~ " of this project." if project.all_granted_are_deployments else "Your access is limited to selected files of this project." -%}
+{%- else -%}
+{%- set count = project.deployments | length -%}
+{%- set summary = count ~ (" deployment" if count == 1 else " deployments") ~ ((" · " ~ project.members ~ (" member" if project.members == 1 else " members")) if project.members is not none else "") -%}
+{%- endif -%}
+{{ page_header(project.name, summary, badges=header_badges, actions=header_actions) }}
+{{ tabs(
+  [{"label": "Deployments", "href": base_href}]
+  + ([{"label": "Members and access", "href": base_href ~ "/members", "superadmin": true}] if can_manage_grants else [])
+  + [{"label": "Activity", "href": base_href ~ "/activity"}]
+  + ([{"label": "Settings", "href": base_href ~ "/settings", "superadmin": true}] if can_manage_structure else []),
+  base_href ~ ("" if tab == "deployments" else "/" ~ tab)
+) }}
+{% block tab %}{% endblock %}
+{% endblock %}

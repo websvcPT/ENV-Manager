@@ -7,6 +7,7 @@
 {% macro button(label, kind="secondary", href=none, type="button", icon_name=none, icon_stroke="2", extra_class="", disabled=false) -%}
 {%- set kinds = {
   "primary": "inline-flex h-11 items-center justify-center gap-2 rounded-btn bg-accent px-5 text-base font-bold text-accent-ink hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
+  "primary-sm": "inline-flex h-10 items-center justify-center gap-2 rounded-btn bg-accent px-5 text-base font-bold text-accent-ink hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
   "secondary": "inline-flex h-10 items-center justify-center gap-2 rounded-btn border border-line-strong bg-surface px-4 text-sm font-semibold text-ink hover:bg-surface2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
   "danger": "inline-flex h-10 items-center justify-center gap-2 rounded-btn border border-danger bg-danger-soft px-4 text-sm font-bold text-danger hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
 } -%}

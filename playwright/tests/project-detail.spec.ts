@@ -1,0 +1,364 @@
+import type { Browser, Page } from '@playwright/test';
+
+import { stateFile, SUPERADMIN_STATE } from '../global-setup';
+import { listProjects } from '../projects-api';
+import { expect, test } from './scratch-project';
+
+const WIDE_BREAKPOINT = 768;
+
+function isWide(page: Page): boolean {
+  return (page.viewportSize()?.width ?? 0) >= WIDE_BREAKPOINT;
+}
+
+async function horizontalOverflow(page: Page): Promise<number> {
+  return page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+}
+
+/** Id of a seeded project by name, looked up as the superadmin so any role's spec can use it. */
+async function projectId(browser: Browser, name: string): Promise<number> {
+  const context = await browser.newContext({ storageState: SUPERADMIN_STATE });
+  try {
+    const found = (await listProjects(context.request, name)).find(([, listed]) => listed === name);
+    if (!found) {
+      throw new Error(`seeded project ${name} is missing`);
+    }
+    return found[0];
+  } finally {
+    await context.close();
+  }
+}
+
+function tabs(page: Page) {
+  return page.locator('nav[aria-label="Sections"] a');
+}
+
+function deploymentNames(page: Page) {
+  return page.locator('#deployments-table [data-fragment="deployment-row"] th[scope="row"] a');
+}
+
+test.describe('superadmin', () => {
+  test('shows the header, the four tabs and the deployments with their actions', async ({
+    page,
+    browser,
+  }) => {
+    const rentals = await projectId(browser, 'rentals');
+    await page.goto('/projects');
+    await page.locator('[data-fragment="project-row"] th a', { hasText: /^rentals$/ }).click();
+    await expect(page).toHaveURL(new RegExp(`/projects/${rentals}$`));
+    await expect(page.locator('[data-fragment="page-header"] h1')).toHaveText('rentals');
+    await expect(page.locator('[data-fragment="page-header"] p')).toHaveText(
+      /^2 deployments · \d+ members$/,
+    );
+    await expect(page.locator('nav[aria-label="Breadcrumb"] [aria-current="page"]')).toHaveText(
+      'rentals',
+    );
+    await expect(tabs(page)).toHaveText([
+      'Deployments',
+      'Members and accessSuperadmin',
+      'Activity',
+      'SettingsSuperadmin',
+    ]);
+    await expect(tabs(page).first()).toHaveAttribute('aria-current', 'page');
+
+    await expect(page.locator('#deployments-table th[scope="col"]')).toHaveText([
+      'Name',
+      'Root path',
+      'Files',
+      'Last deploy',
+      'State flags',
+      'Actions',
+    ]);
+    await expect(deploymentNames(page)).toHaveText(['prod', 'staging']);
+    const prod = page.locator('[data-fragment="deployment-row"]', { hasText: 'prod' });
+    await expect(prod).toContainText('/opt/rentals/prod');
+    await expect(prod.getByRole('link', { name: 'Open' })).toHaveAttribute(
+      'href',
+      /^\/deployments\/\d+$/,
+    );
+    await expect(page.getByRole('link', { name: 'New deployment' })).toHaveAttribute(
+      'href',
+      `/projects/${rentals}/deployments/new`,
+    );
+    expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+  });
+
+  test('moves between the tabs', async ({ page, browser }) => {
+    const rentals = await projectId(browser, 'rentals');
+    await page.goto(`/projects/${rentals}`);
+
+    await tabs(page).filter({ hasText: 'Activity' }).click();
+    await expect(page).toHaveURL(new RegExp(`/projects/${rentals}/activity$`));
+    await expect(tabs(page).filter({ hasText: 'Activity' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    await expect(page.locator('[data-fragment="activity-table"]')).toBeVisible();
+
+    await tabs(page).filter({ hasText: 'Members and access' }).click();
+    await expect(page).toHaveURL(new RegExp(`/projects/${rentals}/members$`));
+    await expect(page.locator('[data-fragment="access-list"]')).toBeVisible();
+
+    await tabs(page).filter({ hasText: 'Settings' }).click();
+    await expect(page).toHaveURL(new RegExp(`/projects/${rentals}/settings$`));
+    await expect(page.locator('[data-fragment="project-rename"]')).toBeVisible();
+
+    await tabs(page).filter({ hasText: 'Deployments' }).click();
+    await expect(page.locator('[data-fragment="deployments-table"]')).toBeVisible();
+    expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+  });
+
+  test('lists who has access, direct and inherited', async ({ page, browser }) => {
+    const rentals = await projectId(browser, 'rentals');
+    await page.goto(`/projects/${rentals}/members`);
+    const list = page.locator('#access-list');
+    await expect(list).toContainText('Users with access to project rentals');
+    await expect(list.locator('th[scope="col"]')).toHaveText(['User', 'Group', 'Access']);
+    const row = (name: string) =>
+      list.locator('tbody tr').filter({ has: page.getByRole('rowheader', { name, exact: true }) });
+    await expect(row('project_admin')).toContainText('Direct');
+    await expect(row('deployment_admin')).toContainText('Inherited');
+    await expect(row('deployment_admin')).toContainText('from prod (Deployment)');
+    await expect(row('env_scoped_admin')).toContainText('from .env.db (Environment)');
+    await expect(row('root')).toContainText('from Superadmin group');
+    await expect(list.getByRole('button')).toHaveCount(0);
+    expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+  });
+
+  test('shows the empty state and the creation in the activity', async ({ page, scratch }) => {
+    await page.goto(`/projects/${scratch.id}`);
+    await expect(page.locator('[data-fragment="page-header"] h1')).toHaveText(scratch.name);
+    await expect(page.locator('[data-fragment="page-header"] [data-status="drift"]')).toHaveText(
+      'Empty',
+    );
+    await expect(page.locator('[data-fragment="page-header"] p')).toHaveText(
+      '0 deployments · 0 members',
+    );
+    const empty = page.locator('#deployments-table [data-fragment="empty-state"]');
+    await expect(empty).toContainText('No deployments yet');
+    await expect(empty.getByRole('link', { name: 'New deployment' })).toHaveAttribute(
+      'href',
+      `/projects/${scratch.id}/deployments/new`,
+    );
+    await expect(page.getByRole('link', { name: 'New deployment' })).toHaveCount(2);
+
+    await page.goto(`/projects/${scratch.id}/activity`);
+    const panel = page.locator('[data-fragment="activity-table"]');
+    await expect(panel.locator('th[scope="col"]')).toHaveText([
+      'Time',
+      'Actor',
+      'Action',
+      'Object',
+      'Result',
+    ]);
+    const entry = panel.locator('tbody tr', { hasText: scratch.name });
+    await expect(entry).toHaveCount(1);
+    await expect(entry).toContainText('root');
+    await expect(entry).toContainText('project.create');
+    await expect(entry.locator('[data-status="success"]')).toBeVisible();
+  });
+
+  test('refuses bad and duplicate names, then renames', async ({ page, scratch }) => {
+    await page.goto(`/projects/${scratch.id}/settings`);
+    const form = page.locator('#project-rename');
+    await expect(form.locator('#rn')).toHaveValue(scratch.name);
+
+    await form.locator('#rn').fill('Bad Name');
+    await form.getByRole('button', { name: 'Save name' }).click();
+    await expect(form.locator('#rn-e[role="alert"]')).toContainText('lowercase letters');
+    await expect(form.locator('#rn')).toHaveAttribute('aria-invalid', 'true');
+    await expect(form.locator('#rn')).toHaveValue('Bad Name');
+
+    await form.locator('#rn').fill('rentals');
+    await form.getByRole('button', { name: 'Save name' }).click();
+    await expect(form.locator('#rn-e[role="alert"]')).toContainText('already exists');
+
+    const renamed = `${scratch.name}-b`;
+    await form.locator('#rn').fill(renamed);
+    await form.getByRole('button', { name: 'Save name' }).click();
+    await expect(page).toHaveURL(new RegExp(`/projects/${scratch.id}/settings\\?renamed=true$`));
+    await expect(page.locator('[data-fragment="toast"]')).toContainText('Project renamed');
+    await expect(page.locator('[data-fragment="page-header"] h1')).toHaveText(renamed);
+    await expect(page.locator('nav[aria-label="Breadcrumb"] [aria-current="page"]')).toHaveText(
+      renamed,
+    );
+    await expect(page.locator('#project-rename #rn')).toHaveValue(renamed);
+  });
+
+  test('confirms by name before deleting and then leaves for the list', async ({
+    page,
+    scratch,
+  }) => {
+    await page.goto(`/projects/${scratch.id}/settings`);
+    await page.getByRole('button', { name: /Delete project/ }).click();
+    const dialog = page.locator('#delete-project[open]');
+    await expect(dialog).toBeVisible();
+    await expect(dialog.locator('#delete-project-t')).toHaveText(`Delete project ${scratch.name}`);
+    await expect(dialog).toContainText('its 0 deployments');
+    await expect(dialog).toContainText('This cannot be undone.');
+
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect(page.locator('#delete-project[open]')).toHaveCount(0);
+
+    await page.getByRole('button', { name: /Delete project/ }).click();
+    await dialog.locator('#dn').fill('not-the-name');
+    await dialog.getByRole('button', { name: 'Delete project' }).click();
+    await expect(dialog.locator('#dn-e[role="alert"]')).toContainText(
+      'Type the project name exactly to confirm.',
+    );
+    await expect(dialog.locator('#dn')).toHaveValue('not-the-name');
+    expect((await listProjects(page.request, scratch.name)).length).toBe(1);
+
+    await dialog.locator('#dn').fill(scratch.name);
+    await dialog.getByRole('button', { name: 'Delete project' }).click();
+    await expect(page).toHaveURL(/\/projects$/);
+    await expect(page.locator('#projects-table')).not.toContainText(scratch.name);
+    expect((await page.request.get(`/projects/${scratch.id}`)).status()).toBe(404);
+  });
+
+  test('refreshes the deployments panel when a deploy finishes', async ({ page, browser }) => {
+    const rentals = await projectId(browser, 'rentals');
+    await page.goto(`/projects/${rentals}`);
+    const refreshed = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === `/projects/${rentals}/deployments` &&
+        response.status() === 200,
+    );
+    await page.evaluate(() =>
+      document.body.dispatchEvent(new CustomEvent('deploy-finished', { bubbles: true })),
+    );
+    await refreshed;
+    await expect(deploymentNames(page)).toHaveText(['prod', 'staging']);
+  });
+
+  test('keeps the deployments and shows a toast when the refresh fails', async ({
+    page,
+    browser,
+  }) => {
+    const rentals = await projectId(browser, 'rentals');
+    await page.goto(`/projects/${rentals}`);
+    await page.route(`**/projects/${rentals}/deployments`, (route) => route.abort());
+    await page.evaluate(() =>
+      document.body.dispatchEvent(new CustomEvent('deploy-finished', { bubbles: true })),
+    );
+    await expect(page.locator('[data-fragment="toast"][role="alert"]')).toBeVisible();
+    await expect(deploymentNames(page)).toHaveText(['prod', 'staging']);
+  });
+
+  test('answers 404 for an unknown project', async ({ page }) => {
+    const response = await page.goto('/projects/999999');
+    expect(response?.status()).toBe(404);
+    await expect(page.locator('main')).toContainText('Not found');
+  });
+});
+
+test.describe('admin', () => {
+  test.use({ storageState: stateFile('admin') });
+
+  test('sees deployments and activity without structure actions', async ({ page, browser }) => {
+    const rentals = await projectId(browser, 'rentals');
+    await page.goto(`/projects/${rentals}`);
+    await expect(tabs(page)).toHaveText(['Deployments', 'Activity']);
+    await expect(page.locator('[data-fragment="page-header"] p')).toHaveText('2 deployments');
+    await expect(deploymentNames(page)).toHaveText(['prod', 'staging']);
+    await expect(page.getByRole('link', { name: 'New deployment' })).toHaveCount(0);
+    await expect(page.locator('[data-fragment="page-header"] [data-js="dialog-open"]')).toHaveCount(
+      0,
+    );
+    expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+  });
+
+  test('is refused the superadmin tabs', async ({ page, browser }) => {
+    const rentals = await projectId(browser, 'rentals');
+    for (const tab of ['members', 'settings']) {
+      const response = await page.goto(`/projects/${rentals}/${tab}`);
+      expect(response?.status()).toBe(403);
+      await expect(page.locator('main')).toContainText('No access');
+    }
+  });
+
+  test('lists the activity in scope', async ({ page, browser }) => {
+    const rentals = await projectId(browser, 'rentals');
+    await page.goto(`/projects/${rentals}/activity`);
+    await expect(page.locator('[data-fragment="activity-table"]')).toBeVisible();
+    await expect(page.locator('main')).not.toContainText('Settings');
+  });
+});
+
+test.describe('viewer', () => {
+  test.use({ storageState: stateFile('viewer') });
+
+  test('reads deployments and activity with no edit actions', async ({ page, browser }) => {
+    const rentals = await projectId(browser, 'rentals');
+    await page.goto(`/projects/${rentals}`);
+    await expect(tabs(page)).toHaveText(['Deployments', 'Activity']);
+    await expect(deploymentNames(page)).toHaveText(['prod', 'staging']);
+    await expect(page.getByRole('link', { name: 'New deployment' })).toHaveCount(0);
+  });
+
+  test('cannot open a project outside the grants', async ({ page, browser }) => {
+    const billing = await projectId(browser, 'billing');
+    const response = await page.goto(`/projects/${billing}`);
+    expect(response?.status()).toBe(404);
+    await expect(page.locator('main')).toContainText('Not found');
+    await expect(page.locator('main')).not.toContainText('billing');
+  });
+});
+
+test.describe('scoped users', () => {
+  test.describe('deployment grant', () => {
+    test.use({ storageState: stateFile('deploymentAdmin') });
+
+    test('sees only the granted deployment and is told so', async ({ page, browser }) => {
+      const rentals = await projectId(browser, 'rentals');
+      await page.goto(`/projects/${rentals}`);
+      await expect(page.locator('[data-fragment="page-header"] p')).toHaveText(
+        'Your access is limited to one deployment of this project.',
+      );
+      await expect(page.locator('[role="note"]')).toHaveText(
+        'You have access to prod only. Other deployments of this project are not listed.',
+      );
+      await expect(deploymentNames(page)).toHaveText(['prod']);
+      await expect(page.locator('[data-fragment="page-header"] [data-status]')).toHaveCount(0);
+      await expect(page.locator('main')).not.toContainText('staging');
+      await expect(page.locator('main')).not.toContainText('billing');
+      expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+    });
+  });
+
+  test.describe('environment grants', () => {
+    test.use({ storageState: stateFile('envScopedViewer') });
+
+    test('sees the parent deployment by name only', async ({ page, browser }) => {
+      const rentals = await projectId(browser, 'rentals');
+      await page.goto(`/projects/${rentals}`);
+      await expect(page.locator('[data-fragment="page-header"] p')).toHaveText(
+        'Your access is limited to selected files of this project.',
+      );
+      await expect(page.locator('[role="note"]')).toContainText('You have access to .env.db only.');
+      await expect(deploymentNames(page)).toHaveText(['prod']);
+      const row = page.locator('[data-fragment="deployment-row"]');
+      await expect(row).toContainText('Limited access');
+      await expect(row).not.toContainText('/opt/rentals');
+      await expect(page.locator('main')).not.toContainText('.env.web');
+      await expect(page.locator('main')).not.toContainText('mysql');
+    });
+  });
+});
+
+test.describe('layout on small screens', () => {
+  test('keeps the page within the viewport and scrolls the table inside', async ({
+    page,
+    browser,
+  }) => {
+    const rentals = await projectId(browser, 'rentals');
+    await page.goto(`/projects/${rentals}`);
+    expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+    if (!isWide(page)) {
+      const scroller = page.locator('#deployments-table .overflow-x-auto');
+      expect(await scroller.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
+    }
+    expect(await tabs(page).count()).toBe(4);
+  });
+});

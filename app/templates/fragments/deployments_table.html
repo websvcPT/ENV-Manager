@@ -1,0 +1,24 @@
+{#- The deployments panel of a project and its empty state. Context: project, can_manage_structure. -#}
+{% from "macros/badges.html" import badge, deploy_status_badge %}
+{% from "macros/buttons.html" import button %}
+{% from "macros/feedback.html" import empty_state %}
+{% from "macros/icons.html" import icon %}
+{% from "macros/panels.html" import panel, table, text_link %}
+{% call panel("Deployments", "deployments-title", fragment="deployments-table", id="deployments-table", hx_get="/projects/" ~ project.id ~ "/deployments", hx_trigger="deploy-finished from:body", hx_swap="outerHTML") %}
+{%- if project.deployments -%}
+{% call table("Deployments", ["Name", "Root path", "Files", "Last deploy", "State flags", "Actions"], right_columns=[5], min_width_class="min-w-[860px]") %}
+{%- for row in project.deployments %}
+<tr data-fragment="deployment-row"><th scope="row" class="border-t border-line px-4 py-3.5 text-left font-semibold"><a href="/deployments/{{ row.id }}" class="font-semibold text-link hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus text-ink">{{ row.name }}</a></th>
+<td class="border-t border-line px-4 py-3.5">{% if row.root_path is not none %}<span class="font-mono text-[13px] text-ink2">{{ row.root_path }}</span>{% else %}<span class="text-ink3">Limited access</span>{% endif %}</td>
+<td class="border-t border-line px-4 py-3.5">{{ row.files }}</td>
+<td class="border-t border-line px-4 py-3.5">{% if row.last_deploy %}{{ deploy_status_badge(row.last_deploy.status.value) }}<span class="mt-1 block text-xs text-ink2">{{ row.last_deploy.started_at.strftime("%Y-%m-%d %H:%M") }}{% if row.last_deploy.actor %} · {{ row.last_deploy.actor }}{% endif %}</span>{% else %}{{ badge("never", "No deploys yet") }}{% endif %}</td>
+<td class="border-t border-line px-4 py-3.5">{% if row.flags %}<span class="flex flex-wrap gap-1.5">{% for flag in row.flags %}{{ deploy_status_badge(flag.value) }}{% endfor %}</span>{% else %}<span class="inline-flex items-center gap-1.5 text-[13px] text-ink2">{{ icon("check", "size-3.5", "2.4") }}No flags</span>{% endif %}</td>
+<td class="border-t border-line px-4 py-3.5 whitespace-nowrap text-right"><span class="inline-flex gap-4">{{ text_link("Open", "/deployments/" ~ row.id) }}</span></td></tr>
+{%- endfor %}
+{% endcall %}
+{%- elif can_manage_structure -%}
+{% call empty_state("No deployments yet", "A deployment is one Compose deployment on a host path under an allowed path.") %}{{ button("New deployment", kind="primary", href="/projects/" ~ project.id ~ "/deployments/new", icon_name="plus", icon_stroke="2.2") }}{% endcall %}
+{%- else -%}
+{{ empty_state("No deployments yet", "A deployment is one Compose deployment on a host path under an allowed path.") }}
+{%- endif -%}
+{% endcall %}

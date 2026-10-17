@@ -218,7 +218,7 @@ async def delete_project(
     await db.commit()
 
 
-async def _latest_runs(
+async def latest_runs(
     db: AsyncSession, service_ids: set[int]
 ) -> dict[int, tuple[DeployRun, str | None]]:
     """The newest real (not dry run) deploy run of each service with the name of who ran it."""
@@ -248,7 +248,7 @@ async def _latest_runs(
     return {run.service_id: (run, name) for run, name in rows if run.service_id is not None}
 
 
-async def _member_counts(db: AsyncSession) -> dict[int, int]:
+async def member_counts(db: AsyncSession) -> dict[int, int]:
     """Active non-superadmin users with access to each project, by project id.
 
     A user counts for a project when a grant covers it or anything inside it.
@@ -319,7 +319,7 @@ async def list_project_rows(
             )
         ).all()
     )
-    latest = await _latest_runs(db, set(service_deployment))
+    latest = await latest_runs(db, set(service_deployment))
     environment_rows = (
         await db.execute(
             select(Environment.id, Environment.name, Deployment.project_id, Deployment.id)
@@ -329,7 +329,7 @@ async def list_project_rows(
         )
     ).all()
     show_members = scope.can(Capability.MANAGE_GRANTS)
-    members = await _member_counts(db) if show_members else {}
+    members = await member_counts(db) if show_members else {}
 
     rows: list[ProjectRow] = []
     for project in projects:
