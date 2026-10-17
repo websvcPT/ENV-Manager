@@ -1,6 +1,7 @@
 """Shared column types and helpers for the models."""
 
 from datetime import UTC, datetime
+from enum import StrEnum
 
 from sqlalchemy import DateTime
 from sqlalchemy.engine import Dialect
@@ -35,3 +36,8 @@ class UtcDateTime(TypeDecorator[datetime]):
         if value is None:
             return None
         return value.replace(tzinfo=UTC)
+
+
+def enum_values(enum_class: type[StrEnum]) -> list[str]:
+    """Store enum values, not member names."""
+    return [member.value for member in enum_class]

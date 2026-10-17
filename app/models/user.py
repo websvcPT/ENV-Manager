@@ -7,7 +7,7 @@ from sqlalchemy import Boolean, Enum, ForeignKey, Integer, String, Text, UniqueC
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
-from app.models.types import UtcDateTime, utc_now
+from app.models.types import UtcDateTime, enum_values, utc_now
 
 
 class UserGroup(StrEnum):
@@ -25,11 +25,6 @@ class LoginCounterKind(StrEnum):
     IP = "ip"
 
 
-def _enum_values(enum_class: type[StrEnum]) -> list[str]:
-    """Store enum values, not member names."""
-    return [member.value for member in enum_class]
-
-
 class User(Base):
     """A person or service account that can sign in. Disabled users are kept for audit."""
 
@@ -40,7 +35,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(320))
     password_hash: Mapped[str] = mapped_column(String(255))
     group: Mapped[UserGroup] = mapped_column(
-        Enum(UserGroup, native_enum=False, length=20, values_callable=_enum_values)
+        Enum(UserGroup, native_enum=False, length=20, values_callable=enum_values)
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     totp_secret: Mapped[str | None] = mapped_column(Text, default=None)
@@ -73,7 +68,7 @@ class LoginCounter(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     kind: Mapped[LoginCounterKind] = mapped_column(
-        Enum(LoginCounterKind, native_enum=False, length=10, values_callable=_enum_values)
+        Enum(LoginCounterKind, native_enum=False, length=10, values_callable=enum_values)
     )
     subject: Mapped[str] = mapped_column(String(320))
     failures: Mapped[int] = mapped_column(Integer, default=0)
