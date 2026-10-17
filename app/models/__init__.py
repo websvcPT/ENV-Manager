@@ -8,7 +8,17 @@ from app.models.access import (
 )
 from app.models.api_token import ApiToken
 from app.models.app_setting import AppSetting
+from app.models.audit import AuditActorType, AuditEntry, AuditResult
 from app.models.base import Base
+from app.models.deploy import (
+    DeployResult,
+    DeployResultStatus,
+    DeployRun,
+    DeployStatus,
+    DeployTrigger,
+    PostDeployStatus,
+)
+from app.models.operations import AllowedPath, Backup, BackupStatus, BackupTrigger
 from app.models.structure import (
     Deployment,
     DistMissingPolicy,
@@ -25,10 +35,22 @@ from app.models.user import LoginCounter, LoginCounterKind, User, UserGroup, Use
 
 __all__ = [
     "AccessGrant",
+    "AllowedPath",
     "ApiToken",
     "ApiTokenRestriction",
     "AppSetting",
+    "AuditActorType",
+    "AuditEntry",
+    "AuditResult",
+    "Backup",
+    "BackupStatus",
+    "BackupTrigger",
     "Base",
+    "DeployResult",
+    "DeployResultStatus",
+    "DeployRun",
+    "DeployStatus",
+    "DeployTrigger",
     "Deployment",
     "DistMissingPolicy",
     "DriftPolicy",
@@ -39,6 +61,7 @@ __all__ = [
     "LoginCounter",
     "LoginCounterKind",
     "MissingTargetPolicy",
+    "PostDeployStatus",
     "Project",
     "RestrictionLevel",
     "Service",
