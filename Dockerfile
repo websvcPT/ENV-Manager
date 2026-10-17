@@ -58,6 +58,8 @@ COPY --from=docker:29.9.1-cli /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=docker:29.9.1-cli /usr/local/libexec/docker/cli-plugins/docker-compose \
     /usr/local/libexec/docker/cli-plugins/docker-compose
 COPY --from=deps /opt/venv /opt/venv
+RUN printf '#!/bin/sh\nexec python -m app.cli "$@"\n' > /usr/local/bin/envmanager \
+    && chmod 755 /usr/local/bin/envmanager
 WORKDIR /app
 COPY app ./app
 COPY start.sh alembic.ini ./

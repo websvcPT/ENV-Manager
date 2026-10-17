@@ -22,7 +22,9 @@ RUN apt-get update \
     && groupadd --gid "$APP_GID" app \
     && useradd --uid "$APP_UID" --gid "$APP_GID" --create-home --shell /bin/sh app \
     && mkdir -p /app /data /opt/venv /opt/uv-cache \
-    && chown app:app /app /data /opt/venv /opt/uv-cache /home/app
+    && chown app:app /app /data /opt/venv /opt/uv-cache /home/app \
+    && printf '#!/bin/sh\nexec python -m app.cli "$@"\n' > /usr/local/bin/envmanager \
+    && chmod 755 /usr/local/bin/envmanager
 USER app
 WORKDIR /app
 EXPOSE 8080

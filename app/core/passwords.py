@@ -1,5 +1,6 @@
 """Argon2id password hashing and the rules for user-chosen passwords."""
 
+import secrets
 from functools import lru_cache
 
 from pwdlib import PasswordHash
@@ -45,3 +46,23 @@ def check_password_rules(password: str, minimum_length: int) -> None:
     """Raise ``PasswordPolicyError`` when a user-chosen password is too short."""
     if len(password) < minimum_length:
         raise PasswordPolicyError(f"password must be at least {minimum_length} characters")
+
+
+GENERATED_PASSWORD_LENGTH = 16
+_LOWER = "abcdefghijkmnopqrstuvwxyz"
+_UPPER = "ABCDEFGHJKLMNPQRSTUVWXYZ"
+_DIGITS = "23456789"
+_SYMBOLS = "!@#%^*-_+="
+_PASSWORD_CLASSES = (_LOWER, _UPPER, _DIGITS, _SYMBOLS)
+
+
+def generate_password() -> str:
+    """A random 16 character password from a mixed alphabet, using the secure generator.
+
+    Visually ambiguous characters are left out and every character class is always present.
+    """
+    characters = [secrets.choice(group) for group in _PASSWORD_CLASSES]
+    alphabet = "".join(_PASSWORD_CLASSES)
+    characters += [secrets.choice(alphabet) for _ in range(GENERATED_PASSWORD_LENGTH - 4)]
+    secrets.SystemRandom().shuffle(characters)
+    return "".join(characters)
