@@ -17,9 +17,11 @@ Structure (project, deployment, service, environments):
         api: .env.api
         worker: .env.worker
 
+Allowed paths: /opt/rentals and /opt/billing (the deployment roots lie under them).
+
 Access:
 
-    superadmin             every project, no grants needed
+    superadmin            every project, no grants needed
     admin                  projects rentals and billing
     viewer                 project rentals
     project_admin          project rentals
@@ -39,6 +41,7 @@ from app.core.crypto import CryptoService
 from app.core.passwords import hash_password
 from app.models import (
     AccessGrant,
+    AllowedPath,
     Deployment,
     Environment,
     EnvironmentVersion,
@@ -121,6 +124,7 @@ class SeedData:
     deployments: SeedDeployments
     services: SeedServices
     envs: SeedEnvironments
+    allowed_paths: tuple[AllowedPath, ...]
 
 
 @lru_cache
@@ -240,6 +244,12 @@ async def seed(db: AsyncSession, crypto: CryptoService) -> SeedData:
         ),
     )
 
+    allowed_paths = (
+        AllowedPath(path="/opt/rentals", created_by_id=users.superadmin.id),
+        AllowedPath(path="/opt/billing", created_by_id=users.superadmin.id),
+    )
+    db.add_all(allowed_paths)
+
     for user, level, target in (
         (users.admin, GrantLevel.PROJECT, projects.rentals),
         (users.admin, GrantLevel.PROJECT, projects.billing),
@@ -253,7 +263,12 @@ async def seed(db: AsyncSession, crypto: CryptoService) -> SeedData:
         db.add(AccessGrant(user_id=user.id, level=level, **{f"{level.value}_id": target.id}))
     await db.commit()
     return SeedData(
-        users=users, projects=projects, deployments=deployments, services=services, envs=envs
+        users=users,
+        projects=projects,
+        deployments=deployments,
+        services=services,
+        envs=envs,
+        allowed_paths=allowed_paths,
     )
 
 
