@@ -1,4 +1,18 @@
 @import "./theme.css";
 
+/* The handoff stylesheet gives every text size the body line height of 1.5; Tailwind's own
+   per-size line heights would make headings and small text a few pixels shorter. */
+@theme {
+  --text-xs--line-height: 1.5;
+  --text-sm--line-height: 1.5;
+  --text-base--line-height: 1.5;
+  --text-lg--line-height: 1.5;
+  --text-xl--line-height: 1.5;
+  --text-2xl--line-height: 1.5;
+  --text-3xl--line-height: 1.5;
+  --text-4xl--line-height: 1.5;
+  --text-5xl--line-height: 1.5;
+}
+
 @source "../templates";
 @source "../static/app.js";

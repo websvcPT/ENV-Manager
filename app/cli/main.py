@@ -7,14 +7,15 @@ from datetime import datetime
 from typing import Annotated
 
 import typer
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.core.crypto import build_crypto_service
 from app.core.db import create_engine, create_session_factory
 from app.core.migrations import migrate_database
-from app.models import AuditActorType, UserGroup
-from app.seeds import DEV_PASSWORD, SeedError
+from app.models import AuditActorType, LoginCounter, UserGroup
+from app.seeds import DEV_PASSWORD, SeedError, ensure_totp_user
 from app.seeds import seed as seed_data
 from app.services import users as user_service
 
@@ -140,22 +141,35 @@ def reset_user_password(name: Annotated[str, typer.Argument(help="Sign-in name."
     typer.echo("This password is shown once and cannot be recovered.")
 
 
-@dev_app.command("seed")
-def seed_dataset() -> None:
-    """Create the development dataset with its fixed dev-only passwords."""
+def _require_development_environment(action: str) -> None:
+    """Exit with an error unless the environment is one where dev helpers may run."""
     environment = get_settings().environment
     if environment not in SEED_ENVIRONMENTS:
         typer.echo(
-            f"error: seeding is only allowed when ENVMANAGER_ENVIRONMENT is one of "
+            f"error: {action} is only allowed when ENVMANAGER_ENVIRONMENT is one of "
             f"{', '.join(sorted(SEED_ENVIRONMENTS))}, not {environment!r}",
             err=True,
         )
         raise typer.Exit(code=1)
 
+
+@dev_app.command("seed")
+def seed_dataset() -> None:
+    """Create the development dataset with its fixed dev-only passwords.
+
+    An already seeded database is left alone except for users added to the dataset later.
+    """
+    _require_development_environment("seeding")
+
     async def operation(db: AsyncSession) -> None:
         settings = get_settings()
         crypto = build_crypto_service(settings.key, settings.key_file)
-        await seed_data(db, crypto)
+        try:
+            await seed_data(db, crypto)
+        except SeedError:
+            await ensure_totp_user(db, crypto)
+            await db.commit()
+            raise
 
     try:
         run_command(operation)
@@ -164,3 +178,18 @@ def seed_dataset() -> None:
         raise typer.Exit(code=1) from error
     typer.echo("seeded the development dataset")
     typer.echo(f"every seeded user signs in with the dev-only password {DEV_PASSWORD}")
+
+
+@dev_app.command("reset-lockouts")
+def reset_lockouts() -> None:
+    """Clear every failed login counter and lockout, so browser specs start from a clean slate."""
+    _require_development_environment("resetting lockouts")
+
+    async def operation(db: AsyncSession) -> int:
+        count = (await db.execute(select(func.count()).select_from(LoginCounter))).scalar_one()
+        await db.execute(delete(LoginCounter))
+        await db.commit()
+        return count
+
+    count = run_command(operation)
+    typer.echo(f"cleared {count} login counters")

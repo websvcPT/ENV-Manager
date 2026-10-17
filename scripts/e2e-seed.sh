@@ -13,3 +13,6 @@ else
     echo "$output" >&2
     exit "$status"
 fi
+
+# Failed logins from earlier runs would count against the lockout limits of this one.
+docker compose exec -T app envmanager dev reset-lockouts

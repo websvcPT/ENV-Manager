@@ -1,0 +1,26 @@
+{#- The sign-in card and the unit htmx swaps after each attempt. Context: `state` (none,
+    "invalid", "locked", "expired" or "totp"), `identifier` (kept after a failed attempt),
+    `remaining` (minutes and seconds left of a lockout), `code_error` (second factor step), and
+    for the second factor step `password` (carried so the code can complete the same login). -#}
+{% from "macros/buttons.html" import button %}
+{% from "macros/forms.html" import csrf_field, field %}
+{% from "macros/icons.html" import icon %}
+{% from "macros/shell.html" import logo_mark %}
+{% set messages = {
+  "invalid": ("alert", "bg-err-bg text-err-fg", "close", "Invalid credentials", "The username or password is incorrect. Try again."),
+  "locked": ("alert", "bg-warn-bg text-warn-fg", "warning", "Account temporarily locked", "Too many failed attempts. Try again in " ~ (remaining | default("")) ~ "."),
+  "expired": ("status", "bg-info-bg text-info-fg", "info", "Session expired", "Your session expired. Sign in again to continue.")
+} %}
+<div id="login-card" data-fragment="login-card" class="rounded-panel border border-line bg-surface shadow-panel flex w-[420px] max-w-full flex-col gap-5 p-6 md:p-8">
+<div class="flex flex-col items-center gap-3 text-center">{{ logo_mark("size-12") }}<h1 class="text-2xl font-bold">ENV Manager</h1><p class="text-ink2">Sign in to continue</p></div>
+{%- if state == "totp" %}
+<form method="post" action="/login/totp" hx-post="/login/totp" hx-target="#login-card" hx-swap="outerHTML" class="flex flex-col gap-4">{{ csrf_field(csrf_token) }}<input type="hidden" name="identifier" value="{{ identifier }}"><input type="hidden" name="password" value="{{ password }}"><h2 class="text-lg font-bold">Two-factor authentication</h2><p class="text-ink2">Enter the 6-digit code from your authenticator app.</p>{{ field("code", "Authentication code", type="text", placeholder="000000", hint="Codes refresh every 30 seconds.", error=code_error | default(none), mono=true, inputmode="numeric", autocomplete="one-time-code", maxlength="6") }}{{ button("Verify", kind="primary", type="submit", extra_class="w-full") }}<a href="/login" class="font-semibold text-link hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus text-center text-sm">Back to sign in</a></form>
+{%- else %}
+{%- if state in messages %}
+{%- set live_role, tone_classes, icon_name, title, detail = messages[state] %}
+<div role="{{ live_role }}" data-fragment="login-message" class="flex items-start gap-3 rounded-btn px-4 py-3 {{ tone_classes }}">{{ icon(icon_name, "size-5 mt-0.5", "2.2") }}<div><p class="font-bold">{{ title }}</p><p class="text-ink">{{ detail }}</p></div></div>
+{%- endif %}
+{%- set locked = state == "locked" %}
+<form method="post" action="/login" hx-post="/login" hx-target="#login-card" hx-swap="outerHTML" class="flex flex-col gap-4">{{ csrf_field(csrf_token) }}{{ field("user", "Email or username", name="identifier", value=identifier | default(""), disabled=locked, autocomplete="username") }}{{ field("pw", "Password", name="password", type="password", disabled=locked, autocomplete="current-password") }}{{ button("Sign in", kind="primary", type="submit", extra_class="w-full", disabled=locked) }}</form>
+{%- endif %}
+<p class="border-t border-line pt-4 text-center text-[13px] text-ink2">Accounts are created by a superadmin. There is no password recovery.</p></div>

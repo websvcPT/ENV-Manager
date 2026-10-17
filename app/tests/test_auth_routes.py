@@ -22,7 +22,7 @@ from app.services.users import set_user_active
 from app.tests.auth_helpers import PASSWORD, make_user
 from app.web.dependencies import require_auth, require_group
 
-PUBLIC_PATHS = {"/healthz", "/login"}
+PUBLIC_PATHS = {"/healthz", "/login", "/login/totp", "/session-expired"}
 PUBLIC_PREFIXES = ("/static",)
 
 
@@ -139,10 +139,11 @@ async def test_login_sets_a_hardened_session_cookie(
 async def test_failed_login_is_generic_and_locked_login_reports_time(
     client: tuple[httpx.AsyncClient, FastAPI],
 ) -> None:
-    """Bad credentials answer 401 with no detail, then repeated failures answer 429."""
+    """Bad credentials answer 401 with a generic card, then repeated failures answer 429."""
     http, _ = client
     bad = await _post(http, "/login", {"identifier": "alice", "password": "wrong"})
-    assert (bad.status_code, bad.json()) == (401, {"status": "invalid"})
+    assert bad.status_code == 401
+    assert "Invalid credentials" in bad.text
     for _ in range(4):
         last = await _post(http, "/login", {"identifier": "alice", "password": "wrong"})
     assert last.status_code == 429

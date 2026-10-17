@@ -152,15 +152,6 @@ async def test_failed_htmx_request_is_not_swapped(web_client: httpx.AsyncClient)
     assert response.headers["hx-reswap"] == "none"
 
 
-async def test_unauthenticated_page_request_keeps_the_json_401(
-    web_client: httpx.AsyncClient,
-) -> None:
-    """Authentication failures are not turned into error pages."""
-    response = await web_client.get("/projects")
-    assert response.status_code == 401
-    assert response.json() == {"detail": "authentication required"}
-
-
 async def test_forbidden_page_for_a_user_without_the_group(
     web_app: FastAPI, web_client: httpx.AsyncClient
 ) -> None:

@@ -3,12 +3,13 @@
 import secrets
 
 from fastapi import Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.cors import is_api_path
 from app.core.log import get_logger
 from app.core.security_headers import SECURITY_HEADERS
+from app.core.sessions import SESSION_COOKIE_NAME
 from app.core.templating import render
 from app.web.dependencies import AuthContext, resolve_optional_auth
 
@@ -73,6 +74,27 @@ def error_page(
     return render(request, "pages/error.html", context, status_code=status_code)
 
 
+def unauthenticated_response(request: Request, headers: dict[str, str]) -> Response:
+    """Send an unauthenticated browser or htmx request to the sign-in screens.
+
+    A request that still carries a session cookie had a session that ended, so the person sees
+    the session expired state and the stale cookie is dropped. A page request goes to the sign-in
+    page; an htmx request from an open screen gets `HX-Redirect` to the standalone expiry page,
+    or to sign-in when it never had a session.
+    """
+    expired = SESSION_COOKIE_NAME in request.cookies
+    response: Response
+    if is_htmx_request(request):
+        target = "/session-expired" if expired else "/login"
+        response = Response(status_code=401, headers={**headers, "HX-Redirect": target})
+    else:
+        target = "/login?expired=1" if expired else "/login"
+        response = RedirectResponse(target, status_code=303, headers=headers)
+    if expired:
+        response.delete_cookie(SESSION_COOKIE_NAME, path="/")
+    return response
+
+
 async def http_error_handler(request: Request, exc: Exception) -> Response:
     """Render 403 and 404 for browsers; every other status keeps the JSON shape.
 
@@ -82,6 +104,9 @@ async def http_error_handler(request: Request, exc: Exception) -> Response:
         raise exc
     status_code = exc.status_code
     headers = dict(exc.headers) if exc.headers else {}
+    browser_request = is_htmx_request(request) or wants_html(request)
+    if status_code == 401 and not is_api_request(request) and browser_request:
+        return unauthenticated_response(request, headers)
     if status_code in PAGE_STATUSES and not is_api_request(request):
         if is_htmx_request(request):
             return Response(status_code=status_code, headers={**headers, "HX-Reswap": "none"})

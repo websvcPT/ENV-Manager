@@ -33,6 +33,7 @@ Access:
     env_scoped_admin       environment .env.db only (not .env.db.secrets)
     env_scoped_viewer      environments .env.db and billing .env.api
     ungranted_admin        no grants
+    totp_user              admin without grants, second factor on (DEV_TOTP_SECRET)
 """
 
 from dataclasses import dataclass
@@ -55,10 +56,16 @@ from app.models import (
     User,
     UserGroup,
 )
+from app.services import totp
 
 # Fixed password of every seeded user. Development and testing only: the seed command refuses
 # to run in any other environment and nothing else may reference this value.
 DEV_PASSWORD = "dev-only-password"  # noqa: S105
+
+# Fixed authenticator secret of the seeded second factor user, same development and testing only
+# restriction as the password.
+DEV_TOTP_SECRET = "JBSWY3DPEHPK3PXP"  # noqa: S105
+TOTP_USER_NAME = "totp_user"
 
 
 class SeedError(Exception):
@@ -77,6 +84,7 @@ class SeedUsers:
     env_scoped_admin: User
     env_scoped_viewer: User
     ungranted_admin: User
+    totp_user: User
 
 
 @dataclass(frozen=True)
@@ -147,6 +155,25 @@ def _user(name: str, group: UserGroup) -> User:
     )
 
 
+async def ensure_totp_user(db: AsyncSession, crypto: CryptoService) -> User:
+    """The seeded user that signs in with a second factor, created when missing.
+
+    Separate from the full dataset so a database seeded before this user existed can get it
+    without being reseeded. The caller commits.
+    """
+    existing = (
+        await db.execute(select(User).where(User.name == TOTP_USER_NAME))
+    ).scalar_one_or_none()
+    if existing is not None:
+        return existing
+    user = _user(TOTP_USER_NAME, UserGroup.ADMIN)
+    db.add(user)
+    await db.flush()
+    totp.store_secret(user, DEV_TOTP_SECRET, crypto)
+    user.totp_enabled = True
+    return user
+
+
 async def _environment(
     db: AsyncSession,
     crypto: CryptoService,
@@ -199,6 +226,7 @@ async def seed(db: AsyncSession, crypto: CryptoService) -> SeedData:
         env_scoped_admin=_user("env_scoped_admin", UserGroup.ADMIN),
         env_scoped_viewer=_user("env_scoped_viewer", UserGroup.VIEWER),
         ungranted_admin=_user("ungranted_admin", UserGroup.ADMIN),
+        totp_user=await ensure_totp_user(db, crypto),
     )
     db.add_all(vars(users).values())
     projects = SeedProjects(rentals=Project(name="rentals"), billing=Project(name="billing"))
@@ -300,4 +328,5 @@ _USER_NAMES = [
     "env_scoped_admin",
     "env_scoped_viewer",
     "ungranted_admin",
+    TOTP_USER_NAME,
 ]
