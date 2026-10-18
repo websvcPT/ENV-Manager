@@ -1,18 +1,9 @@
 #!/usr/bin/env sh
-# Make sure the development dataset exists in the running stack. Seeding an already seeded
-# database is not an error; any other failure is.
-set -u
+# Make sure the development dataset exists in the running stack, then clear the lockout state
+# that earlier browser runs left behind.
+set -eu
 
-output=$(docker compose exec -T app envmanager dev seed 2>&1)
-status=$?
-if [ "$status" -eq 0 ]; then
-    echo "seeded the development dataset"
-elif echo "$output" | grep -q "already seeded"; then
-    echo "development dataset already seeded"
-else
-    echo "$output" >&2
-    exit "$status"
-fi
+sh "$(dirname "$0")/seed-dev.sh"
 
 # Failed logins from earlier runs would count against the lockout limits of this one.
 docker compose exec -T app envmanager dev reset-lockouts

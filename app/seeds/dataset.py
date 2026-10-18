@@ -47,12 +47,17 @@ Access:
     ungranted_admin        no grants
     totp_user              admin without grants, second factor on (DEV_TOTP_SECRET)
     totp_user_alt          the same, a second account so parallel browser runs never share a code
+
+The demo project (``app/seeds/demo.py``) is added only when a demo root is passed to ``seed``;
+it brings grants for project_admin (the project) and env_scoped_admin (its .env.db file) and
+leaves every other user's view untouched.
 """
 
 import hashlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import lru_cache
+from pathlib import Path
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -85,6 +90,7 @@ from app.models import (
     User,
     UserGroup,
 )
+from app.seeds.demo import SeedDemo, ensure_demo_project
 from app.services import totp
 from app.services.audit import record_audit
 from app.services.versions import create_version
@@ -215,6 +221,7 @@ class SeedData:
     """Named references to everything the seed created.
 
     ``editor`` is the production MySQL file with comments, a multiline value and three versions.
+    ``demo`` is the demo project and is None unless a demo root was given.
     """
 
     users: SeedUsers
@@ -227,6 +234,7 @@ class SeedData:
     allowed_paths: tuple[AllowedPath, ...]
     deploy_runs: tuple[DeployRun, ...]
     tokens: tuple[ApiToken, ...]
+    demo: SeedDemo | None = None
 
 
 @lru_cache
@@ -428,7 +436,12 @@ async def ensure_activity(db: AsyncSession) -> tuple[tuple[DeployRun, ...], tupl
     ).scalar_one_or_none()
     if token is None:
         api_environment_id = (
-            await db.execute(select(Environment.id).where(Environment.name == ".env.api"))
+            await db.execute(
+                select(Environment.id)
+                .join(Service, Service.id == Environment.service_id)
+                .join(Deployment, Deployment.id == Service.deployment_id)
+                .where(Deployment.name == "main", Environment.name == ".env.api")
+            )
         ).scalar_one()
         token = ApiToken(
             owner_id=users["admin"].id,
@@ -726,10 +739,11 @@ async def ensure_dev_host_paths(db: AsyncSession) -> None:
     db.add(AllowedPath(path=DEV_ALLOWED_ROOT, created_by_id=superadmin.id if superadmin else None))
 
 
-async def seed(db: AsyncSession, crypto: CryptoService) -> SeedData:
+async def seed(db: AsyncSession, crypto: CryptoService, demo_root: Path | None = None) -> SeedData:
     """Create the dataset in a migrated database and return named references.
 
-    Raises ``SeedError`` when the dataset, or any user it would create, already exists.
+    With ``demo_root`` the demo project rooted below it is created as well. Raises ``SeedError``
+    when the dataset, or any user it would create, already exists.
     """
     taken = (
         (await db.execute(select(User.name).where(User.name.in_(_USER_NAMES)))).scalars().first()
@@ -841,6 +855,7 @@ async def seed(db: AsyncSession, crypto: CryptoService) -> SeedData:
     editor = await ensure_editor_figures(db, crypto)
     if editor is None:
         raise SeedError("the editor environment was not created")
+    demo = await ensure_demo_project(db, crypto, demo_root) if demo_root else None
     await db.commit()
     return SeedData(
         users=users,
@@ -853,6 +868,7 @@ async def seed(db: AsyncSession, crypto: CryptoService) -> SeedData:
         allowed_paths=allowed_paths,
         deploy_runs=deploy_runs,
         tokens=tokens,
+        demo=demo,
     )
 
 

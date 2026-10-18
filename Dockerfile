@@ -76,4 +76,5 @@ USER root
 COPY --from=deps-dev /opt/venv /opt/venv
 COPY pyproject.toml ./
 COPY scripts ./scripts
+COPY demo ./demo
 USER app

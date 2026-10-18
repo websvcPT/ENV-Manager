@@ -16,11 +16,13 @@ from app.core.db import create_engine, create_session_factory
 from app.core.migrations import migrate_database
 from app.models import AuditActorType, LoginCounter, User, UserGroup
 from app.seeds import (
+    DEMO_STACK_FOLDER,
     DEV_PASSWORD,
     TOTP_ALT_USER_NAME,
     TOTP_USER_NAME,
     SeedError,
     ensure_activity,
+    ensure_demo_project,
     ensure_deployment_history,
     ensure_dev_host_paths,
     ensure_editor_figures,
@@ -170,6 +172,8 @@ def seed_dataset() -> None:
 
     An already seeded database is left alone except for users, deploy runs and tokens that
     were added to the dataset later, and it always allows the development deployments directory.
+    When ENVMANAGER_DEMO_ROOT is set the demo project rooted below it is created or completed too,
+    on a new and on an already seeded database.
     """
     _require_development_environment("seeding")
 
@@ -177,7 +181,7 @@ def seed_dataset() -> None:
         settings = get_settings()
         crypto = build_crypto_service(settings.key, settings.key_file)
         try:
-            await seed_data(db, crypto)
+            await seed_data(db, crypto, demo_root=settings.demo_root)
             await ensure_dev_host_paths(db)
             await db.commit()
         except SeedError:
@@ -187,6 +191,8 @@ def seed_dataset() -> None:
             await ensure_deployment_history(db)
             await ensure_service_figures(db, crypto)
             await ensure_editor_figures(db, crypto)
+            if settings.demo_root is not None:
+                await ensure_demo_project(db, crypto, settings.demo_root)
             await ensure_dev_host_paths(db)
             await db.commit()
             raise
@@ -198,6 +204,9 @@ def seed_dataset() -> None:
         raise typer.Exit(code=1) from error
     typer.echo("seeded the development dataset")
     typer.echo(f"every seeded user signs in with the dev-only password {DEV_PASSWORD}")
+    demo_root = get_settings().demo_root
+    if demo_root is not None:
+        typer.echo(f"demo project rooted at {demo_root / DEMO_STACK_FOLDER}")
 
 
 @dev_app.command("reset-lockouts")

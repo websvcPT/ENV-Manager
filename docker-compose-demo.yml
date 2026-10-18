@@ -1,0 +1,16 @@
+# Opt-in override for the demo deployment (`make demo-up`). It is never part of the default
+# stack: the Docker socket is root-equivalent on the host, so only the demo run mounts it.
+#
+# demo/ is mounted at the same absolute path as on the host, so a `docker compose` command run
+# from the app container against the host daemon resolves the project directory, the env files
+# and the project labels exactly as it would on the host. The socket is reachable through the
+# host's docker group id.
+services:
+  app:
+    environment:
+      ENVMANAGER_DEMO_ROOT: ${DEMO_ROOT:?run through make demo-up}
+    group_add:
+      - "${DOCKER_GID:?run through make demo-up}"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${DEMO_ROOT:?run through make demo-up}:${DEMO_ROOT:?run through make demo-up}

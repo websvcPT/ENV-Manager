@@ -1,0 +1,27 @@
+# Demo deployment for real-scenario tests. Two tiny workloads load their env files the way a real
+# Compose deployment does. Apart from the dist templates, the files under environments/ are
+# written by ENV Manager (or restored by `make demo-reset`) and are not committed.
+name: env-manager-demo
+
+services:
+  api:
+    image: alpine:3.24.2
+    init: true
+    env_file:
+      - environments/.env.api
+    # Prints the names, never the values, of the demo variables it received, then idles.
+    command:
+      - sh
+      - -c
+      - "env | cut -d= -f1 | grep '^DEMO_' | sort; exec sleep infinity"
+
+  db:
+    image: alpine:3.24.2
+    init: true
+    env_file:
+      - environments/.env.db
+      - environments/.env.db.secrets
+    command:
+      - sh
+      - -c
+      - "env | cut -d= -f1 | grep '^DEMO_' | sort; exec sleep infinity"

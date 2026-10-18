@@ -18,6 +18,12 @@ from app.seeds import DEV_PASSWORD, SeedData, seed
 from app.tests.web_helpers import EnvironmentIds, environment_ids
 
 
+@pytest.fixture(autouse=True)
+def no_inherited_demo_root(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The demo project is opt in: ignore a demo root the app container inherited."""
+    monkeypatch.delenv("ENVMANAGER_DEMO_ROOT", raising=False)
+
+
 @pytest.fixture
 def database_path(tmp_path: Path) -> Path:
     """Path of a database file that does not exist yet."""

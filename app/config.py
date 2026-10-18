@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     cors_origins: Annotated[list[str], NoDecode] = []
     sentry_dsn: SecretStr | None = None
     environment: str = "production"
+    demo_root: Path | None = None
 
     @property
     def database_path(self) -> Path:
@@ -58,6 +59,16 @@ class Settings(BaseSettings):
         for origin in value:
             if origin == "*" or not origin.startswith(("http://", "https://")):
                 raise ValueError("CORS origins must be explicit http or https origins")
+        return value
+
+    @field_validator("demo_root")
+    @classmethod
+    def _check_demo_root(cls, value: Path | None) -> Path | None:
+        """Treat an empty value as unset and require an absolute path otherwise."""
+        if value is None or str(value) in {"", "."}:
+            return None
+        if not value.is_absolute():
+            raise ValueError("the demo root must be an absolute path")
         return value
 
     @model_validator(mode="after")

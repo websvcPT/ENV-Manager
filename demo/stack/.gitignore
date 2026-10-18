@@ -1,0 +1,4 @@
+# Real target files are written by ENV Manager or restored by `make demo-reset`; only the dist
+# templates are committed.
+/environments/*
+!/environments/*-dist

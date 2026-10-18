@@ -16,3 +16,5 @@ docs
 playwright/node_modules
 playwright/test-results
 scripts/bin
+demo/stack/environments/*
+!demo/stack/environments/*-dist
