@@ -1,0 +1,60 @@
+{#- Step one of the deploy dialog: the environments of the service in the caller's scope with
+    the outcome of a dry run, the post-deploy preview and the force option. Context: service (a
+    ServiceHeader), preflight (a Preflight) and deploy_timeout_ms. -#}
+{% from "macros/badges.html" import badge %}
+{% from "macros/buttons.html" import button %}
+{% from "macros/deploy.html" import deploy_head %}
+{% from "macros/feedback.html" import code_block, note %}
+{% from "macros/forms.html" import dangerous_option %}
+{% from "macros/icons.html" import icon %}
+{% set columns = "md:grid-cols-[44px_minmax(0,1.5fr)_70px_minmax(0,1.4fr)_minmax(0,1.1fr)_130px]" %}
+{% set rows = preflight.rows %}
+{% set preview = preflight.preview %}
+{% set chosen = preflight.selected %}
+<div id="deploy-dialog-content" data-fragment="deploy-dialog">
+{{ deploy_head(service, 1) }}
+<form id="deploy-form" data-stale="false" hx-post="/services/{{ service.id }}/deploy" hx-target="#deploy-dialog" hx-swap="innerHTML" hx-sync="this:drop" hx-config='{{ {"timeout": deploy_timeout_ms}|tojson }}' class="group">
+<input type="hidden" name="selection" value="explicit">
+<div id="deploy-dialog-body" class="flex flex-col gap-5 p-5 md:p-6">
+{%- if preflight.older_version %}
+{{ note(preflight.older_version) }}
+{%- endif %}
+<fieldset class="min-w-0"><legend class="mb-2 text-xs font-bold uppercase tracking-wide text-ink3">Environments in your scope</legend>
+<div class="overflow-hidden rounded-panel border border-line" data-fragment="preflight-table">
+<div class="hidden bg-head text-xs font-semibold uppercase tracking-wide text-head-ink md:grid {{ columns }}"><span class="px-3 py-2.5"><span class="sr-only">Select</span></span><span class="py-2.5">Environment</span><span class="py-2.5">Version</span><span class="py-2.5">Dist check</span><span class="py-2.5">Drift</span><span class="px-3 py-2.5">Outcome</span></div>
+{%- for row in rows %}
+<label data-fragment="preflight-row" data-env="{{ row.name }}" class="flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 border-t border-line px-3 py-3 first:border-t-0 md:gap-0 md:p-0 md:grid {{ columns }} has-checked:bg-accent-soft">
+<span class="md:p-3"><input type="checkbox" name="environment" value="{{ row.environment_id }}" data-js="deploy-select"{% if row.selected %} checked{% endif %} aria-label="Deploy {{ row.name }}" class="block size-[18px] accent-accent"></span>
+<span class="min-w-0 flex-1 break-all font-mono text-[13px] font-semibold md:py-3">{{ row.name }}</span>
+<span class="font-mono text-[13px] md:py-3">{% if row.version is not none %}v{{ row.version }}{% else %}None{% endif %}</span>
+<span class="basis-full pl-8 text-[13px] text-ink2 md:basis-auto md:py-3 md:pl-0">{{ row.dist_text }}</span>
+<span class="basis-full pl-8 text-[13px] text-ink2 md:basis-auto md:py-3 md:pl-0">{{ row.drift_text }}</span>
+<span class="pl-8 md:p-3">{{ badge(row.badge, row.badge_label) }}{% if row.problem %}<span class="mt-1 block text-xs text-ink2">{{ row.problem }}</span>{% endif %}</span>
+{%- if row.version is not none %}<input type="hidden" name="version_{{ row.environment_id }}" value="{{ row.version }}">{% endif %}</label>
+{%- endfor %}
+</div></fieldset>
+<div role="status" data-fragment="preflight-summary" class="flex items-start gap-3 rounded-btn bg-info-bg px-4 py-3 font-semibold text-info-fg">{{ icon("info", "size-[18px] mt-0.5", "2") }}<span>{{ preflight.summary }}</span></div>
+<p role="status" data-stale-note class="hidden items-start gap-3 rounded-btn bg-warn-bg px-4 py-3 font-semibold text-warn-fg group-data-[stale=true]:flex">{{ icon("warning", "size-[18px] mt-0.5", "2") }}<span>The selection changed after the dry run. Run it again to refresh the summary.</span></p>
+<section class="rounded-panel border border-line p-4" aria-labelledby="pf-pd" data-fragment="post-deploy-preview"><h3 id="pf-pd" class="mb-1.5 text-xs font-bold uppercase tracking-wide text-ink3">Post-deploy</h3>
+{%- if preview.state == "run" %}
+<p class="mb-2.5">The post-deploy command will run <strong>once</strong>, after {% if chosen == 1 %}this environment is{% else %}these {{ chosen }} environments are{% endif %} written.{% if service.hidden_environments %} The service may also load environments you cannot see; they are not changed.{% endif %}</p>
+{%- elif preview.state == "skipped" %}
+<p class="mb-2.5 flex flex-wrap items-center gap-3">{{ badge("skipped") }}<span class="text-[13px] text-ink2">{{ preview.reason }}</span></p>
+{%- elif preview.state == "idle" %}
+<p class="text-ink2">Choose the environments to see whether the post-deploy command runs.</p>
+{%- else %}
+<p class="text-ink2">{{ preview.reason }}</p>
+{%- endif %}
+{%- if preview.command %}
+<div hx-ignore>{{ code_block(preview.command) }}</div>
+<p class="mt-1.5 text-xs text-ink3">Command text is shown to the superadmin only.</p>
+{%- endif %}
+</section>
+{{ dangerous_option("force", "Force overwrite", "Overrides the block policy for missing dist keys and the halt policy for drift. Target files changed outside the app are replaced. The force flag is always written to the audit log.", checked=preflight.force, data_js="deploy-stale") }}
+</div>
+<div class="flex flex-wrap items-center gap-3 rounded-b-dialog border-t border-line bg-surface2 px-5 py-4 md:px-6"><span role="status" class="hidden items-center gap-2 text-[13px] font-semibold text-ink2 group-[.htmx-request]:inline-flex">{{ icon("clock", "size-4", "2") }}Working. A post-deploy command can take a while.</span><span class="flex-1"></span>
+{{ button("Cancel", extra_class="h-11", data_js="dialog-close") }}
+{{ button("Run dry run again", extra_class="h-11", hx_post="/services/" ~ service.id ~ "/deploy/preflight", hx_target="#deploy-dialog", hx_swap="innerHTML", hx_sync="this:replace") }}
+<button type="submit" data-deploy-submit data-label-none="Deploy" data-label-one="Deploy 1 environment" data-label-many="Deploy {count} environments"{% if chosen == 0 %} disabled{% endif %} class="inline-flex h-11 items-center justify-center gap-2 rounded-btn bg-accent px-5 text-base font-bold text-accent-ink hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-60 group-[.htmx-request]:opacity-60">{% if chosen == 0 %}Deploy{% elif chosen == 1 %}Deploy 1 environment{% else %}Deploy {{ chosen }} environments{% endif %}</button></div>
+</form>
+</div>

@@ -3,7 +3,8 @@
    Behaviours: theme toggle, dialogs, sidebar collapse, reveal hide and timer, removing a new
    variable row, row toggle, tree toggle, copy, dismiss, history back, picking a path into a
    field, limiting the version comparison to two versions, closing dialogs when the server asks,
-   and a toast when an htmx request fails. */
+   the deploy dialog (loading content, chosen environments, closing when the load fails), and a
+   toast when an htmx request fails. */
 (function () {
   'use strict';
 
@@ -105,6 +106,23 @@
     document.body.appendChild(toast);
   }
 
+  /* A dialog whose content is loaded by a request (the deploy dialog) names a template with its
+     loading content: opening it again never shows the previous answer while the new one is on
+     its way. */
+  function showLoading(dialog) {
+    var template = document.getElementById(dialog.getAttribute('data-loading') || '');
+    if (!template) { return; }
+    dialog.replaceChildren(template.content.cloneNode(true));
+  }
+
+  /* A request that failed while its dialog still shows the loading content has nothing to
+     show: the dialog closes and the error toast explains. */
+  function closeLoadingDialogs() {
+    document.querySelectorAll('dialog[open]').forEach(function (dialog) {
+      if (dialog.querySelector('[aria-busy=true]')) { dialog.close(); }
+    });
+  }
+
   var clickActions = {
     'theme-toggle': function () {
       var dark = root.classList.toggle('dark');
@@ -113,7 +131,9 @@
     },
     'dialog-open': function (control) {
       var dialog = document.getElementById(control.getAttribute('data-target'));
-      if (dialog) { dialog.showModal(); }
+      if (!dialog) { return; }
+      showLoading(dialog);
+      dialog.showModal();
     },
     'menu-open': function () {
       var dialog = document.getElementById('mobile-menu');
@@ -192,6 +212,25 @@
     earliest.checked = false;
   }, true);
 
+  /* The deploy dialog: the Deploy button counts the chosen environments, and any change of the
+     choice (or of the force option) marks the dry run on screen as out of date. */
+  document.addEventListener('change', function (event) {
+    var box = event.target;
+    if (!(box instanceof HTMLInputElement)) { return; }
+    var kind = box.getAttribute('data-js');
+    if (kind !== 'deploy-select' && kind !== 'deploy-stale') { return; }
+    var form = box.closest('form');
+    if (!form) { return; }
+    form.setAttribute('data-stale', 'true');
+    var button = form.querySelector('[data-deploy-submit]');
+    if (!button) { return; }
+    var count = form.querySelectorAll('[data-js=deploy-select]:checked').length;
+    button.disabled = count === 0;
+    button.textContent = count === 0 ? button.getAttribute('data-label-none')
+      : count === 1 ? button.getAttribute('data-label-one')
+        : button.getAttribute('data-label-many').replace('{count}', String(count));
+  });
+
   document.addEventListener('click', function (event) {
     if (!(event.target instanceof Element)) { return; }
     if (event.target.tagName === 'DIALOG') {
@@ -208,7 +247,10 @@
   document.addEventListener('htmx:response:error', function (event) {
     var ctx = event.detail && event.detail.ctx;
     var status = ctx && ctx.response ? ctx.response.status : 0;
-    if (status >= 500 || status === 403 || status === 404) { showErrorToast(); }
+    if (status >= 500 || status === 403 || status === 404) {
+      closeLoadingDialogs();
+      showErrorToast();
+    }
   });
   /* A response header event (HX-Trigger: close-dialogs) closes open dialogs after a form
      succeeded. */
@@ -217,7 +259,10 @@
       dialog.close();
     });
   });
-  document.addEventListener('htmx:error', showErrorToast);
+  document.addEventListener('htmx:error', function () {
+    closeLoadingDialogs();
+    showErrorToast();
+  });
   document.addEventListener('htmx:after:swap', function () {
     syncThemeLabels();
     armReveals();

@@ -25,6 +25,7 @@ from app.models import (
     ServiceHook,
 )
 from app.services.deployment_detail import HistoryRow, load_history
+from app.services.paths import load_allowed_paths
 from app.services.permissions import (
     CAPABILITY_GROUPS,
     AccessScope,
@@ -55,7 +56,9 @@ class ServiceHeader:
     ``visible_environment_ids`` are the environments of the service in scope and
     ``hidden_environments`` counts the others. ``can_view_output`` and ``can_view_command`` follow
     the group only: an environment grant does not cover the parent service, yet it still lets the
-    caller see the post-deploy outcome of the deploys it can see.
+    caller see the post-deploy outcome of the deploys it can see. ``outside_allowed`` is True when
+    the deployment root no longer lies inside the allowed paths (whoever asks; the root itself is
+    not part of what the caller gets).
     """
 
     id: int
@@ -70,6 +73,7 @@ class ServiceHeader:
     hidden_environments: int
     can_view_output: bool
     can_view_command: bool
+    outside_allowed: bool = False
 
 
 @dataclass(frozen=True)
@@ -167,6 +171,7 @@ async def load_service_header(
         can_view_command=(
             scope.active and scope.group in CAPABILITY_GROUPS[Capability.VIEW_POST_DEPLOY_COMMAND]
         ),
+        outside_allowed=not (await load_allowed_paths(db)).contains(deployment.root_path),
     )
 
 

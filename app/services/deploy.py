@@ -141,6 +141,7 @@ class _Findings:
     drift: DriftState | None = None
     target_hash_before: str | None = None
     forced: bool = False
+    check: DistCheck | None = None
 
 
 def _outcome(
@@ -169,6 +170,7 @@ def _outcome(
         written_hash=written_hash,
         backup_path=backup_path,
         forced=found.forced,
+        check=found.check,
     )
 
 
@@ -361,7 +363,9 @@ class DeployEngine:
         try:
             current = await asyncio.to_thread(read_target_file, location, allowed)
         except TargetError as error:
-            unread = _outcome(environment, version, failed, str(error), _Findings(check.outcome))
+            unread = _outcome(
+                environment, version, failed, str(error), _Findings(check.outcome, check=check)
+            )
             return unread, check
         current_hash = self.crypto.content_hash(current) if current is not None else None
         deployment = context.deployment
@@ -373,7 +377,7 @@ class DeployEngine:
             missing_policy=environment.missing_target_policy or deployment.missing_target_policy,
             force=request.force,
         )
-        findings = _Findings(check.outcome, plan.drift, current_hash, plan.forced)
+        findings = _Findings(check.outcome, plan.drift, current_hash, plan.forced, check)
         if plan.action is Action.BLOCK:
             return _outcome(
                 environment, version, DeployResultStatus.BLOCKED, plan.message, findings

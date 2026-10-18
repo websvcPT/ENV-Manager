@@ -101,7 +101,7 @@ async def test_superadmin_sees_everything_and_the_command_settings(
     }
     assert row_actions(page, ".env.web.tuning") == ["Edit", "History", "Compare to dist"]
     assert f'href="/services/{ids.staging_web}/environments/new"' in page
-    assert "Read-only view" not in page and "Deploy service" not in page
+    assert "Read-only view" not in page and "Deploy service" in page
     assert "Command settings" in page and "Superadmin" in page
     assert "docker compose up -d --no-deps {service_name}" in page
     assert 'placeholder="/opt/rentals/staging"' in page

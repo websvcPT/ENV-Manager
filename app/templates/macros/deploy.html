@@ -1,0 +1,34 @@
+{#- Parts shared by the deploy dialog fragments and the pages that open it. The dialog is one
+    native <dialog id="deploy-dialog"> per page, outside every swappable fragment; each
+    response replaces its inner content (the `deploy-dialog` fragment) so the step header can
+    change. `app.js` puts the loading content back whenever a control opens the dialog. -#}
+{% from "macros/buttons.html" import icon_button %}
+{% from "macros/feedback.html" import skeleton %}
+
+{#- Header of every step: title, where it runs and the two steps. `step` is 1 or 2. -#}
+{% macro deploy_head(service, step) -%}
+<div class="flex items-center gap-4 border-b border-line px-5 py-4 md:px-6"><div class="min-w-0 flex-1"><h2 id="dd-title" class="text-xl font-bold">Deploy <span class="font-mono">{{ service.name }}</span></h2><p class="text-[13px] text-ink2">{{ service.deployment_name }} · {{ service.project_name }}</p></div>
+<ol class="hidden list-none gap-4 sm:flex" aria-label="Steps"><li{% if step == 1 %} aria-current="step"{% endif %} class="flex items-center gap-2 text-[13px] font-semibold {{ "text-ink" if step == 1 else "text-ink3" }}"><span class="flex size-6 items-center justify-center rounded-full text-xs {{ "bg-accent text-accent-ink" if step == 1 else "bg-ok-bg text-ok-fg" }}">1</span>Pre-flight</li><li{% if step == 2 %} aria-current="step"{% endif %} class="flex items-center gap-2 text-[13px] font-semibold {{ "text-ink" if step == 2 else "text-ink3" }}"><span class="flex size-6 items-center justify-center rounded-full text-xs {{ "bg-accent text-accent-ink" if step == 2 else "bg-mute-bg text-mute-fg" }}">2</span>Result</li></ol>
+{{ icon_button("Close", "close", shape="square", data_js="dialog-close") }}</div>
+{%- endmacro %}
+
+{#- The fields that carry a choice to the next request: the chosen environments and the version
+    each one was checked at. -#}
+{% macro selection_fields(selected_ids, versions) -%}
+<input type="hidden" name="selection" value="explicit">{% for environment_id in selected_ids %}<input type="hidden" name="environment" value="{{ environment_id }}">{% endfor %}{% for environment_id, number in versions.items() %}<input type="hidden" name="version_{{ environment_id }}" value="{{ number }}">{% endfor %}
+{%- endmacro %}
+
+{% macro deploy_loading() -%}
+<div id="deploy-dialog-content" data-fragment="deploy-dialog" aria-busy="true"><div class="flex items-center gap-4 border-b border-line px-5 py-4 md:px-6"><div class="min-w-0 flex-1"><h2 id="dd-title" class="text-xl font-bold">Deploy</h2></div>{{ icon_button("Close", "close", shape="square", data_js="dialog-close") }}</div><div class="p-5 md:p-6">{{ skeleton(3) }}</div></div>
+{%- endmacro %}
+
+{#- The dialog and the loading content that replaces its old content before it opens. -#}
+{% macro deploy_shell() -%}
+<dialog id="deploy-dialog" aria-labelledby="dd-title" data-loading="deploy-dialog-loading" class="m-auto max-h-[92vh] w-[820px] max-w-[calc(100%_-_1.5rem)] overflow-auto rounded-dialog bg-surface p-0 text-ink shadow-dialog backdrop:bg-scrim">{{ deploy_loading() }}</dialog>
+<template id="deploy-dialog-loading">{{ deploy_loading() }}</template>
+{%- endmacro %}
+
+{#- Attributes of a control that opens the dialog and starts the pre-flight of a service. -#}
+{% macro deploy_link(service_id, label="Deploy") -%}
+<button type="button" data-js="dialog-open" data-target="deploy-dialog" aria-haspopup="dialog" hx-post="/services/{{ service_id }}/deploy/preflight" hx-target="#deploy-dialog" hx-swap="innerHTML" class="font-semibold text-link hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus text-sm">{{ label }}</button>
+{%- endmacro %}

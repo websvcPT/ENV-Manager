@@ -1,5 +1,6 @@
 import { request, type FullConfig } from '@playwright/test';
 
+import { removeLeftoverHostFolders } from './host-files';
 import { removeProjectsMatching } from './projects-api';
 
 export const SUPERADMIN_STATE = '.auth/superadmin.json';
@@ -63,4 +64,5 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
     await signInAndStore(baseURL, SESSION_USERS[user], password, stateFile(user));
   }
   await removeLeftoverProjects(baseURL);
+  removeLeftoverHostFolders();
 }

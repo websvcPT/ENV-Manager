@@ -21,6 +21,7 @@ from app.services.deploy_recovery import recover_interrupted_runs
 from app.services.docker_cli import DockerCli
 from app.services.key_check import ensure_key_check
 from app.web.auth import router as auth_router
+from app.web.deploy_dialog import router as deploy_dialog_router
 from app.web.deployment_form import router as deployment_form_router
 from app.web.deployments import router as deployments_router
 from app.web.dist_report import router as dist_report_router
@@ -69,6 +70,7 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         application.state.crypto = crypto
         application.state.auth_policy = AuthPolicy()
         application.state.docker_cli = DockerCli(socket_path=settings.docker_socket)
+        application.state.lock_dir = settings.lock_path
         application.state.engine = engine
         application.state.session_factory = session_factory
         yield
@@ -100,6 +102,7 @@ def create_app() -> FastAPI:
     application.include_router(deployments_router)
     application.include_router(deployment_form_router)
     application.include_router(service_detail_router)
+    application.include_router(deploy_dialog_router)
     application.include_router(service_form_router)
     application.include_router(environment_form_router)
     application.include_router(editor_router)

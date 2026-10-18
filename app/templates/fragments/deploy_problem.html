@@ -1,0 +1,13 @@
+{#- A deploy request that cannot start, shown in the dialog with the way back to the pre-flight.
+    Context: service (a ServiceHeader), message, selected_ids and versions. -#}
+{% from "macros/buttons.html" import button %}
+{% from "macros/deploy.html" import deploy_head, selection_fields %}
+{% from "macros/feedback.html" import note %}
+<div id="deploy-dialog-content" data-fragment="deploy-dialog">
+{{ deploy_head(service, 1) }}
+<form hx-post="/services/{{ service.id }}/deploy/preflight" hx-target="#deploy-dialog" hx-swap="innerHTML">
+{{ selection_fields(selected_ids, versions) }}
+<div id="deploy-dialog-body" class="flex flex-col gap-5 p-5 md:p-6">{{ note(message, tone="error") }}</div>
+<div class="flex flex-wrap items-center justify-end gap-3 rounded-b-dialog border-t border-line bg-surface2 px-5 py-4 md:px-6">{{ button("Close", extra_class="h-11", data_js="dialog-close") }}{{ button("Back to pre-flight", type="submit", extra_class="h-11") }}</div>
+</form>
+</div>

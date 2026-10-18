@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from app.models import DeployResultStatus, DeployStatus, DistOutcome, DriftState
+from app.services.dist_check import DistCheck
 from app.services.hooks import PostDeployResult
 
 
@@ -42,7 +43,8 @@ class EnvironmentOutcome:
     """The outcome for one environment: status, message and what the checks found.
 
     ``target_path`` and ``backup_path`` are relative to the deployment root. ``forced`` is True
-    when the force flag overrode a block or halt of this environment.
+    when the force flag overrode a block or halt of this environment. ``check`` is the dist check
+    the decision was based on (key names and counts only), None when none ran.
     """
 
     environment_id: int
@@ -58,6 +60,7 @@ class EnvironmentOutcome:
     written_hash: str | None = None
     backup_path: str | None = None
     forced: bool = False
+    check: DistCheck | None = None
 
 
 @dataclass(frozen=True)

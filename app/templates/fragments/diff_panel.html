@@ -14,7 +14,7 @@
 {%- if diff %}
 <h2 id="dt" class="text-lg font-bold">Comparing <span class="font-mono">v{{ diff.left }}</span> to <span class="font-mono">v{{ diff.right }}</span></h2>
 <span class="flex-1"></span>
-{%- if (env.can_reveal and diff.rows) or env.can_edit %}
+{%- if (env.can_reveal and diff.rows) or env.can_edit or env.can_check_dist %}
 <div class="flex basis-full flex-wrap items-center gap-3 md:basis-auto">
 {%- if env.can_reveal and diff.rows %}
 <button type="button" aria-pressed="false" hx-post="/environments/{{ env.id }}/history/reveal?v={{ diff.left }}&amp;v={{ diff.right }}" hx-swap="none" class="inline-flex {{ reveal_classes }} group-data-[revealed=true]:hidden">{{ icon("eye", "size-4", "2") }}Reveal values (audited)</button>
@@ -22,6 +22,10 @@
 {%- endif %}
 {%- if env.can_edit %}
 {{ button("Restore v" ~ diff.left ~ " as new version", kind="danger", icon_name="restore", icon_stroke="2.2", extra_class="max-md:h-11", data_js="dialog-open", data_target="restore-dialog", aria_haspopup="dialog") }}
+{%- endif %}
+{%- if env.can_check_dist %}
+{% set deploy_vals = {"environment": env.id, ("version_" ~ env.id): diff.right} | tojson | forceescape %}
+{{ button("Deploy v" ~ diff.right, extra_class="max-md:h-11", data_js="dialog-open", data_target="deploy-dialog", aria_haspopup="dialog", hx_post="/services/" ~ env.service_id ~ "/deploy/preflight", hx_target="#deploy-dialog", hx_swap="innerHTML", hx_vals=deploy_vals) }}
 {%- endif %}
 </div>
 {%- endif %}

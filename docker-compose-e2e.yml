@@ -23,6 +23,9 @@ x-browser: &browser
     - ./playwright/package.json:/package.json:ro
     - ./playwright/package-lock.json:/package-lock.json:ro
     - node-modules:/node_modules
+    # The folder the stack's app container sees as /srv/deployments, so the specs can write and
+    # remove the host files that deploys touch (as the same user, so every file is theirs).
+    - ./dev/deployments:/srv/deployments
   networks:
     - default
 
@@ -46,6 +49,15 @@ services:
 
   playwright-demo:
     <<: *browser
+    # A service-level list replaces the anchor's, so the shared mounts are repeated, plus the
+    # demo folder at its host path: the specs edit and read the demo target files there.
+    volumes:
+      - ./playwright:/e2e
+      - ./playwright/package.json:/package.json:ro
+      - ./playwright/package-lock.json:/package-lock.json:ro
+      - node-modules:/node_modules
+      - ./dev/deployments:/srv/deployments
+      - ${DEMO_ROOT:?run through make e2e-demo}:${DEMO_ROOT:?run through make e2e-demo}
     environment:
       HOME: /tmp
       E2E_BASE_URL: http://envmanager:8080

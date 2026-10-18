@@ -96,7 +96,7 @@ test.describe('superadmin', () => {
       'href',
       /^\/services\/\d+$/,
     );
-    await expect(mysql.getByRole('link', { name: 'Deploy' })).toBeVisible();
+    await expect(mysql.getByRole('button', { name: 'Deploy' })).toBeVisible();
     await expect(serviceRows(page).filter({ hasText: 'web' })).toContainText('No flags');
     await expect(page.getByRole('link', { name: 'Add service' })).toHaveAttribute(
       'href',
@@ -207,7 +207,7 @@ test.describe('superadmin', () => {
     await expect(header(page).getByRole('link', { name: 'Check dist' })).toHaveCount(0);
     await expect(header(page).getByRole('link', { name: 'Edit' })).toBeVisible();
     await expect(serviceRows(page).locator('th a')).toHaveText(['cron']);
-    await expect(page.getByRole('link', { name: 'Deploy', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Deploy', exact: true })).toHaveCount(0);
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
   });
 
@@ -230,7 +230,7 @@ test.describe('admin', () => {
     await expect(page.getByRole('link', { name: 'Edit policies' })).toHaveCount(0);
     await expect(page.locator('[data-fragment="policies-panel"]')).toContainText('Read-only');
     await expect(sections(page)).toHaveText(['Services', 'Deploy history']);
-    await expect(serviceRows(page).getByRole('link', { name: 'Deploy' })).toHaveCount(2);
+    await expect(serviceRows(page).getByRole('button', { name: 'Deploy' })).toHaveCount(2);
     await expect(page.locator('#hist')).toContainText('Post-deploy exit code');
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
   });
@@ -246,7 +246,7 @@ test.describe('viewer', () => {
     await expect(header(page).getByRole('link')).toHaveCount(0);
     await expect(header(page).getByRole('button')).toHaveCount(0);
     await expect(serviceRows(page).locator('th a')).toHaveText(['mysql', 'web']);
-    await expect(serviceRows(page).getByRole('link', { name: 'Deploy' })).toHaveCount(0);
+    await expect(serviceRows(page).getByRole('button', { name: 'Deploy' })).toHaveCount(0);
     await expect(page.getByRole('link', { name: 'Add service' })).toHaveCount(0);
     await expect(page.locator('#hist')).not.toContainText('exit code');
     await expect(page.locator('[data-fragment="policies-panel"]')).toContainText('Read-only');
@@ -311,7 +311,7 @@ test.describe('scoped users', () => {
       await page.goto(`/deployments/${await prod(browser)}`);
       await expect(serviceRows(page).locator('th a')).toHaveText(['mysql']);
       await expect(header(page).getByRole('link')).toHaveCount(0);
-      await expect(serviceRows(page).getByRole('link', { name: 'Deploy' })).toHaveCount(0);
+      await expect(serviceRows(page).getByRole('button', { name: 'Deploy' })).toHaveCount(0);
     });
   });
 });

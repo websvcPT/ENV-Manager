@@ -168,7 +168,7 @@ async def test_admin_page_has_the_reveal_and_restore_controls(
     )
     assert "Values are masked for the Viewer group" not in page
     assert "3 unchanged keys hidden" in page
-    assert "Deploy v" not in page
+    assert "Deploy v3" in page and "deploy-dialog" in page
 
 
 async def test_table_lists_versions_newest_first_with_the_deployed_marker(

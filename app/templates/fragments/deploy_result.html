@@ -1,0 +1,37 @@
+{#- Step two of the deploy dialog: the result banner, one row per environment, the post-deploy
+    outcome and the links to follow. Context: service (a ServiceHeader), result (a
+    DeployResultView), selected_ids, versions, force and deploy_timeout_ms. -#}
+{% from "macros/badges.html" import badge, post_deploy_badge %}
+{% from "macros/buttons.html" import button %}
+{% from "macros/deploy.html" import deploy_head, selection_fields %}
+{% from "macros/feedback.html" import code_block %}
+{% from "macros/icons.html" import icon %}
+{% from "macros/panels.html" import text_link %}
+{% set tones = {"ok": "bg-ok-bg text-ok-fg", "warn": "bg-warn-bg text-warn-fg", "err": "bg-err-bg text-err-fg"} %}
+{% set head_classes = "bg-head px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-head-ink" %}
+{% set cell_classes = "border-t border-line px-4 py-3.5" %}
+{% set post = result.post_deploy %}
+<div id="deploy-dialog-content" data-fragment="deploy-dialog">
+{{ deploy_head(service, 2) }}
+<div id="deploy-dialog-body" class="flex flex-col gap-5 p-5 md:p-6">
+<div role="alert" data-fragment="deploy-result" data-tone="{{ result.tone }}" class="flex items-start gap-4 rounded-panel p-4 {{ tones[result.tone] }}">{{ icon(result.icon, "size-7 mt-0.5", "2.4") }}<div><p class="text-lg font-bold">{{ result.title }}</p><p class="mt-0.5 text-ink">{{ result.message }}</p></div></div>
+{%- if result.rows %}
+<div class="overflow-x-auto rounded-panel border border-line"><table class="w-full min-w-[560px] border-collapse"><caption class="sr-only">Result per environment</caption><thead><tr><th scope="col" class="{{ head_classes }}">Environment</th><th scope="col" class="{{ head_classes }}">Version</th><th scope="col" class="{{ head_classes }}">Result</th><th scope="col" class="{{ head_classes }}">Detail</th></tr></thead><tbody>
+{%- for row in result.rows %}
+<tr data-fragment="result-row" data-env="{{ row.name }}"><th scope="row" class="{{ cell_classes }} text-left font-mono text-[13px] font-semibold">{{ row.name }}</th><td class="{{ cell_classes }} font-mono text-[13px]">{% if row.version is not none %}v{{ row.version }}{% else %}None{% endif %}</td><td class="{{ cell_classes }}">{{ badge(row.badge, row.label) }}</td><td class="{{ cell_classes }} text-[13px] text-ink2">{{ row.detail }}</td></tr>
+{%- endfor %}
+</tbody></table></div>
+{%- endif %}
+<section class="flex flex-col gap-2.5 rounded-panel border border-line p-4" aria-labelledby="rs-pd" data-fragment="post-deploy-result"><div class="flex flex-wrap items-center gap-3"><h3 id="rs-pd" class="text-xs font-bold uppercase tracking-wide text-ink3">Post-deploy</h3>{{ post_deploy_badge(post.badge) }}<span class="text-[13px] text-ink2">{{ post.text }}</span></div>
+{%- if post.output %}
+<div hx-ignore>{{ code_block(post.output) }}</div>
+{%- endif %}
+</section>
+</div>
+<div class="flex flex-wrap items-center gap-3 rounded-b-dialog border-t border-line bg-surface2 px-5 py-4 md:px-6">
+{%- if result.audit_entry_id is not none %}<a href="/audit?entry={{ result.audit_entry_id }}" class="font-semibold text-link hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">View audit entry #{{ result.audit_entry_id }}</a>{% endif %}<span class="flex-1"></span>
+{%- if result.drift_environment is not none %}<a href="/environments/{{ result.drift_environment }}/drift" class="font-semibold text-link hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">Open drift view</a>{% endif %}
+{%- if result.dist_environment is not none %}<a href="/environments/{{ result.dist_environment }}/dist" class="font-semibold text-link hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">Open dist report</a>{% endif %}
+{%- if result.retry %}<form hx-post="/services/{{ service.id }}/deploy/preflight" hx-target="#deploy-dialog" hx-swap="innerHTML">{{ selection_fields(selected_ids, versions) }}<button type="submit" class="font-semibold text-link hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">Retry deploy</button></form>{% endif %}
+{{ button("Close", extra_class="h-11", data_js="dialog-close") }}</div>
+</div>

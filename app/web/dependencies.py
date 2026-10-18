@@ -11,7 +11,9 @@ from app.core.crypto import CryptoService
 from app.core.sessions import SESSION_COOKIE_NAME
 from app.models import User, UserGroup, UserSession
 from app.services.auth_policy import AuthPolicy
+from app.services.deploy import DeployEngine
 from app.services.docker_cli import DockerCli
+from app.services.hook_runner import DockerHookRunner
 from app.services.permissions import AccessScope, Capability, load_user_scope
 from app.services.sessions import resolve_session
 
@@ -40,6 +42,17 @@ def get_docker_cli(request: Request) -> DockerCli:
     """The application-wide docker CLI on the configured Docker socket."""
     cli: DockerCli = request.app.state.docker_cli
     return cli
+
+
+def get_deploy_engine(request: Request) -> DeployEngine:
+    """A deploy engine on the app's key, lock folder and current docker CLI.
+
+    Built per request so it uses the docker CLI the app holds at that moment.
+    """
+    state = request.app.state
+    return DeployEngine(
+        state.crypto, state.lock_dir, hook_runner=DockerHookRunner(state.docker_cli)
+    )
 
 
 def get_auth_policy(request: Request) -> AuthPolicy:

@@ -30,6 +30,7 @@ from app.services.permissions import (
     ItemLevel,
     ItemRef,
     Target,
+    permitted_environment_ids,
 )
 from app.services.service_detail import (
     HookSettings,
@@ -167,11 +168,15 @@ async def service_page(
     rows = await load_environment_rows(db, access.scope, access.service)
     history = await load_service_history(db, access.service)
     post_deploy = await load_post_deploy(db, access.service, history)
+    deployable = await permitted_environment_ids(
+        db, access.scope, Capability.DEPLOY, service_id=access.service.id
+    )
     return render(
         request,
         "pages/service.html",
         {
             **_flags(access),
+            "can_deploy": bool(deployable) and not access.service.outside_allowed,
             **await _settings_context(access, cli, post_deploy.hook),
             "environments": rows,
             "pending": sum(1 for row in rows if row.status == "pending"),

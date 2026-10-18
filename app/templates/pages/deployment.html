@@ -4,6 +4,7 @@
 {% extends "layouts/app.html" %}
 {% from "macros/badges.html" import badge, deploy_status_badge, dist_badge, post_deploy_badge %}
 {% from "macros/buttons.html" import button %}
+{% from "macros/deploy.html" import deploy_shell %}
 {% from "macros/feedback.html" import note, toast %}
 {% from "macros/panels.html" import page_header, panel, tabs, text_link %}
 {% set active_nav = "projects" %}
@@ -29,6 +30,7 @@
 </section>
 {% include "fragments/services_table.html" %}
 {% include "fragments/deploy_history.html" %}
+{% if deployment.can_check_dist and not deployment.outside_allowed %}{{ deploy_shell() }}{% endif %}
 {% if deployment.policies %}
 {% set policy_note %}{% if can_manage_structure %}{{ text_link("Edit policies", "/deployments/" ~ deployment.id ~ "/edit") }}{% else %}<span class="text-[13px] text-ink2">Read-only</span>{% endif %}{% endset %}
 {% call panel("Policies", "policies-title", fragment="policies-panel", actions=policy_note) %}
