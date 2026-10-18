@@ -22,7 +22,7 @@ from app.services.deployment_detail import DeploymentDetail, load_deployment_det
 from app.services.paths import load_allowed_paths
 from app.services.permissions import cli_scope, load_user_scope
 from app.tests.conftest import sign_in
-from app.tests.deploy_helpers import Harness, require_extra_key, set_deployment
+from app.tests.deploy_helpers import Harness, docker_less_runner, require_extra_key, set_deployment
 from app.tests.dist_helpers import link_dist, relocate_deployments, write_dist
 
 
@@ -147,7 +147,9 @@ async def test_the_status_strip_shows_recorded_outcomes_instead_of_not_checked_y
         assert cell(before, "Drift state").count("Not checked yet") == 1
         assert cell(before, "Dist check").count("Not checked yet") == 1
 
-        engine = DeployEngine(web_app.state.crypto, tmp_path / "locks")
+        engine = DeployEngine(
+            web_app.state.crypto, tmp_path / "locks", hook_runner=docker_less_runner(tmp_path)
+        )
         await engine.run(
             db, cli_scope(), AuditActor.cli(), DeployRequest(service_id=service.id, force=False)
         )

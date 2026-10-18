@@ -24,11 +24,13 @@ from app.services.audit import record_audit
 from app.services.deploy import LOCK_UNAVAILABLE_MESSAGE, LOCKED_MESSAGE, DeployEngine
 from app.services.deploy_lock import DeployLockBusyError, hold_deploy_lock
 from app.services.deploy_types import DeployOutcome, DeployRefusal
-from app.services.hooks import COMMANDS_UNAVAILABLE_REASON, PostDeployResult
+from app.services.docker_cli import NOT_MOUNTED_REASON
+from app.services.hooks import PostDeployResult
 from app.tests.deploy_helpers import (
     Harness,
     RecordingNotifier,
     audit_of,
+    docker_less_runner,
     files_in,
     require_extra_key,
     set_deployment,
@@ -213,20 +215,21 @@ async def test_post_deploy_is_not_called_on_a_dry_run_block_halt_or_failure(
         assert outcome.post_deploy.reason == "Not run because an environment was not deployed."
 
 
-async def test_a_service_without_a_command_records_none_and_a_stored_command_a_skip(
-    harness: Harness,
+async def test_a_service_without_a_command_records_none_and_an_unavailable_docker_a_skip(
+    harness: Harness, tmp_path: Path
 ) -> None:
     h = harness
-    h.engine = DeployEngine(h.crypto, h.lock_dir)
+    h.engine = DeployEngine(h.crypto, h.lock_dir, hook_runner=docker_less_runner(tmp_path))
     with_command = await deploy_staging(h)
     without_command = await h.deploy(h.seed.services.api.id)
     assert with_command.post_deploy == PostDeployResult(
-        PostDeployStatus.SKIPPED, reason=COMMANDS_UNAVAILABLE_REASON
+        PostDeployStatus.SKIPPED, reason=NOT_MOUNTED_REASON
     )
     assert with_command.status is DeployStatus.SUCCESS
     assert without_command.post_deploy == PostDeployResult(PostDeployStatus.NONE)
     run = await h.db.get(DeployRun, with_command.run_id)
-    assert run is not None and run.post_deploy_reason == COMMANDS_UNAVAILABLE_REASON
+    assert run is not None and run.post_deploy_reason == NOT_MOUNTED_REASON
+    assert run.finished_at is not None
 
 
 async def test_a_failed_post_deploy_marks_the_run_deployed_with_post_deploy_failed(

@@ -104,9 +104,9 @@ def test_drift_follows_the_policy_and_force_overrides_a_halt(
     assert plan(drift_policy=policy, force=force) == (action, DriftState.DRIFT)
 
 
-def test_only_the_backup_policy_asks_for_a_backup() -> None:
+def test_a_drifted_target_is_backed_up_unless_the_policy_overwrites_it() -> None:
     for policy, backup in (
-        (DriftPolicy.HALT, False),
+        (DriftPolicy.HALT, True),
         (DriftPolicy.OVERWRITE, False),
         (DriftPolicy.BACKUP_OVERWRITE, True),
     ):
@@ -119,6 +119,19 @@ def test_only_the_backup_policy_asks_for_a_backup() -> None:
             force=True,
         )
         assert result.backup is backup
+
+
+def test_only_a_drifted_target_is_backed_up() -> None:
+    for state in (DriftState.IN_SYNC, DriftState.MISSING):
+        result = plan_environment(
+            drift=state,
+            unchanged=False,
+            check=make_check(),
+            drift_policy=DriftPolicy.BACKUP_OVERWRITE,
+            missing_policy=MissingTargetPolicy.CREATE,
+            force=True,
+        )
+        assert result.backup is False
 
 
 @pytest.mark.parametrize(

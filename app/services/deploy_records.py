@@ -17,6 +17,7 @@ from app.models import (
     DeployRun,
     DeployStatus,
     DeployTrigger,
+    PostDeployStatus,
     Service,
 )
 from app.models.types import utc_now
@@ -76,7 +77,7 @@ async def record_run(
         post_deploy_output=post_deploy.output,
         post_deploy_reason=truncate(post_deploy.reason),
         started_at=started_at,
-        finished_at=utc_now(),
+        finished_at=None if post_deploy.status is PostDeployStatus.RUNNING else utc_now(),
     )
     db.add(run)
     await db.flush()
@@ -111,7 +112,11 @@ async def audit_run(
     run: DeployRun,
     outcomes: tuple[EnvironmentOutcome, ...],
 ) -> None:
-    """Audit the run with the actor, the versions involved, the force flag and each outcome."""
+    """Audit the run with the actor, the versions involved, the force flag and each outcome.
+
+    The post-deploy exit code, truncated output and reason are part of the details. Command text
+    never is: admins read the audit log and only the superadmin may see commands.
+    """
     entry = await record_actor_audit(
         db,
         actor,
@@ -129,6 +134,9 @@ async def audit_run(
             "force": request.force,
             "status": run.status.value,
             "post_deploy": run.post_deploy_status.value,
+            "post_deploy_exit_code": run.post_deploy_exit_code,
+            "post_deploy_output": run.post_deploy_output,
+            "post_deploy_reason": run.post_deploy_reason,
             "environments": [
                 {
                     "environment": outcome.name,

@@ -27,6 +27,8 @@ from app.services.audit import AuditActor
 from app.services.deploy import DeployEngine
 from app.services.deploy_events import DeployFinished
 from app.services.deploy_types import DeployOutcome, DeployRequest
+from app.services.docker_cli import DockerCli
+from app.services.hook_runner import DockerHookRunner
 from app.services.hooks import PostDeployRequest, PostDeployResult
 from app.services.permissions import AccessScope, load_user_scope
 from app.tests.dist_helpers import link_dist, write_dist
@@ -198,3 +200,8 @@ async def require_extra_key(h: Harness) -> Environment:
     write_dist(h.roots["staging"], TUNING_DIST, "WORKERS=\nEXTRA_KEY=\n")
     await link_dist(h.db, tuning, TUNING_DIST)
     return tuning
+
+
+def docker_less_runner(folder: Path) -> DockerHookRunner:
+    """The real runner on a socket path that does not exist: it skips any stored command."""
+    return DockerHookRunner(DockerCli(socket_path=folder / "no-docker.sock"))

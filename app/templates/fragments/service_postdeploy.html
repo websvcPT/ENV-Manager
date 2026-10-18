@@ -14,6 +14,9 @@
 <p class="flex flex-wrap items-center gap-3"><span class="text-ink3">None</span><span>{{ run.started_at.strftime("%Y-%m-%d %H:%M") }}{% if service.can_view_output %} · by {{ run.who }}{% endif %}</span></p><p class="text-[13px] text-ink2">No command ran in the latest deploy.</p>
 {%- else %}
 <p class="flex flex-wrap items-center gap-3">{{ badge(run.status.value) }}<span>{{ run.started_at.strftime("%Y-%m-%d %H:%M") }}{% if service.can_view_output %} · by {{ run.who }}{% if run.reason %} · {{ run.reason }}{% endif %}{% if run.exit_code is not none %} · exit code {{ run.exit_code }}{% endif %}{% endif %}</span></p>
+{%- if run.status.value == "running" %}
+<p class="text-[13px] text-ink2">The command is still running. Reload this page when the deploy has finished.</p>
+{%- endif %}
 {%- if service.can_view_output and run.output %}
 <div hx-ignore><p class="mb-1.5 text-[13px] text-ink2">Output, truncated (admins in scope and the superadmin)</p>{{ code_block(run.output) }}</div>
 {%- elif is_viewer %}

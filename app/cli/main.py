@@ -43,7 +43,10 @@ from app.seeds import seed as seed_data
 from app.services import users as user_service
 from app.services.audit import AuditActor
 from app.services.deploy import DeployEngine
+from app.services.deploy_recovery import recover_interrupted_runs
 from app.services.deploy_types import DeployOutcome, DeployRequest, DeployRequestError
+from app.services.docker_cli import DockerCli
+from app.services.hook_runner import DockerHookRunner
 from app.services.permissions import cli_scope
 
 app = typer.Typer(help="ENV Manager administration.", no_args_is_help=True, add_completion=False)
@@ -220,6 +223,12 @@ def _print_deploy(target: str, outcome: DeployOutcome) -> None:
     if not outcome.dry_run and outcome.run_id is not None:
         reason = f" ({post_deploy.reason})" if post_deploy.reason else ""
         typer.echo(f"  post-deploy: {post_deploy.status.value}{reason}")
+        if post_deploy.exit_code is not None:
+            typer.echo(f"  post-deploy exit code: {post_deploy.exit_code}")
+        if post_deploy.output:
+            typer.echo("  post-deploy output (truncated):")
+            for line in post_deploy.output.splitlines():
+                typer.echo(f"    {line}")
 
 
 @app.command("deploy")
@@ -243,7 +252,9 @@ def deploy_service(
         engine = DeployEngine(
             crypto=build_crypto_service(settings.key, settings.key_file),
             lock_dir=settings.lock_path,
+            hook_runner=DockerHookRunner(DockerCli(socket_path=settings.docker_socket)),
         )
+        await recover_interrupted_runs(db, settings.lock_path)
         request = await _find_deploy_request(db, target, env or [], dry_run, force)
         return await engine.run(db, cli_scope(), AuditActor.cli(), request)
 

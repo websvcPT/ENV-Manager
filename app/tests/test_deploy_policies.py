@@ -174,20 +174,55 @@ async def test_the_first_deploy_to_a_differing_target_halts_by_default(harness: 
     assert h.runner.requests == []
 
 
-async def test_force_overwrites_a_drifted_target_and_the_force_flag_is_audited(
+async def test_force_overwrites_a_drifted_target_after_backing_it_up_and_is_audited(
     harness: Harness,
 ) -> None:
     h = harness
     web = h.seed.envs.staging_web
     target = folder_of(h) / web.name
     target.write_text("WORKERS=old\n", encoding="utf-8")
+    target.chmod(0o644)
     outcome = await deploy_files(h, web, force=True)
     (result,) = outcome.environments
     assert result.status is DeployResultStatus.WRITTEN and result.forced
-    assert result.backup_path is None and files_in(folder_of(h)) == [".env.web"]
+    assert result.backup_path is not None and "backed up" in result.message
+    backup = h.roots["staging"] / result.backup_path
+    assert backup.read_text(encoding="utf-8") == "WORKERS=old\n"
+    assert stat.S_IMODE(backup.stat().st_mode) == 0o600
+    assert files_in(folder_of(h)) == [".env.web", backup.name]
     assert target.read_text(encoding="utf-8") != "WORKERS=old\n"
+    stored = await results_of(h.db, outcome.run_id or 0)
+    assert stored[".env.web"].backup_path == result.backup_path
     (entry,) = await audit_of(h.db, "service.deploy")
     assert entry.details["force"] is True and entry.result is AuditResult.SUCCESS
+
+
+async def test_a_forced_deploy_of_a_target_that_did_not_drift_makes_no_backup(
+    harness: Harness,
+) -> None:
+    h = harness
+    tuning = h.seed.figures.tuning
+    assert (await deploy_files(h, tuning)).status is DeployStatus.SUCCESS
+    await create_version(h.db, h.crypto, tuning.id, "WORKERS=8\n", author=h.seed.users.admin)
+    await h.db.commit()
+    outcome = await deploy_files(h, tuning, force=True)
+    (result,) = outcome.environments
+    assert result.status is DeployResultStatus.WRITTEN and result.backup_path is None
+    assert files_in(folder_of(h)) == [tuning.name]
+
+
+async def test_a_forced_dry_run_says_the_drifted_file_would_be_backed_up(
+    harness: Harness,
+) -> None:
+    h = harness
+    web = h.seed.envs.staging_web
+    target = folder_of(h) / web.name
+    target.write_text("WORKERS=old\n", encoding="utf-8")
+    outcome = await deploy_files(h, web, dry_run=True, force=True)
+    (result,) = outcome.environments
+    assert result.status is DeployResultStatus.WOULD_WRITE
+    assert "would be backed up" in result.message
+    assert files_in(folder_of(h)) == [".env.web"]
 
 
 async def test_the_overwrite_policy_replaces_a_drifted_target_without_a_backup(

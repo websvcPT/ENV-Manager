@@ -8,6 +8,7 @@
   "ran": ("bg-ok-bg text-ok-fg", "check", "Ran"),
   "proceed": ("bg-ok-bg text-ok-fg", "check", "Will proceed"),
   "pending": ("bg-info-bg text-info-fg", "clock", "Pending"),
+  "running": ("bg-info-bg text-info-fg", "clock", "Running"),
   "drift": ("bg-warn-bg text-warn-fg", "warning", "Drift"),
   "warnout": ("bg-warn-bg text-warn-fg", "warning", "Will warn"),
   "halted": ("bg-warn-bg text-warn-fg", "pause", "Halted"),
@@ -51,7 +52,8 @@
 {{ badge(DEPLOY_BADGES[status]) }}
 {%- endmacro %}
 
-{#- Badge for a post-deploy outcome value (ran, skipped, failed); `none` means no command ran. -#}
+{#- Badge for a post-deploy outcome value (running, ran, skipped, failed); `none` means no
+    command ran. -#}
 {% macro post_deploy_badge(status) -%}
 {%- if status == "none" -%}
 <span class="text-ink3">None</span>

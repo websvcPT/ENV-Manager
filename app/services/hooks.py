@@ -3,8 +3,8 @@
 The engine calls a ``HookRunner`` once per real deploy after every selected environment was
 written or found unchanged, while it still holds the deploy lock. The runner decides everything
 about the command itself (availability, run only if changed, execution, timeout, output); the
-engine only records the ``PostDeployResult`` it returns. ``UnavailableHookRunner`` is the stand-in
-until commands can run: a service with a stored command reports a skip with a reason.
+engine only records the ``PostDeployResult`` it returns. ``app.services.hook_runner`` holds the
+runner that executes the stored docker commands.
 """
 
 from dataclasses import dataclass
@@ -12,8 +12,7 @@ from pathlib import Path
 from typing import Protocol
 
 from app.models import PostDeployStatus
-
-COMMANDS_UNAVAILABLE_REASON = "Post-deploy commands are not available yet."
+from app.services.paths import AllowedPaths
 
 
 @dataclass(frozen=True)
@@ -31,7 +30,8 @@ class PostDeployRequest:
     """Everything a runner needs: the service, its real deployment root and what the deploy did.
 
     ``hook`` is None when the service has no command. ``changed`` is True when at least one
-    environment was written; ``force`` repeats the force flag of the deploy.
+    environment was written; ``force`` repeats the force flag of the deploy. ``allowed`` is the
+    allowed path list loaded for this deploy, which a working directory must lie in.
     """
 
     service_id: int
@@ -42,6 +42,7 @@ class PostDeployRequest:
     hook: PostDeployHook | None
     changed: bool
     force: bool
+    allowed: AllowedPaths
 
 
 @dataclass(frozen=True)
@@ -60,13 +61,3 @@ class HookRunner(Protocol):
     async def run_post_deploy(self, request: PostDeployRequest) -> PostDeployResult:
         """Run the command once, or report why it was skipped or that there is none."""
         ...
-
-
-class UnavailableHookRunner:
-    """The runner used while commands cannot run: none without a command, else a skip."""
-
-    async def run_post_deploy(self, request: PostDeployRequest) -> PostDeployResult:
-        """Report no command for a service without one, otherwise a skip with the reason."""
-        if request.hook is None or not request.hook.commands.strip():
-            return PostDeployResult(PostDeployStatus.NONE)
-        return PostDeployResult(PostDeployStatus.SKIPPED, reason=COMMANDS_UNAVAILABLE_REASON)

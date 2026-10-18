@@ -7,73 +7,30 @@ mode, owner, content, and what was not touched.
 
 import os
 import stat
-import subprocess
 from pathlib import Path
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
     AuditEntry,
     Deployment,
     DeployResult,
     DeployResultStatus,
-    DeployRun,
-    DeployTrigger,
     DriftPolicy,
     Environment,
     User,
 )
 from app.real_scenarios.conftest import DemoStack, World
-from app.seeds import DEMO_FILES
+from app.real_scenarios.helpers import (
+    BASELINE_NAMES,
+    MANAGED,
+    cli_runs,
+    deploy_audit,
+    output,
+    snapshot,
+)
 from app.services.environments import EnvironmentForm, create_environment, validate_environment
 from app.services.paths import load_allowed_paths
-
-MANAGED = {file.name: file.latest for file in DEMO_FILES}
-BASELINE_NAMES = {
-    ".env.api",
-    ".env.api-dist",
-    ".env.db",
-    ".env.db-dist",
-    ".env.db.secrets",
-    ".env.db.secrets-dist",
-    "demo-ca.pem-dist",
-}
-
-
-def snapshot(folder: Path) -> dict[str, tuple[int, int, int, int]]:
-    """Inode, size, modification time and mode of every entry of a folder."""
-    entries: dict[str, tuple[int, int, int, int]] = {}
-    for entry in folder.iterdir():
-        info = entry.stat()
-        entries[entry.name] = (
-            info.st_ino,
-            info.st_size,
-            info.st_mtime_ns,
-            stat.S_IMODE(info.st_mode),
-        )
-    return entries
-
-
-def output(result: subprocess.CompletedProcess[str]) -> str:
-    """Everything a finished command printed, for failure messages."""
-    return result.stdout + result.stderr
-
-
-async def cli_runs(db: AsyncSession) -> list[DeployRun]:
-    """The deploy runs the command line made, oldest first."""
-    rows = await db.execute(
-        select(DeployRun).where(DeployRun.trigger == DeployTrigger.CLI).order_by(DeployRun.id)
-    )
-    return list(rows.scalars())
-
-
-async def deploy_audit(db: AsyncSession) -> list[AuditEntry]:
-    """The audit entries of real deploys, oldest first."""
-    rows = await db.execute(
-        select(AuditEntry).where(AuditEntry.action == "service.deploy").order_by(AuditEntry.id)
-    )
-    return list(rows.scalars())
 
 
 async def test_a_deploy_writes_the_file_with_mode_0600_and_the_managed_content(
@@ -112,10 +69,17 @@ async def test_a_drifted_target_halts_by_default_and_force_overwrites_it(
 
     forced = world.deploy("api", "--env", ".env.api", "--force")
     assert forced.returncode == 0, output(forced)
+    assert "The previous file was backed up." in forced.stdout
     target = demo.targets / ".env.api"
     assert target.read_text(encoding="utf-8") == MANAGED[".env.api"]
     assert stat.S_IMODE(target.stat().st_mode) == 0o600
-    assert {entry.name for entry in demo.targets.iterdir()} == BASELINE_NAMES
+    backups = [entry for entry in demo.targets.iterdir() if ".bak-" in entry.name]
+    assert [entry.name.startswith(".env.api.bak-") for entry in backups] == [True]
+    assert backups[0].read_text(encoding="utf-8") == drifted
+    assert stat.S_IMODE(backups[0].stat().st_mode) == 0o600
+    assert {entry.name for entry in demo.targets.iterdir() if ".bak-" not in entry.name} == (
+        BASELINE_NAMES
+    )
 
     async with world.session() as db:
         assert [run.force for run in await cli_runs(db)] == [False, True]

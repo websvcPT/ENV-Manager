@@ -69,4 +69,32 @@ prints one line per file and exits 0 only when every file was written or found u
 post-deploy step did not fail; a blocked, halted or failed file (or a deploy refused because
 another deploy holds the lock of the same deployment folder) exits 1. `--dry-run` runs the same
 checks without writing or backing anything up, `--force` overrides missing-key blocks and drift
-halts and is audited.
+halts and is audited. A drifted file that a forced deploy replaces is backed up first, next to it
+(`<name>.bak-<UTC stamp>-<4 hex>`, mode 0600).
+
+## Post-deploy commands
+
+A service can store commands that run once after its files were deployed, for example to
+recreate the Compose service that loads them. They need the Docker socket mounted into the
+container (`/var/run/docker.sock`, with the host docker group id in `group_add`); the docker CLI
+and compose plugin of the image do the rest. Without a reachable daemon and compose plugin the
+step is skipped with the reason and the deploy still counts as successful. `ENVMANAGER_DOCKER_SOCKET`
+changes the socket path (read by the command line today, by the web app with the settings form).
+
+- One command per line, split into words and run without a shell: no pipes, redirects or `&&`
+  (an unquoted operator is refused), and the first word must be exactly `docker`. The
+  placeholders `{deployment_path}`, `{deployment_name}` and `{service_name}` are replaced inside
+  the words with validated values; nothing else is interpolated.
+- Commands run in order in the working directory (default the deployment root, always inside an
+  allowed path, checked again when the command runs) and stop at the first non-zero exit. One
+  timeout (default 120 seconds) covers all of them and the deploy lock stays held until they
+  end; at the deadline the whole process group is killed and the run counts as failed.
+- The command gets a minimal environment (`PATH`, `HOME`, `LANG`, `DOCKER_CONFIG` and a
+  `DOCKER_HOST` pinned to the checked socket), never the environment of the app, so the master
+  key, the CSRF secret and the error reporting DSN do not reach it.
+- The run records the status (ran, skipped with a reason, failed), the exit code and the first
+  and last 4 KB of the output, in the run and in the audit entry. While the command executes the
+  run reads `running`. A failing command makes the deploy "deployed, post-deploy failed". Status is
+  visible to everyone with access to the service, the output to admins in scope and the
+  superadmin, the command text to the superadmin only.
+- Only the superadmin stores commands, and saving is refused while Docker is not usable.

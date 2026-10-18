@@ -29,8 +29,12 @@ class DeployStatus(StrEnum):
 
 
 class PostDeployStatus(StrEnum):
-    """What happened to the post-deploy command of a run."""
+    """What happened to the post-deploy command of a run.
 
+    ``RUNNING`` is recorded while the command executes and is replaced by the final outcome.
+    """
+
+    RUNNING = "running"
     RAN = "ran"
     SKIPPED = "skipped"
     FAILED = "failed"

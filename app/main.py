@@ -17,6 +17,7 @@ from app.core.middleware import install_middleware
 from app.core.migrations import migrate_database
 from app.core.observability import configure_otel, init_sentry
 from app.services.auth_policy import AuthPolicy
+from app.services.deploy_recovery import recover_interrupted_runs
 from app.services.key_check import ensure_key_check
 from app.web.auth import router as auth_router
 from app.web.deployment_form import router as deployment_form_router
@@ -41,6 +42,7 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     """Check the master key, back up and migrate the database, then serve.
 
     A missing, malformed or mismatching master key stops startup before anything is served.
+    Deploy runs left running by a process that is gone are closed before the first request.
     """
     settings = get_settings()
     try:
@@ -61,6 +63,8 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
                 raise
         if created:
             log.info("key check record created for a new database")
+        async with session_factory() as session:
+            await recover_interrupted_runs(session, settings.lock_path)
         application.state.crypto = crypto
         application.state.auth_policy = AuthPolicy()
         application.state.engine = engine

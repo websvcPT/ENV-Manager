@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     sentry_dsn: SecretStr | None = None
     environment: str = "production"
     demo_root: Path | None = None
+    docker_socket: Path = Path("/var/run/docker.sock")
 
     @property
     def database_path(self) -> Path:

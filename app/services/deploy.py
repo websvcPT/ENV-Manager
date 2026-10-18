@@ -17,7 +17,9 @@ without the lock, a write or a backup and reports ``would_write`` for what a rea
 Decrypted content lives in memory for the duration of one environment and appears in no result,
 log line, audit entry or exception message; messages are fixed text without host paths. The
 database write transaction is never held across file work or the post-deploy command: the run is
-committed before the hook runs and updated in a second short transaction afterwards.
+committed before the hook runs, with its post-deploy state set to running and no finish time, and
+updated in a second short transaction afterwards, so a page never reads a final state while the
+command is still executing. ``app.services.deploy_recovery`` closes a run a crash left running.
 """
 
 import asyncio
@@ -60,6 +62,7 @@ from app.services.deploy_lock import (
 )
 from app.services.deploy_policy import Action, Plan, drift_state, overall_status, plan_environment
 from app.services.deploy_records import audit_refusal, audit_run, record_run, truncate
+from app.services.deploy_recovery import INTERRUPTED_REASON
 from app.services.deploy_types import (
     DeployOutcome,
     DeployRefusal,
@@ -70,12 +73,12 @@ from app.services.deploy_types import (
 from app.services.dist import DistError
 from app.services.dist_check import DistCheck, evaluate_dist, record_dist_check
 from app.services.editor import stored_version
+from app.services.hook_runner import DockerHookRunner
 from app.services.hooks import (
     HookRunner,
     PostDeployHook,
     PostDeployRequest,
     PostDeployResult,
-    UnavailableHookRunner,
 )
 from app.services.paths import AllowedPaths, PathValidationError, load_allowed_paths
 from app.services.permissions import AccessScope, Capability, permitted_environment_ids
@@ -172,7 +175,7 @@ class DeployEngine:
 
     crypto: CryptoService
     lock_dir: Path
-    hook_runner: HookRunner = field(default_factory=UnavailableHookRunner)
+    hook_runner: HookRunner = field(default_factory=DockerHookRunner)
     notifier: DeployNotifier = field(default_factory=NoNotifier)
     change_owner: ChangeOwner = os.fchown
 
@@ -506,6 +509,8 @@ class DeployEngine:
             post_deploy = PostDeployResult(
                 PostDeployStatus.SKIPPED, reason=POST_DEPLOY_NOT_RUN_REASON
             )
+        elif has_command:
+            post_deploy = PostDeployResult(PostDeployStatus.RUNNING)
         else:
             post_deploy = PostDeployResult(PostDeployStatus.NONE)
         run = await record_run(
@@ -524,7 +529,11 @@ class DeployEngine:
         await db.commit()
 
         if deployed:
-            post_deploy = await self._run_post_deploy(context, allowed, request, outcomes)
+            try:
+                post_deploy = await self._run_post_deploy(context, allowed, request, outcomes)
+            except asyncio.CancelledError:
+                await self._close_cancelled(db, context, actor, request, run, outcomes)
+                raise
             if post_deploy.status is PostDeployStatus.FAILED:
                 status = DeployStatus.POST_DEPLOY_FAILED
         run.status = status
@@ -546,6 +555,40 @@ class DeployEngine:
         log.info("deploy run %s of service %s: %s", run.id, context.service.id, status.value)
         outcome = DeployOutcome(run.id, status, False, request.force, outcomes, post_deploy)
         return outcome, self._event(context, actor, request, run.id, outcome)
+
+    async def _close_cancelled(
+        self,
+        db: AsyncSession,
+        context: _Context,
+        actor: AuditActor,
+        request: DeployRequest,
+        run: DeployRun,
+        outcomes: tuple[EnvironmentOutcome, ...],
+    ) -> None:
+        """Record a deploy whose post-deploy step was cancelled as a failed post-deploy.
+
+        The caller re-raises the cancellation. A failure to record is only logged: the next start
+        of the app closes the run (``app.services.deploy_recovery``).
+        """
+        run.status = DeployStatus.POST_DEPLOY_FAILED
+        run.post_deploy_status = PostDeployStatus.FAILED
+        run.post_deploy_exit_code = None
+        run.post_deploy_output = None
+        run.post_deploy_reason = INTERRUPTED_REASON
+        run.finished_at = utc_now()
+        try:
+            await audit_run(
+                db,
+                service=context.service,
+                deployment=context.deployment,
+                actor=actor,
+                request=request,
+                run=run,
+                outcomes=outcomes,
+            )
+            await db.commit()
+        except Exception as error:
+            log.warning("a cancelled deploy could not be recorded: %s", type(error).__name__)
 
     @staticmethod
     def _event(
@@ -594,6 +637,7 @@ class DeployEngine:
             hook=context.hook,
             changed=any(outcome.status is DeployResultStatus.WRITTEN for outcome in outcomes),
             force=request.force,
+            allowed=allowed,
         )
         try:
             return await self.hook_runner.run_post_deploy(hook_request)
