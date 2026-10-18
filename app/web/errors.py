@@ -3,9 +3,12 @@
 import secrets
 
 from fastapi import Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.api.errors import http_error_response, internal_error_response, validation_error_response
 from app.core.cors import is_api_path
 from app.core.log import get_logger
 from app.core.security_headers import SECURITY_HEADERS
@@ -99,12 +102,15 @@ def unauthenticated_response(request: Request, headers: dict[str, str]) -> Respo
 async def http_error_handler(request: Request, exc: Exception) -> Response:
     """Render 403 and 404 for browsers; every other status keeps the JSON shape.
 
-    An htmx request gets an empty answer that is not swapped; the page script shows a toast.
+    An htmx request gets an empty answer that is not swapped; the page script shows a toast. The
+    API prefix always answers in the API's error shape.
     """
     if not isinstance(exc, StarletteHTTPException):
         raise exc
     status_code = exc.status_code
     headers = dict(exc.headers) if exc.headers else {}
+    if is_api_request(request):
+        return http_error_response(status_code, headers)
     browser_request = is_htmx_request(request) or wants_html(request)
     if status_code == 401 and not is_api_request(request) and browser_request:
         return unauthenticated_response(request, headers)
@@ -133,8 +139,11 @@ async def unhandled_error_handler(request: Request, exc: Exception) -> Response:
         request.method,
         request.url.path,
     )
-    if is_htmx_request(request):
-        response: Response = Response(status_code=500, headers={"HX-Reswap": "none"})
+    response: Response
+    if is_api_request(request):
+        response = internal_error_response(request_id)
+    elif is_htmx_request(request):
+        response = Response(status_code=500, headers={"HX-Reswap": "none"})
     elif wants_html(request):
         auth = getattr(request.state, "auth", None)
         response = error_page(request, 500, auth, request_id)
@@ -146,3 +155,12 @@ async def unhandled_error_handler(request: Request, exc: Exception) -> Response:
         response.headers[name] = value
     response.headers["Cache-Control"] = "no-store"
     return response
+
+
+async def validation_error_handler(request: Request, exc: Exception) -> Response:
+    """Answer a request the framework could not read, in the API shape under ``/api``."""
+    if not isinstance(exc, RequestValidationError):
+        raise exc
+    if is_api_request(request):
+        return validation_error_response(exc)
+    return await request_validation_exception_handler(request, exc)

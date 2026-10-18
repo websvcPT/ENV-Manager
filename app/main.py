@@ -5,10 +5,13 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app import VERSION
+from app.api.errors import refusal_handler
+from app.api.v1 import router as api_router
 from app.config import get_settings
 from app.core.crypto import CryptoError, build_crypto_service
 from app.core.db import create_engine, create_session_factory
@@ -16,6 +19,7 @@ from app.core.log import configure_logging, get_logger
 from app.core.middleware import install_middleware
 from app.core.migrations import migrate_database
 from app.core.observability import configure_otel, init_sentry
+from app.services.api_errors import ApiRefusal
 from app.services.auth_policy import AuthPolicy
 from app.services.deploy_recovery import recover_interrupted_runs
 from app.services.docker_cli import DockerCli
@@ -30,7 +34,7 @@ from app.web.dist_report import router as dist_report_router
 from app.web.drift import router as drift_router
 from app.web.editor import router as editor_router
 from app.web.environment_form import router as environment_form_router
-from app.web.errors import http_error_handler, unhandled_error_handler
+from app.web.errors import http_error_handler, unhandled_error_handler, validation_error_handler
 from app.web.history import router as history_router
 from app.web.project_detail import router as project_detail_router
 from app.web.projects import router as projects_router
@@ -98,6 +102,8 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
     install_middleware(application, settings)
+    application.add_exception_handler(ApiRefusal, refusal_handler)
+    application.add_exception_handler(RequestValidationError, validation_error_handler)
     application.add_exception_handler(StarletteHTTPException, http_error_handler)
     application.add_exception_handler(Exception, unhandled_error_handler)
     application.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -118,6 +124,7 @@ def create_app() -> FastAPI:
     application.include_router(users_router)
     application.include_router(access_grid_router)
     application.include_router(tokens_router)
+    application.include_router(api_router)
 
     @application.get("/healthz", include_in_schema=False)
     async def healthz() -> dict[str, str]:

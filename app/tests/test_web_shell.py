@@ -245,10 +245,12 @@ async def test_anonymous_not_found_page_has_no_navigation(web_client: httpx.Asyn
 async def test_not_found_stays_json_for_api_and_non_browser_clients(
     web_client: httpx.AsyncClient,
 ) -> None:
-    """The API prefix and clients that do not ask for HTML keep the JSON error shape."""
+    """The API prefix answers in the API error shape; clients that do not ask for HTML get JSON."""
     api = await web_client.get("/api/v1/nothing")
     assert api.status_code == 404
-    assert api.json() == {"detail": "Not Found"}
+    assert api.json() == {
+        "error": {"code": "not_found", "message": "Not found.", "fields": [], "request_id": None}
+    }
     plain = await web_client.get("/does-not-exist", headers={"Accept": "*/*"})
     assert plain.json() == {"detail": "Not Found"}
 

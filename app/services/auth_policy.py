@@ -14,6 +14,7 @@ class AuthPolicy:
     min_password_length: int = 12
     user_max_failures: int = 5
     ip_max_failures: int = 20
+    api_ip_max_failures: int = 10
     failure_window: timedelta = timedelta(minutes=15)
     lockout_duration: timedelta = timedelta(minutes=15)
     pending_login_timeout: timedelta = timedelta(minutes=5)

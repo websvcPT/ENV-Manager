@@ -1,7 +1,8 @@
 """Tests for the login and logout routes and the default-deny route check."""
 
-from collections.abc import AsyncIterator, Iterator, Sequence
+from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
@@ -12,7 +13,9 @@ from fastapi.routing import APIRoute
 from sqlalchemy import select
 from starlette.routing import BaseRoute
 
+from app.api.dependencies import require_api_token
 from app.config import get_settings
+from app.core.cors import is_api_path
 from app.core.crypto import generate_master_key
 from app.core.csrf import CSRF_COOKIE_NAME
 from app.core.sessions import SESSION_COOKIE_NAME
@@ -24,53 +27,70 @@ from app.web.dependencies import require_auth, require_group
 
 PUBLIC_PATHS = {"/healthz", "/login", "/login/totp", "/session-expired"}
 PUBLIC_PREFIXES = ("/static",)
+COOKIE_AUTH = require_auth
+BEARER_AUTH = require_api_token
 
 
-def _uses_auth(dependant: Dependant) -> bool:
-    """Whether a route's dependency tree includes the authentication dependency."""
-    if dependant.call is require_auth:
-        return True
-    return any(_uses_auth(child) for child in dependant.dependencies)
+def _auth_calls(dependant: Dependant) -> set[Callable[..., Any]]:
+    """The authentication dependencies a route's dependency tree includes."""
+    found: set[Callable[..., Any]] = set()
+    if dependant.call in (COOKIE_AUTH, BEARER_AUTH) and dependant.call is not None:
+        found.add(dependant.call)
+    for child in dependant.dependencies:
+        found |= _auth_calls(child)
+    return found
 
 
 def _walk(
-    routes: Sequence[BaseRoute], prefix: str, inherited_auth: bool
-) -> Iterator[tuple[str, bool]]:
-    """Yield each route's full path and whether it authenticates.
+    routes: Sequence[BaseRoute], prefix: str, inherited: set[Callable[..., Any]]
+) -> Iterator[tuple[str, set[Callable[..., Any]]]]:
+    """Yield each route's full path and the authentication dependencies it carries.
 
     FastAPI keeps included routers as lazy wrapper objects; they are unwrapped here so routes
-    from included routers are checked too. A wrapper that cannot be read yields an empty path,
-    which the caller reports as unprotected, so a FastAPI change fails the test loudly.
+    from included routers are checked too. A wrapper that cannot be read yields an empty path
+    with no dependencies, which the caller reports as unprotected, so a FastAPI change fails the
+    test loudly.
     """
     for route in routes:
         original = getattr(route, "original_router", None)
         if original is not None:
             context = route.include_context  # type: ignore[attr-defined]
-            router_auth = inherited_auth or any(
-                _uses_auth(get_dependant(path="", call=dependency.dependency))
-                for dependency in context.dependencies
-            )
-            yield from _walk(original.routes, prefix + context.prefix, router_auth)
+            router_calls = set(inherited)
+            for dependency in context.dependencies:
+                router_calls |= _auth_calls(get_dependant(path="", call=dependency.dependency))
+            yield from _walk(original.routes, prefix + context.prefix, router_calls)
         elif isinstance(route, APIRoute):
-            yield prefix + route.path, inherited_auth or _uses_auth(route.dependant)
+            yield prefix + route.path, inherited | _auth_calls(route.dependant)
         else:
-            yield prefix + getattr(route, "path", ""), False
+            yield prefix + getattr(route, "path", ""), set()
 
 
 def routes_without_auth(application: FastAPI) -> list[str]:
-    """Paths of routes that neither authenticate nor sit on the public allow list."""
+    """Paths of routes that do not authenticate the way their prefix demands.
+
+    A page route needs the cookie session dependency. An ``/api/`` route needs the bearer token
+    dependency and must not use the cookie one. The public allow list is exempt.
+    """
     missing: list[str] = []
-    for path, authenticated in _walk(application.routes, "", False):
+    for path, calls in _walk(application.routes, "", set()):
         if path in PUBLIC_PATHS or (path and path.startswith(PUBLIC_PREFIXES)):
             continue
-        if not authenticated:
+        allowed = calls == {BEARER_AUTH} if is_api_path(path) else COOKIE_AUTH in calls
+        if not allowed:
             missing.append(path)
     return missing
 
 
 def test_every_application_route_authenticates_or_is_public() -> None:
-    """Default deny: a new route without an auth dependency fails this test."""
+    """Default deny: a new route without the auth dependency of its prefix fails this test."""
     assert routes_without_auth(create_app()) == []
+
+
+def test_the_api_routes_are_checked() -> None:
+    """The route walk reaches the API routes, so the check above covers them."""
+    paths = {path for path, _ in _walk(create_app().routes, "", set())}
+    assert "/api/v1/services/{service_id}/deploy" in paths
+    assert "/api/v1/services/{service_id}/deployments/last" in paths
 
 
 def test_check_detects_a_route_without_authentication() -> None:
@@ -90,8 +110,53 @@ def test_check_detects_a_route_without_authentication() -> None:
     async def grouped_route() -> dict[str, str]:
         return {}
 
+    @router.get("/page-with-token", dependencies=[Depends(require_api_token)])
+    async def page_with_token() -> dict[str, str]:
+        return {}
+
     application.include_router(router)
-    assert routes_without_auth(application) == ["/open"]
+    assert routes_without_auth(application) == ["/open", "/page-with-token"]
+
+
+def test_check_demands_the_bearer_dependency_on_api_routes() -> None:
+    """An API route needs the bearer dependency and refuses the cookie one, however it is wired."""
+    application = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+    router = APIRouter()
+
+    @router.get("/api/v1/open")
+    async def open_route() -> dict[str, str]:
+        return {}
+
+    @router.get("/api/v1/cookie", dependencies=[Depends(require_auth)])
+    async def cookie_route() -> dict[str, str]:
+        return {}
+
+    @router.get("/api/v1/grouped", dependencies=[Depends(require_group(UserGroup.ADMIN))])
+    async def grouped_route() -> dict[str, str]:
+        return {}
+
+    @router.get("/api/v1/both", dependencies=[Depends(require_api_token), Depends(require_auth)])
+    async def both_route() -> dict[str, str]:
+        return {}
+
+    @router.get("/api/v1/bearer", dependencies=[Depends(require_api_token)])
+    async def bearer_route() -> dict[str, str]:
+        return {}
+
+    inherited = APIRouter()
+
+    @inherited.get("/api/v2/inherited")
+    async def inherited_route() -> dict[str, str]:
+        return {}
+
+    application.include_router(router)
+    application.include_router(inherited, dependencies=[Depends(require_api_token)])
+    assert routes_without_auth(application) == [
+        "/api/v1/open",
+        "/api/v1/cookie",
+        "/api/v1/grouped",
+        "/api/v1/both",
+    ]
 
 
 @pytest.fixture

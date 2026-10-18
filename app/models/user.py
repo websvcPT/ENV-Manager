@@ -29,10 +29,14 @@ class UserGroup(StrEnum):
 
 
 class LoginCounterKind(StrEnum):
-    """What a login failure counter is keyed on."""
+    """What a failure counter is keyed on.
+
+    ``API_IP`` counts the bad API tokens of a client address, apart from sign-in failures.
+    """
 
     USER = "user"
     IP = "ip"
+    API_IP = "api_ip"
 
 
 class User(Base):
@@ -78,7 +82,7 @@ class UserSession(Base):
 
 
 class LoginCounter(Base):
-    """Failed login counter per user name or client address, persisted across restarts."""
+    """Failed attempt counter per user name or client address, persisted across restarts."""
 
     __tablename__ = "login_counters"
     __table_args__ = (UniqueConstraint("kind", "subject", name="uq_login_counters_kind_subject"),)

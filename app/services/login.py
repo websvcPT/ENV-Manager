@@ -20,6 +20,7 @@ from app.models.types import utc_now
 from app.services import totp
 from app.services.audit import record_audit
 from app.services.auth_policy import AuthPolicy
+from app.services.lockout import get_counter, register_failure, remaining_lock
 from app.services.pending_logins import consume_pending_login, create_pending_login
 from app.services.sessions import create_session
 
@@ -49,50 +50,6 @@ class LoginResult:
     pending_token: str | None = None
 
 
-async def _counter(db: AsyncSession, kind: LoginCounterKind, subject: str) -> LoginCounter | None:
-    """The failure counter for a subject, if one exists."""
-    return (
-        await db.execute(
-            select(LoginCounter).where(LoginCounter.kind == kind, LoginCounter.subject == subject)
-        )
-    ).scalar_one_or_none()
-
-
-def _remaining(counters: list[LoginCounter | None], now: datetime) -> timedelta | None:
-    """The longest time any of the counters is still locked for, or None when none is locked."""
-    waits = [
-        counter.locked_until - now
-        for counter in counters
-        if counter is not None and counter.locked_until is not None and counter.locked_until > now
-    ]
-    return max(waits) if waits else None
-
-
-async def _register_failure(
-    db: AsyncSession,
-    kind: LoginCounterKind,
-    subject: str,
-    limit: int,
-    policy: AuthPolicy,
-    now: datetime,
-) -> bool:
-    """Count one failure and start a lockout at the limit. Returns whether it locked."""
-    counter = await _counter(db, kind, subject)
-    if counter is None:
-        counter = LoginCounter(kind=kind, subject=subject, failures=0, window_started_at=now)
-        db.add(counter)
-    stale_lock = counter.locked_until is not None and counter.locked_until <= now
-    if stale_lock or now - counter.window_started_at > policy.failure_window:
-        counter.failures = 0
-        counter.window_started_at = now
-        counter.locked_until = None
-    counter.failures += 1
-    if counter.failures >= limit:
-        counter.locked_until = now + policy.lockout_duration
-        return True
-    return False
-
-
 async def _find_user(db: AsyncSession, identifier: str) -> User | None:
     """The user whose name matches, else the one whose email matches when it is unambiguous."""
     lowered = identifier.lower()
@@ -115,7 +72,7 @@ async def _locked_out(
     now: datetime,
 ) -> LoginResult | None:
     """A locked result, with its blocked audit entry, when any of the counters is locked."""
-    wait = _remaining(counters, now)
+    wait = remaining_lock(counters, now)
     if wait is None:
         return None
     await record_audit(
@@ -151,8 +108,8 @@ async def authenticate(
     """
     moment = now or utc_now()
     subject = identifier.strip().lower()
-    user_counter = await _counter(db, LoginCounterKind.USER, subject) if subject else None
-    ip_counter = await _counter(db, LoginCounterKind.IP, ip_address) if ip_address else None
+    user_counter = await get_counter(db, LoginCounterKind.USER, subject) if subject else None
+    ip_counter = await get_counter(db, LoginCounterKind.IP, ip_address) if ip_address else None
 
     user = await _find_user(db, subject) if subject else None
     locked = await _locked_out(db, [user_counter, ip_counter], user, ip_address, moment)
@@ -205,8 +162,8 @@ async def complete_totp_login(
         return LoginResult(LoginStatus.PENDING_INVALID)
 
     subject = user.name.lower()
-    user_counter = await _counter(db, LoginCounterKind.USER, subject)
-    ip_counter = await _counter(db, LoginCounterKind.IP, ip_address) if ip_address else None
+    user_counter = await get_counter(db, LoginCounterKind.USER, subject)
+    ip_counter = await get_counter(db, LoginCounterKind.IP, ip_address) if ip_address else None
     locked = await _locked_out(db, [user_counter, ip_counter], user, ip_address, moment)
     if locked is not None:
         return locked
@@ -252,11 +209,11 @@ async def _fail(
 ) -> LoginResult:
     """Count and audit a failed attempt, locking the name or address at the limit."""
     locked_subjects: list[str] = []
-    if subject and await _register_failure(
+    if subject and await register_failure(
         db, LoginCounterKind.USER, subject, policy.user_max_failures, policy, now
     ):
         locked_subjects.append("user")
-    if ip_address and await _register_failure(
+    if ip_address and await register_failure(
         db, LoginCounterKind.IP, ip_address, policy.ip_max_failures, policy, now
     ):
         locked_subjects.append("ip")
@@ -295,7 +252,7 @@ async def _succeed(
     now: datetime,
 ) -> LoginResult:
     """Reset the name counter, start the session and audit the login."""
-    counter = await _counter(db, LoginCounterKind.USER, subject)
+    counter = await get_counter(db, LoginCounterKind.USER, subject)
     if counter is not None:
         counter.failures = 0
         counter.locked_until = None

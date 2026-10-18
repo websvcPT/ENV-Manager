@@ -23,6 +23,7 @@ from app.main import create_app
 from app.seeds import DEV_PASSWORD, SeedData
 from app.services.deploy import DeployEngine
 from app.services.docker_cli import DockerCli
+from app.tests.api_helpers import ApiWorld, build_world
 from app.tests.deploy_helpers import Harness, RecordingNotifier, RecordingRunner, set_deployment
 from app.tests.dist_helpers import relocate_deployments
 from app.tests.template_databases import (
@@ -199,3 +200,10 @@ async def harness(
         yield Harness(
             engine, runner, notifier, lock_dir, roots, seed_data, db, seeded_database, crypto
         )
+
+
+@pytest.fixture
+async def api_world(web_app: FastAPI, tmp_path: Path) -> AsyncIterator[ApiWorld]:
+    """The seeded application on real folders with a fake docker and a client for the API."""
+    async with build_world(web_app, tmp_path) as world:
+        yield world

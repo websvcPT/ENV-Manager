@@ -364,6 +364,21 @@ async def test_csrf_exempts_api_prefix(client: httpx.AsyncClient) -> None:
     assert response.status_code == 200
 
 
+async def test_api_answers_carry_no_csrf_cookie_and_the_prefix_is_exact(
+    client: httpx.AsyncClient,
+) -> None:
+    """The API prefix is passed through without a token cookie; a page and a lookalike get one."""
+    api = await client.get("/api/v1/thing")
+    assert api.status_code == 200 and "set-cookie" not in api.headers
+    posted = await client.post("/api/v1/thing")
+    assert posted.status_code == 200 and "set-cookie" not in posted.headers
+    assert CSRF_COOKIE_NAME not in client.cookies
+    for path in ("/page", "/apix"):
+        client.cookies.clear()
+        answered = await client.get(path)
+        assert CSRF_COOKIE_NAME in answered.headers["set-cookie"], path
+
+
 async def test_forwarded_headers_ignored_without_trusted_proxy(
     client: httpx.AsyncClient,
 ) -> None:

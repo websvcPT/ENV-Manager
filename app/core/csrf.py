@@ -97,7 +97,8 @@ class CSRFMiddleware:
     `hx-headers`. A request passes when the submitted token (the `X-CSRFToken` header, or the
     hidden `csrf_token` form field) equals the cookie token and carries a valid signature.
     Unsafe requests are checked when a session cookie is present and always on the login path.
-    The API prefix accepts bearer tokens and is exempt. A form body is buffered, up to a fixed
+    The API prefix accepts bearer tokens and ignores cookies, so it is passed through untouched:
+    no check, and no token cookie is set on its answers. A form body is buffered, up to a fixed
     bound, only to read the field, then replayed to the application.
     """
 
@@ -117,7 +118,7 @@ class CSRFMiddleware:
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         """Issue the token cookie, and verify the token on sensitive unsafe requests."""
-        if scope["type"] != "http":
+        if scope["type"] != "http" or _API_PATTERN.match(scope["path"]):
             await self.app(scope, receive, send)
             return
 
@@ -149,7 +150,7 @@ class CSRFMiddleware:
     def _requires_check(self, request: Request) -> bool:
         """Whether this request must carry a valid token."""
         path = request.url.path
-        if request.method in SAFE_METHODS or _API_PATTERN.match(path):
+        if request.method in SAFE_METHODS:
             return False
         return bool(_LOGIN_PATTERN.match(path)) or SESSION_COOKIE_NAME in request.cookies
 
