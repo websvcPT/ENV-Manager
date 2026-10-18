@@ -1,4 +1,4 @@
-import { expect, test as base, type Browser, type Page } from '@playwright/test';
+import { expect, test as base, type Browser, type Locator, type Page } from '@playwright/test';
 
 import { createDeployment } from '../deployments-api';
 import { createEnvironment } from '../environments-api';
@@ -63,6 +63,19 @@ const test = base.extend<{
     }
   },
 });
+
+/**
+ * Save the grant tree and wait for the server's answer, so a note left by an earlier save never
+ * stands in for the answer of this one.
+ */
+async function saveGrants(page: Page, grants: Locator): Promise<void> {
+  const answered = page.waitForResponse(
+    (response) => response.url().endsWith('/grants') && response.request().method() === 'POST',
+  );
+  await grants.getByRole('button', { name: 'Save grants' }).click();
+  await answered;
+  await expect(grants.getByText('Grants saved. They apply now.')).toBeVisible();
+}
 
 function isWide(page: Page): boolean {
   return (page.viewportSize()?.width ?? 0) >= WIDE_BREAKPOINT;
@@ -412,8 +425,7 @@ test.describe('superadmin: the user detail', () => {
     const grants = page.locator('#user-grants');
     await expect(grants.locator('input:checked')).toHaveCount(0);
     await grants.locator('#grant-environment-' + scratch.environmentId).check();
-    await grants.getByRole('button', { name: 'Save grants' }).click();
-    await expect(grants.getByText('Grants saved. They apply now.')).toBeVisible();
+    await saveGrants(page, grants);
     await expect(grants.locator('#grant-environment-' + scratch.environmentId)).toBeChecked();
     await person.reload();
     await expect(person.locator('#projects-table')).toContainText(scratch.projectName);
@@ -422,8 +434,7 @@ test.describe('superadmin: the user detail', () => {
     await other.goto(`/users/${user.id}`);
     await grants.locator('#grant-project-' + scratch.projectId).check();
     await grants.locator('#grant-environment-' + scratch.environmentId).uncheck();
-    await grants.getByRole('button', { name: 'Save grants' }).click();
-    await expect(grants.getByText('Grants saved. They apply now.')).toBeVisible();
+    await saveGrants(page, grants);
 
     await other.locator('#grant-deployment-' + scratch.deploymentId).check();
     await other.getByRole('button', { name: 'Save grants' }).click();
@@ -435,8 +446,7 @@ test.describe('superadmin: the user detail', () => {
     await other.close();
 
     await grants.locator('#grant-project-' + scratch.projectId).uncheck();
-    await grants.getByRole('button', { name: 'Save grants' }).click();
-    await expect(grants.getByText('Grants saved. They apply now.')).toBeVisible();
+    await saveGrants(page, grants);
     await person.reload();
     await expect(person.locator('#projects-table')).not.toContainText(scratch.projectName);
     await person.context().close();

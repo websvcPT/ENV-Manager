@@ -1,0 +1,23 @@
+{% extends "layouts/app.html" %}
+{% from "macros/access_grid.html" import section_tabs %}
+{% from "macros/icons.html" import icon %}
+{% from "macros/panels.html" import page_header %}
+{% set active_nav = "users" %}
+{% set breadcrumbs = [("Users", "/users"), ("Access grid", none)] %}
+{% set select_classes = "h-11 rounded-ctl border border-line-strong bg-surface px-3 text-sm text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus md:h-10" %}
+{% block title %}Access grid{% endblock %}
+{% block content %}
+{{ page_header("Access grid", "Rows are projects, deployments, services and environments. Columns are users.") }}
+{{ section_tabs("/access/grid") }}
+<section data-fragment="access-grid" id="access-grid" aria-label="Access grid" class="rounded-panel border border-line bg-surface shadow-panel overflow-hidden">
+<div class="flex flex-wrap items-end gap-3 p-4 md:px-5">
+<form id="grid-filters" action="/access/grid" method="get" hx-get="/access/grid/table" hx-target="#grid-table" hx-swap="outerHTML" hx-trigger="change, submit" hx-sync="this:replace" class="flex min-w-0 max-w-full flex-wrap items-end gap-3">
+<div class="flex items-center gap-2"><label for="g-g" class="text-[13px] font-semibold text-ink2">Group</label><select id="g-g" name="group" class="{{ select_classes }}"><option value="">All groups</option><option value="admin"{% if grid.filters.group and grid.filters.group.value == "admin" %} selected{% endif %}>Admin</option><option value="viewer"{% if grid.filters.group and grid.filters.group.value == "viewer" %} selected{% endif %}>Viewer</option></select></div>
+<div class="flex min-w-0 max-w-full items-center gap-2"><label for="g-p" class="text-[13px] font-semibold text-ink2">Project</label><select id="g-p" name="project" class="min-w-0 {{ select_classes }}"><option value="">All projects</option>{% for project_id, name in grid.project_options %}<option value="{{ project_id }}"{% if project_id == grid.filters.project_id %} selected{% endif %}>{{ name }}</option>{% endfor %}</select></div>
+</form>
+<ul class="m-0 ml-auto flex list-none flex-wrap items-center gap-x-5 gap-y-2 text-[13px] text-ink2" aria-label="Legend"><li class="flex items-center gap-1.5">{{ icon("check", "size-3.5", "2.6") }}Direct grant</li><li class="flex items-center gap-1.5 text-info-fg">{{ icon("arrow-right", "size-3.5", "2.6") }}Inherited, not editable</li><li class="flex items-center gap-1.5">{{ icon("eye", "size-3.5", "2.2") }}Service result</li></ul>
+</div>
+{% include "fragments/grid_table.html" %}
+<p class="border-t border-line bg-surface2 px-5 py-3 text-[13px] text-ink2">Grants exist at project, deployment and environment rows. A grant on a project or deployment row includes items added later. Service rows show the result. Superadmins reach everything, so they have no column.</p>
+</section>
+{% endblock %}

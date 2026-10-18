@@ -1,0 +1,430 @@
+"""The access grid read model and cell toggles on the seeded database."""
+
+from collections.abc import AsyncIterator, Iterator
+from contextlib import contextmanager
+
+import pytest
+from sqlalchemy import event, func, select, update
+from sqlalchemy.engine import Connection
+from sqlalchemy.engine.interfaces import DBAPICursor, ExecutionContext
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
+
+from app.core.db import create_session_factory
+from app.models import (
+    AccessGrant,
+    AuditEntry,
+    Deployment,
+    Environment,
+    GrantLevel,
+    Project,
+    Service,
+    User,
+    UserGroup,
+)
+from app.seeds import SeedData
+from app.services.access_grid import (
+    GONE_NOTICE,
+    STALE_NOTICE,
+    AccessGrid,
+    CellKind,
+    CellUpdate,
+    GridCell,
+    GridFilters,
+    GridNode,
+    load_access_grid,
+    toggle_cell,
+)
+from app.services.audit import AuditActor
+from app.services.grants import SUPERADMIN_REFUSAL, GrantTarget, list_grants, set_user_grants
+
+PROJECT = GrantLevel.PROJECT
+DEPLOYMENT = GrantLevel.DEPLOYMENT
+ENVIRONMENT = GrantLevel.ENVIRONMENT
+
+
+@pytest.fixture
+async def db(seeded_database: AsyncEngine) -> AsyncIterator[AsyncSession]:
+    """A session on the seeded temporary database."""
+    async with create_session_factory(seeded_database)() as session:
+        yield session
+
+
+def actor_of(seed_data: SeedData) -> AuditActor:
+    """The superadmin as the web routes name them in audit entries."""
+    return AuditActor.for_user(seed_data.users.superadmin, "10.0.0.5")
+
+
+def node_of(grid: AccessGrid, node_id: str) -> GridNode:
+    """A row of the grid by its dom id."""
+    return next(node for project in grid.projects for node in project.nodes if node.id == node_id)
+
+
+def cell_of(grid: AccessGrid, user: User, node_id: str) -> GridCell:
+    """The cell of a seeded user at a row."""
+    column = next(item for item in grid.users if item.id == user.id)
+    return grid.cell(node_of(grid, node_id), column)
+
+
+async def grants_of(db: AsyncSession, user: User) -> set[GrantTarget]:
+    """The stored direct grants of a user."""
+    return set(await list_grants(db, user.id))
+
+
+async def entries(db: AsyncSession, action: str) -> list[AuditEntry]:
+    """The audit entries of one action, oldest first."""
+    rows = await db.execute(
+        select(AuditEntry).where(AuditEntry.action == action).order_by(AuditEntry.id)
+    )
+    return list(rows.scalars())
+
+
+@contextmanager
+def count_statements(engine: AsyncEngine) -> Iterator[list[str]]:
+    """Collect every SQL statement the engine runs while the block executes."""
+    statements: list[str] = []
+
+    def record(
+        _connection: Connection,
+        _cursor: DBAPICursor,
+        statement: str,
+        _parameters: object,
+        _context: ExecutionContext | None,
+        _executemany: bool,
+    ) -> None:
+        statements.append(statement)
+
+    event.listen(engine.sync_engine, "before_cursor_execute", record)
+    try:
+        yield statements
+    finally:
+        event.remove(engine.sync_engine, "before_cursor_execute", record)
+
+
+async def grow(db: AsyncSession, projects: int, users: int) -> None:
+    """Add projects with deployments, services and environments, and viewers, in bulk."""
+    for number in range(projects):
+        project = Project(name=f"big-{number}")
+        db.add(project)
+        await db.flush()
+        for deployment_number in range(2):
+            deployment = Deployment(
+                project_id=project.id, name=f"dep-{deployment_number}", root_path="/srv/big"
+            )
+            db.add(deployment)
+            await db.flush()
+            for service_number in range(2):
+                service = Service(deployment_id=deployment.id, name=f"svc-{service_number}")
+                db.add(service)
+                await db.flush()
+                db.add_all(
+                    Environment(service_id=service.id, name=f".env.{index}", target_path="/x")
+                    for index in range(3)
+                )
+    for number in range(users):
+        db.add(
+            User(
+                name=f"bulk-{number}",
+                email=f"bulk-{number}@example.test",
+                password_hash="x",
+                group=UserGroup.VIEWER,
+            )
+        )
+    await db.commit()
+
+
+async def test_columns_are_the_active_admins_and_viewers_by_name(
+    db: AsyncSession, seed_data: SeedData
+) -> None:
+    grid = await load_access_grid(db, GridFilters())
+    names = [user.name for user in grid.users]
+    assert names == sorted(names, key=str.lower)
+    assert "root" not in names
+    assert {"admin", "viewer", "ungranted_admin", "totp_user"} <= set(names)
+    assert all(user.group in (UserGroup.ADMIN, UserGroup.VIEWER) for user in grid.users)
+    viewer_id = seed_data.users.viewer.id
+    await db.execute(update(User).where(User.id == viewer_id).values(is_active=False))
+    await db.commit()
+    after = await load_access_grid(db, GridFilters())
+    assert "viewer" not in [user.name for user in after.users]
+
+
+async def test_the_group_filter_keeps_only_that_group(db: AsyncSession) -> None:
+    viewers = await load_access_grid(db, GridFilters(group=UserGroup.VIEWER))
+    assert viewers.users
+    assert {user.group for user in viewers.users} == {UserGroup.VIEWER}
+    admins = await load_access_grid(db, GridFilters(group=UserGroup.ADMIN))
+    assert {user.group for user in admins.users} == {UserGroup.ADMIN}
+    assert not {user.id for user in viewers.users} & {user.id for user in admins.users}
+
+
+async def test_the_project_filter_narrows_the_rows_and_keeps_every_user(
+    db: AsyncSession, seed_data: SeedData
+) -> None:
+    everything = await load_access_grid(db, GridFilters())
+    billing = await load_access_grid(db, GridFilters(project_id=seed_data.projects.billing.id))
+    assert [project.name for project in billing.projects] == ["billing"]
+    assert len(everything.projects) == 2
+    assert billing.users == everything.users
+    assert billing.project_options == everything.project_options
+    missing = await load_access_grid(db, GridFilters(project_id=999_999))
+    assert missing.filters.project_id is None
+    assert len(missing.projects) == 2
+
+
+@pytest.mark.parametrize(
+    ("params", "expected"),
+    [
+        ({}, GridFilters()),
+        ({"group": "admin", "project": "4"}, GridFilters(UserGroup.ADMIN, 4)),
+        ({"group": "superadmin"}, GridFilters()),
+        ({"group": "nobody", "project": "x"}, GridFilters()),
+        ({"project": "0"}, GridFilters()),
+        ({"project": "-3"}, GridFilters()),
+        ({"project": "٣"}, GridFilters()),
+        ({"project": "1234567890123456"}, GridFilters()),
+    ],
+)
+def test_filters_ignore_values_that_do_not_parse(
+    params: dict[str, str], expected: GridFilters
+) -> None:
+    assert GridFilters.parse(params) == expected
+
+
+def test_filters_round_trip_through_a_query_string() -> None:
+    assert GridFilters().query_string() == ""
+    assert GridFilters(UserGroup.VIEWER, 7).query_string() == "group=viewer&project=7"
+    assert GridFilters(project_id=7).query_string() == "project=7"
+
+
+async def test_a_project_grant_is_direct_and_passes_down_as_inherited(
+    db: AsyncSession, seed_data: SeedData
+) -> None:
+    grid = await load_access_grid(db, GridFilters())
+    viewer = seed_data.users.viewer
+    project = f"project-{seed_data.projects.rentals.id}"
+    deployment = f"deployment-{seed_data.deployments.rentals_prod.id}"
+    service = f"service-{seed_data.services.mysql.id}"
+    environment = f"environment-{seed_data.envs.db.id}"
+    assert cell_of(grid, viewer, project) == GridCell(CellKind.DIRECT)
+    assert node_of(grid, project).future_items
+    assert cell_of(grid, viewer, deployment) == GridCell(CellKind.INHERITED, source="rentals")
+    assert cell_of(grid, viewer, environment) == GridCell(CellKind.INHERITED, source="rentals")
+    result = cell_of(grid, viewer, service)
+    assert result.kind is CellKind.RESULT
+    assert result.reaches
+    assert result.seen == result.total == len(node_of(grid, service).environments) > 1
+    billing = f"project-{seed_data.projects.billing.id}"
+    api = f"environment-{seed_data.envs.api.id}"
+    assert cell_of(grid, viewer, billing) == GridCell(CellKind.NONE)
+    assert cell_of(grid, viewer, api) == GridCell(CellKind.NONE)
+    assert not cell_of(grid, viewer, f"service-{seed_data.services.api.id}").reaches
+
+
+async def test_a_deployment_grant_passes_down_with_the_deployment_as_source(
+    db: AsyncSession, seed_data: SeedData
+) -> None:
+    grid = await load_access_grid(db, GridFilters())
+    user = seed_data.users.deployment_admin
+    prod = f"deployment-{seed_data.deployments.rentals_prod.id}"
+    staging = f"deployment-{seed_data.deployments.rentals_staging.id}"
+    assert cell_of(grid, user, prod) == GridCell(CellKind.DIRECT)
+    assert node_of(grid, prod).future_items
+    assert cell_of(grid, user, f"project-{seed_data.projects.rentals.id}").kind is CellKind.NONE
+    assert cell_of(grid, user, f"environment-{seed_data.envs.web.id}") == GridCell(
+        CellKind.INHERITED, source="prod"
+    )
+    assert cell_of(grid, user, staging).kind is CellKind.NONE
+    assert not cell_of(grid, user, f"service-{seed_data.services.staging_web.id}").reaches
+
+
+async def test_an_environment_grant_shows_a_partial_service_result(
+    db: AsyncSession, seed_data: SeedData
+) -> None:
+    grid = await load_access_grid(db, GridFilters())
+    user = seed_data.users.env_scoped_admin
+    db_file = f"environment-{seed_data.envs.db.id}"
+    assert cell_of(grid, user, db_file) == GridCell(CellKind.DIRECT)
+    assert not node_of(grid, db_file).future_items
+    assert cell_of(grid, user, f"environment-{seed_data.envs.db_secrets.id}") == GridCell(
+        CellKind.NONE
+    )
+    mysql = cell_of(grid, user, f"service-{seed_data.services.mysql.id}")
+    assert (mysql.seen, mysql.reaches) == (1, True)
+    assert mysql.total == len(node_of(grid, f"service-{seed_data.services.mysql.id}").environments)
+    assert mysql.total > 1
+    assert cell_of(grid, user, f"deployment-{seed_data.deployments.rentals_prod.id}").kind is (
+        CellKind.NONE
+    )
+
+
+async def test_the_widest_item_is_the_source_and_a_redundant_grant_stays_direct(
+    db: AsyncSession, seed_data: SeedData
+) -> None:
+    user = seed_data.users.viewer
+    prod = GrantTarget(DEPLOYMENT, seed_data.deployments.rentals_prod.id)
+    db_file = GrantTarget(ENVIRONMENT, seed_data.envs.db.id)
+    project = GrantTarget(PROJECT, seed_data.projects.rentals.id)
+    await set_user_grants(db, user, {project, prod, db_file}, actor=actor_of(seed_data))
+    grid = await load_access_grid(db, GridFilters())
+    assert cell_of(grid, user, f"deployment-{prod.item_id}") == GridCell(
+        CellKind.DIRECT, also="rentals"
+    )
+    assert cell_of(grid, user, f"environment-{db_file.item_id}") == GridCell(
+        CellKind.DIRECT, also="rentals"
+    )
+    assert cell_of(grid, user, f"environment-{seed_data.envs.web.id}") == GridCell(
+        CellKind.INHERITED, source="rentals"
+    )
+
+
+async def test_loading_takes_the_same_queries_for_a_small_and_a_large_tree(
+    seeded_database: AsyncEngine,
+) -> None:
+    async with create_session_factory(seeded_database)() as session:
+        with count_statements(seeded_database) as small:
+            await load_access_grid(session, GridFilters())
+        await grow(session, projects=12, users=15)
+        with count_statements(seeded_database) as large:
+            grid = await load_access_grid(session, GridFilters())
+    assert len(grid.projects) == 14
+    assert len(grid.users) >= 15
+    assert len(small) == len(large) <= 8
+
+
+async def test_a_toggle_takes_the_same_queries_for_a_small_and_a_large_tree(
+    seeded_database: AsyncEngine, seed_data: SeedData
+) -> None:
+    actor = actor_of(seed_data)
+    user = seed_data.users.ungranted_admin
+    target = GrantTarget(PROJECT, seed_data.projects.billing.id)
+    async with create_session_factory(seeded_database)() as session:
+        with count_statements(seeded_database) as small:
+            await toggle_cell(session, user, target, was=False, actor=actor)
+        await toggle_cell(session, user, target, was=True, actor=actor)
+        await grow(session, projects=12, users=15)
+        with count_statements(seeded_database) as large:
+            await toggle_cell(session, user, target, was=False, actor=actor)
+    assert len(small) == len(large)
+
+
+async def test_a_toggle_adds_and_removes_one_grant_with_one_audit_entry_each(
+    db: AsyncSession, seed_data: SeedData
+) -> None:
+    user = seed_data.users.ungranted_admin
+    target = GrantTarget(PROJECT, seed_data.projects.billing.id)
+    added = await toggle_cell(db, user, target, was=False, actor=actor_of(seed_data))
+    assert added.changed and added.notice is None
+    assert await grants_of(db, user) == {target}
+    [entry] = await entries(db, "grant.add")
+    assert entry.target_name == "ungranted_admin"
+    assert entry.details == {"level": "project", "item": "billing"}
+    removed = await toggle_cell(db, user, target, was=True, actor=actor_of(seed_data))
+    assert removed.changed and removed.notice is None
+    assert await grants_of(db, user) == set()
+    assert len(await entries(db, "grant.add")) == 1
+    [gone] = await entries(db, "grant.remove")
+    assert gone.details == {"level": "project", "item": "billing"}
+
+
+async def test_a_project_toggle_redraws_the_cells_below_and_only_those_that_changed(
+    db: AsyncSession, seed_data: SeedData
+) -> None:
+    user = seed_data.users.ungranted_admin
+    billing = seed_data.projects.billing
+    update = await toggle_cell(
+        db, user, GrantTarget(PROJECT, billing.id), was=False, actor=actor_of(seed_data)
+    )
+    grid = await load_access_grid(db, GridFilters(project_id=billing.id))
+    sent = {node.id: cell for node, cell in update.cells}
+    project_nodes = {node.id for node in grid.projects[0].nodes}
+    assert set(sent) == project_nodes
+    assert sent[f"project-{billing.id}"].kind is CellKind.DIRECT
+    assert sent[f"environment-{seed_data.envs.api.id}"] == GridCell(
+        CellKind.INHERITED, source="billing"
+    )
+    assert sent[f"service-{seed_data.services.api.id}"].reaches
+    assert update.clicked == f"project-{billing.id}"
+
+
+async def test_an_environment_toggle_redraws_its_cell_and_the_service_result_only(
+    db: AsyncSession, seed_data: SeedData
+) -> None:
+    user = seed_data.users.ungranted_admin
+    target = GrantTarget(ENVIRONMENT, seed_data.envs.db.id)
+    update = await toggle_cell(db, user, target, was=False, actor=actor_of(seed_data))
+    assert {node.id for node, _ in update.cells} == {
+        f"environment-{seed_data.envs.db.id}",
+        f"service-{seed_data.services.mysql.id}",
+    }
+
+
+async def test_a_cell_that_shows_an_old_state_is_refused_and_nothing_changes(
+    db: AsyncSession, seed_data: SeedData
+) -> None:
+    user = seed_data.users.viewer
+    project = GrantTarget(PROJECT, seed_data.projects.rentals.id)
+    before = await entries(db, "grant.remove")
+    update = await toggle_cell(db, user, project, was=False, actor=actor_of(seed_data))
+    assert update.notice == STALE_NOTICE
+    assert not update.changed
+    assert await grants_of(db, user) == {project}
+    assert await entries(db, "grant.remove") == before
+    shown = {node.id: cell for node, cell in update.cells}
+    assert shown[f"project-{project.item_id}"].kind is CellKind.DIRECT
+    assert len(shown) == len(
+        next(
+            item
+            for item in (await load_access_grid(db, GridFilters())).projects
+            if item.id == project.item_id
+        ).nodes
+    )
+
+
+async def test_access_an_item_above_already_includes_cannot_be_granted_again(
+    db: AsyncSession, seed_data: SeedData
+) -> None:
+    user = seed_data.users.viewer
+    target = GrantTarget(ENVIRONMENT, seed_data.envs.db.id)
+    update = await toggle_cell(db, user, target, was=False, actor=actor_of(seed_data))
+    assert update.notice == "Access to this item is already included through rentals."
+    assert await grants_of(db, user) == {GrantTarget(PROJECT, seed_data.projects.rentals.id)}
+    assert await entries(db, "grant.add") == []
+
+
+async def test_a_redundant_grant_can_be_removed(db: AsyncSession, seed_data: SeedData) -> None:
+    user = seed_data.users.viewer
+    target = GrantTarget(ENVIRONMENT, seed_data.envs.db.id)
+    project = GrantTarget(PROJECT, seed_data.projects.rentals.id)
+    await set_user_grants(db, user, {project, target}, actor=actor_of(seed_data))
+    update = await toggle_cell(db, user, target, was=True, actor=actor_of(seed_data))
+    assert update.changed and update.notice is None
+    assert await grants_of(db, user) == {project}
+    [entry] = await entries(db, "grant.remove")
+    assert entry.details is not None and entry.details["level"] == "environment"
+
+
+async def test_a_deleted_item_is_reported_and_nothing_is_written(
+    db: AsyncSession, seed_data: SeedData
+) -> None:
+    user = seed_data.users.ungranted_admin
+    update: CellUpdate = await toggle_cell(
+        db, user, GrantTarget(PROJECT, 424242), was=False, actor=actor_of(seed_data)
+    )
+    assert update.missing and update.notice == GONE_NOTICE
+    assert update.cells == ()
+    assert update.clicked == "project-424242"
+    assert await db.scalar(select(func.count()).select_from(AccessGrant)) == 8
+
+
+async def test_a_superadmin_cannot_be_given_a_grant(db: AsyncSession, seed_data: SeedData) -> None:
+    update = await toggle_cell(
+        db,
+        seed_data.users.superadmin,
+        GrantTarget(PROJECT, seed_data.projects.billing.id),
+        was=False,
+        actor=actor_of(seed_data),
+    )
+    assert update.notice == SUPERADMIN_REFUSAL
+    assert not update.changed
+    assert await grants_of(db, seed_data.users.superadmin) == set()
+    assert await entries(db, "grant.add") == []

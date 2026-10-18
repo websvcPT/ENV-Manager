@@ -1,0 +1,10 @@
+{#- The answer to a toggle: the cells to redraw, each swapped into place by its id. The clicked
+    cell carries the reason when the toggle was refused. Context: update (CellUpdate). -#}
+{% from "macros/access_grid.html" import gone_cell, grid_cell %}
+{%- if update.missing -%}
+{{ gone_cell(update.user, update.clicked, update.notice) }}
+{%- else -%}
+{%- for node, cell in update.cells -%}
+{{ grid_cell(update.user, node, cell, oob=true, notice=update.notice if node.id == update.clicked else none) }}
+{%- endfor -%}
+{%- endif -%}

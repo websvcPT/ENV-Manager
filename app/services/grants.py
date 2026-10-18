@@ -26,6 +26,7 @@ from app.models import (
 from app.services.audit import AuditActor, record_actor_audit
 
 MAX_ID_DIGITS = 15
+SUPERADMIN_REFUSAL = "Superadmins reach every project, so they hold no grants."
 
 
 class GrantError(Exception):
@@ -160,7 +161,7 @@ async def load_grant_tree(db: AsyncSession) -> tuple[GrantProject, ...]:
     )
 
 
-def _target_of(grant: AccessGrant) -> GrantTarget:
+def target_of(grant: AccessGrant) -> GrantTarget:
     """The target a stored grant row points at."""
     ids = {
         GrantLevel.PROJECT: grant.project_id,
@@ -176,7 +177,7 @@ def _target_of(grant: AccessGrant) -> GrantTarget:
 async def list_grants(db: AsyncSession, user_id: int) -> frozenset[GrantTarget]:
     """The direct grants of a user."""
     rows = (await db.execute(select(AccessGrant).where(AccessGrant.user_id == user_id))).scalars()
-    return frozenset(_target_of(grant) for grant in rows)
+    return frozenset(target_of(grant) for grant in rows)
 
 
 async def describe_targets(
@@ -272,7 +273,7 @@ async def set_user_grants(
     change is effective at once because scopes are loaded per request.
     """
     if user.group is UserGroup.SUPERADMIN:
-        raise GrantError("Superadmins reach every project, so they hold no grants.")
+        raise GrantError(SUPERADMIN_REFUSAL)
     wanted = set(desired)
     current = set(await list_grants(db, user.id))
     if base is not None and set(base) != current:
@@ -291,7 +292,7 @@ async def set_user_grants(
             await db.execute(select(AccessGrant).where(AccessGrant.user_id == user.id))
         ).scalars()
         for grant in stored:
-            target = _target_of(grant)
+            target = target_of(grant)
             if target in removed:
                 await db.delete(grant)
                 path = removed_labels.get(target, target.key)
@@ -302,6 +303,29 @@ async def set_user_grants(
         await db.rollback()
         raise StaleGrantsError("This user's grants changed since the page was loaded.") from error
     return GrantChange(tuple(added), tuple(removed))
+
+
+async def toggle_user_grant(
+    db: AsyncSession,
+    user: User,
+    target: GrantTarget,
+    *,
+    was: bool,
+    actor: AuditActor,
+) -> GrantChange:
+    """Flip one direct grant of a user, auditing the grant added or removed.
+
+    ``was`` is whether the person saw the grant as held; when the stored state differs the flip
+    is refused, so a cell on an old page never undoes a change made meanwhile. Everything else
+    goes through ``set_user_grants``, so a concurrent change to any other grant of the user is
+    caught too.
+    """
+    if user.group is UserGroup.SUPERADMIN:
+        raise GrantError(SUPERADMIN_REFUSAL)
+    current = set(await list_grants(db, user.id))
+    if (target in current) != was:
+        raise StaleGrantsError("This grant changed since the page was loaded.")
+    return await set_user_grants(db, user, current ^ {target}, actor=actor, base=current)
 
 
 async def projects_reached(db: AsyncSession) -> dict[int, set[int]]:

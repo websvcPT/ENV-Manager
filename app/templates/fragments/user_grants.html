@@ -6,8 +6,9 @@
 {% from "macros/buttons.html" import button %}
 {% from "macros/feedback.html" import note %}
 {% from "macros/grants.html" import grant_tree %}
-{% from "macros/panels.html" import panel %}
-{% call panel("Access grants", "p-grants", fragment="user-grants", id="user-grants") %}
+{% from "macros/panels.html" import panel, text_link %}
+{% set grid_link %}{{ text_link("Open access grid", "/access/grid") }}{% endset %}
+{% call panel("Access grants", "p-grants", fragment="user-grants", id="user-grants", actions=grid_link) %}
 {%- if user.group.value == "superadmin" %}
 <div class="px-4 pb-5 md:px-5">{{ note("Superadmins reach every project, so grants do not apply to this account.") }}</div>
 {%- else %}

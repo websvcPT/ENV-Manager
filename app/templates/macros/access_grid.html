@@ -1,0 +1,69 @@
+{#- The access grid: section tabs shared with the Users list, row headers and cells.
+    A cell is a direct grant (a checkbox that posts the flip), inherited access (text with its
+    source, not editable), none (an empty checkbox) or, on a service row, the result. A cell
+    carries `hx-swap-oob` when it comes in a toggle answer, so one answer redraws every cell of
+    the user that changed. -#}
+{% from "macros/icons.html" import icon %}
+{% from "macros/panels.html" import tabs %}
+
+{% set LEVEL_LABELS = {"project": "Project", "deployment": "Deployment", "service": "Service", "environment": "Environment"} %}
+{% set INDENTS = ["", "ml-5", "ml-10", "ml-[60px]"] %}
+{% set CELL_CLASSES = "border-t border-line px-4 py-3.5" %}
+
+{#- Users and Access grid, the two sections of user administration. `current` is the open path. -#}
+{% macro section_tabs(current) -%}
+{{ tabs([{"label": "Users", "href": "/users"}, {"label": "Access grid", "href": "/access/grid", "superadmin": true}], current) }}
+{%- endmacro %}
+
+{#- The sticky first cell of a row: the expand control (when the row has rows below it), the
+    level and the name. -#}
+{% macro row_header(node) -%}
+<th scope="row" class="sticky left-0 z-10 border-t border-line bg-surface px-4 py-3 text-left"><div class="flex items-center gap-2"><span class="{{ INDENTS[node.depth] }} flex items-center gap-2">
+{%- if node.expandable -%}
+<button type="button" data-js="tree-toggle" aria-expanded="true" aria-label="Expand or collapse {{ node.name }}" class="inline-flex size-6 shrink-0 items-center justify-center rounded-ctl border border-line-strong text-ink hover:bg-surface2 max-md:size-11 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ icon("chevron-down", "size-3.5", "2.4") }}</button>
+{%- else -%}
+<span class="size-6 shrink-0 max-md:size-11"></span>
+{%- endif -%}
+<span><span class="block text-xs font-semibold uppercase tracking-wide text-ink3">{{ LEVEL_LABELS[node.kind.value] }}</span><span class="{{ "font-mono text-[13px]" if node.kind.value == "environment" else "font-semibold" }}">{{ node.name }}</span></span></span></div></th>
+{%- endmacro %}
+
+{#- The checkbox of a direct grant or of none. It posts the user, the item and what it showed;
+    the server answers with the cells to redraw. Another change of the box while the request runs is
+    dropped, and the answer redraws the box from what is stored. -#}
+{% macro toggle_box(user, node, held) -%}
+{%- set vals = {"user": user.id, "target": node.target.key, "was": "1" if held else "0"} | tojson | forceescape -%}
+<input type="checkbox" id="grant-{{ user.id }}-{{ node.id }}"{% if held %} checked{% endif %} data-grid-toggle hx-post="/access/grid/toggle" hx-trigger="change" hx-swap="none" hx-sync="this:drop" hx-vals="{{ vals }}" aria-label="{{ "Direct grant for " ~ user.name ~ " on " ~ node.name if held else "Grant " ~ user.name ~ " access to " ~ node.name }}" class="size-[18px] accent-accent">
+{%- endmacro %}
+
+{#- One cell. `notice` is the reason a toggle was refused, shown under the control. -#}
+{% macro grid_cell(user, node, cell, oob=false, notice=none) -%}
+{%- set kind = cell.kind.value -%}
+<td id="cell-{{ user.id }}-{{ node.id }}" data-fragment="grid-cell" data-cell="{{ kind }}"{% if oob %} hx-swap-oob="true"{% endif %} class="{{ CELL_CLASSES }}">
+{%- if kind == "result" -%}
+{%- if cell.reaches -%}
+<span class="inline-flex items-center gap-1.5 text-[13px] text-ink2">{{ icon("eye", "size-3.5", "2.2") }}Sees {{ cell.seen }} of {{ cell.total }}</span>
+{%- else -%}
+<span class="inline-flex items-center gap-1.5 text-[13px] text-ink3">{{ icon("circle-minus", "size-3.5", "2.2") }}No access</span>
+{%- endif -%}
+{%- elif kind == "inherited" -%}
+<span class="inline-flex flex-col text-[13px]"><span class="inline-flex items-center gap-1.5 font-semibold text-info-fg">{{ icon("arrow-right", "size-3.5", "2.4") }}Inherited</span><span class="text-xs text-ink2">from {{ cell.source }}</span></span>
+{%- else -%}
+<span class="inline-flex flex-col items-start gap-1">
+{%- if kind == "direct" -%}
+<label class="inline-flex items-center gap-2 whitespace-nowrap text-[13px] font-semibold max-md:min-h-11">{{ toggle_box(user, node, true) }}Direct{% if node.future_items %}<span class="text-xs font-normal text-ink2">+ future items</span>{% endif %}</label>
+{%- if cell.also %}<span class="text-xs text-ink2">Also included through {{ cell.also }}</span>{% endif -%}
+{%- else -%}
+<label class="inline-flex items-center gap-2 text-[13px] text-ink2 max-md:min-h-11">{{ toggle_box(user, node, false) }}None</label>
+{%- endif -%}
+</span>
+{%- endif -%}
+{%- if notice -%}
+<p role="alert" class="mt-1.5 flex max-w-56 items-start gap-1.5 text-xs font-semibold text-danger">{{ icon("warning", "size-3.5 mt-px", "2.4") }}{{ notice }}</p>
+{%- endif -%}
+</td>
+{%- endmacro %}
+
+{#- The cell of an item that no longer exists: only the reason, no control. -#}
+{% macro gone_cell(user, item_id, notice) -%}
+<td id="cell-{{ user.id }}-{{ item_id }}" data-fragment="grid-cell" data-cell="gone" hx-swap-oob="true" class="{{ CELL_CLASSES }}"><p role="alert" class="flex max-w-56 items-start gap-1.5 text-xs font-semibold text-danger">{{ icon("warning", "size-3.5 mt-px", "2.4") }}{{ notice }}</p></td>
+{%- endmacro %}

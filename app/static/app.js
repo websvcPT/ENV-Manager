@@ -5,7 +5,7 @@
    variable row, row toggle, tree toggle, copy, dismiss, history back, picking a path into a
    field, limiting the version comparison to two versions, closing dialogs when the server asks,
    the deploy dialog (loading content, chosen environments, closing when the load fails), and a
-   toast when an htmx request fails. */
+   toast when an htmx request fails (an access grid checkbox goes back to the stored state). */
 (function () {
   'use strict';
 
@@ -272,11 +272,23 @@
     if (action) { action(control, event); }
   });
 
+  /* An access grid checkbox flips before the server answers. When the request fails the box goes
+     back to what is stored, so the grid never shows a grant that does not exist. A refusal that
+     redraws the cell replaces the box anyway. */
+  function restoreGridToggle(event) {
+    var ctx = event.detail && event.detail.ctx;
+    var source = ctx && ctx.sourceElement;
+    if (source instanceof HTMLInputElement && source.hasAttribute('data-grid-toggle')) {
+      source.checked = source.defaultChecked;
+    }
+  }
+
   /* A failed request keeps the previous content (the server answer is not swapped) and the
      person is told with a toast. Validation answers (422) are swapped as form content instead. */
   document.addEventListener('htmx:response:error', function (event) {
     var ctx = event.detail && event.detail.ctx;
     var status = ctx && ctx.response ? ctx.response.status : 0;
+    restoreGridToggle(event);
     if (status >= 500 || status === 403 || status === 404) {
       closeLoadingDialogs();
       showErrorToast();
@@ -289,7 +301,8 @@
       dialog.close();
     });
   });
-  document.addEventListener('htmx:error', function () {
+  document.addEventListener('htmx:error', function (event) {
+    restoreGridToggle(event);
     closeLoadingDialogs();
     showErrorToast();
   });
