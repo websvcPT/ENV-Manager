@@ -1,4 +1,4 @@
-"""Typer commands for bootstrapping and recovering user access."""
+"""Typer commands for bootstrapping and recovering user access and for deploying a service."""
 
 import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -14,7 +14,17 @@ from app.config import get_settings
 from app.core.crypto import build_crypto_service
 from app.core.db import create_engine, create_session_factory
 from app.core.migrations import migrate_database
-from app.models import AuditActorType, LoginCounter, User, UserGroup
+from app.models import (
+    AuditActorType,
+    Deployment,
+    DeployStatus,
+    Environment,
+    LoginCounter,
+    Project,
+    Service,
+    User,
+    UserGroup,
+)
 from app.seeds import (
     DEMO_STACK_FOLDER,
     DEV_PASSWORD,
@@ -31,6 +41,10 @@ from app.seeds import (
 )
 from app.seeds import seed as seed_data
 from app.services import users as user_service
+from app.services.audit import AuditActor
+from app.services.deploy import DeployEngine
+from app.services.deploy_types import DeployOutcome, DeployRequest, DeployRequestError
+from app.services.permissions import cli_scope
 
 app = typer.Typer(help="ENV Manager administration.", no_args_is_help=True, add_completion=False)
 user_app = typer.Typer(help="Manage users.", no_args_is_help=True)
@@ -152,6 +166,95 @@ def reset_user_password(name: Annotated[str, typer.Argument(help="Sign-in name."
     typer.echo(f"password reset for {name.strip()}")
     typer.echo(f"password: {password}")
     typer.echo("This password is shown once and cannot be recovered.")
+
+
+class DeployTargetError(Exception):
+    """The service or file named on the deploy command line does not exist."""
+
+
+async def _find_deploy_request(
+    db: AsyncSession, target: str, file_names: list[str], dry_run: bool, force: bool
+) -> DeployRequest:
+    """The deploy request for ``project/deployment/service`` and the named files (default all)."""
+    names = target.split("/")
+    if len(names) != 3 or not all(names):
+        raise DeployTargetError("name the service as project/deployment/service")
+    service_id = await db.scalar(
+        select(Service.id)
+        .join(Deployment, Deployment.id == Service.deployment_id)
+        .join(Project, Project.id == Deployment.project_id)
+        .where(Project.name == names[0], Deployment.name == names[1], Service.name == names[2])
+    )
+    if service_id is None:
+        raise DeployTargetError(f"no service {target}")
+    environment_ids: tuple[int, ...] | None = None
+    if file_names:
+        rows = await db.execute(
+            select(Environment.name, Environment.id).where(
+                Environment.service_id == service_id, Environment.name.in_(file_names)
+            )
+        )
+        found = dict(rows.all())
+        unknown = sorted(set(file_names) - set(found))
+        if unknown:
+            raise DeployTargetError(f"no file {', '.join(unknown)} in {target}")
+        environment_ids = tuple(found.values())
+    return DeployRequest(
+        service_id=service_id, environment_ids=environment_ids, dry_run=dry_run, force=force
+    )
+
+
+def _print_deploy(target: str, outcome: DeployOutcome) -> None:
+    """Print the result of a deploy: one line per file, then the post-deploy outcome."""
+    kind = "dry run" if outcome.dry_run else "deploy"
+    run = f" (run {outcome.run_id})" if outcome.run_id is not None else ""
+    typer.echo(f"{kind} of {target}: {outcome.status.value}{run}")
+    if outcome.message:
+        typer.echo(outcome.message)
+    for environment in outcome.environments:
+        version = f"v{environment.version_number}" if environment.version_number else "no version"
+        typer.echo(
+            f"  {environment.name} ({version}): {environment.status.value}. {environment.message}"
+        )
+    post_deploy = outcome.post_deploy
+    if not outcome.dry_run and outcome.run_id is not None:
+        reason = f" ({post_deploy.reason})" if post_deploy.reason else ""
+        typer.echo(f"  post-deploy: {post_deploy.status.value}{reason}")
+
+
+@app.command("deploy")
+def deploy_service(
+    target: Annotated[str, typer.Argument(help="The service as project/deployment/service.")],
+    env: Annotated[
+        list[str] | None,
+        typer.Option("--env", help="File name to deploy, repeatable. Default: every file."),
+    ] = None,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Check and report without writing anything.")
+    ] = False,
+    force: Annotated[
+        bool, typer.Option("--force", help="Override missing-keys blocks and drift halts.")
+    ] = False,
+) -> None:
+    """Deploy a service as the CLI actor. Exits 1 unless every file was written or unchanged."""
+
+    async def operation(db: AsyncSession) -> DeployOutcome:
+        settings = get_settings()
+        engine = DeployEngine(
+            crypto=build_crypto_service(settings.key, settings.key_file),
+            lock_dir=settings.lock_path,
+        )
+        request = await _find_deploy_request(db, target, env or [], dry_run, force)
+        return await engine.run(db, cli_scope(), AuditActor.cli(), request)
+
+    try:
+        outcome = run_command(operation)
+    except (DeployTargetError, DeployRequestError) as error:
+        typer.echo(f"error: {error}", err=True)
+        raise typer.Exit(code=1) from error
+    _print_deploy(target, outcome)
+    if outcome.status is not DeployStatus.SUCCESS:
+        raise typer.Exit(code=1)
 
 
 def _require_development_environment(action: str) -> None:

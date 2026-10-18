@@ -10,24 +10,23 @@ overview and later the API and the deploy sequence.
 
 from dataclasses import dataclass
 from datetime import datetime
-from enum import StrEnum
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.crypto import CryptoService
 from app.models import (
-    AuditActorType,
     AuditResult,
     Deployment,
     DistMissingPolicy,
+    DistOutcome,
     Environment,
     EnvironmentVersion,
     Service,
     User,
 )
 from app.models.types import utc_now
-from app.services.audit import record_audit
+from app.services.audit import AuditActor, record_actor_audit
 from app.services.dist import (
     DistError,
     DistProblem,
@@ -76,16 +75,6 @@ SKIP_MESSAGES = {
         "No dist file is linked to this file. Key comparison is skipped for it."
     ),
 }
-
-
-class DistOutcome(StrEnum):
-    """How a check ended: the policy decision for missing keys, or why there is none."""
-
-    BLOCKED = "blocked"
-    WARNING = "warning"
-    PASSED = "passed"
-    SKIPPED = "skipped"
-    FAILED = "failed"
 
 
 @dataclass(frozen=True)
@@ -171,20 +160,27 @@ def _outcome(report: DistReport, policy: DistMissingPolicy) -> DistOutcome:
 
 
 async def evaluate_dist(
-    db: AsyncSession, crypto: CryptoService, environment_id: int, *, checked_by: str
+    db: AsyncSession,
+    crypto: CryptoService,
+    environment_id: int,
+    *,
+    checked_by: str,
+    version_number: int | None = None,
 ) -> DistCheck:
-    """Compare the latest saved version of an environment with its dist file, without auditing.
+    """Compare a saved version of an environment with its dist file, without auditing.
 
-    A file that is not env format is skipped before anything is read from the host, and so is a
-    file without a dist link. Otherwise the dist file is read with allowed paths loaded now.
-    Every refusal to read becomes a failed check; nothing here raises for them.
+    The version is the one with ``version_number``, else the newest; a deploy names the version it
+    is about to write so a save made meanwhile cannot change what was checked. A file that is not
+    env format is skipped before anything is read from the host, and so is a file without a dist
+    link. Otherwise the dist file is read with allowed paths loaded now. Every refusal to read
+    becomes a failed check; nothing here raises for them.
     """
     loaded = await _load_subject(db, environment_id)
     if loaded is None:
         missing = DistProblem.ENVIRONMENT_MISSING
         raise DistError(missing, PROBLEM_MESSAGES[missing])
     subject, root_path, policy = loaded
-    latest = await stored_version(db, environment_id)
+    latest = await stored_version(db, environment_id, version_number)
 
     def finish(
         outcome: DistOutcome,
@@ -228,13 +224,12 @@ def _audit_result(outcome: DistOutcome) -> AuditResult:
     return AuditResult.SUCCESS
 
 
-async def record_dist_check(
-    db: AsyncSession, check: DistCheck, *, actor: User, ip_address: str | None
-) -> None:
+async def record_dist_check(db: AsyncSession, check: DistCheck, *, actor: AuditActor) -> None:
     """Add the audit entry of a check to the session; the caller commits.
 
-    Details hold the outcome, the policy, key counts and the skip reason or problem code, never
-    a key value.
+    The actor is a user, an API token or the CLI, so the web screens, the API and the deploy
+    sequence audit their checks the same way. Details hold the outcome, the policy, key counts
+    and the skip reason or problem code, never a key value.
     """
     report = check.report
     details: dict[str, object] = {
@@ -251,13 +246,11 @@ async def record_dist_check(
     if check.problem is not None:
         details["problem"] = check.problem.value
     subject = check.subject
-    entry = await record_audit(
+    entry = await record_actor_audit(
         db,
+        actor,
         action="environment.dist_check",
         result=_audit_result(check.outcome),
-        actor_type=AuditActorType.USER,
-        actor_user=actor,
-        ip_address=ip_address,
         target_type="environment",
         target_id=subject.environment_id,
         target_name=subject.name,
@@ -267,6 +260,7 @@ async def record_dist_check(
         environment_id=subject.environment_id,
         details=details,
     )
+    entry.created_at = check.checked_at
     if check.version_id is not None:
         entry.version_ids = [check.version_id]
 
@@ -281,7 +275,7 @@ async def run_dist_check(
 ) -> DistCheck:
     """Run a check for one environment and audit it."""
     check = await evaluate_dist(db, crypto, environment_id, checked_by=actor.name)
-    await record_dist_check(db, check, actor=actor, ip_address=ip_address)
+    await record_dist_check(db, check, actor=AuditActor.for_user(actor, ip_address))
     await db.commit()
     return check
 
@@ -309,8 +303,9 @@ async def run_deployment_dist_checks(
         await evaluate_dist(db, crypto, environment_id, checked_by=actor.name)
         for environment_id in environment_ids
     ]
+    audit_actor = AuditActor.for_user(actor, ip_address)
     for check in checks:
-        await record_dist_check(db, check, actor=actor, ip_address=ip_address)
+        await record_dist_check(db, check, actor=audit_actor)
     await db.commit()
     return tuple(sorted(checks, key=lambda check: (check.subject.service_name, check.subject.name)))
 

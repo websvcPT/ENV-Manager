@@ -16,6 +16,7 @@ from app.models import (
     Deployment,
     DeployRun,
     DeployStatus,
+    DeployTrigger,
     Environment,
     GrantLevel,
     Project,
@@ -23,7 +24,7 @@ from app.models import (
     User,
     UserGroup,
 )
-from app.services.audit import record_audit
+from app.services.audit import CLI_ACTOR_NAME, record_audit
 from app.services.permissions import AccessScope, Capability, ItemLevel, compute_visibility
 
 MAX_PROJECT_NAME_LENGTH = 100
@@ -245,7 +246,11 @@ async def latest_runs(
             .where(ranked.c.position == 1)
         )
     ).all()
-    return {run.service_id: (run, name) for run, name in rows if run.service_id is not None}
+    return {
+        run.service_id: (run, CLI_ACTOR_NAME if run.trigger is DeployTrigger.CLI else name)
+        for run, name in rows
+        if run.service_id is not None
+    }
 
 
 async def member_counts(db: AsyncSession) -> dict[int, int]:

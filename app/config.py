@@ -46,6 +46,11 @@ class Settings(BaseSettings):
         """Folder inside the data volume that holds database backups."""
         return self.data_path / "backups"
 
+    @property
+    def lock_path(self) -> Path:
+        """Folder inside the data volume that holds the deploy lock files."""
+        return self.data_path / "locks"
+
     @field_validator("trusted_proxies", "cors_origins", mode="before")
     @classmethod
     def _parse_list(cls, value: object) -> object:

@@ -309,6 +309,16 @@ async def _owner_targets(db: AsyncSession, user: User) -> TargetSet:
     )
 
 
+def cli_scope() -> AccessScope:
+    """The scope of the command line tool: an unrestricted superadmin that is no user row.
+
+    The command line runs inside the container with access to the same data, so it is trusted
+    like the superadmin. The user id 0 matches no user; what the CLI writes is audited with the
+    actor ``cli``.
+    """
+    return AccessScope(0, UserGroup.SUPERADMIN, TargetSet(unrestricted=True))
+
+
 async def load_user_scope(db: AsyncSession, user: User) -> AccessScope:
     """The scope of a signed-in user. A disabled user gets a scope that allows nothing."""
     if not user.is_active:

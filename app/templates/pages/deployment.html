@@ -2,7 +2,7 @@
     and policies. Context: deployment (a DeploymentDetail), saved (optional), can_manage_structure,
     can_view_output. -#}
 {% extends "layouts/app.html" %}
-{% from "macros/badges.html" import badge, deploy_status_badge, post_deploy_badge %}
+{% from "macros/badges.html" import badge, deploy_status_badge, dist_badge, post_deploy_badge %}
 {% from "macros/buttons.html" import button %}
 {% from "macros/feedback.html" import note, toast %}
 {% from "macros/panels.html" import page_header, panel, tabs, text_link %}
@@ -10,6 +10,7 @@
 {% set breadcrumbs = [("Projects", "/projects"), (deployment.project_name, "/projects/" ~ deployment.project_id), (deployment.name, none)] %}
 {% set run = deployment.last_run %}
 {% set drift_labels = {"halt": "Halt", "overwrite": "Overwrite", "backup_overwrite": "Back up, then overwrite"} %}
+{% set drift_badges = {"in_sync": ("deployed", "In sync"), "drift": ("drift", none), "missing": ("never", "Target missing")} %}
 {% set dist_labels = {"block": "Block", "warn": "Warn and continue"} %}
 {% set target_labels = {"create": "Create", "halt": "Halt"} %}
 {% block title %}{{ deployment.name }}{% endblock %}
@@ -22,8 +23,8 @@
 {{ tabs([{"label": "Services", "href": "#services"}, {"label": "Deploy history", "href": "#hist"}], "#services") }}
 <section aria-label="Status" data-fragment="status-strip" class="grid divide-line overflow-hidden rounded-panel border border-line bg-surface shadow-panel sm:grid-cols-2 lg:grid-cols-4">
 <div class="flex flex-col gap-1.5 border-b border-line p-4 sm:border-r lg:border-b-0"><p class="text-xs font-bold uppercase tracking-wide text-ink3">Last deploy</p><div class="flex flex-wrap items-center gap-2">{% if run %}{{ deploy_status_badge(run.status.value) }}<span class="text-[13px] text-ink2">{{ run.started_at.strftime("%Y-%m-%d %H:%M") }} · {{ run.who }}</span>{% else %}{{ badge("never") }}{% endif %}</div></div>
-<div class="flex flex-col gap-1.5 border-b border-line p-4 sm:border-r lg:border-b-0"><p class="text-xs font-bold uppercase tracking-wide text-ink3">Drift state</p><div class="flex flex-wrap items-center gap-2">{{ badge("unchanged", "Not checked yet") }}</div></div>
-<div class="flex flex-col gap-1.5 border-b border-line p-4 sm:border-r lg:border-b-0"><p class="text-xs font-bold uppercase tracking-wide text-ink3">Dist check</p><div class="flex flex-wrap items-center gap-2">{{ badge("unchanged", "Not checked yet") }}</div></div>
+<div class="flex flex-col gap-1.5 border-b border-line p-4 sm:border-r lg:border-b-0"><p class="text-xs font-bold uppercase tracking-wide text-ink3">Drift state</p><div class="flex flex-wrap items-center gap-2">{% if deployment.drift_state %}{% set drift_key, drift_label = drift_badges[deployment.drift_state.value] %}{{ badge(drift_key, drift_label) }}{% else %}{{ badge("unchanged", "Not checked yet") }}{% endif %}</div></div>
+<div class="flex flex-col gap-1.5 border-b border-line p-4 sm:border-r lg:border-b-0"><p class="text-xs font-bold uppercase tracking-wide text-ink3">Dist check</p><div class="flex flex-wrap items-center gap-2">{% if deployment.dist_outcome %}{{ dist_badge(deployment.dist_outcome.value) }}{% else %}{{ badge("unchanged", "Not checked yet") }}{% endif %}</div></div>
 <div class="flex flex-col gap-1.5 border-b border-line p-4 sm:border-r lg:border-b-0"><p class="text-xs font-bold uppercase tracking-wide text-ink3">Post-deploy</p><div class="flex flex-wrap items-center gap-2">{% if run %}{{ post_deploy_badge(run.post_deploy.value) }}<span class="text-[13px] text-ink2">{{ run.service }}</span>{% else %}<span class="text-[13px] text-ink2">No deploys yet</span>{% endif %}</div></div>
 </section>
 {% include "fragments/services_table.html" %}

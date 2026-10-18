@@ -16,10 +16,14 @@ from app.models import (
     ApiToken,
     Deployment,
     DeployResult,
+    DeployResultStatus,
     DeployRun,
     DeployStatus,
+    DeployTrigger,
     DistMissingPolicy,
+    DistOutcome,
     DriftPolicy,
+    DriftState,
     Environment,
     EnvironmentVersion,
     MissingTargetPolicy,
@@ -28,6 +32,7 @@ from app.models import (
     Service,
     User,
 )
+from app.services.audit import CLI_ACTOR_NAME
 from app.services.paths import AllowedPaths
 from app.services.permissions import (
     CAPABILITY_GROUPS,
@@ -116,6 +121,58 @@ class DeploymentDetail:
     can_view_output: bool
     flags: tuple[DeployStatus, ...]
     policies: DeploymentPolicies | None
+    dist_outcome: DistOutcome | None = None
+    drift_state: DriftState | None = None
+
+
+# From the outcome that holds a deploy back the most to the one that holds it back the least.
+_DIST_SEVERITY = (
+    DistOutcome.BLOCKED,
+    DistOutcome.FAILED,
+    DistOutcome.WARNING,
+    DistOutcome.PASSED,
+    DistOutcome.SKIPPED,
+)
+_IN_SYNC_AFTER = (DeployResultStatus.WRITTEN, DeployResultStatus.UNCHANGED)
+
+
+async def load_check_summary(
+    db: AsyncSession, service_ids: set[int], visible_environments: frozenset[int] | set[int]
+) -> tuple[DistOutcome | None, DriftState | None]:
+    """The dist outcome and drift state the newest result of each environment in scope recorded.
+
+    Dry runs count, since they run the same checks. The worst dist outcome wins; the drift state
+    is Drift if any file drifted, else Missing if any target was missing, else In sync. A file the
+    newest result wrote (or found identical) is in sync whatever the check found before writing.
+    Both are None when no result in scope recorded a check.
+    """
+    if not service_ids or not visible_environments:
+        return None, None
+    rows = await db.execute(
+        select(
+            DeployResult.environment_id,
+            DeployResult.status,
+            DeployResult.dist_outcome,
+            DeployResult.drift_state,
+        )
+        .join(DeployRun, DeployRun.id == DeployResult.run_id)
+        .where(
+            DeployRun.service_id.in_(service_ids),
+            DeployResult.environment_id.in_(visible_environments),
+        )
+        .order_by(DeployResult.id)
+    )
+    newest = {environment_id: row for environment_id, *row in rows.all()}
+    dists = {dist for _status, dist, _drift in newest.values() if dist is not None}
+    drifts = {
+        DriftState.IN_SYNC if status in _IN_SYNC_AFTER else drift
+        for status, _dist, drift in newest.values()
+        if drift is not None
+    }
+    dist_outcome = next((outcome for outcome in _DIST_SEVERITY if outcome in dists), None)
+    drift_order = (DriftState.DRIFT, DriftState.MISSING, DriftState.IN_SYNC)
+    drift_state = next((state for state in drift_order if state in drifts), None)
+    return dist_outcome, drift_state
 
 
 async def load_deployment_detail(
@@ -168,6 +225,7 @@ async def load_deployment_detail(
         if item.deployment_id == deployment_id and scope.can(Capability.DEPLOY, item)
     }
     history = await load_history(db, service_ids, visible_environments, full)
+    dist_outcome, check_drift = await load_check_summary(db, service_ids, visible_environments)
     latest = await latest_runs(db, service_ids)
     service_rows: list[ServiceRow] = []
     for service in services:
@@ -216,6 +274,8 @@ async def load_deployment_detail(
             if full
             else None
         ),
+        dist_outcome=dist_outcome,
+        drift_state=check_drift,
     )
 
 
@@ -274,6 +334,8 @@ async def load_history(
             who = user_name
         elif token_name:
             who = f"token {token_name} ({owner_name})" if owner_name else f"token {token_name}"
+        elif run.trigger is DeployTrigger.CLI:
+            who = CLI_ACTOR_NAME
         else:
             who = "unknown"
         rows.append(

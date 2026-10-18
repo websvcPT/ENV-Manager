@@ -37,6 +37,11 @@ mounts the Docker socket.
 | `make demo-up` | Restores the baseline when no target file exists yet, restarts the app container with `docker-compose-demo.yml` (the Docker socket, the host docker group id in `group_add`, and `demo/` mounted at the same absolute path as on the host), waits for it and seeds the demo project. |
 | `make demo-reset` | Restores the demo target files to the baseline. Database state (versions, deploy results) is not touched. |
 | `make demo-down` | Stops the demo workloads (Compose project `env-manager-demo`) and recreates the app container from the default stack, without the socket. |
+| `make e2e-demo` | Runs `make demo-up` and `make demo-reset`, then the real-scenario tests in `app/real_scenarios` inside the app container, then `make demo-reset` and `make demo-down`, whether or not the tests pass. |
+
+The real-scenario tests are outside the default test run. Each one seeds a throwaway database,
+runs the real `envmanager deploy` command against the demo stack on the mounted host folder and
+checks the files it left (mode, owner, content, what was not touched).
 
 Because `demo/` sits at the same absolute path in the container and on the host, a
 `docker compose` command run by the app (a post-deploy command works in the deployment root)
@@ -51,3 +56,17 @@ make demo-down
 ```
 
 The Docker socket is root-equivalent on the host; keep the demo override for local runs only.
+
+## Deploying from the command line
+
+```sh
+docker compose exec app envmanager deploy <project>/<deployment>/<service> \
+    [--env <file name> ...] [--dry-run] [--force]
+```
+
+Deploys the service as the actor `cli`: every file of the service, or the named ones. The command
+prints one line per file and exits 0 only when every file was written or found unchanged and the
+post-deploy step did not fail; a blocked, halted or failed file (or a deploy refused because
+another deploy holds the lock of the same deployment folder) exits 1. `--dry-run` runs the same
+checks without writing or backing anything up, `--force` overrides missing-key blocks and drift
+halts and is audited.

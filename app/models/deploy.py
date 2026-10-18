@@ -15,6 +15,7 @@ class DeployTrigger(StrEnum):
 
     UI = "ui"
     API = "api"
+    CLI = "cli"
 
 
 class DeployStatus(StrEnum):
@@ -45,6 +46,27 @@ class DeployResultStatus(StrEnum):
     BLOCKED = "blocked"
     HALTED = "halted"
     FAILED = "failed"
+
+
+class DistOutcome(StrEnum):
+    """How a dist check ended: the policy decision for missing keys, or why there is none."""
+
+    BLOCKED = "blocked"
+    WARNING = "warning"
+    PASSED = "passed"
+    SKIPPED = "skipped"
+    FAILED = "failed"
+
+
+class DriftState(StrEnum):
+    """How the target file stood against the last content this app wrote to it.
+
+    ``in_sync`` covers an identical file and, for a target this app never wrote, an empty one.
+    """
+
+    IN_SYNC = "in_sync"
+    DRIFT = "drift"
+    MISSING = "missing"
 
 
 class DeployRun(Base):
@@ -87,7 +109,14 @@ class DeployRun(Base):
 
 
 class DeployResult(Base):
-    """The outcome for one environment within a run, with the hashes needed for drift checks."""
+    """The outcome for one environment within a run, with the hashes needed for drift checks.
+
+    ``target_path`` and ``backup_path`` are relative to the deployment root, so a result never
+    names the root. ``written_hash`` is the keyed hash of the content this app wrote to the target
+    or found there identical to the version; it is the baseline of the next drift check.
+    ``dist_outcome`` and ``drift_state`` are what the checks of this run found, None when a check
+    did not run.
+    """
 
     __tablename__ = "deploy_results"
 
@@ -110,4 +139,12 @@ class DeployResult(Base):
     target_hash_before: Mapped[str | None] = mapped_column(String(64), default=None)
     written_hash: Mapped[str | None] = mapped_column(String(64), default=None)
     backup_path: Mapped[str | None] = mapped_column(String(4096), default=None)
+    dist_outcome: Mapped[DistOutcome | None] = mapped_column(
+        Enum(DistOutcome, native_enum=False, length=10, values_callable=enum_values),
+        default=None,
+    )
+    drift_state: Mapped[DriftState | None] = mapped_column(
+        Enum(DriftState, native_enum=False, length=10, values_callable=enum_values),
+        default=None,
+    )
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utc_now)

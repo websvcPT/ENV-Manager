@@ -16,6 +16,7 @@ from app.models import (
     AuditEntry,
     AuditResult,
     DistMissingPolicy,
+    DistOutcome,
     EnvironmentVersion,
 )
 from app.seeds import SeedData
@@ -24,7 +25,6 @@ from app.services.dist_check import (
     ADDED_COMMENT,
     NOTHING_TO_ADD_MESSAGE,
     STALE_MESSAGE,
-    DistOutcome,
     add_missing_keys,
     evaluate_dist,
     run_deployment_dist_checks,

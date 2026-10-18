@@ -1,4 +1,4 @@
-"""Shared fixtures: temporary SQLite database, crypto service, seed data and a seeded web app."""
+"""Shared fixtures: database, crypto, seed data, seeded web app and deploy harness."""
 
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -15,6 +15,9 @@ from app.core.db import create_engine, create_session_factory
 from app.core.migrations import migrate_database
 from app.main import create_app
 from app.seeds import DEV_PASSWORD, SeedData, seed
+from app.services.deploy import DeployEngine
+from app.tests.deploy_helpers import Harness, RecordingNotifier, RecordingRunner, set_deployment
+from app.tests.dist_helpers import relocate_deployments
 from app.tests.web_helpers import EnvironmentIds, environment_ids
 
 
@@ -107,3 +110,26 @@ async def sign_in(http: httpx.AsyncClient, name: str) -> None:
 async def ids(web_app: FastAPI) -> EnvironmentIds:
     """The seeded environment ids of the web application."""
     return await environment_ids(web_app)
+
+
+@pytest.fixture
+async def harness(
+    seeded_database: AsyncEngine, seed_data: SeedData, crypto: CryptoService, tmp_path: Path
+) -> AsyncIterator[Harness]:
+    """A deploy engine with recording seams on the seeded deployments moved to a real folder.
+
+    The folder is the only allowed path; the seeded owner of the production deployment is
+    cleared so deploys there need no privilege.
+    """
+    async with create_session_factory(seeded_database)() as db:
+        roots = await relocate_deployments(db, tmp_path / "host")
+        await set_deployment(
+            db, seed_data.deployments.rentals_prod.id, file_owner=None, file_group=None
+        )
+        runner = RecordingRunner()
+        notifier = RecordingNotifier()
+        lock_dir = tmp_path / "locks"
+        engine = DeployEngine(crypto, lock_dir, hook_runner=runner, notifier=notifier)
+        yield Harness(
+            engine, runner, notifier, lock_dir, roots, seed_data, db, seeded_database, crypto
+        )

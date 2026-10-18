@@ -16,6 +16,8 @@ from app.models.deploy import (
     DeployRun,
     DeployStatus,
     DeployTrigger,
+    DistOutcome,
+    DriftState,
     PostDeployStatus,
 )
 from app.models.operations import AllowedPath, Backup, BackupStatus, BackupTrigger
@@ -60,7 +62,9 @@ __all__ = [
     "DeployTrigger",
     "Deployment",
     "DistMissingPolicy",
+    "DistOutcome",
     "DriftPolicy",
+    "DriftState",
     "Environment",
     "EnvironmentVersion",
     "GrantLevel",

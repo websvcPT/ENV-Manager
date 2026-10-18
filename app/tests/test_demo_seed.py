@@ -24,6 +24,7 @@ from app.models import (
     AccessGrant,
     AllowedPath,
     Deployment,
+    DistOutcome,
     Environment,
     EnvironmentVersion,
     HookType,
@@ -45,7 +46,7 @@ from app.seeds import (
     seed,
 )
 from app.services.dist import DistSkipReason, compare_text_to_dist
-from app.services.dist_check import DistOutcome, evaluate_dist
+from app.services.dist_check import evaluate_dist
 from app.services.env_parser import parse_env
 from app.services.permissions import (
     Capability,
