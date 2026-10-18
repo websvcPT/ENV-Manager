@@ -83,6 +83,17 @@ def test_create_rejects_a_duplicate_and_a_bad_group() -> None:
     assert bad_group.exit_code == 2
 
 
+def test_create_refuses_an_email_another_user_has_ignoring_case(cli_data_path: Path) -> None:
+    first = ["user", "create", "ann", "Ann@Example.test", "--group", "admin"]
+    assert runner.invoke(app, first).exit_code == 0
+    duplicate = runner.invoke(
+        app, ["user", "create", "ann2", "ann@example.TEST", "--group", "viewer"]
+    )
+    assert duplicate.exit_code == 1
+    assert "Another user already has this email address." in duplicate.output
+    assert [user.name for user in _users(cli_data_path)] == ["ann"]
+
+
 def test_list_shows_group_status_and_last_login() -> None:
     runner.invoke(app, ["user", "create", "root", "root@example.test", "--group", "superadmin"])
     runner.invoke(app, ["user", "create", "view", "view@example.test", "--group", "viewer"])

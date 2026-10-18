@@ -1,0 +1,23 @@
+{#- The access grants panel of the user detail: the grant tree with Save grants, or a note for a
+    superadmin, who reaches everything. Saving posts the whole chosen set and the set the page
+    started from, so a concurrent change is refused instead of undone. Context: user (UserDetail),
+    tree (grant tree projects), granted (set of grant keys), base (the started-from keys,
+    comma separated), message and message_tone (optional result of the last save). -#}
+{% from "macros/buttons.html" import button %}
+{% from "macros/feedback.html" import note %}
+{% from "macros/grants.html" import grant_tree %}
+{% from "macros/panels.html" import panel %}
+{% call panel("Access grants", "p-grants", fragment="user-grants", id="user-grants") %}
+{%- if user.group.value == "superadmin" %}
+<div class="px-4 pb-5 md:px-5">{{ note("Superadmins reach every project, so grants do not apply to this account.") }}</div>
+{%- else %}
+<form hx-post="/users/{{ user.id }}/grants" hx-target="#user-grants" hx-swap="outerHTML" class="flex flex-col gap-4 px-4 pb-5 md:px-5">
+{%- if message %}
+<div aria-live="polite">{{ note(message, message_tone) }}</div>
+{%- endif %}
+<input type="hidden" name="base" value="{{ base }}">
+{{ grant_tree(tree, granted) }}
+<div>{{ button("Save grants", kind="primary-sm", type="submit") }}</div>
+</form>
+{%- endif %}
+{% endcall %}

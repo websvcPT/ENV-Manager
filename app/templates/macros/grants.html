@@ -1,0 +1,49 @@
+{#- The grant tree picker: Project > Deployment > Environment as checkboxes, with the service
+    between a deployment and its environments shown as context only (it is not a grant level).
+    Project and deployment grants carry a hint that they include later items. Every checkbox
+    posts `grant=<level>:<id>`; `granted` is the set of such keys that start checked. -#}
+{% set PROJECT_HINT = "Includes future deployments, services and environments." %}
+{% set DEPLOYMENT_HINT = "Includes future services and environments." %}
+{% set SUB_LIST = "m-0 ml-7 mt-2 flex list-none flex-col gap-2 border-l border-line pl-4" %}
+
+{% macro grant_box(key, checked, hint=none, field="grant") -%}
+<label class="flex items-start gap-2.5 text-[13px] font-semibold"><input type="checkbox" id="grant-{{ key | replace(":", "-") }}" name="{{ field }}" value="{{ key }}"{% if checked %} checked{% endif %} class="mt-0.5 size-[18px] shrink-0 accent-accent"><span>{{ caller() }}{% if hint %}<span class="block font-normal text-ink2">{{ hint }}</span>{% endif %}</span></label>
+{%- endmacro %}
+
+{% macro grant_tree(projects, granted=[], field="grant") -%}
+<div data-fragment="grant-tree" role="group" aria-label="Access grants">
+{%- if projects %}
+<ul class="m-0 flex list-none flex-col gap-2 rounded-panel border border-line p-3.5">
+{%- for project in projects %}
+<li>{% call grant_box("project:" ~ project.id, ("project:" ~ project.id) in granted, PROJECT_HINT, field) %}Project {{ project.name }}{% endcall %}
+{%- if project.deployments %}
+<ul class="{{ SUB_LIST }}">
+{%- for deployment in project.deployments %}
+<li>{% call grant_box("deployment:" ~ deployment.id, ("deployment:" ~ deployment.id) in granted, DEPLOYMENT_HINT, field) %}Deployment {{ deployment.name }}{% endcall %}
+{%- if deployment.services %}
+<ul class="{{ SUB_LIST }}">
+{%- for service in deployment.services %}
+<li><p class="text-[13px] text-ink2">Service <span class="font-mono">{{ service.name }}</span> <span class="text-xs">(groups environments, not a grant level)</span></p>
+{%- if service.environments %}
+<ul class="{{ SUB_LIST }}">
+{%- for environment in service.environments %}
+<li>{% call grant_box("environment:" ~ environment.id, ("environment:" ~ environment.id) in granted, none, field) %}<span class="font-mono">{{ environment.name }}</span>{% endcall %}</li>
+{%- endfor %}
+</ul>
+{%- endif %}
+</li>
+{%- endfor %}
+</ul>
+{%- endif %}
+</li>
+{%- endfor %}
+</ul>
+{%- endif %}
+</li>
+{%- endfor %}
+</ul>
+{%- else %}
+<p class="rounded-panel border border-line p-3.5 text-[13px] text-ink2">There are no projects yet. Grants can be chosen once a project exists.</p>
+{%- endif %}
+</div>
+{%- endmacro %}

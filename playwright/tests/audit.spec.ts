@@ -335,7 +335,7 @@ test.describe('admin', () => {
     const actions = await page.locator('#f-a option').evaluateAll((options) =>
       options.map((option) => (option as HTMLOptionElement).value),
     );
-    for (const hidden of ['backup.create', 'user.create', 'login.failure', 'audit.export']) {
+    for (const hidden of ['backup.create', 'user.create', 'login.failure']) {
       expect(actions).not.toContain(hidden);
     }
     await expect(page.locator('a[href="/audit"]').first()).toBeAttached();
@@ -379,12 +379,41 @@ test.describe('scoped admin', () => {
     expect(projects).not.toContain('billing');
     await expect(page.locator('main')).not.toContainText('billing');
 
+    // A service deploy names the service, which an environment grant does not cover, so the
+    // scoped admin sees only the deploys it ran itself (the real deploy specs leave some).
     await page.goto('/audit?action=service.deploy');
-    await expect(auditRows(page)).toHaveCount(0);
+    const deployActors = await auditRows(page)
+      .locator('td:nth-child(2) > span:first-of-type')
+      .allTextContents();
+    expect(deployActors.every((actor) => actor === 'env_scoped_admin')).toBe(true);
     const id = await tokenEntry(browser);
     const response = await page.goto(`/audit?entry=${id}`);
     expect(response?.status()).toBe(404);
     await expect(page.locator('main')).not.toContainText('billing');
+    await expect(page.locator('main')).toContainText('Entry not found');
+  });
+
+  test('opens an entry it made itself, which names no item of its scope, and no one else', async ({
+    page,
+    browser,
+  }) => {
+    await page.goto('/audit?action=login.success');
+    await expect(auditRows(page).first()).toBeVisible();
+    const actors = await auditRows(page).locator('td:nth-child(2) > span:first-of-type').allTextContents();
+    expect(new Set(actors)).toEqual(new Set(['env_scoped_admin']));
+    const own = await auditRows(page).first().getAttribute('id');
+    const ownId = Number(own?.replace('audit-entry-', ''));
+    expect(ownId).toBeGreaterThan(0);
+    const opened = await page.goto(`/audit?entry=${ownId}`);
+    expect(opened?.status()).toBe(200);
+    await expect(auditRows(page)).toHaveCount(1);
+    await expect(detailsOf(page, ownId)).toBeVisible();
+    await expect(detailsOf(page, ownId)).toContainText(`Entry #${ownId}`);
+
+    const [rootSignIn] = await idsAsSuperadmin(browser, 'action=login.success&actor=user%3Aroot');
+    expect(rootSignIn).toBeGreaterThan(0);
+    const hidden = await page.goto(`/audit?entry=${rootSignIn}`);
+    expect(hidden?.status()).toBe(404);
     await expect(page.locator('main')).toContainText('Entry not found');
   });
 });
@@ -392,13 +421,27 @@ test.describe('scoped admin', () => {
 test.describe('admin without grants', () => {
   test.use({ storageState: stateFile('ungrantedAdmin') });
 
-  test('sees an empty log and exports only the header', async ({ page }) => {
+  test('sees only its own entries, naming nothing else', async ({ page }) => {
     await page.goto('/audit');
+    await expect(auditRows(page).first()).toBeVisible();
+    await expect(page.locator('#audit-results [data-fragment="empty-state"]')).toHaveCount(0);
+    const actors = await auditRows(page).locator('td:nth-child(2) > span:first-of-type').allTextContents();
+    expect(actors.length).toBeGreaterThan(0);
+    expect(new Set(actors)).toEqual(new Set(['ungranted_admin']));
+    await expect(page.locator('#f-p option')).toHaveText(['All assigned']);
+    await expect(page.locator('main')).not.toContainText('rentals');
+    await expect(page.locator('main')).not.toContainText('billing');
+  });
+
+  test('reads an empty result and exports only the header when nothing matches', async ({
+    page,
+  }) => {
+    await page.goto('/audit?action=service.deploy');
     await expect(page.locator('#audit-results [data-fragment="empty-state"]')).toContainText(
-      'No entries yet',
+      'No entries match',
     );
     await expect(auditRows(page)).toHaveCount(0);
-    const csv = await page.request.get('/audit/export.csv');
+    const csv = await page.request.get('/audit/export.csv?action=service.deploy');
     expect((await csv.text()).trim().split('\r\n')).toHaveLength(1);
   });
 });

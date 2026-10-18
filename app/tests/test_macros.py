@@ -194,3 +194,79 @@ def test_panel_table_tabs_and_breadcrumb() -> None:
     assert page.count('aria-current="page"') == 2
     assert "Superadmin</span>" in page
     assert '<li aria-hidden="true">/</li>' in page
+
+
+def test_loaded_dialog_has_loading_content_a_template_and_the_clear_on_close_marker() -> None:
+    """A loaded dialog starts as a busy skeleton and keeps a template to put back on open."""
+    page = render_snippet(
+        "{% from 'macros/dialogs.html' import loaded_dialog %}"
+        "{{ loaded_dialog('user-create', 'Create user', width='720', clear_on_close=true,"
+        " narrows=true) }}"
+    )
+    assert 'id="user-create"' in page and 'aria-labelledby="user-create-t"' in page
+    assert 'data-loading="user-create-loading"' in page and "data-clear-on-close" in page
+    assert "w-[720px]" in page and "has-[[data-narrow]]:w-[560px]" in page
+    assert page.count('aria-busy="true"') == 4 and '<template id="user-create-loading">' in page
+    plain = render_snippet(
+        "{% from 'macros/dialogs.html' import loaded_dialog %}{{ loaded_dialog('d', 'Title') }}"
+    )
+    assert "data-clear-on-close" not in plain and "has-[" not in plain and "w-[640px]" in plain
+
+
+def test_inline_error_in_a_dialog_is_a_rounded_block_and_can_drop_retry() -> None:
+    """The band under a panel title becomes a block inside a dialog body."""
+    band = render_snippet(
+        "{% from 'macros/feedback.html' import inline_error %}"
+        "{{ inline_error('Failed', 'Try later', hx_get='/x') }}"
+    )
+    assert "border-t border-line" in band and "Retry" in band and 'hx-get="/x"' in band
+    block = render_snippet(
+        "{% from 'macros/feedback.html' import inline_error %}"
+        "{{ inline_error('Failed', 'Try later', in_dialog=true, retry=false) }}"
+    )
+    assert "rounded-panel" in block and "border-t" not in block and "Retry" not in block
+
+
+def test_grant_tree_offers_projects_deployments_and_environments_with_services_as_context() -> None:
+    """Only the three grant levels are checkboxes; services are text, hints name future items."""
+    tree = [
+        {
+            "id": 1,
+            "name": "rentals",
+            "deployments": [
+                {
+                    "id": 2,
+                    "name": "prod",
+                    "services": [
+                        {
+                            "id": 3,
+                            "name": "mysql",
+                            "environments": [{"id": 4, "name": ".env.db"}],
+                        }
+                    ],
+                }
+            ],
+        }
+    ]
+    page = render_snippet(
+        "{% from 'macros/grants.html' import grant_tree %}{{ grant_tree(tree, granted) }}",
+        tree=tree,
+        granted={"deployment:2"},
+    )
+    assert page.count('type="checkbox"') == 3
+    for key in ("project:1", "deployment:2", "environment:4"):
+        assert f'value="{key}"' in page and 'name="grant"' in page
+    assert 'value="deployment:2" checked' in page
+    assert 'value="project:1" checked' not in page and 'value="environment:4" checked' not in page
+    assert "Includes future deployments, services and environments." in page
+    assert "Includes future services and environments." in page
+    assert "(groups environments, not a grant level)" in page and "service:" not in page
+    empty = render_snippet(
+        "{% from 'macros/grants.html' import grant_tree %}{{ grant_tree([], []) }}"
+    )
+    assert "There are no projects yet." in empty and "checkbox" not in empty
+    escaped = render_snippet(
+        "{% from 'macros/grants.html' import grant_tree %}{{ grant_tree(tree, []) }}",
+        tree=[{"id": 1, "name": "<b>x</b>", "deployments": []}],
+    )
+    assert "<b>x</b>" not in escaped and "&lt;b&gt;x&lt;/b&gt;" in escaped

@@ -42,8 +42,10 @@
 
 {#- Failed swap: the previous content stays, this explains and offers Retry. Pass the request
     attributes for the retry (hx_get, hx_target, hx_swap). -#}
-{% macro inline_error(title, message) -%}
-<div role="alert" data-fragment="inline-error" class="flex flex-wrap items-start gap-3 border-t border-line bg-err-bg p-4 text-err-fg md:px-5">{{ icon("warning", "size-5 mt-0.5", "2.2") }}<div class="min-w-0 flex-1"><p class="font-bold">{{ title }}</p><p class="text-ink">{{ message }}</p></div>{{ button("Retry", **kwargs) }}</div>
+{#- Inside a dialog body (`in_dialog`) it is a rounded block instead of a band under a panel title,
+    and `retry=false` leaves out the Retry button for a refusal that retrying cannot change. -#}
+{% macro inline_error(title, message, in_dialog=false, retry=true) -%}
+<div role="alert" data-fragment="inline-error" class="flex flex-wrap items-start gap-3 {{ "rounded-panel" if in_dialog else "border-t border-line" }} bg-err-bg p-4 text-err-fg md:px-5">{{ icon("warning", "size-5 mt-0.5", "2.2") }}<div class="min-w-0 flex-1"><p class="font-bold">{{ title }}</p><p class="text-ink">{{ message }}</p></div>{% if retry %}{{ button("Retry", **kwargs) }}{% endif %}</div>
 {%- endmacro %}
 
 {#- In-flight placeholder rows for a table or list. -#}

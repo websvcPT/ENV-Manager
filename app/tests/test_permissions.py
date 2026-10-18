@@ -19,7 +19,7 @@ from collections.abc import AsyncIterator
 from datetime import timedelta
 
 import pytest
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.core.db import create_session_factory
@@ -758,6 +758,7 @@ async def test_audit_entry_scope(
         return tree.id_of(f"{level}:{value}")
 
     entry = {
+        "actor_user_id": None,
         "project_id": resolve("project", ids[0]),
         "deployment_id": resolve("deployment", ids[1]),
         "service_id": resolve("service", ids[2]),
@@ -772,10 +773,78 @@ async def test_superadmin_sees_every_audit_entry_including_unscoped_and_deleted(
     superadmin = tree.data.users.superadmin
     visibility = await compute_visibility(db, await load_user_scope(db, superadmin))
     for entry in (
-        {"project_id": None, "deployment_id": None, "service_id": None, "environment_id": None},
-        {"project_id": 9999, "deployment_id": 9999, "service_id": None, "environment_id": None},
+        {
+            "actor_user_id": None,
+            "project_id": None,
+            "deployment_id": None,
+            "service_id": None,
+            "environment_id": None,
+        },
+        {
+            "actor_user_id": 12345,
+            "project_id": 9999,
+            "deployment_id": 9999,
+            "service_id": None,
+            "environment_id": None,
+        },
     ):
         assert visibility.includes_audit_entry(**entry)
+
+
+async def test_an_admin_always_sees_the_entries_they_made_whatever_their_scope(
+    db: AsyncSession, tree: Tree
+) -> None:
+    """Own entries are visible with no scope id, for a hidden item and for a deleted one."""
+    admin = await _make_user(db, "own-entries", UserGroup.ADMIN)
+    await _grant(db, tree, admin, "environment:db")
+    visibility = await compute_visibility(db, await load_user_scope(db, admin))
+    hidden_item = {
+        "project_id": tree.id_of("project:billing"),
+        "deployment_id": tree.id_of("deployment:main"),
+        "service_id": tree.id_of("service:api"),
+        "environment_id": tree.id_of("environment:api"),
+    }
+    unscoped = {
+        "project_id": None,
+        "deployment_id": None,
+        "service_id": None,
+        "environment_id": None,
+    }
+    deleted = {
+        "project_id": None,
+        "deployment_id": None,
+        "service_id": None,
+        "environment_id": 99999,
+    }
+    for ids in (hidden_item, unscoped, deleted):
+        assert visibility.includes_audit_entry(actor_user_id=admin.id, **ids)
+        assert not visibility.includes_audit_entry(actor_user_id=admin.id + 1, **ids)
+        assert not visibility.includes_audit_entry(actor_user_id=None, **ids)
+
+
+async def test_a_viewer_and_a_token_have_no_own_audit_entries(db: AsyncSession, tree: Tree) -> None:
+    """Only a group with an audit log gets the own-entries rule, and a token never does."""
+    viewer = tree.data.users.viewer
+    viewer_visibility = await compute_visibility(db, await load_user_scope(db, viewer))
+    assert viewer_visibility.actor_user_id is None
+    unscoped = {
+        "project_id": None,
+        "deployment_id": None,
+        "service_id": None,
+        "environment_id": None,
+    }
+    assert not viewer_visibility.includes_audit_entry(actor_user_id=viewer.id, **unscoped)
+
+    token = (await db.execute(select(ApiToken))).scalars().first()
+    assert token is not None
+    token_scope = await load_token_scope(db, token)
+    assert token_scope is not None
+    token_visibility = await compute_visibility(db, token_scope)
+    assert token_visibility.actor_user_id is None
+
+    disabled = await _make_user(db, "disabled-admin", UserGroup.ADMIN, active=False)
+    disabled_visibility = await compute_visibility(db, await load_user_scope(db, disabled))
+    assert disabled_visibility.actor_user_id is None
 
 
 # Token narrowing: owner grants, token restrictions, and the items the token may reach.

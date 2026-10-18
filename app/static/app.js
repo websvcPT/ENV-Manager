@@ -1,6 +1,7 @@
 /* ENV Manager page behaviour. Vanilla JS in an external file (strict CSP, no inline scripts).
    Handlers are delegated from the document so content swapped in by htmx works without rebinding.
-   Behaviours: theme toggle, dialogs, sidebar collapse, reveal hide and timer, removing a new
+   Behaviours: theme toggle, dialogs (one that held a one-time secret is emptied when it
+   closes), sidebar collapse, reveal hide and timer, removing a new
    variable row, row toggle, tree toggle, copy, dismiss, history back, picking a path into a
    field, limiting the version comparison to two versions, closing dialogs when the server asks,
    the deploy dialog (loading content, chosen environments, closing when the load fails), and a
@@ -86,15 +87,28 @@
     });
   }
 
+  function showCopied(label) {
+    if (!label) { return; }
+    label.textContent = 'Copied';
+    setTimeout(function () { label.textContent = 'Copy'; }, COPIED_MS);
+  }
+
+  /* The clipboard API needs a secure context. Where the app is served over plain http (a
+     development stack, an internal host) the text is selected and copied with the older
+     command, and stays selected so it can be copied by hand if that is refused too. */
   function copySecret(button) {
     var source = document.getElementById(button.getAttribute('data-target'));
     var label = button.querySelector('[data-copy-label]');
-    if (!navigator.clipboard || !source) { return; }
-    navigator.clipboard.writeText(source.value || source.textContent).then(function () {
-      if (!label) { return; }
-      label.textContent = 'Copied';
-      setTimeout(function () { label.textContent = 'Copy'; }, COPIED_MS);
-    });
+    if (!source) { return; }
+    var text = source.value || source.textContent;
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(function () { showCopied(label); });
+      return;
+    }
+    if (source.select) { source.select(); }
+    var copied = false;
+    try { copied = document.execCommand('copy'); } catch (error) { copied = false; }
+    if (copied) { showCopied(label); }
   }
 
   function showErrorToast() {
@@ -122,6 +136,16 @@
       if (dialog.querySelector('[aria-busy=true]')) { dialog.close(); }
     });
   }
+
+  /* A dialog that can hold a one-time secret (the generated password of a new user) is emptied
+     the moment it closes, so the secret leaves the page and a later opening starts clean. The
+     close event does not bubble, so it is caught on the way down. */
+  document.addEventListener('close', function (event) {
+    var dialog = event.target;
+    if (dialog instanceof HTMLDialogElement && dialog.hasAttribute('data-clear-on-close')) {
+      showLoading(dialog);
+    }
+  }, true);
 
   var clickActions = {
     'theme-toggle': function () {

@@ -35,6 +35,7 @@ from app.web.project_detail import router as project_detail_router
 from app.web.projects import router as projects_router
 from app.web.service_detail import router as service_detail_router
 from app.web.service_form import router as service_form_router
+from app.web.users import router as users_router
 
 log = get_logger("main")
 
@@ -112,6 +113,7 @@ def create_app() -> FastAPI:
     application.include_router(drift_router)
     application.include_router(dist_report_router)
     application.include_router(audit_router)
+    application.include_router(users_router)
 
     @application.get("/healthz", include_in_schema=False)
     async def healthz() -> dict[str, str]:

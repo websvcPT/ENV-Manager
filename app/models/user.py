@@ -3,7 +3,17 @@
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import Boolean, Enum, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -26,9 +36,15 @@ class LoginCounterKind(StrEnum):
 
 
 class User(Base):
-    """A person or service account that can sign in. Disabled users are kept for audit."""
+    """A person or service account that can sign in. Disabled users are kept for audit.
+
+    Email addresses are unique ignoring case through the functional index below, so the same
+    address in another case is refused by the database too. Names are unique ignoring case by
+    the user service.
+    """
 
     __tablename__ = "users"
+    __table_args__ = (Index("uq_users_email_lower", text("lower(email)"), unique=True),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100), unique=True)

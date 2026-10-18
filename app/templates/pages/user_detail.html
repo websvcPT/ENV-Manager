@@ -1,0 +1,62 @@
+{% extends "layouts/app.html" %}
+{% from "macros/audit.html" import RESULT_BADGES %}
+{% from "macros/badges.html" import badge %}
+{% from "macros/buttons.html" import button %}
+{% from "macros/dialogs.html" import loaded_dialog %}
+{% from "macros/feedback.html" import empty_state, toast %}
+{% from "macros/forms.html" import select_field %}
+{% from "macros/panels.html" import page_header, panel, table, text_link %}
+{% set active_nav = "users" %}
+{% set breadcrumbs = [("Users", "/users"), (user.name, none)] %}
+{% block title %}{{ user.name }}{% endblock %}
+{% block content %}
+{% set UPDATES = {
+  "group": ("Group changed", user.name ~ " is now " ~ ("an " if user.group.value == "admin" else "a ") ~ user.group.value.capitalize() ~ "."),
+  "disabled": ("User disabled", "Sessions ended and API tokens stopped working."),
+  "enabled": ("User enabled", user.name ~ " can sign in again.")
+} %}
+{% set header_badges %}{{ badge(user.group.value) }}{% if user.is_active %}{{ badge("deployed", "Active") }}{% else %}{{ badge("never", "Disabled") }}{% endif %}{% endset %}
+{% set header_actions %}{% if user.is_active %}{{ button("Disable", kind="danger", extra_class="h-11 md:h-10", data_js="dialog-open", data_target="user-action", aria_haspopup="dialog", hx_get="/users/" ~ user.id ~ "/confirm/disable?from=detail", hx_target="#user-action", hx_swap="innerHTML") }}{% else %}{{ button("Enable", extra_class="h-11 md:h-10", data_js="dialog-open", data_target="user-action", aria_haspopup="dialog", hx_get="/users/" ~ user.id ~ "/confirm/enable?from=detail", hx_target="#user-action", hx_swap="innerHTML") }}{% endif %}{% endset %}
+{{ page_header(user.name, user.email ~ " · " ~ ("last login " ~ user.last_login_at.strftime("%Y-%m-%d %H:%M") if user.last_login_at else "never signed in"), badges=header_badges, actions=header_actions) }}
+<div class="grid items-start gap-5 lg:grid-cols-2">
+{% call panel("Group", "p-group", fragment="user-group", id="user-group") %}
+<div class="flex flex-col gap-4 px-4 pb-5 md:px-5">
+{{ select_field("g2", "Group", [("viewer", "Viewer"), ("admin", "Admin"), ("superadmin", "Superadmin")], selected=user.group.value, name="group", extra_class="max-w-xs") }}
+<div>{{ button("Save group", kind="primary-sm", data_js="dialog-open", data_target="user-action", aria_haspopup="dialog", hx_get="/users/" ~ user.id ~ "/confirm/group?from=detail", hx_include="#g2", hx_target="#user-action", hx_swap="innerHTML") }}</div>
+</div>
+{% endcall %}
+{% include "fragments/user_grants.html" %}
+</div>
+{% call panel("API tokens", "p-tokens", fragment="user-tokens") %}
+{%- if user.tokens %}
+{% call table("Tokens of " ~ user.name, ["Name", "Last used", "Status"], min_width_class="min-w-[560px]") %}
+{%- for token in user.tokens %}
+<tr data-fragment="token-row"><th scope="row" class="border-t border-line px-4 py-3.5 text-left font-semibold"><span class="font-mono text-[13px]">{{ token.name }}</span></th>
+<td class="border-t border-line px-4 py-3.5">{% if token.last_used_at %}<time datetime="{{ token.last_used_at.strftime('%Y-%m-%dT%H:%M:%SZ') }}" title="UTC">{{ token.last_used_at.strftime("%Y-%m-%d %H:%M") }}</time>{% else %}Never{% endif %}</td>
+<td class="border-t border-line px-4 py-3.5"><span class="inline-flex flex-col items-start gap-0.5">{% if token.status.value == "active" %}{{ badge("deployed", "Active") }}{% else %}{{ badge("never", token.status.value.capitalize()) }}{% endif %}{% if token.reason %}<span class="text-xs text-ink2">{{ token.reason }}</span>{% endif %}</span></td></tr>
+{%- endfor %}
+{% endcall %}
+{%- else %}
+{{ empty_state("No API tokens", user.name ~ " has not created any API tokens.", "key") }}
+{%- endif %}
+{% endcall %}
+{% set activity_link %}{{ text_link("Open audit log", "/audit?actor=user:" ~ (user.name | urlencode)) }}{% endset %}
+{% call panel("Recent activity", "p-activity", fragment="user-activity", actions=activity_link) %}
+{%- if user.activity %}
+{% call table("Recent activity of " ~ user.name, ["Time", "Action", "Object", "Result"], min_width_class="min-w-[560px]") %}
+{%- for entry in user.activity %}
+<tr data-fragment="activity-row"><td class="border-t border-line px-4 py-3.5"><time datetime="{{ entry.created_at.strftime('%Y-%m-%dT%H:%M:%SZ') }}" title="UTC">{{ entry.created_at.strftime("%Y-%m-%d %H:%M") }}</time></td>
+<td class="border-t border-line px-4 py-3.5"><span class="font-mono text-[13px]">{{ entry.action }}</span></td>
+<td class="border-t border-line px-4 py-3.5">{% if entry.object_name %}{{ entry.object_name }}{% else %}<span class="text-ink3">None</span>{% endif %}</td>
+<td class="border-t border-line px-4 py-3.5">{{ badge(RESULT_BADGES[entry.result.value]) }}</td></tr>
+{%- endfor %}
+{% endcall %}
+{%- else %}
+{{ empty_state("No activity yet", user.name ~ " has not done anything that is recorded in the audit log.", "clock") }}
+{%- endif %}
+{% endcall %}
+{%- if updated in UPDATES %}
+{{ toast("success", UPDATES[updated][1], UPDATES[updated][0], floating=true) }}
+{%- endif %}
+{{ loaded_dialog("user-action", "User", width="560") }}
+{% endblock %}

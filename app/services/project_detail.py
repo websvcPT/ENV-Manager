@@ -220,6 +220,7 @@ async def list_activity(
     rows: list[ActivityRow] = []
     for entry in entries:
         if not visibility.includes_audit_entry(
+            actor_user_id=entry.actor_user_id,
             project_id=entry.project_id,
             deployment_id=entry.deployment_id,
             service_id=entry.service_id,

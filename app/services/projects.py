@@ -8,7 +8,6 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
-    AccessGrant,
     ApiToken,
     ApiTokenRestriction,
     AuditActorType,
@@ -18,13 +17,13 @@ from app.models import (
     DeployStatus,
     DeployTrigger,
     Environment,
-    GrantLevel,
     Project,
     Service,
     User,
     UserGroup,
 )
 from app.services.audit import CLI_ACTOR_NAME, record_audit
+from app.services.grants import projects_reached
 from app.services.permissions import AccessScope, Capability, ItemLevel, compute_visibility
 
 MAX_PROJECT_NAME_LENGTH = 100
@@ -258,34 +257,18 @@ async def member_counts(db: AsyncSession) -> dict[int, int]:
 
     A user counts for a project when a grant covers it or anything inside it.
     """
-    deployment_project = dict(
-        (await db.execute(select(Deployment.id, Deployment.project_id))).all()
-    )
-    environment_project = dict(
+    eligible = set(
         (
             await db.execute(
-                select(Environment.id, Deployment.project_id)
-                .join(Service, Service.id == Environment.service_id)
-                .join(Deployment, Deployment.id == Service.deployment_id)
+                select(User.id).where(User.is_active.is_(True), User.group != UserGroup.SUPERADMIN)
             )
-        ).all()
+        ).scalars()
     )
-    grants = (
-        await db.execute(
-            select(AccessGrant)
-            .join(User, User.id == AccessGrant.user_id)
-            .where(User.is_active.is_(True), User.group != UserGroup.SUPERADMIN)
-        )
-    ).scalars()
     members: dict[int, set[int]] = {}
-    for grant in grants:
-        project_id = {
-            GrantLevel.PROJECT: grant.project_id,
-            GrantLevel.DEPLOYMENT: deployment_project.get(grant.deployment_id or 0),
-            GrantLevel.ENVIRONMENT: environment_project.get(grant.environment_id or 0),
-        }[grant.level]
-        if project_id is not None:
-            members.setdefault(project_id, set()).add(grant.user_id)
+    for user_id, project_ids in (await projects_reached(db)).items():
+        if user_id in eligible:
+            for project_id in project_ids:
+                members.setdefault(project_id, set()).add(user_id)
     return {project_id: len(users) for project_id, users in members.items()}
 
 

@@ -1,0 +1,41 @@
+{#- The confirm dialog content for disabling or enabling a user and for changing a group, loaded
+    into the shared user dialog. The server decides what it can offer: a refusal (the last
+    active superadmin, a group the user already has) replaces the buttons with its reason.
+    Context: action (disable, enable or group), user_id, user_name, origin (list or detail),
+    is_self, unchanged_message, current_group and target_group (group labels, group only), target_value (the
+    group value to post), refusal (none, last_active_superadmin or unchanged). -#}
+{% from "macros/buttons.html" import button %}
+{% from "macros/dialogs.html" import dialog_body, dialog_footer, dialog_head %}
+{% from "macros/feedback.html" import inline_error, note %}
+{% from "macros/icons.html" import icon %}
+{% set GROUP_EFFECTS = {
+  "viewer": "Viewers read the items they are granted. They cannot edit, deploy or reveal values, and their API tokens stop working.",
+  "admin": "Admins edit values, deploy and reveal values within their grants, and can use API tokens.",
+  "superadmin": "Superadmins reach every project and manage users, grants and settings. Grants no longer limit them."
+} %}
+{% set confirm_url = "/users/" ~ user_id ~ "/confirm/" ~ action ~ "?from=" ~ origin ~ ("&group=" ~ target_value if action == "group" else "") %}
+{% if action == "disable" %}{% set title = "Disable " ~ user_name %}{% elif action == "enable" %}{% set title = "Enable " ~ user_name %}{% else %}{% set title = "Change group of " ~ user_name %}{% endif %}
+<div data-fragment="user-action">
+{{ dialog_head("user-action", title) }}
+{%- if refusal == "last_active_superadmin" %}
+{% call dialog_body() %}{{ inline_error("Cannot " ~ ("disable" if action == "disable" else "demote") ~ " the last active superadmin", "Create or enable another superadmin first. The last active superadmin cannot be disabled or demoted.", in_dialog=true, hx_get=confirm_url, hx_target="#user-action", hx_swap="innerHTML") }}{% endcall %}
+{% call dialog_footer() %}{{ button("Close", extra_class="h-11", data_js="dialog-close") }}{% endcall %}
+{%- elif refusal == "unchanged" %}
+{% call dialog_body() %}{{ note(unchanged_message) }}{% endcall %}
+{% call dialog_footer() %}{{ button("Close", extra_class="h-11", data_js="dialog-close") }}{% endcall %}
+{%- else %}
+<form hx-post="/users/{{ user_id }}/{{ action }}" hx-target="#user-action" hx-swap="innerHTML">
+<input type="hidden" name="from" value="{{ origin }}">{% if action == "group" %}<input type="hidden" name="group" value="{{ target_value }}">{% endif %}
+{% call dialog_body() %}<div class="flex items-start gap-3.5"><span class="flex size-10 shrink-0 items-center justify-center rounded-full {{ "bg-danger-soft text-danger" if action == "disable" else "bg-info-bg text-info-fg" }}">{{ icon("warning" if action == "disable" else "info", "size-5", "2.2") }}</span><p class="text-[15px] text-ink">
+{%- if action == "disable" -%}
+The user can no longer sign in and active sessions end now. Their API tokens stop working. Their audit entries stay. You can enable the account again.{% if is_self %} This is your own account: you will be signed out now.{% endif %}
+{%- elif action == "enable" -%}
+The user can sign in again with their current password. API tokens that were not revoked work again.
+{%- else -%}
+Move {{ user_name }} from {{ current_group }} to {{ target_group }}. The change applies now. {{ GROUP_EFFECTS[target_value] }}{% if is_self %} This is your own account, so you may lose access to this page.{% endif %}
+{%- endif -%}
+</p></div>{% endcall %}
+{% call dialog_footer() %}{{ button("Cancel", extra_class="h-11", data_js="dialog-close") }}{% if action == "disable" %}{{ button("Disable user", kind="danger", type="submit", extra_class="h-11 text-[15px]") }}{% elif action == "enable" %}{{ button("Enable user", kind="primary", type="submit") }}{% else %}{{ button("Change group", kind="primary", type="submit") }}{% endif %}{% endcall %}
+</form>
+{%- endif %}
+</div>

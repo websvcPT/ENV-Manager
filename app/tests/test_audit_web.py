@@ -49,6 +49,11 @@ def row_ids(page: str) -> list[int]:
     return [int(found.group(1)) for found in ROW.finditer(page)]
 
 
+def rows_with(page: str, text: str) -> int:
+    """How many table rows of a page or fragment contain the text."""
+    return sum(1 for found in ROW.finditer(page) if text in found.group(2))
+
+
 def row_cells(page: str) -> list[int]:
     """How many cells each table row has."""
     return [found.group(2).count("<td") for found in ROW.finditer(page)]
@@ -122,8 +127,10 @@ async def test_the_admin_page_is_limited_to_the_scope_and_says_so(
     body = main_of(page)
     assert "Entries for the projects, deployments and environments granted to you." in body
     assert "Showing entries within your granted scope only." in body
-    assert len(row_ids(body)) == 10
-    hidden_texts = (BULK_ACTION, "new.hire", "retired", "198.51.100.7", "127.0.0.1")
+    ids = row_ids(body)
+    assert len(ids) == 11
+    assert rows_with(body, "login.success") == 1
+    hidden_texts = (BULK_ACTION, "new.hire", "retired", "198.51.100.7", "user.create")
     for hidden in hidden_texts:
         assert hidden not in body, hidden
     assert 'data-fragment="audit-more"' not in body
@@ -140,20 +147,35 @@ async def test_a_scoped_admin_sees_its_file_and_only_its_parent_name(
     """An environment grant lists the entries of that file and offers only its project."""
     await sign_in(web_client, "env_scoped_admin")
     body = main_of((await web_client.get("/audit")).text)
-    assert len(row_ids(body)) == 2
+    assert len(row_ids(body)) == 3
     assert "environment.save" in body and "file_save" in body
+    assert rows_with(body, "login.success") == 1
     assert ">rentals</option>" in body
     for hidden in ("billing", ".env.api", ".env.db.secrets", "service.deploy", "retired"):
         assert hidden not in body, hidden
 
 
 @pytest.mark.usefixtures("figures")
-async def test_a_user_without_grants_sees_the_empty_state(web_client: httpx.AsyncClient) -> None:
-    """No entries in scope reads as an empty log, without naming anything."""
+async def test_a_user_without_grants_sees_only_their_own_entries(
+    web_client: httpx.AsyncClient,
+) -> None:
+    """Before the user does anything the log holds only their own sign-in, naming nothing else."""
     await sign_in(web_client, "ungranted_admin")
     body = main_of((await web_client.get("/audit")).text)
-    assert "No entries yet" in body and row_ids(body) == []
+    assert len(row_ids(body)) == 1 and rows_with(body, "login.success") == 1
+    assert "No entries yet" not in body
+    for hidden in ("rentals", "billing", "new.hire", BULK_ACTION):
+        assert hidden not in body, hidden
     assert 'data-fragment="skeleton"' in body and 'aria-busy="true"' in body
+
+
+async def test_the_empty_state_shows_when_nothing_matches_the_filter(
+    web_client: httpx.AsyncClient,
+) -> None:
+    """An admin with no entries in scope for a filter reads an empty result, naming nothing."""
+    await sign_in(web_client, "ungranted_admin")
+    body = main_of((await web_client.get("/audit?action=service.deploy")).text)
+    assert "No entries match" in body and row_ids(body) == []
 
 
 @pytest.mark.usefixtures("figures")
@@ -422,16 +444,19 @@ async def test_the_export_covers_exactly_the_recorded_rows_and_the_callers_scope
     web_client.cookies.clear()
     await sign_in(web_client, "admin")
     admin_rows = list(csv.reader(io.StringIO((await web_client.get("/audit/export.csv")).text)))[1:]
-    assert len(admin_rows) == 10
+    assert len(admin_rows) == 11
     assert not {BULK_ACTION, "user.create", "login.failure", "audit.export"} & {
         row[5] for row in admin_rows
     }
+    assert [row[5] for row in admin_rows].count("login.success") == 1
 
 
-async def test_an_empty_view_exports_only_the_header(web_client: httpx.AsyncClient) -> None:
-    """No entries in scope means a file with the column names and nothing else."""
+async def test_an_export_of_an_empty_view_holds_only_the_header(
+    web_client: httpx.AsyncClient,
+) -> None:
+    """No entries matching the filter means a file with the column names and nothing else."""
     await sign_in(web_client, "ungranted_admin")
-    response = await web_client.get("/audit/export.csv")
+    response = await web_client.get("/audit/export.csv?action=service.deploy")
     assert response.status_code == 200
     assert len(list(csv.reader(io.StringIO(response.text)))) == 1
 

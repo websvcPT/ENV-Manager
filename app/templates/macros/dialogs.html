@@ -1,6 +1,7 @@
 {#- Native dialogs opened by data-js="dialog-open" (data-target is the dialog id) and closed by
     data-js="dialog-close". Content swaps happen inside the `data-fragment` wrapper. -#}
 {% from "macros/buttons.html" import button, icon_button %}
+{% from "macros/feedback.html" import skeleton %}
 {% from "macros/icons.html" import icon %}
 
 {% set DIALOG_WIDTHS = {
@@ -10,9 +11,28 @@
   "820": "w-[820px]"
 } %}
 
+{#- Title row of a dialog: the heading (id `<id>-t`), an optional subtitle and the close button. -#}
+{% macro dialog_head(id, title, subtitle=none) -%}
+<div class="flex items-center gap-4 border-b border-line px-5 py-4 md:px-6"><div class="min-w-0 flex-1"><h2 id="{{ id }}-t" class="text-xl font-bold">{{ title }}</h2>{% if subtitle %}<p class="text-[13px] text-ink2">{{ subtitle }}</p>{% endif %}</div>{{ icon_button("Close", "close", shape="square", data_js="dialog-close") }}</div>
+{%- endmacro %}
+
 {#- Dialog shell and header. The call block holds `dialog_body` and `dialog_footer`. -#}
 {% macro dialog(id, title, subtitle=none, width="640") -%}
-<dialog id="{{ id }}" aria-labelledby="{{ id }}-t" class="m-auto max-h-[92vh] {{ DIALOG_WIDTHS[width] }} max-w-[calc(100%_-_1.5rem)] overflow-auto rounded-dialog bg-surface p-0 text-ink shadow-dialog backdrop:bg-scrim"><div data-fragment="{{ id }}"><div class="flex items-center gap-4 border-b border-line px-5 py-4 md:px-6"><div class="min-w-0 flex-1"><h2 id="{{ id }}-t" class="text-xl font-bold">{{ title }}</h2>{% if subtitle %}<p class="text-[13px] text-ink2">{{ subtitle }}</p>{% endif %}</div>{{ icon_button("Close", "close", shape="square", data_js="dialog-close") }}</div>{{ caller() }}</div></dialog>
+<dialog id="{{ id }}" aria-labelledby="{{ id }}-t" class="m-auto max-h-[92vh] {{ DIALOG_WIDTHS[width] }} max-w-[calc(100%_-_1.5rem)] overflow-auto rounded-dialog bg-surface p-0 text-ink shadow-dialog backdrop:bg-scrim"><div data-fragment="{{ id }}">{{ dialog_head(id, title, subtitle) }}{{ caller() }}</div></dialog>
+{%- endmacro %}
+
+{#- Content shown in a loaded dialog until its request answers. -#}
+{% macro dialog_loading(id, title) -%}
+<div data-fragment="{{ id }}" aria-busy="true">{{ dialog_head(id, title) }}<div class="p-5 md:p-6">{{ skeleton(3) }}</div></div>
+{%- endmacro %}
+
+{#- A dialog whose content is loaded by the request of the control that opens it (`hx-get` or
+    `hx-post` targeting `#<id>` with an innerHTML swap). `app.js` puts the loading content back
+    whenever the dialog opens, and also when it closes if `clear_on_close` is set, so nothing
+    from an earlier answer (a one-time secret) stays in the page. -#}
+{% macro loaded_dialog(id, title, width="640", clear_on_close=false, narrows=false) -%}
+<dialog id="{{ id }}" aria-labelledby="{{ id }}-t" data-loading="{{ id }}-loading"{% if clear_on_close %} data-clear-on-close{% endif %} class="m-auto max-h-[92vh] {{ DIALOG_WIDTHS[width] }}{% if narrows %} has-[[data-narrow]]:w-[560px]{% endif %} max-w-[calc(100%_-_1.5rem)] overflow-auto rounded-dialog bg-surface p-0 text-ink shadow-dialog backdrop:bg-scrim">{{ dialog_loading(id, title) }}</dialog>
+<template id="{{ id }}-loading">{{ dialog_loading(id, title) }}</template>
 {%- endmacro %}
 
 {% macro dialog_body() -%}

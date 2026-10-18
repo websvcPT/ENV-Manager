@@ -502,6 +502,35 @@ async def test_a_scoped_admin_deploys_only_their_file_and_the_command_runs_once(
     assert len(staged.docker.calls()) == 1
 
 
+async def test_a_scoped_admin_opens_the_audit_entry_of_their_own_deploy(
+    web_client: httpx.AsyncClient, web_app: FastAPI, staged: Staged
+) -> None:
+    """The deploy entry names the service, which an environment grant does not cover, but it is
+    the admin's own entry, so the result link opens it; others without the scope get not found."""
+    await sign_in(web_client, "env_scoped_admin")
+    service = staged.services["prod/mysql"]
+    db_file = staged.environments["mysql/.env.db"]
+    page = (await deploy(web_client, service, chosen(db_file))).text
+    link = re.search(r'href="(/audit\?entry=(\d+))"', page)
+    assert link is not None
+    entry = (await audit(web_app, "service.deploy"))[0]
+    assert int(link.group(2)) == entry.id
+    assert entry.environment_id is None and entry.service_id == service
+
+    opened = await web_client.get(link.group(1))
+    assert opened.status_code == 200
+    body = main_of(opened.text)
+    assert f"Entry #{entry.id}" in body and "service.deploy" in body
+    listing = main_of((await web_client.get("/audit?action=service.deploy")).text)
+    assert f'id="audit-entry-{entry.id}"' in listing
+
+    web_client.cookies.clear()
+    await sign_in(web_client, "ungranted_admin")
+    hidden = await web_client.get(link.group(1))
+    assert hidden.status_code == 404
+    assert "Entry not found" in hidden.text and "mysql" not in main_of(hidden.text)
+
+
 async def test_an_environment_of_another_service_is_not_deployable_through_this_one(
     web_client: httpx.AsyncClient, web_app: FastAPI, staged: Staged
 ) -> None:

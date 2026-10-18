@@ -13,7 +13,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import ColumnElement, and_, null, or_, select, true
+from sqlalchemy import ColumnElement, and_, false, null, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -190,11 +190,17 @@ DENIED_TARGETS = TargetSet()
 
 @dataclass(frozen=True)
 class Visibility:
-    """Ids a caller may see per level: in scope, and ancestors shown as context (names only)."""
+    """Ids a caller may see per level: in scope, and ancestors shown as context (names only).
+
+    ``actor_user_id`` is the user whose own audit entries are always visible (an admin sees what
+    they or their own API tokens did, even outside their items), or None when the caller has no
+    audit log of their own.
+    """
 
     unrestricted: bool
     full: dict[ItemLevel, frozenset[int]]
     context: dict[ItemLevel, frozenset[int]]
+    actor_user_id: int | None = None
 
     def can_see(self, level: ItemLevel, item_id: int) -> bool:
         """Whether the item is in scope."""
@@ -207,17 +213,22 @@ class Visibility:
     def includes_audit_entry(
         self,
         *,
+        actor_user_id: int | None,
         project_id: int | None,
         deployment_id: int | None,
         service_id: int | None,
         environment_id: int | None,
     ) -> bool:
-        """Whether an audit entry with these scope ids is inside the scope.
+        """Whether an audit entry with this actor and these scope ids is visible.
 
-        The most specific id decides. Entries without scope ids and entries for items that no
-        longer exist are visible only without restriction.
+        An entry the caller made (their user, or one of their own tokens, which record the owner
+        as the user) is always visible. For other entries the most specific scope id decides.
+        Entries without scope ids and entries for items that no longer exist are visible only
+        without restriction.
         """
         if self.unrestricted:
+            return True
+        if self.actor_user_id is not None and actor_user_id == self.actor_user_id:
             return True
         for level, item_id in (
             (ItemLevel.ENVIRONMENT, environment_id),
@@ -232,15 +243,22 @@ class Visibility:
     def audit_entry_clause(self) -> ColumnElement[bool]:
         """The SQL form of ``includes_audit_entry`` for queries over ``AuditEntry``.
 
-        The same rule: the most specific scope id of the entry decides, and an entry with no
-        scope id or one whose item no longer exists is visible only without restriction.
+        The same rule: the caller's own entries are always visible, otherwise the most specific
+        scope id of the entry decides, and an entry with no scope id or one whose item no longer
+        exists is visible only without restriction.
         """
         if self.unrestricted:
             return true()
         no_environment = AuditEntry.environment_id.is_(None)
         no_service = AuditEntry.service_id.is_(None)
         no_deployment = AuditEntry.deployment_id.is_(None)
+        own = (
+            AuditEntry.actor_user_id == self.actor_user_id
+            if self.actor_user_id is not None
+            else false()
+        )
         return or_(
+            own,
             and_(
                 AuditEntry.environment_id.is_not(None),
                 AuditEntry.environment_id.in_(self.full[ItemLevel.ENVIRONMENT]),
@@ -423,10 +441,16 @@ async def compute_visibility(db: AsyncSession, scope: AccessScope) -> Visibility
                 context[ItemLevel.SERVICE].add(item.service_id)
             if level is not ItemLevel.PROJECT:
                 context[ItemLevel.PROJECT].add(item.project_id)
+    has_audit_log = (
+        scope.active
+        and not scope.is_token
+        and scope.group in CAPABILITY_GROUPS[Capability.VIEW_AUDIT]
+    )
     return Visibility(
         unrestricted=scope.active and scope.grants.unrestricted and scope.narrowing is None,
         full={level: frozenset(ids) for level, ids in full.items()},
         context={level: frozenset(context[level] - full[level]) for level in ItemLevel},
+        actor_user_id=scope.user_id if has_audit_log else None,
     )
 
 

@@ -247,10 +247,10 @@ async def test_secrets_in_details_never_reach_the_file(
     assert HIDDEN_TEXT in flat
 
 
-async def test_an_export_is_audited_with_filters_and_count_and_seen_by_the_superadmin_only(
+async def test_an_export_is_audited_with_filters_and_count_and_seen_by_its_actor_and_superadmin(
     db: AsyncSession, seed_data: SeedData
 ) -> None:
-    """The entry has no item scope: the superadmin reads it, an admin does not."""
+    """The entry has no item scope: the superadmin and the admin who exported read it."""
     admin = seed_data.users.admin
     visibility = await visibility_of(db, admin)
     filters = AuditFilters(result=AuditResult.SUCCESS)
@@ -269,9 +269,12 @@ async def test_an_export_is_audited_with_filters_and_count_and_seen_by_the_super
         None,
         None,
     )
+    own = await list_page(db, visibility, AuditFilters(action="audit.export"))
+    assert [row.object_name for row in own.rows] == ["audit log"]
+    other_admin = await visibility_of(db, seed_data.users.project_admin)
     assert not any(
         row.action == "audit.export"
-        for row in (await list_page(db, visibility, AuditFilters(), limit=500)).rows
+        for row in (await list_page(db, other_admin, AuditFilters(), limit=500)).rows
     )
     superadmin = await visibility_of(db, seed_data.users.superadmin)
     shown = await list_page(db, superadmin, AuditFilters(action="audit.export"))

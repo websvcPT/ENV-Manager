@@ -8,6 +8,7 @@ from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.runtime.migration import MigrationContext
 from sqlalchemy import Connection, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.core.crypto import CryptoService, KeyMismatchError, generate_master_key, parse_master_key
@@ -28,8 +29,14 @@ async def test_connections_use_wal_and_foreign_keys(engine: AsyncEngine) -> None
     assert foreign_keys == 1
 
 
+@pytest.mark.filterwarnings("ignore:Skipped unsupported reflection of expression-based index")
+@pytest.mark.filterwarnings("ignore:autogenerate skipping metadata-specified expression-based")
 async def test_migrations_match_models(engine: AsyncEngine) -> None:
-    """The migrated schema has no difference from the model metadata."""
+    """The migrated schema has no difference from the model metadata.
+
+    SQLite cannot reflect the expression index on the lowercased email, so that one index is
+    skipped by the comparison; its own test reads it from the schema.
+    """
 
     def diff(connection: Connection) -> list[object]:
         context = MigrationContext.configure(connection, opts={"compare_type": True})
@@ -207,5 +214,59 @@ async def test_autoincrement_migration_keeps_children_and_stops_id_reuse(
             remaining = leftover.scalar_one()
         assert new_id == 2
         assert remaining == 0
+    finally:
+        await engine.dispose()
+
+
+USER_INSERT = (
+    'INSERT INTO users (name, email, password_hash, "group", is_active, totp_enabled,'
+    " created_at, updated_at) VALUES (:name, :email, 'x', 'admin', 1, 0, '2026-01-01',"
+    " '2026-01-01')"
+)
+
+
+async def test_the_database_refuses_an_email_that_differs_only_in_case(
+    engine: AsyncEngine,
+) -> None:
+    """The unique index is on the lowercased address, so a case variant is a duplicate."""
+    async with engine.begin() as connection:
+        await connection.execute(
+            text(USER_INSERT), {"name": "first", "email": "Person@Example.test"}
+        )
+    with pytest.raises(IntegrityError):
+        async with engine.begin() as connection:
+            await connection.execute(
+                text(USER_INSERT), {"name": "second", "email": "person@EXAMPLE.test"}
+            )
+    async with engine.connect() as connection:
+        index_sql = (
+            await connection.execute(
+                text("SELECT sql FROM sqlite_master WHERE name = 'uq_users_email_lower'")
+            )
+        ).scalar_one()
+    assert "UNIQUE" in index_sql and "lower(email)" in index_sql
+
+
+async def test_the_upgrade_refuses_users_that_share_an_email_and_changes_nothing(
+    database_path: Path, backup_dir: Path
+) -> None:
+    """Existing duplicates stop the upgrade with the user names, never the addresses."""
+    engine = create_engine(database_path)
+    try:
+        await migrate_database(engine, database_path, backup_dir)
+        async with engine.begin() as connection:
+            await connection.run_sync(lambda sync: command.downgrade(build_config(sync), "0009"))
+            for name, email in (("ann", "Shared@example.test"), ("bob", "shared@example.test")):
+                await connection.execute(text(USER_INSERT), {"name": name, "email": email})
+        with pytest.raises(RuntimeError) as refused:
+            await migrate_database(engine, database_path, backup_dir)
+        message = str(refused.value)
+        assert "ann" in message and "bob" in message
+        assert "example.test" not in message
+        async with engine.connect() as connection:
+            revision = await connection.execute(text("SELECT version_num FROM alembic_version"))
+            users = (await connection.execute(text("SELECT count(*) FROM users"))).scalar_one()
+        assert revision.scalar_one() == "0009" and users == 2
+        assert any("pre-migration" in backup.name for backup in backup_dir.iterdir())
     finally:
         await engine.dispose()

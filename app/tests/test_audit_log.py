@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.core.db import create_session_factory
 from app.models import (
+    ApiToken,
     AuditActorType,
     AuditEntry,
     AuditResult,
@@ -24,7 +25,7 @@ from app.seeds import (
     SeedData,
     ensure_audit_figures,
 )
-from app.services.audit import record_audit
+from app.services.audit import AuditActor, record_actor_audit, record_audit
 from app.services.audit_filters import AuditFilters, Cursor, parse_number
 from app.services.audit_log import (
     PAGE_SIZE,
@@ -101,25 +102,36 @@ async def test_the_sql_scope_matches_the_python_rule_for_every_user_and_every_id
         ),
         "gone": (DELETED_PROJECT_ID, 900002, 900003, 900004),
     }
+    users = seed_data.users
+    token = (await db.execute(select(ApiToken).where(ApiToken.name == "billing-ci"))).scalar_one()
+    actors = [
+        AuditActor(AuditActorType.SYSTEM),
+        AuditActor.for_user(users.admin),
+        AuditActor.for_user(users.env_scoped_admin),
+        AuditActor.for_user(users.viewer),
+        AuditActor.for_user(users.ungranted_admin),
+        AuditActor.for_token(token, users.admin),
+    ]
     for ids in chains.values():
         for present in itertools.product((False, True), repeat=4):
             project, deployment, service, environment = (
                 value if keep else None for value, keep in zip(ids, present, strict=True)
             )
-            await record_audit(
-                db,
-                action="shape.test",
-                result=AuditResult.SUCCESS,
-                actor_type=AuditActorType.SYSTEM,
-                project_id=project,
-                deployment_id=deployment,
-                service_id=service,
-                environment_id=environment,
-            )
+            for actor in actors:
+                await record_actor_audit(
+                    db,
+                    actor,
+                    action="shape.test",
+                    result=AuditResult.SUCCESS,
+                    project_id=project,
+                    deployment_id=deployment,
+                    service_id=service,
+                    environment_id=environment,
+                )
     await db.commit()
     entries = (await db.execute(select(AuditEntry))).scalars().all()
-    assert len(entries) > 64
-    for user in vars(seed_data.users).values():
+    assert len(entries) > 64 * len(actors)
+    for user in vars(users).values():
         visibility = await visibility_of(db, user)
         by_sql = set(
             (await db.execute(select(AuditEntry.id).where(visibility.audit_entry_clause())))
@@ -130,6 +142,7 @@ async def test_the_sql_scope_matches_the_python_rule_for_every_user_and_every_id
             entry.id
             for entry in entries
             if visibility.includes_audit_entry(
+                actor_user_id=entry.actor_user_id,
                 project_id=entry.project_id,
                 deployment_id=entry.deployment_id,
                 service_id=entry.service_id,
