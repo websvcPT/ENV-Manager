@@ -1,0 +1,25 @@
+{#- The confirm dialog content of removing a direct grant, loaded when a Remove control is used.
+    When the user no longer holds the grant (the page is out of date) it shows that instead of
+    the buttons and redraws the list out of band. Context: access (an AccessList), base,
+    user_id, user_name, entry (the AccessEntry being removed, none for a refusal), notice (the
+    reason of a refusal), refresh and oob (true: the list included below is an out of band swap). -#}
+{% from "macros/buttons.html" import button %}
+{% from "macros/dialogs.html" import dialog_body, dialog_footer, dialog_head %}
+{% from "macros/feedback.html" import inline_error %}
+{% from "macros/icons.html" import icon %}
+<div data-fragment="access-remove">
+{{ dialog_head("access-remove", "Remove access for " ~ user_name, access.subtitle) }}
+{%- if notice %}
+{% call dialog_body() %}{{ inline_error("Access was not removed", notice, in_dialog=true, retry=false) }}{% endcall %}
+{% call dialog_footer() %}{{ button("Close", extra_class="h-11", data_js="dialog-close") }}{% endcall %}
+{%- else %}
+<form hx-post="{{ base }}/remove/{{ user_id }}" hx-target="#access-remove" hx-swap="innerHTML">
+{% call dialog_body() %}<div class="flex items-start gap-3.5"><span class="flex size-10 shrink-0 items-center justify-center rounded-full bg-danger-soft text-danger">{{ icon("warning", "size-5", "2.2") }}</span><p class="text-[15px] text-ink">
+{{ user_name }} loses the grant on {{ access.subtitle }}{% if access.node.future_items %} and on the items added under it later{% endif %}. The change applies now, including to their API tokens.
+{%- if entry.also %} They keep access through {{ entry.also.name }} ({{ entry.also.level_label }}).{% else %} Access they have through other grants stays.{% endif %} Their audit entries stay.
+</p></div>{% endcall %}
+{% call dialog_footer() %}{{ button("Cancel", extra_class="h-11", data_js="dialog-close") }}{{ button("Remove access", kind="danger", type="submit", extra_class="h-11 text-[15px]") }}{% endcall %}
+</form>
+{%- endif %}
+{%- if refresh %}{% include "fragments/access_list.html" %}{% endif %}
+</div>

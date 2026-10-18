@@ -13,6 +13,7 @@ from app.core.crypto import CryptoService
 from app.core.log import get_logger
 from app.core.templating import render
 from app.models import ServiceHook
+from app.services.access_grid import NodeKind
 from app.services.audit import AuditActor
 from app.services.docker_cli import DockerCli
 from app.services.hook_settings import (
@@ -40,6 +41,7 @@ from app.services.service_detail import (
     load_service_header,
     load_service_history,
 )
+from app.web.access_tabs import AccessSubject, mount_access_routes
 from app.web.dependencies import (
     AuthContext,
     get_crypto,
@@ -116,8 +118,26 @@ def _flags(access: ServiceContext) -> dict[str, Any]:
     return {
         "service": access.service,
         "can_manage_structure": access.scope.can(Capability.MANAGE_STRUCTURE),
+        "can_manage_grants": access.scope.can(Capability.MANAGE_GRANTS),
         "is_viewer": access.scope.group not in CAPABILITY_GROUPS[Capability.EDIT_VALUES],
     }
+
+
+async def _access_subject(
+    access: Annotated[ServiceContext, Depends(service_access(Capability.MANAGE_GRANTS))],
+) -> AccessSubject:
+    """The service of an Access tab request, for the superadmin."""
+    return AccessSubject(
+        NodeKind.SERVICE,
+        access.service.id,
+        access.service.project_id,
+        access.auth,
+        "pages/service_access.html",
+        _flags(access),
+    )
+
+
+mount_access_routes(router, NodeKind.SERVICE, _access_subject)
 
 
 def _form_of(hook: HookSettings | ServiceHook | None) -> HookForm:

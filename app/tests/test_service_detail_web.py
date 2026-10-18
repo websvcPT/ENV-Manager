@@ -90,7 +90,8 @@ async def test_superadmin_sees_everything_and_the_command_settings(
     assert '<h1 class="font-mono' in page and ">web</h1>" in page
     assert ">Service</span>" in page and ">1 pending</span>" in page
     assert "Deployment <strong" in page and "/opt/rentals/staging" in page
-    assert section_links(page) == ["Environments 4", "Deploy history"]
+    assert section_links(page) == ["Environments 4", "Deploy history", "AccessSuperadmin"]
+    assert f'href="/services/{ids.staging_web}/access"' in page
     assert page.count('data-fragment="service-explainer"') == 2
     assert "What is a service?" in page and "Runs once, not per file" in page
     assert environment_rows(page) == {

@@ -1,23 +1,16 @@
 """The access grid read model and cell toggles on the seeded database."""
 
-from collections.abc import AsyncIterator, Iterator
-from contextlib import contextmanager
+from collections.abc import AsyncIterator
 
 import pytest
-from sqlalchemy import event, func, select, update
-from sqlalchemy.engine import Connection
-from sqlalchemy.engine.interfaces import DBAPICursor, ExecutionContext
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.core.db import create_session_factory
 from app.models import (
     AccessGrant,
     AuditEntry,
-    Deployment,
-    Environment,
     GrantLevel,
-    Project,
-    Service,
     User,
     UserGroup,
 )
@@ -36,6 +29,7 @@ from app.services.access_grid import (
 )
 from app.services.audit import AuditActor
 from app.services.grants import SUPERADMIN_REFUSAL, GrantTarget, list_grants, set_user_grants
+from app.tests.grant_helpers import count_statements, grow
 
 PROJECT = GrantLevel.PROJECT
 DEPLOYMENT = GrantLevel.DEPLOYMENT
@@ -76,60 +70,6 @@ async def entries(db: AsyncSession, action: str) -> list[AuditEntry]:
         select(AuditEntry).where(AuditEntry.action == action).order_by(AuditEntry.id)
     )
     return list(rows.scalars())
-
-
-@contextmanager
-def count_statements(engine: AsyncEngine) -> Iterator[list[str]]:
-    """Collect every SQL statement the engine runs while the block executes."""
-    statements: list[str] = []
-
-    def record(
-        _connection: Connection,
-        _cursor: DBAPICursor,
-        statement: str,
-        _parameters: object,
-        _context: ExecutionContext | None,
-        _executemany: bool,
-    ) -> None:
-        statements.append(statement)
-
-    event.listen(engine.sync_engine, "before_cursor_execute", record)
-    try:
-        yield statements
-    finally:
-        event.remove(engine.sync_engine, "before_cursor_execute", record)
-
-
-async def grow(db: AsyncSession, projects: int, users: int) -> None:
-    """Add projects with deployments, services and environments, and viewers, in bulk."""
-    for number in range(projects):
-        project = Project(name=f"big-{number}")
-        db.add(project)
-        await db.flush()
-        for deployment_number in range(2):
-            deployment = Deployment(
-                project_id=project.id, name=f"dep-{deployment_number}", root_path="/srv/big"
-            )
-            db.add(deployment)
-            await db.flush()
-            for service_number in range(2):
-                service = Service(deployment_id=deployment.id, name=f"svc-{service_number}")
-                db.add(service)
-                await db.flush()
-                db.add_all(
-                    Environment(service_id=service.id, name=f".env.{index}", target_path="/x")
-                    for index in range(3)
-                )
-    for number in range(users):
-        db.add(
-            User(
-                name=f"bulk-{number}",
-                email=f"bulk-{number}@example.test",
-                password_hash="x",
-                group=UserGroup.VIEWER,
-            )
-        )
-    await db.commit()
 
 
 async def test_columns_are_the_active_admins_and_viewers_by_name(

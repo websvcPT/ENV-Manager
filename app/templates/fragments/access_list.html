@@ -1,0 +1,35 @@
+{#- The Access panel of an item: the users with access, direct or inherited, and the controls the
+    superadmin edits with. It refreshes itself when a grant changes (`grants-changed`), and a
+    refused change sends it out of band (`oob`) so the page shows what is stored now.
+    Context: access (an AccessList), base (the path of the item's Access tab), oob (optional). -#}
+{% from "macros/access.html" import access_actions, access_cell %}
+{% from "macros/badges.html" import badge %}
+{% from "macros/buttons.html" import button %}
+{% from "macros/feedback.html" import empty_state %}
+{% from "macros/panels.html" import panel, table %}
+{% set node = access.node %}
+{% set add_access %}{% if access.grantable %}{{ button("Add access", icon_name="plus", icon_stroke="2.2", extra_class="max-md:h-11", data_js="dialog-open", data_target="grant-dialog", aria_haspopup="dialog", hx_get=base ~ "/add", hx_target="#grant-dialog", hx_swap="innerHTML") }}{% endif %}{% endset %}
+{% call panel("Access", "access-title", fragment="access-list", id="access-list", hx_get=base ~ "/list", hx_trigger="grants-changed from:body", hx_swap="outerHTML", hx_swap_oob=("true" if oob | default(false) else none), actions=add_access) %}
+<p class="px-4 pb-3 text-[13px] text-ink2 md:px-5">Users with access to <strong class="text-ink">{{ access.subtitle }}</strong>, direct or inherited.
+{%- if node.kind.value == "project" %} A project grant includes the deployments, services and environments added later.
+{%- elif node.kind.value == "deployment" %} A deployment grant includes the services and environments added later.
+{%- elif node.kind.value == "service" %} Services are not a grant level: access here comes from the deployment or from individual environments.
+{%- endif %} Superadmins reach everything, so they are not listed. Disabled accounts are not listed either.</p>
+{%- if node.kind.value == "service" %}
+<p class="px-4 pb-3 text-[13px] text-ink2 md:px-5">Change it on the Access tab of {% for parent in access.parents %}<a href="{{ parent.href }}" class="font-semibold text-link hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ parent.level_label | lower }} {{ parent.name }}</a>{{ ", " if not loop.last else "" }}{% endfor %}, or of one of its environments.</p>
+{%- endif %}
+{%- if access.entries %}
+{% call table("Users with access", ["User", "Group", "Access", "Actions"], right_columns=[3], min_width_class="min-w-[560px]") %}
+{%- for entry in access.entries %}
+<tr id="access-row-{{ entry.user.id }}" data-fragment="access-row"><th scope="row" class="border-t border-line px-4 py-3.5 text-left font-semibold"><span class="font-semibold">{{ entry.user.name }}</span></th>
+<td class="border-t border-line px-4 py-3.5">{{ badge(entry.user.group.value) }}</td>
+<td class="border-t border-line px-4 py-3.5">{{ access_cell(entry, node) }}</td>
+<td class="border-t border-line px-4 py-3.5 whitespace-nowrap text-right">{{ access_actions(entry, base) }}</td></tr>
+{%- endfor %}
+{% endcall %}
+{%- elif access.grantable %}
+{{ empty_state("No users have access yet", "Admins and viewers reach this " ~ node.kind.value ~ " only through a grant. Use Add access to give a user access.", "users") }}
+{%- else %}
+{{ empty_state("No users reach this service", "Admins and viewers reach a service through a grant on its deployment or project, or on one of its environments.", "users") }}
+{%- endif %}
+{% endcall %}

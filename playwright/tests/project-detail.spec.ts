@@ -97,7 +97,7 @@ test.describe('superadmin', () => {
     await expect(page.locator('[data-fragment="activity-table"]')).toBeVisible();
 
     await tabs(page).filter({ hasText: 'Members and access' }).click();
-    await expect(page).toHaveURL(new RegExp(`/projects/${rentals}/members$`));
+    await expect(page).toHaveURL(new RegExp(`/projects/${rentals}/access$`));
     await expect(page.locator('[data-fragment="access-list"]')).toBeVisible();
 
     await tabs(page).filter({ hasText: 'Settings' }).click();
@@ -111,18 +111,20 @@ test.describe('superadmin', () => {
 
   test('lists who has access, direct and inherited', async ({ page, browser }) => {
     const rentals = await projectId(browser, 'rentals');
-    await page.goto(`/projects/${rentals}/members`);
+    await page.goto(`/projects/${rentals}/access`);
     const list = page.locator('#access-list');
     await expect(list).toContainText('Users with access to project rentals');
-    await expect(list.locator('th[scope="col"]')).toHaveText(['User', 'Group', 'Access']);
+    await expect(list.locator('th[scope="col"]')).toHaveText(['User', 'Group', 'Access', 'Actions']);
     const row = (name: string) =>
       list.locator('tbody tr').filter({ has: page.getByRole('rowheader', { name, exact: true }) });
     await expect(row('project_admin')).toContainText('Direct');
     await expect(row('deployment_admin')).toContainText('Inherited');
     await expect(row('deployment_admin')).toContainText('from prod (Deployment)');
     await expect(row('env_scoped_admin')).toContainText('from .env.db (Environment)');
-    await expect(row('root')).toContainText('from Superadmin group');
-    await expect(list.getByRole('button')).toHaveCount(0);
+    await expect(row('root')).toHaveCount(0);
+    await expect(page.locator('[data-fragment="page-header"] p')).toHaveText(
+      /^2 deployments · \d+ members$/,
+    );
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
   });
 
@@ -271,7 +273,7 @@ test.describe('admin', () => {
 
   test('is refused the superadmin tabs', async ({ page, browser }) => {
     const rentals = await projectId(browser, 'rentals');
-    for (const tab of ['members', 'settings']) {
+    for (const tab of ['access', 'members', 'settings']) {
       const response = await page.goto(`/projects/${rentals}/${tab}`);
       expect(response?.status()).toBe(403);
       await expect(page.locator('main')).toContainText('No access');

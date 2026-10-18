@@ -128,7 +128,7 @@ async def test_projects_outside_the_scope_are_not_found(
     """Out of scope and nonexistent projects answer the same 404 on every tab."""
     await sign_in(web_client, "viewer")
     billing = ids.billing
-    for suffix in ("", "/activity", "/deployments", "/members", "/settings"):
+    for suffix in ("", "/activity", "/deployments", "/access", "/members", "/settings"):
         assert (await web_client.get(f"/projects/{billing}{suffix}")).status_code == 404
     assert (await web_client.get("/projects/9999")).status_code == 404
 
@@ -136,9 +136,10 @@ async def test_projects_outside_the_scope_are_not_found(
 async def test_superadmin_only_tabs_are_forbidden_for_other_groups(
     web_client: httpx.AsyncClient, ids: ProjectIds
 ) -> None:
-    """A project in scope still refuses Members and Settings to a non-superadmin."""
+    """A project in scope still refuses Access and Settings to a non-superadmin."""
     await sign_in(web_client, "project_admin")
     rentals = ids.rentals
+    assert (await web_client.get(f"/projects/{rentals}/access")).status_code == 403
     assert (await web_client.get(f"/projects/{rentals}/members")).status_code == 403
     assert (await web_client.get(f"/projects/{rentals}/settings")).status_code == 403
     assert (await post(web_client, f"/projects/{rentals}/rename", name="x")).status_code == 403
@@ -223,18 +224,17 @@ async def test_activity_empty_state(web_client: httpx.AsyncClient, web_app: Fast
     assert "No activity yet" in page
 
 
-async def test_members_tab_lists_direct_and_inherited_access(
+async def test_members_tab_address_redirects_to_the_access_tab(
     web_client: httpx.AsyncClient, ids: ProjectIds
 ) -> None:
-    """Direct grants, deeper grants with their source and the superadmin group are shown."""
+    """The old address of the Members tab still works and leads to the Access tab."""
     await sign_in(web_client, "root")
-    page = (await web_client.get(f"/projects/{ids.rentals}/members")).text
+    response = await web_client.get(f"/projects/{ids.rentals}/members", follow_redirects=False)
+    assert response.status_code == 307
+    assert response.headers["location"] == f"/projects/{ids.rentals}/access"
+    assert response.headers["cache-control"] == "no-store"
+    page = (await web_client.get(f"/projects/{ids.rentals}/members", follow_redirects=True)).text
     assert 'data-fragment="access-list"' in page
-    assert "project rentals" in page
-    assert "from prod (Deployment)" in page
-    assert "from .env.db (Environment)" in page
-    assert "from Superadmin group" in page
-    assert "Direct" in page
 
 
 async def test_settings_tab_has_rename_and_delete(
@@ -351,7 +351,7 @@ async def test_non_superadmin_pages_have_no_settings_or_delete_markup(
     """Edit actions are absent, not disabled, for groups that cannot manage structure."""
     await sign_in(web_client, user)
     page = (await web_client.get(f"/projects/{ids.rentals}")).text
-    for absent in ("delete-project", "project-rename", "/settings", "/members"):
+    for absent in ("delete-project", "project-rename", "/settings", "/members", "/access"):
         assert absent not in page
 
 
@@ -360,6 +360,6 @@ async def test_anonymous_requests_are_refused(
 ) -> None:
     """Every detail route needs a session."""
     rentals = ids.rentals
-    for suffix in ("", "/activity", "/members", "/settings", "/deployments"):
+    for suffix in ("", "/activity", "/access", "/members", "/settings", "/deployments"):
         response = await web_client.get(f"/projects/{rentals}{suffix}", follow_redirects=False)
         assert response.status_code in (303, 401)

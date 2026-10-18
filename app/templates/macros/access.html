@@ -1,0 +1,61 @@
+{#- The Access tab pieces shared by the project, deployment, service and environment pages: the
+    section links of the deployment and service pages (which link to their own sections on the
+    page itself and to the Access tab), the dialogs the tab loads and the rows of the list. -#}
+{% from "macros/badges.html" import badge %}
+{% from "macros/dialogs.html" import loaded_dialog %}
+{% from "macros/panels.html" import tabs %}
+
+{#- Section links of the deployment page; on the Access tab the sections are links to the page. -#}
+{% macro deployment_tabs(deployment, can_manage_grants, on_access=false) -%}
+{%- set base = "/deployments/" ~ deployment.id -%}
+{{ tabs(
+  [{"label": "Services", "href": base if on_access else "#services"}, {"label": "Deploy history", "href": (base ~ "#hist") if on_access else "#hist"}]
+  + ([{"label": "Access", "href": base ~ "/access", "superadmin": true}] if can_manage_grants else []),
+  (base ~ "/access") if on_access else "#services"
+) }}
+{%- endmacro %}
+
+{#- Section links of the service page; `count` is the number of environments shown on the page. -#}
+{% macro service_tabs(service, can_manage_grants, count=none, on_access=false) -%}
+{%- set base = "/services/" ~ service.id -%}
+{{ tabs(
+  [{"label": "Environments", "href": base if on_access else "#environments", "count": count}, {"label": "Deploy history", "href": (base ~ "#hist") if on_access else "#hist"}]
+  + ([{"label": "Access", "href": base ~ "/access", "superadmin": true}] if can_manage_grants else []),
+  (base ~ "/access") if on_access else "#environments"
+) }}
+{%- endmacro %}
+
+{#- The dialogs an Access tab fills when its controls are used: add access and remove access. -#}
+{% macro access_dialogs() -%}
+{{ loaded_dialog("grant-dialog", "Add access", width="640") }}
+{{ loaded_dialog("access-remove", "Remove access", width="560") }}
+{%- endmacro %}
+
+{#- The sources of an inherited entry as a phrase: names with their level, then how many more. -#}
+{% macro source_phrase(entry) -%}
+{%- for source in entry.sources %}{{ source.name }} ({{ source.level_label }}){% if not loop.last %}, {% endif %}{% endfor -%}
+{%- if entry.more %} and {{ entry.more }} more{% endif -%}
+{%- endmacro %}
+
+{#- The Access cell of a row: how the user reaches the item and, for a direct grant, the notes. -#}
+{% macro access_cell(entry, node) -%}
+<span class="inline-flex flex-col items-start gap-0.5">
+{%- if entry.direct -%}
+{{ badge("direct") }}
+{%- if node.future_items %}<span class="text-xs text-ink2">Includes future items</span>{% endif -%}
+{%- if entry.also %}<span class="text-xs text-ink2">Also included through {{ entry.also.name }} ({{ entry.also.level_label }})</span>{% endif -%}
+{%- else -%}
+{{ badge("inherited") }}<span class="text-xs text-ink2">from {{ source_phrase(entry) }}{% if entry.sees %}, sees {{ entry.sees[0] }} of {{ entry.sees[1] }}{% endif %}</span>
+{%- endif -%}
+</span>
+{%- endmacro %}
+
+{#- The Actions cell: Remove (opens the confirm dialog) for a direct grant, a link to where an
+    inherited access is edited otherwise. Both are 44 px high on a phone. -#}
+{% macro access_actions(entry, base) -%}
+{%- if entry.direct -%}
+<button type="button" data-js="dialog-open" data-target="access-remove" aria-haspopup="dialog" hx-get="{{ base }}/remove/{{ entry.user.id }}" hx-target="#access-remove" hx-swap="innerHTML" class="font-semibold text-danger hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus text-sm max-md:inline-flex max-md:min-h-11 max-md:items-center">Remove<span class="sr-only"> access for {{ entry.user.name }}</span></button>
+{%- else -%}
+<a href="{{ entry.edit_href }}" class="font-semibold text-link hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus text-sm max-md:inline-flex max-md:min-h-11 max-md:items-center">{{ entry.edit_label }}<span class="sr-only"> for {{ entry.user.name }}</span></a>
+{%- endif -%}
+{%- endmacro %}

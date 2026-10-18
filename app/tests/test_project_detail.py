@@ -1,4 +1,4 @@
-"""Project detail service: header figures, deployment rows, activity and members by scope."""
+"""Project detail service: header figures, deployment rows and activity by scope."""
 
 from collections.abc import AsyncIterator
 
@@ -7,16 +7,11 @@ from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.core.db import create_session_factory
-from app.models import AllowedPath, DeployStatus, User, UserGroup
+from app.models import AllowedPath, DeployStatus, User
 from app.seeds import SeedData
 from app.services.paths import load_allowed_paths
 from app.services.permissions import load_user_scope
-from app.services.project_detail import (
-    ProjectDetail,
-    list_activity,
-    list_members,
-    load_project_detail,
-)
+from app.services.project_detail import ProjectDetail, list_activity, load_project_detail
 
 
 @pytest.fixture
@@ -127,37 +122,6 @@ async def test_activity_respects_the_limit(db: AsyncSession, seed_data: SeedData
     scope = await load_user_scope(db, seed_data.users.superadmin)
     rows = await list_activity(db, scope, seed_data.projects.rentals.id, limit=1)
     assert [(row.action, row.target) for row in rows] == [("deploy", "mysql")]
-
-
-async def test_members_show_direct_inherited_and_group_access(
-    db: AsyncSession, seed_data: SeedData
-) -> None:
-    """Project grants are direct, deeper grants name their source, superadmins come by group."""
-    members = {m.name: m for m in await list_members(db, seed_data.projects.rentals.id)}
-    assert set(members) == {
-        "root",
-        "admin",
-        "viewer",
-        "project_admin",
-        "deployment_admin",
-        "env_scoped_admin",
-        "env_scoped_viewer",
-    }
-    assert members["viewer"].direct and members["viewer"].group is UserGroup.VIEWER
-    assert members["deployment_admin"].sources == (("prod", "Deployment"),)
-    assert members["env_scoped_viewer"].sources == ((".env.db", "Environment"),)
-    assert not members["root"].direct and members["root"].sources == ()
-    billing = {m.name for m in await list_members(db, seed_data.projects.billing.id)}
-    assert billing == {"root", "admin", "env_scoped_viewer"}
-
-
-async def test_disabled_users_are_not_members(db: AsyncSession, seed_data: SeedData) -> None:
-    """Only active users are listed."""
-    seed_data.users.viewer.is_active = False
-    await db.merge(seed_data.users.viewer)
-    await db.commit()
-    names = {m.name for m in await list_members(db, seed_data.projects.rentals.id)}
-    assert "viewer" not in names
 
 
 async def test_check_dist_row_action_follows_group_files_and_allowed_paths(

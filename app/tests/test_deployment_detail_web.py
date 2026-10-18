@@ -64,7 +64,8 @@ async def test_superadmin_sees_everything_and_the_edit_actions(
     assert '<h1 class="font-mono' in page and ">prod</h1>" in page
     assert "Project <strong" in page and "/opt/rentals/prod" in page
     assert ">Failed<" in page
-    assert section_links(page) == ["Services", "Deploy history"]
+    assert section_links(page) == ["Services", "Deploy history", "AccessSuperadmin"]
+    assert f'href="/deployments/{ids.prod}/access"' in page
     assert f'href="/deployments/{ids.prod}/edit"' in page
     assert f'href="/deployments/{ids.prod}/dist"' in page
     assert f'href="/deployments/{ids.prod}/services/new"' in page

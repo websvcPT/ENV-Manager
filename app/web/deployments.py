@@ -9,6 +9,7 @@ from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.templating import render
+from app.services.access_grid import NodeKind
 from app.services.deployment_detail import DeploymentDetail, load_deployment_detail
 from app.services.paths import load_allowed_paths
 from app.services.permissions import (
@@ -19,6 +20,7 @@ from app.services.permissions import (
     ItemRef,
     Target,
 )
+from app.web.access_tabs import AccessSubject, mount_access_routes
 from app.web.dependencies import AuthContext, get_db, get_scope, require_auth
 
 router = APIRouter()
@@ -73,9 +75,27 @@ def _page_context(access: DeploymentContext, **extra: Any) -> dict[str, Any]:
     return {
         "deployment": access.deployment,
         "can_manage_structure": access.scope.can(Capability.MANAGE_STRUCTURE),
+        "can_manage_grants": access.scope.can(Capability.MANAGE_GRANTS),
         "can_view_output": access.deployment.can_view_output,
         **extra,
     }
+
+
+async def _access_subject(
+    access: Annotated[DeploymentContext, Depends(deployment_access(Capability.MANAGE_GRANTS))],
+) -> AccessSubject:
+    """The deployment of an Access tab request, for the superadmin."""
+    return AccessSubject(
+        NodeKind.DEPLOYMENT,
+        access.deployment.id,
+        access.deployment.project_id,
+        access.auth,
+        "pages/deployment_access.html",
+        _page_context(access),
+    )
+
+
+mount_access_routes(router, NodeKind.DEPLOYMENT, _access_subject)
 
 
 @router.get("/deployments/{deployment_id:int}", include_in_schema=False)

@@ -1,0 +1,15 @@
+{#- The Access tab of a service: header, section links and the access panel, which shows the
+    result and links to the items that grant it (a service is not a grant level). Context:
+    service (a ServiceHeader), can_manage_grants, access (an AccessList) and base. -#}
+{% extends "layouts/app.html" %}
+{% from "macros/access.html" import service_tabs %}
+{% from "macros/panels.html" import page_header %}
+{% set active_nav = "projects" %}
+{% set breadcrumbs = [("Projects", "/projects"), (service.project_name, "/projects/" ~ service.project_id), (service.deployment_name, "/deployments/" ~ service.deployment_id), (service.name, none)] %}
+{% block title %}{{ service.name }}{% endblock %}
+{% block content %}
+{% set header_badges %}<span class="text-xs font-bold uppercase tracking-wide text-ink3">Service</span>{% endset %}
+{{ page_header(service.name, "Deployment " ~ service.deployment_name ~ " in " ~ service.project_name, mono=true, badges=header_badges) }}
+{{ service_tabs(service, can_manage_grants, on_access=true) }}
+{% include "fragments/access_list.html" %}
+{% endblock %}

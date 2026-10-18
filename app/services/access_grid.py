@@ -16,10 +16,10 @@ from dataclasses import dataclass, replace
 from enum import StrEnum
 from urllib.parse import urlencode
 
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AccessGrant, GrantLevel, User, UserGroup
+from app.models import AccessGrant, Deployment, Environment, GrantLevel, Service, User, UserGroup
 from app.services.audit import AuditActor
 from app.services.grants import (
     MAX_ID_DIGITS,
@@ -263,9 +263,15 @@ def build_projects(tree: tuple[GrantProject, ...]) -> tuple[GridProject, ...]:
     return tuple(projects)
 
 
+def covering_source(node: GridNode, grants: frozenset[GrantTarget]) -> GridSource | None:
+    """The widest item above a row that the user holds a grant on, or None."""
+    return next((item for item in node.sources if item.target in grants), None)
+
+
 def inherited_source(node: GridNode, grants: frozenset[GrantTarget]) -> str | None:
-    """The widest item above a row that the user holds a grant on, by name, or None."""
-    return next((item.name for item in node.sources if item.target in grants), None)
+    """The name of the widest item above a row that the user holds a grant on, or None."""
+    source = covering_source(node, grants)
+    return source.name if source is not None else None
 
 
 def cell_for(node: GridNode, grants: frozenset[GrantTarget]) -> GridCell:
@@ -290,6 +296,59 @@ def cell_for(node: GridNode, grants: frozenset[GrantTarget]) -> GridCell:
     return GridCell(CellKind.NONE)
 
 
+async def load_grid_users(
+    db: AsyncSession, groups: tuple[UserGroup, ...] = GRID_GROUPS
+) -> tuple[GridUser, ...]:
+    """The active users of the groups, by name: the accounts that can hold grants."""
+    rows = (
+        await db.execute(
+            select(User.id, User.name, User.group)
+            .where(User.is_active.is_(True), User.group.in_(groups))
+            .order_by(func.lower(User.name), User.id)
+        )
+    ).all()
+    return tuple(GridUser(user_id, name, group) for user_id, name, group in rows)
+
+
+def _grant_in_project(project_id: int) -> ColumnElement[bool]:
+    """Whether a grant lies on the project or on a deployment or environment inside it."""
+    deployments = select(Deployment.id).where(Deployment.project_id == project_id)
+    environments = (
+        select(Environment.id)
+        .join(Service, Service.id == Environment.service_id)
+        .join(Deployment, Deployment.id == Service.deployment_id)
+        .where(Deployment.project_id == project_id)
+    )
+    return or_(
+        AccessGrant.project_id == project_id,
+        AccessGrant.deployment_id.in_(deployments),
+        AccessGrant.environment_id.in_(environments),
+    )
+
+
+async def load_user_grants(
+    db: AsyncSession,
+    groups: tuple[UserGroup, ...] = GRID_GROUPS,
+    *,
+    project_id: int | None = None,
+) -> dict[int, frozenset[GrantTarget]]:
+    """The direct grants of the active users of the groups, by user id, in one query.
+
+    With ``project_id`` only the grants on that project and inside it are read.
+    """
+    query = (
+        select(AccessGrant)
+        .join(User, User.id == AccessGrant.user_id)
+        .where(User.is_active.is_(True), User.group.in_(groups))
+    )
+    if project_id is not None:
+        query = query.where(_grant_in_project(project_id))
+    held: dict[int, set[GrantTarget]] = {}
+    for grant in (await db.execute(query)).scalars():
+        held.setdefault(grant.user_id, set()).add(target_of(grant))
+    return {user_id: frozenset(targets) for user_id, targets in held.items()}
+
+
 async def load_access_grid(db: AsyncSession, filters: GridFilters) -> AccessGrid:
     """The grid for the filters, in a fixed number of queries.
 
@@ -304,31 +363,11 @@ async def load_access_grid(db: AsyncSession, filters: GridFilters) -> AccessGrid
     )
     shown = tuple(project for project in projects if effective.project_id in (None, project.id))
     groups = (effective.group,) if effective.group is not None else GRID_GROUPS
-    column_filter = (User.is_active.is_(True), User.group.in_(groups))
-    users = (
-        await db.execute(
-            select(User.id, User.name, User.group)
-            .where(*column_filter)
-            .order_by(func.lower(User.name), User.id)
-        )
-    ).all()
-    stored = (
-        (
-            await db.execute(
-                select(AccessGrant).join(User, User.id == AccessGrant.user_id).where(*column_filter)
-            )
-        )
-        .scalars()
-        .all()
-    )
-    held: dict[int, set[GrantTarget]] = {}
-    for grant in stored:
-        held.setdefault(grant.user_id, set()).add(target_of(grant))
     return AccessGrid(
-        users=tuple(GridUser(user_id, name, group) for user_id, name, group in users),
+        users=await load_grid_users(db, groups),
         projects=shown,
         project_options=options,
-        grants={user_id: frozenset(targets) for user_id, targets in held.items()},
+        grants=await load_user_grants(db, groups),
         filters=effective,
     )
 
@@ -350,6 +389,70 @@ def _column(
     return tuple(cells)
 
 
+class Refusal(StrEnum):
+    """Why a toggle was refused: the page is out of date, an item above covers it, or the rest."""
+
+    STALE = "stale"
+    INCLUDED = "included"
+    OTHER = "other"
+
+
+@dataclass(frozen=True)
+class ToggleOutcome:
+    """What flipping one direct grant did: the user's grants before and after, and the refusal.
+
+    ``covering`` names the item above that already includes the access (``Refusal.INCLUDED``)
+    and ``message`` is the reason of any other refusal.
+    """
+
+    before: frozenset[GrantTarget]
+    after: frozenset[GrantTarget]
+    changed: bool
+    refusal: Refusal | None = None
+    covering: str | None = None
+    message: str | None = None
+
+    def notice(self, stale: str) -> str | None:
+        """The words for the refusal, None when there was none; ``stale`` words an old page."""
+        if self.refusal is Refusal.STALE:
+            return stale
+        if self.refusal is Refusal.INCLUDED:
+            return f"Access to this item is already included through {self.covering}."
+        return self.message
+
+
+async def apply_toggle(
+    db: AsyncSession,
+    user: User,
+    node: GridNode,
+    target: GrantTarget,
+    *,
+    was: bool,
+    actor: AuditActor,
+) -> ToggleOutcome:
+    """Flip one direct grant of a row from the state a page showed, or refuse with nothing written.
+
+    ``was`` is whether the page showed the grant as held. Refused when the stored grant differs
+    from it, when an item above already includes the access (inherited cells are not editable)
+    and when the user is a superadmin. Shared by the grid cells and the Access tabs.
+    """
+    before = frozenset(await list_grants(db, user.id))
+    covering = None if was else inherited_source(node, before)
+    if covering is not None and target not in before:
+        return ToggleOutcome(before, before, False, Refusal.INCLUDED, covering=covering)
+    refusal: Refusal | None = None
+    message: str | None = None
+    changed = False
+    try:
+        changed = (await toggle_user_grant(db, user, target, was=was, actor=actor)).changed
+    except StaleGrantsError:
+        refusal = Refusal.STALE
+    except GrantError as error:
+        refusal, message = Refusal.OTHER, str(error)
+    after = frozenset(await list_grants(db, user.id))
+    return ToggleOutcome(before, after, changed, refusal, message=message)
+
+
 async def toggle_cell(
     db: AsyncSession,
     user: User,
@@ -360,10 +463,9 @@ async def toggle_cell(
 ) -> CellUpdate:
     """Flip one direct grant from the cell a person clicked and say which cells to redraw.
 
-    Refused, with nothing written, when the item is gone, the stored grant differs from what
-    the page showed, an item above already includes it (inherited cells are not editable) or
-    the user is a superadmin. A refusal answers the user's whole column of the project as
-    stored now, since the page that sent the request is out of date.
+    Refused, with nothing written, when the item is gone or ``apply_toggle`` refuses. A refusal
+    answers the user's whole column of the project as stored now, since the page that sent the
+    request is out of date.
     """
     grid_user = GridUser(user.id, user.name, user.group)
     clicked = node_dom_id(target)
@@ -379,20 +481,7 @@ async def toggle_cell(
     if located is None:
         return CellUpdate(grid_user, (), clicked, GONE_NOTICE, changed=False, missing=True)
     project, node = located
-    before = frozenset(await list_grants(db, user.id))
-    notice: str | None = None
-    changed = False
-    covering = None if was else inherited_source(node, before)
-    if covering is not None and target not in before:
-        notice = f"Access to this item is already included through {covering}."
-    else:
-        try:
-            change = await toggle_user_grant(db, user, target, was=was, actor=actor)
-            changed = change.changed
-        except StaleGrantsError:
-            notice = STALE_NOTICE
-        except GrantError as error:
-            notice = str(error)
-    after = frozenset(await list_grants(db, user.id))
-    cells = _column(project, before, after, clicked, everything=notice is not None)
-    return CellUpdate(grid_user, cells, clicked, notice, changed)
+    outcome = await apply_toggle(db, user, node, target, was=was, actor=actor)
+    notice = outcome.notice(STALE_NOTICE)
+    cells = _column(project, outcome.before, outcome.after, clicked, everything=notice is not None)
+    return CellUpdate(grid_user, cells, clicked, notice, outcome.changed)

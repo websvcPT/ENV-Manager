@@ -1,4 +1,4 @@
-"""The project detail screen: header figures, deployments table, activity and members.
+"""The project detail screen: header figures, deployments table and activity.
 
 Everything is computed for one caller scope. A project the caller reaches only through a
 deployment or environment is shown with the granted names; items outside the scope are never
@@ -12,16 +12,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
-    AccessGrant,
     AuditEntry,
     Deployment,
     DeployStatus,
     Environment,
-    GrantLevel,
     Project,
     Service,
-    User,
-    UserGroup,
 )
 from app.services.paths import AllowedPaths
 from app.services.permissions import (
@@ -83,21 +79,6 @@ class ActivityRow:
     action: str
     target: str
     result: str
-
-
-@dataclass(frozen=True)
-class MemberAccess:
-    """One user with access to the project and where that access comes from.
-
-    ``direct`` is True for a grant on the project itself. Otherwise ``sources`` lists the
-    (name, level) of the deployments and environments inside the project that carry a grant,
-    and a superadmin has neither (access comes from the group).
-    """
-
-    name: str
-    group: UserGroup
-    direct: bool
-    sources: tuple[tuple[str, str], ...]
 
 
 async def load_project_detail(
@@ -239,61 +220,3 @@ async def list_activity(
         if len(rows) == limit:
             break
     return rows
-
-
-async def list_members(db: AsyncSession, project_id: int) -> list[MemberAccess]:
-    """Active users with access to the project, direct or inherited, ordered by name.
-
-    A grant on the project is direct. A grant on a deployment or environment inside it makes the
-    user a member with that item as the source. Superadmins have access through their group.
-    """
-    deployments = dict(
-        (
-            await db.execute(
-                select(Deployment.id, Deployment.name).where(Deployment.project_id == project_id)
-            )
-        ).all()
-    )
-    environments = dict(
-        (
-            await db.execute(
-                select(Environment.id, Environment.name)
-                .join(Service, Service.id == Environment.service_id)
-                .join(Deployment, Deployment.id == Service.deployment_id)
-                .where(Deployment.project_id == project_id)
-            )
-        ).all()
-    )
-    users = (
-        (
-            await db.execute(
-                select(User).where(User.is_active.is_(True)).order_by(User.name, User.id)
-            )
-        )
-        .scalars()
-        .all()
-    )
-    grants = (await db.execute(select(AccessGrant))).scalars().all()
-    direct: set[int] = set()
-    sources: dict[int, list[tuple[str, str]]] = {}
-    for grant in grants:
-        if grant.level is GrantLevel.PROJECT and grant.project_id == project_id:
-            direct.add(grant.user_id)
-        elif grant.level is GrantLevel.DEPLOYMENT and grant.deployment_id in deployments:
-            sources.setdefault(grant.user_id, []).append(
-                (deployments[grant.deployment_id], "Deployment")
-            )
-        elif grant.level is GrantLevel.ENVIRONMENT and grant.environment_id in environments:
-            sources.setdefault(grant.user_id, []).append(
-                (environments[grant.environment_id], "Environment")
-            )
-    members: list[MemberAccess] = []
-    for user in users:
-        if user.group is UserGroup.SUPERADMIN:
-            members.append(MemberAccess(user.name, user.group, False, ()))
-        elif user.id in direct:
-            members.append(MemberAccess(user.name, user.group, True, ()))
-        elif user.id in sources:
-            ordered = tuple(sorted(sources[user.id]))
-            members.append(MemberAccess(user.name, user.group, False, ordered))
-    return members

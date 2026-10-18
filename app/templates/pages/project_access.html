@@ -1,0 +1,8 @@
+{#- The Access tab of a project. Context: the project frame (see layouts/project.html), access
+    (an AccessList) and base. -#}
+{% extends "layouts/project.html" %}
+{% from "macros/access.html" import access_dialogs %}
+{% block tab %}
+{% include "fragments/access_list.html" %}
+{{ access_dialogs() }}
+{% endblock %}

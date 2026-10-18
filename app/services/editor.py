@@ -63,6 +63,7 @@ class EditorHeader:
     successful write, None when nothing was written yet. ``status`` is a badge key.
     File mode, owner and group are the effective values (the environment's own or the
     deployment default); an empty owner or group means the application user.
+    ``can_manage_grants`` is True for the superadmin, who gets the Access tab.
     """
 
     id: int
@@ -88,6 +89,7 @@ class EditorHeader:
     can_reveal: bool
     can_check_dist: bool
     item: ItemRef
+    can_manage_grants: bool
 
     @property
     def can_deploy(self) -> bool:
@@ -200,6 +202,7 @@ async def load_editor_header(
         can_reveal=scope.can(Capability.REVEAL_SECRETS, item),
         can_check_dist=row.can_check_dist,
         item=item,
+        can_manage_grants=scope.can(Capability.MANAGE_GRANTS),
     )
 
 

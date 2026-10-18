@@ -1,0 +1,8 @@
+{#- The Access tab of an environment, under the shared environment frame. Context: env (an
+    EditorHeader), tab, is_viewer, access (an AccessList) and base. -#}
+{% extends "layouts/environment.html" %}
+{% from "macros/access.html" import access_dialogs %}
+{% block tab %}
+{% include "fragments/access_list.html" %}
+{{ access_dialogs() }}
+{% endblock %}

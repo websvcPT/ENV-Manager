@@ -21,7 +21,7 @@
 {{ page_header(project.name, summary, badges=header_badges, actions=header_actions) }}
 {{ tabs(
   [{"label": "Deployments", "href": base_href}]
-  + ([{"label": "Members and access", "href": base_href ~ "/members", "superadmin": true}] if can_manage_grants else [])
+  + ([{"label": "Members and access", "href": base_href ~ "/access", "superadmin": true}] if can_manage_grants else [])
   + ([{"label": "Activity", "href": base_href ~ "/activity"}] if can_view_audit else [])
   + ([{"label": "Settings", "href": base_href ~ "/settings", "superadmin": true}] if can_manage_structure else []),
   base_href ~ ("" if tab == "deployments" else "/" ~ tab)

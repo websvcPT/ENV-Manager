@@ -1,7 +1,7 @@
 {#- Shared frame of the environment pages: page header with the file name and status, then the
     section links. Pages extend this and fill the `tab` block; the dist report replaces the
-    `header` block with its own header. Context: env (an EditorHeader), tab (edit, history or
-    dist) and is_viewer. -#}
+    `header` block with its own header. Context: env (an EditorHeader), tab (edit, history, dist
+    or access) and is_viewer. -#}
 {% extends "layouts/app.html" %}
 {% from "macros/badges.html" import badge %}
 {% from "macros/panels.html" import page_header, tabs %}
@@ -15,6 +15,7 @@
 {% endblock %}
 {% set section_links = [{"label": "View" if is_viewer else "Edit", "href": "/environments/" ~ env.id}, {"label": "History", "href": "/environments/" ~ env.id ~ "/history"}] %}
 {% if env.can_check_dist %}{% set section_links = section_links + [{"label": "Compare to dist", "href": "/environments/" ~ env.id ~ "/dist"}] %}{% endif %}
-{{ tabs(section_links, "/environments/" ~ env.id ~ {"history": "/history", "dist": "/dist"}.get(tab, "")) }}
+{% if env.can_manage_grants %}{% set section_links = section_links + [{"label": "Access", "href": "/environments/" ~ env.id ~ "/access", "superadmin": true}] %}{% endif %}
+{{ tabs(section_links, "/environments/" ~ env.id ~ {"history": "/history", "dist": "/dist", "access": "/access"}.get(tab, "")) }}
 {% block tab %}{% endblock %}
 {% endblock %}

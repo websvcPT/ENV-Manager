@@ -125,6 +125,7 @@ test.describe('superadmin report', () => {
       'Edit',
       'History',
       'Compare to dist',
+      'AccessSuperadmin',
     ]);
     await expect(page.locator('nav[aria-label="Sections"] a[aria-current="page"]')).toHaveText(
       'Compare to dist',

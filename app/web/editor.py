@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.datastructures import FormData
 
 from app.core.templating import render
+from app.services.access_grid import NodeKind
 from app.services.editor import (
     EditorContent,
     EditorError,
@@ -29,6 +30,7 @@ from app.services.editor import (
     save_version,
 )
 from app.services.permissions import CAPABILITY_GROUPS, AccessScope, Capability
+from app.web.access_tabs import AccessSubject, mount_access_routes
 from app.web.dependencies import AuthContext, get_crypto, get_db, get_scope, require_auth
 
 router = APIRouter()
@@ -84,6 +86,27 @@ def environment_access(
 def _client_ip(request: Request) -> str | None:
     """The client address as resolved by the proxy header middleware."""
     return request.client.host if request.client else None
+
+
+async def _access_subject(
+    access: Annotated[EnvironmentContext, Depends(environment_access(Capability.MANAGE_GRANTS))],
+) -> AccessSubject:
+    """The environment of an Access tab request, for the superadmin."""
+    return AccessSubject(
+        NodeKind.ENVIRONMENT,
+        access.env.id,
+        access.env.project_id,
+        access.auth,
+        "pages/environment_access.html",
+        {
+            "env": access.env,
+            "tab": "access",
+            "is_viewer": access.scope.group not in CAPABILITY_GROUPS[Capability.EDIT_VALUES],
+        },
+    )
+
+
+mount_access_routes(router, NodeKind.ENVIRONMENT, _access_subject)
 
 
 def _panel_context(

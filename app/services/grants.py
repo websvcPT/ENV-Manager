@@ -126,16 +126,33 @@ def parse_targets(values: Iterable[str]) -> set[GrantTarget]:
     return targets
 
 
-async def load_grant_tree(db: AsyncSession) -> tuple[GrantProject, ...]:
-    """Every project with its deployments, services and environments, ordered by name."""
-    projects = (await db.execute(select(Project.id, Project.name))).all()
-    deployments = (
-        await db.execute(select(Deployment.id, Deployment.project_id, Deployment.name))
-    ).all()
-    services = (await db.execute(select(Service.id, Service.deployment_id, Service.name))).all()
-    environments = (
-        await db.execute(select(Environment.id, Environment.service_id, Environment.name))
-    ).all()
+async def load_grant_tree(
+    db: AsyncSession, project_id: int | None = None
+) -> tuple[GrantProject, ...]:
+    """Every project (or only ``project_id``) with its deployments, services and environments.
+
+    Projects, deployments, services and environments are read in four queries whatever the size
+    of the tree. Projects and their children are ordered by name.
+    """
+    project_query = select(Project.id, Project.name)
+    deployment_query = select(Deployment.id, Deployment.project_id, Deployment.name)
+    service_query = select(Service.id, Service.deployment_id, Service.name)
+    environment_query = select(Environment.id, Environment.service_id, Environment.name)
+    if project_id is not None:
+        project_query = project_query.where(Project.id == project_id)
+        deployment_query = deployment_query.where(Deployment.project_id == project_id)
+        service_query = service_query.join(
+            Deployment, Deployment.id == Service.deployment_id
+        ).where(Deployment.project_id == project_id)
+        environment_query = (
+            environment_query.join(Service, Service.id == Environment.service_id)
+            .join(Deployment, Deployment.id == Service.deployment_id)
+            .where(Deployment.project_id == project_id)
+        )
+    projects = (await db.execute(project_query)).all()
+    deployments = (await db.execute(deployment_query)).all()
+    services = (await db.execute(service_query)).all()
+    environments = (await db.execute(environment_query)).all()
     by_service: dict[int, list[GrantEnvironment]] = {}
     for environment_id, service_id, name in environments:
         by_service.setdefault(service_id, []).append(GrantEnvironment(environment_id, name))

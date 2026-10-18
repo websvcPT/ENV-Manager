@@ -62,7 +62,7 @@ test.describe('superadmin', () => {
       '/',
       'prod',
     ]);
-    await expect(sections(page)).toHaveText(['Services', 'Deploy history']);
+    await expect(sections(page)).toHaveText(['Services', 'Deploy history', 'AccessSuperadmin']);
     await expect(sections(page).first()).toHaveAttribute('aria-current', 'page');
 
     const strip = page.locator('[data-fragment="status-strip"]');

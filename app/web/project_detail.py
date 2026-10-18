@@ -5,17 +5,17 @@ from dataclasses import dataclass
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
-from fastapi.responses import Response
+from fastapi.responses import RedirectResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.templating import render
 from app.models import Project
+from app.services.access_grid import NodeKind
 from app.services.paths import load_allowed_paths
 from app.services.permissions import AccessScope, Capability
 from app.services.project_detail import (
     ProjectDetail,
     list_activity,
-    list_members,
     load_project_detail,
 )
 from app.services.projects import (
@@ -24,6 +24,7 @@ from app.services.projects import (
     delete_project,
     rename_project,
 )
+from app.web.access_tabs import AccessSubject, mount_access_routes
 from app.web.dependencies import AuthContext, get_db, get_scope, require_auth
 
 router = APIRouter()
@@ -120,16 +121,32 @@ async def activity_tab(
     return render(request, "pages/project_activity.html", context)
 
 
-@router.get("/projects/{project_id:int}/members", include_in_schema=False)
-async def members_tab(
-    request: Request,
+async def _access_subject(
     access: Annotated[ProjectContext, Depends(project_access(Capability.MANAGE_GRANTS))],
-    db: Annotated[AsyncSession, Depends(get_db)],
+) -> AccessSubject:
+    """The project of an Access tab request, for the superadmin."""
+    return AccessSubject(
+        NodeKind.PROJECT,
+        access.project.id,
+        access.project.id,
+        access.auth,
+        "pages/project_access.html",
+        _page_context(access, "access"),
+    )
+
+
+mount_access_routes(router, NodeKind.PROJECT, _access_subject)
+
+
+@router.get("/projects/{project_id:int}/members", include_in_schema=False)
+async def members_redirect(
+    access: Annotated[ProjectContext, Depends(project_access(Capability.MANAGE_GRANTS))],
 ) -> Response:
-    """The Members and access tab (superadmin)."""
-    members = await list_members(db, access.project.id)
-    return render(
-        request, "pages/project_members.html", _page_context(access, "members", members=members)
+    """The old address of the Members tab, which is the Access tab now."""
+    return RedirectResponse(
+        f"/projects/{access.project.id}/access",
+        status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+        headers={"Cache-Control": "no-store"},
     )
 
 

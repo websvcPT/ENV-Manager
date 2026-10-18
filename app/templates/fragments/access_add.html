@@ -1,0 +1,29 @@
+{#- The add access dialog content, loaded when the dialog opens so the users are the ones a grant
+    would give something new. A refusal swaps it again with the reason and the choice kept, and
+    redraws the list out of band. Context: access (an AccessList), base, chosen (the user id as
+    text), user_options (value and label pairs), error (the field message), notice (the reason
+    of a refusal), refresh and oob (true: the list included below is an out of band swap). -#}
+{% from "macros/buttons.html" import button %}
+{% from "macros/dialogs.html" import dialog_body, dialog_footer, dialog_head %}
+{% from "macros/feedback.html" import inline_error, note %}
+{% from "macros/forms.html" import select_field %}
+{% set kind = access.node.kind.value %}
+<div data-fragment="grant-dialog">
+{{ dialog_head("grant-dialog", "Add access", access.subtitle) }}
+{%- if not access.candidates %}
+{% call dialog_body() %}{{ note("Every active admin and viewer already has access to this " ~ kind ~ ".") }}{% endcall %}
+{% call dialog_footer() %}{{ button("Close", extra_class="h-11", data_js="dialog-close") }}{% endcall %}
+{%- else %}
+<form hx-post="{{ base }}/grants" hx-target="#grant-dialog" hx-swap="innerHTML">
+{% call dialog_body() %}
+{%- if notice %}{{ inline_error("Access was not added", notice, in_dialog=true, retry=false) }}{% endif %}
+{{ select_field("grant-dialog-u", "User", user_options, selected=chosen, name="user", error=error) }}
+{% if kind == "project" %}{{ note("Includes future items: deployments, services and environments added under project " ~ access.node.name ~ " later are visible to this user automatically.") }}
+{%- elif kind == "deployment" %}{{ note("Includes future items: services and environments added under deployment " ~ access.node.name ~ " later are visible to this user automatically.") }}
+{%- else %}{{ note("Grants only the named environments. A newly added environment stays invisible to this user until a grant is added for it.") }}{% endif %}
+{% endcall %}
+{% call dialog_footer() %}{{ button("Cancel", extra_class="h-11", data_js="dialog-close") }}{{ button("Add access", kind="primary", type="submit") }}{% endcall %}
+</form>
+{%- endif %}
+{%- if refresh %}{% include "fragments/access_list.html" %}{% endif %}
+</div>
