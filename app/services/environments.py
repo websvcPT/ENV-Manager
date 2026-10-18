@@ -31,6 +31,7 @@ from app.services.confined_read import (
     resolve_below_root,
     split_relative,
 )
+from app.services.content import MAX_CONTENT_BYTES, content_problem, normalize_newlines
 from app.services.deployments import FILE_MODE_PATTERN, parse_account
 from app.services.paths import AllowedPaths
 from app.services.services import ServiceNameError, add_service, validate_service_name
@@ -38,9 +39,6 @@ from app.services.versions import create_version
 
 ENVIRONMENT_NAME_PATTERN = re.compile(r"\.?[A-Za-z0-9_-][A-Za-z0-9._-]*")
 MAX_ENVIRONMENT_NAME_LENGTH = 100
-# Well below the CSRF form body bound and the multipart text part bound, even when a browser
-# sends every line break as two bytes.
-MAX_CONTENT_BYTES = 256 * 1024
 NEW_SERVICE = "new"
 OUTSIDE_MESSAGE = "Resolves outside the deployment root and the allowed paths."
 
@@ -145,15 +143,6 @@ def target_hint(allowed: AllowedPaths, root: str, raw: str) -> TargetHint:
     return TargetHint(f"Resolves to {real_path}", True)
 
 
-def _text_problem(content: str) -> str | None:
-    """The reason a text cannot be stored as content, None when it can."""
-    if "\x00" in content:
-        return "Binary content is not supported."
-    if len(content.encode("utf-8")) > MAX_CONTENT_BYTES:
-        return f"Content is larger than {MAX_CONTENT_BYTES // 1024} KiB."
-    return None
-
-
 def _uploaded_text(upload: bytes | None) -> tuple[str, str | None]:
     """The text of an uploaded file and None, or an empty text and the message to show."""
     if not upload:
@@ -164,7 +153,7 @@ def _uploaded_text(upload: bytes | None) -> tuple[str, str | None]:
         text = upload.decode("utf-8")
     except UnicodeDecodeError:
         return "", "The file is not valid UTF-8 text."
-    return text, _text_problem(text)
+    return text, content_problem(text)
 
 
 def _imported_text(allowed: AllowedPaths, root: str, target_path: str) -> tuple[str, str | None]:
@@ -181,7 +170,7 @@ def _imported_text(allowed: AllowedPaths, root: str, target_path: str) -> tuple[
             PathProblem.LEAVES_ROOT: OUTSIDE_MESSAGE,
         }
         return "", messages.get(error.problem, "The target file cannot be read.")
-    return text, _text_problem(text)
+    return text, content_problem(text)
 
 
 async def _target_in_use(db: AsyncSession, deployment_id: int, target_path: str) -> bool:
@@ -286,8 +275,8 @@ async def validate_environment(
         errors["source"] = "Choose where the first version comes from."
     content = ""
     if source is ContentSource.PASTE:
-        content = form.content.replace("\r\n", "\n").replace("\r", "\n")
-        problem = _text_problem(content)
+        content = normalize_newlines(form.content)
+        problem = content_problem(content)
         if problem:
             errors["content"] = problem
     elif source is ContentSource.UPLOAD:

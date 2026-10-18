@@ -1,0 +1,14 @@
+{#- The save bar of the editor. Edited fields elsewhere on the page belong to this form through
+    their `form` attribute. Context: env, mode (kv or raw), version (the version the page was
+    loaded from) and error (optional). -#}
+{% from "macros/buttons.html" import button %}
+{% from "macros/icons.html" import icon %}
+<form id="editor-save" data-fragment="editor-save" hx-post="/environments/{{ env.id }}/versions" hx-target="#editor-save" hx-swap="outerHTML" hx-status:422="swap:outerHTML target:#editor-save" class="flex flex-wrap items-end gap-3 border-t border-line bg-surface2 px-4 py-4 md:px-5">
+<input type="hidden" name="mode" value="{{ mode }}"><input type="hidden" name="base_version" value="{{ version }}">
+{%- if error %}
+<p role="alert" id="editor-save-error" class="flex w-full items-center gap-1.5 text-[13px] font-semibold text-danger">{{ icon("warning", "size-3.5", "2.4") }}{{ error }}</p>
+{%- endif %}
+<label class="flex min-w-48 flex-1 flex-col gap-1.5 text-[13px] font-semibold">Comment<input type="text" name="comment" maxlength="500" placeholder="Optional" autocomplete="off"{% if error %} aria-describedby="editor-save-error"{% endif %} class="h-10 w-full rounded-ctl border border-line-strong bg-surface px-3 text-sm font-normal text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus placeholder:text-ink3"></label>
+{{ button("Discard changes", hx_get="/environments/" ~ env.id ~ "/panel?mode=" ~ mode, hx_target="#editor-panel", hx_swap="outerHTML") }}
+{{ button("Save as new version", kind="primary-sm", type="submit") }}
+</form>

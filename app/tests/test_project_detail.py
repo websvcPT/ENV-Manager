@@ -38,7 +38,7 @@ async def test_superadmin_sees_every_deployment_with_state(
     assert [row.name for row in detail.deployments] == ["prod", "staging"]
     prod, staging = detail.deployments
     assert prod.root_path == "/opt/rentals/prod"
-    assert prod.files == 3
+    assert prod.files == 4
     assert prod.last_deploy is not None
     assert prod.last_deploy.status is DeployStatus.FAILED
     assert prod.last_deploy.actor == "root"

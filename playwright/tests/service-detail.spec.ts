@@ -122,7 +122,7 @@ test.describe('superadmin', () => {
     await page.locator('#services').getByRole('link', { name: 'Open' }).first().click();
     await expect(page).toHaveURL(/\/services\/\d+$/);
     await expect(header(page).locator('h1')).toHaveText('mysql');
-    await expect(statuses(page)).toHaveText(['Failed', 'Failed']);
+    await expect(statuses(page)).toHaveText(['Failed', 'Never deployed', 'Failed']);
     await expect(page.locator('#postdeploy')).toContainText('Skipped');
     await expect(page.locator('#postdeploy')).toContainText('deploy did not finish');
     await expectLayout(page);
@@ -232,7 +232,7 @@ test.describe('deployment grant', () => {
     const id = await prodMysql(browser);
     await page.goto(`/services/${id}`);
     await expect(header(page).locator('p')).toContainText('/opt/rentals/prod');
-    await expect(visibleRows(page)).toHaveCount(2);
+    await expect(visibleRows(page)).toHaveCount(3);
     await expect(page.locator('[role="note"]')).toHaveCount(0);
   });
 });

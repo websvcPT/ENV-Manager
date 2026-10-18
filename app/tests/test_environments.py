@@ -12,8 +12,8 @@ from app.core.crypto import CryptoService
 from app.core.db import create_session_factory
 from app.models import AuditEntry, Deployment, Environment, EnvironmentVersion, Service
 from app.seeds import SeedData
+from app.services.content import MAX_CONTENT_BYTES
 from app.services.environments import (
-    MAX_CONTENT_BYTES,
     NEW_SERVICE,
     OUTSIDE_MESSAGE,
     ContentSource,

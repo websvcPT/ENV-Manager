@@ -56,7 +56,7 @@ async def test_seed_creates_the_dataset(
         assert len(users) == 10
         assert all(verify_password(DEV_PASSWORD, user.password_hash)[0] for user in users)
         assert (await db.execute(select(func.count()).select_from(AccessGrant))).scalar_one() == 8
-        assert (await db.execute(select(func.count()).select_from(Environment))).scalar_one() == 9
+        assert (await db.execute(select(func.count()).select_from(Environment))).scalar_one() == 10
         versions = (
             (
                 await db.execute(
@@ -344,7 +344,7 @@ async def test_service_figures_are_added_once_and_content_is_ciphertext(
             .all()
         )
     assert again is not None and again.tuning.id == seed_data.figures.tuning.id
-    assert before == after == [9, 5, 7, 1]
+    assert before == after == [10, 5, 7, 1]
     assert [version.number for version in stored] == [1, 2]
     assert all("WORKERS" not in version.content_encrypted for version in stored)
     assert crypto.decrypt_text(stored[1].content_encrypted) == "WORKERS=4\n"

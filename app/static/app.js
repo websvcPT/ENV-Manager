@@ -1,8 +1,8 @@
 /* ENV Manager page behaviour. Vanilla JS in an external file (strict CSP, no inline scripts).
    Handlers are delegated from the document so content swapped in by htmx works without rebinding.
-   Behaviours: theme toggle, dialogs, sidebar collapse, reveal timer, row toggle, tree toggle,
-   copy, dismiss, history back, picking a path into a field, closing dialogs when the server
-   asks, and a toast when an htmx request fails. */
+   Behaviours: theme toggle, dialogs, sidebar collapse, reveal hide and timer, removing a new
+   variable row, row toggle, tree toggle, copy, dismiss, history back, picking a path into a
+   field, closing dialogs when the server asks, and a toast when an htmx request fails. */
 (function () {
   'use strict';
 
@@ -57,21 +57,31 @@
 
   var revealTimers = new WeakMap();
 
-  /* The reveal itself is an audited server request; this only owns the visual state and the
-     automatic re-hide after 30 seconds. */
-  function toggleReveal(button) {
-    var row = button.closest('[data-reveal-row]');
-    if (!row) { return; }
-    var wasRevealed = row.getAttribute('data-revealed') === 'true';
-    row.setAttribute('data-revealed', String(!wasRevealed));
-    button.setAttribute('aria-pressed', String(!wasRevealed));
+  /* A reveal is an audited server request whose answer carries the value. The value is only ever
+     in the page while a row is revealed: hiding it, by button or after 30 seconds, removes it from
+     the document, and showing it again takes another audited request. A raw text field the person
+     changed is kept past the timeout so typing is never discarded. */
+  function hideRevealed(row) {
     clearTimeout(revealTimers.get(row));
-    if (!wasRevealed) {
+    revealTimers.delete(row);
+    row.querySelectorAll('[data-reveal-value]').forEach(function (value) { value.remove(); });
+    row.setAttribute('data-revealed', 'false');
+  }
+
+  function hasUnsavedText(row) {
+    var field = row.querySelector('[data-keep-edited] textarea');
+    return !!field && field.value !== field.defaultValue;
+  }
+
+  function armReveals() {
+    document.querySelectorAll('[data-reveal-value]').forEach(function (value) {
+      var row = value.closest('[data-reveal-row]');
+      if (!row || row.getAttribute('data-revealed') === 'true') { return; }
+      row.setAttribute('data-revealed', 'true');
       revealTimers.set(row, setTimeout(function () {
-        row.setAttribute('data-revealed', 'false');
-        button.setAttribute('aria-pressed', 'false');
+        if (!hasUnsavedText(row)) { hideRevealed(row); }
       }, REVEAL_MS));
-    }
+    });
   }
 
   function copySecret(button) {
@@ -118,7 +128,14 @@
       setNavCollapsed(collapsed);
       writeStored(NAV_KEY, String(collapsed));
     },
-    'reveal': toggleReveal,
+    'reveal-hide': function (button) {
+      var row = button.closest('[data-reveal-row]');
+      if (row) { hideRevealed(row); }
+    },
+    'row-remove': function (button) {
+      var row = button.closest('[data-fragment=kv-row]');
+      if (row) { row.remove(); }
+    },
     'row-toggle': function (button) {
       var row = document.getElementById(button.getAttribute('aria-controls'));
       var open = button.getAttribute('aria-expanded') === 'true';
@@ -163,13 +180,6 @@
     if (action) { action(control, event); }
   });
 
-  document.addEventListener('change', function (event) {
-    if (!(event.target instanceof Element)) { return; }
-    var box = event.target.closest('[data-js=reveal-scope]');
-    var scope = box && box.closest('[data-reveal-scope]');
-    if (scope) { scope.setAttribute('data-revealed', String(box.checked)); }
-  });
-
   /* A failed request keeps the previous content (the server answer is not swapped) and the
      person is told with a toast. Validation answers (422) are swapped as form content instead. */
   document.addEventListener('htmx:response:error', function (event) {
@@ -185,7 +195,10 @@
     });
   });
   document.addEventListener('htmx:error', showErrorToast);
-  document.addEventListener('htmx:after:swap', syncThemeLabels);
+  document.addEventListener('htmx:after:swap', function () {
+    syncThemeLabels();
+    armReveals();
+  });
 
   document.addEventListener('DOMContentLoaded', function () {
     syncThemeLabels();

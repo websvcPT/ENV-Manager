@@ -14,8 +14,8 @@ from starlette.datastructures import FormData, UploadFile
 
 from app.core.templating import render
 from app.models import Deployment, Service
+from app.services.content import MAX_CONTENT_BYTES
 from app.services.environments import (
-    MAX_CONTENT_BYTES,
     EnvironmentForm,
     EnvironmentFormError,
     TargetHint,

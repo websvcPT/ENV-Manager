@@ -1,0 +1,5 @@
+{#- The answer to a raw text reveal: the whole file in an editable field inside hx-ignore. The
+    line break after the opening tag is dropped by HTML parsers, so a file that starts with a
+    blank line round-trips. -#}
+<div hx-ignore data-reveal-value data-keep-edited><textarea name="content" form="editor-save" rows="{{ [[line_count + 1, 6] | max, 24] | min }}" aria-label="File content" autocomplete="off" spellcheck="false" class="w-full resize-y rounded-ctl border-2 border-accent bg-surface px-3 py-2 font-mono text-[13px] leading-relaxed text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">
+{{ text }}</textarea></div>

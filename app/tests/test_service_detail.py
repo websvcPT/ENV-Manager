@@ -111,9 +111,10 @@ async def test_failed_attempts_show_as_failed_with_nothing_deployed(
     rows = await _rows(db, seed_data.users.superadmin, seed_data.services.mysql.id)
     assert [(row.name, row.current, row.deployed, row.status) for row in rows] == [
         (".env.db", 2, None, "failed"),
+        (".env.db.app", 3, None, "never"),
         (".env.db.secrets", 1, None, "failed"),
     ]
-    assert [row.dist_linked for row in rows] == [True, False]
+    assert [row.dist_linked for row in rows] == [True, False, False]
 
 
 async def test_dry_runs_do_not_change_status(db: AsyncSession, seed_data: SeedData) -> None:
@@ -125,7 +126,7 @@ async def test_dry_runs_do_not_change_status(db: AsyncSession, seed_data: SeedDa
 async def test_viewer_rows_cannot_edit_or_check_dist(db: AsyncSession, seed_data: SeedData) -> None:
     """A viewer reads the same rows with neither the edit nor the dist action."""
     rows = await _rows(db, seed_data.users.viewer, seed_data.services.mysql.id)
-    assert len(rows) == 2
+    assert len(rows) == 3
     assert not any(row.can_edit or row.can_check_dist for row in rows)
 
 
@@ -138,7 +139,7 @@ async def test_environment_grant_limits_rows_and_hides_the_path(
     names = (header.name, header.deployment_name, header.project_name)
     assert names == ("mysql", "prod", "rentals")
     assert header.root_path is None and not header.deployment_full
-    assert header.hidden_environments == 1
+    assert header.hidden_environments == 2
     rows = await _rows(db, seed_data.users.env_scoped_admin, seed_data.services.mysql.id)
     assert [row.name for row in rows] == [".env.db"]
     assert rows[0].can_edit and rows[0].can_check_dist
@@ -151,7 +152,7 @@ async def test_deployment_grant_sees_the_path_and_every_file(
     header = await _header(db, seed_data.users.deployment_admin, seed_data.services.mysql.id)
     assert header is not None
     assert header.root_path == "/opt/rentals/prod" and header.hidden_environments == 0
-    assert len(header.visible_environment_ids) == 2
+    assert len(header.visible_environment_ids) == 3
 
 
 async def test_service_outside_the_scope_is_not_loaded(

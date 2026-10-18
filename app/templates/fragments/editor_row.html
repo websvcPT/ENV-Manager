@@ -1,0 +1,17 @@
+{#- One variable in the masked key/value list. The value is never part of this markup: Reveal is
+    an audited POST whose answer fills the value slot. Context: env (an EditorHeader), row (a
+    VariableRow) and version (the version number the list was loaded from). -#}
+{% from "macros/icons.html" import icon %}
+{% set button_classes = "h-9 items-center gap-1.5 rounded-ctl border border-line-strong bg-surface px-3 text-[13px] font-semibold text-ink hover:bg-surface2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus" %}
+<li data-reveal-row data-revealed="false" data-fragment="kv-row" data-key="{{ row.key }}" class="group grid gap-2 border-t border-line px-4 py-3 first:border-t-0 md:grid-cols-[230px_minmax(0,1fr)_auto] md:items-start md:gap-4 md:px-5"><p class="break-all font-mono text-[13px] font-semibold md:pt-2">{{ row.key }}</p>
+<div class="min-w-0"><div class="min-h-[38px] whitespace-pre-wrap break-all rounded-ctl border border-line-strong bg-surface2 px-3 py-2 font-mono text-[13px] leading-relaxed text-ink2 group-data-[revealed=true]:border-2 group-data-[revealed=true]:border-accent group-data-[revealed=true]:bg-surface group-data-[revealed=true]:text-ink"><span class="group-data-[revealed=true]:hidden">••••••••••••{% if row.multiline %} multiline value, {{ row.lines }} lines{% endif %}</span><span id="value-{{ row.index }}" data-value class="hidden group-data-[revealed=true]:inline"></span></div>
+{%- if env.can_reveal %}<p class="mt-1 hidden text-xs text-ink3 group-data-[revealed=true]:block">Revealed and logged to the audit trail. Hides again in 30 s.</p>{% endif -%}</div>
+<div class="flex items-center gap-2 md:justify-end">
+{%- if env.can_reveal %}
+<button type="button" aria-pressed="false" hx-post="/environments/{{ env.id }}/reveal/{{ row.key }}?version={{ version }}" hx-target="#value-{{ row.index }}" hx-swap="innerHTML" class="inline-flex {{ button_classes }} group-data-[revealed=true]:hidden">{{ icon("eye", "size-4", "2.2") }}Reveal</button>
+<button type="button" data-js="reveal-hide" aria-pressed="true" class="{{ button_classes }} hidden group-data-[revealed=true]:inline-flex group-data-[revealed=true]:border-accent group-data-[revealed=true]:bg-accent-soft">{{ icon("eye-off", "size-4", "2.2") }}Hide</button>
+{%- endif %}
+{%- if env.can_edit %}
+<button type="button" hx-get="/environments/{{ env.id }}/rows/{{ row.key }}/edit?n={{ row.index }}&amp;version={{ version }}" hx-target="closest li" hx-swap="outerHTML" aria-label="Edit {{ row.key }}" class="inline-flex {{ button_classes }}">Edit</button>
+{%- endif %}
+</div></li>

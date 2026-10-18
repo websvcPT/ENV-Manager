@@ -90,7 +90,7 @@ test.describe('superadmin', () => {
     ]);
     await expect(serviceRows(page).locator('th a')).toHaveText(['mysql', 'web']);
     const mysql = serviceRows(page).filter({ hasText: 'mysql' });
-    await expect(mysql.locator('td').first()).toHaveText('2');
+    await expect(mysql.locator('td').first()).toHaveText('3');
     await expect(mysql.locator('[data-status="failed"]').first()).toBeVisible();
     await expect(mysql.getByRole('link', { name: 'Open' })).toHaveAttribute(
       'href',

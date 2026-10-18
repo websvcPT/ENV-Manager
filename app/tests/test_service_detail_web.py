@@ -118,7 +118,11 @@ async def test_dist_and_versions_read_from_the_stored_figures(
     """Dist link, current and deployed versions and none markers show per row."""
     await sign_in(web_client, "root")
     page = (await web_client.get(f"/services/{ids.mysql}")).text
-    assert environment_rows(page) == {".env.db": "failed", ".env.db.secrets": "failed"}
+    assert environment_rows(page) == {
+        ".env.db": "failed",
+        ".env.db.app": "never",
+        ".env.db.secrets": "failed",
+    }
     assert "Dist linked · current v2 · deployed None" in page
     assert "Dist none · current v1 · deployed None" in page
     assert "&mdash;" not in page and "\u2014" not in page
@@ -200,7 +204,7 @@ async def test_deployment_grant_sees_the_root_and_every_file(
     await sign_in(web_client, "deployment_admin")
     page = (await web_client.get(f"/services/{ids.mysql}")).text
     assert "/opt/rentals/prod" in page
-    assert set(environment_rows(page)) == {".env.db", ".env.db.secrets"}
+    assert set(environment_rows(page)) == {".env.db", ".env.db.app", ".env.db.secrets"}
     assert "You see" not in page
 
 

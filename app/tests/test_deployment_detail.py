@@ -50,7 +50,7 @@ async def test_superadmin_sees_services_history_and_policies(
     assert detail.full and not detail.outside_allowed
     assert detail.root_path == "/opt/rentals/prod"
     assert [row.name for row in detail.services] == ["mysql", "web"]
-    assert [row.environments for row in detail.services] == [2, 1]
+    assert [row.environments for row in detail.services] == [3, 1]
     mysql, web = detail.services
     assert mysql.last_deploy is not None and mysql.last_deploy.status is DeployStatus.FAILED
     assert mysql.post_deploy is PostDeployStatus.SKIPPED

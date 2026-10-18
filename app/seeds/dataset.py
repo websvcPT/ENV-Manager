@@ -106,6 +106,39 @@ LEGACY_ROOT = "/srv/old/legacy"
 DEV_ALLOWED_ROOT = "/srv/deployments"
 
 
+# Name and distinctive secret values of the seeded editor file; tests search masked pages for
+# these values.
+EDITOR_ENVIRONMENT_NAME = ".env.db.app"
+EDITOR_SECRET_VALUES = (
+    "Zq7vK2mPw9",
+    "Tn4xB8cL1d",
+    "MIIDdzCCAl7sentinelCertBody",
+    "Ke3rH6vNa5",
+)
+_EDITOR_VERSIONS = (
+    "# Database connection\n"
+    "MYSQL_HOST=db.internal.example.com\n"
+    "MYSQL_PORT=3306\n"
+    "MYSQL_PASSWORD=Zq7vK2mPw9\n",
+    "# Database connection\n"
+    "MYSQL_HOST=db.internal.example.com\n"
+    "MYSQL_PORT=3306\n"
+    "MYSQL_PASSWORD=Ke3rH6vNa5\n"
+    "# rotated by hand, the old password was Zq7vK2mPw9\n"
+    "MAX_CONNECTIONS=150\n",
+    "# Database connection\n"
+    "MYSQL_HOST=db.internal.example.com\n"
+    "MYSQL_PORT=3306\n"
+    "MYSQL_PASSWORD=Ke3rH6vNa5\n"
+    "# rotated by hand, the old password was Tn4xB8cL1d\n"
+    "export MAX_CONNECTIONS=200\n"
+    "TLS_MIN_VERSION=TLSv1.2\n"
+    'TLS_CA_CERT="-----BEGIN CERTIFICATE-----\n'
+    "MIIDdzCCAl7sentinelCertBody\n"
+    'AQIEAgAAuTANBgkqhkiG9w0BAQUFADBa\n-----END CERTIFICATE-----"\n',
+)
+
+
 class SeedError(Exception):
     """The dataset cannot be created."""
 
@@ -179,7 +212,10 @@ class SeedServiceFigures:
 
 @dataclass(frozen=True)
 class SeedData:
-    """Named references to everything the seed created."""
+    """Named references to everything the seed created.
+
+    ``editor`` is the production MySQL file with comments, a multiline value and three versions.
+    """
 
     users: SeedUsers
     projects: SeedProjects
@@ -187,6 +223,7 @@ class SeedData:
     services: SeedServices
     envs: SeedEnvironments
     figures: SeedServiceFigures
+    editor: Environment
     allowed_paths: tuple[AllowedPath, ...]
     deploy_runs: tuple[DeployRun, ...]
     tokens: tuple[ApiToken, ...]
@@ -640,6 +677,40 @@ async def ensure_service_figures(
     return SeedServiceFigures(tuning=tuning, replica=replica, ca=ca)
 
 
+async def ensure_editor_figures(db: AsyncSession, crypto: CryptoService) -> Environment | None:
+    """A rich file for the editor: comments, an exported key, a multiline certificate and three
+    versions whose values are distinctive (`EDITOR_SECRET_VALUES`).
+
+    Added to the production MySQL service, so the superadmin, admin, viewer, project and
+    deployment scoped users see it and the environment scoped users do not. Does nothing when
+    the service is missing and returns the environment that was created or found. The caller
+    commits.
+    """
+    service = (
+        await db.execute(
+            select(Service)
+            .join(Deployment, Deployment.id == Service.deployment_id)
+            .where(Deployment.name == "prod", Service.name == "mysql")
+        )
+    ).scalar_one_or_none()
+    root = (await db.execute(select(User).where(User.name == "root"))).scalar_one_or_none()
+    if service is None or root is None:
+        return None
+    found = (
+        await db.execute(
+            select(Environment).where(
+                Environment.service_id == service.id,
+                Environment.name == EDITOR_ENVIRONMENT_NAME,
+            )
+        )
+    ).scalar_one_or_none()
+    if found is not None:
+        return found
+    return await _environment(
+        db, crypto, service, EDITOR_ENVIRONMENT_NAME, list(_EDITOR_VERSIONS), root
+    )
+
+
 async def ensure_dev_host_paths(db: AsyncSession) -> None:
     """Allow the directory the development stack mounts, so the deployment form has real folders.
 
@@ -767,6 +838,9 @@ async def seed(db: AsyncSession, crypto: CryptoService) -> SeedData:
     figures = await ensure_service_figures(db, crypto)
     if figures is None:
         raise SeedError("the staging web service was not created")
+    editor = await ensure_editor_figures(db, crypto)
+    if editor is None:
+        raise SeedError("the editor environment was not created")
     await db.commit()
     return SeedData(
         users=users,
@@ -775,6 +849,7 @@ async def seed(db: AsyncSession, crypto: CryptoService) -> SeedData:
         services=services,
         envs=envs,
         figures=figures,
+        editor=editor,
         allowed_paths=allowed_paths,
         deploy_runs=deploy_runs,
         tokens=tokens,

@@ -1,0 +1,74 @@
+{#- The editor: the variable list or the raw text, the save bar and the details panel. Values are
+    never part of it. Context: env (an EditorHeader), content (an EditorContent), mode (kv or
+    raw), version and error (optional). -#}
+{% from "macros/buttons.html" import button %}
+{% from "macros/icons.html" import icon %}
+{% set segment_classes = "h-9 px-4 text-[13px] font-semibold focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus" %}
+{% set button_classes = "h-9 items-center gap-1.5 rounded-ctl border border-line-strong bg-surface px-3 text-[13px] font-semibold text-ink hover:bg-surface2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus" %}
+<div data-fragment="editor-panel" id="editor-panel" class="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_300px] lg:gap-6">
+<section aria-label="Variables" class="overflow-hidden rounded-panel border border-line bg-surface shadow-panel">
+<div class="flex flex-wrap items-center gap-3 border-b border-line px-4 py-3.5 md:px-5">
+{%- if content.env_format %}
+<div role="group" aria-label="Editor mode" class="inline-flex overflow-hidden rounded-btn border border-line-strong">
+<button type="button" aria-pressed="{{ 'true' if mode == 'kv' else 'false' }}" hx-get="/environments/{{ env.id }}/panel?mode=kv" hx-target="#editor-panel" hx-swap="outerHTML" class="{{ segment_classes }} {{ 'bg-ink text-surface' if mode == 'kv' else 'text-ink hover:bg-surface2' }}">Key / value</button>
+<button type="button" aria-pressed="{{ 'true' if mode == 'raw' else 'false' }}" hx-get="/environments/{{ env.id }}/panel?mode=raw" hx-target="#editor-panel" hx-swap="outerHTML" class="{{ segment_classes }} {{ 'bg-ink text-surface' if mode == 'raw' else 'text-ink hover:bg-surface2' }}">Raw text</button>
+</div>
+{%- endif %}
+<span class="flex-1"></span>
+<p class="flex items-center gap-2 text-[13px] text-ink2">{{ icon("lock", "size-4", "2") }}{% if env.can_reveal %}Values masked. Each reveal is audited and hides after 30 s.{% else %}Values are masked.{% endif %}</p>
+</div>
+{%- if mode == "kv" %}
+{%- if not content.rows %}
+<p class="px-4 py-8 text-center text-ink2 md:px-5">This file has no variables yet.</p>
+{%- endif %}
+<ul id="kv-list" class="m-0 list-none">
+{%- for row in content.rows %}
+{% include "fragments/editor_row.html" %}
+{%- endfor %}
+</ul>
+{%- if env.can_edit %}
+<div class="border-t border-line px-4 py-3 md:px-5">{{ button("Add variable", icon_name="plus", icon_stroke="2.2", extra_class="h-9 rounded-ctl text-[13px]", hx_get="/environments/" ~ env.id ~ "/new-row", hx_target="#kv-list", hx_swap="beforeend") }}</div>
+{%- endif %}
+{%- else %}
+<div data-reveal-row data-revealed="false" data-fragment="raw-text" class="group flex flex-col gap-3 px-4 py-4 md:px-5">
+{%- if not content.env_format %}
+<p class="text-[13px] text-ink2">This file is not in KEY=VALUE format, so it is shown and edited as one text.</p>
+{%- endif %}
+<div class="min-h-[38px] rounded-ctl border border-line-strong bg-surface2 px-3 py-2 font-mono text-[13px] leading-relaxed text-ink2 group-data-[revealed=true]:border-0 group-data-[revealed=true]:bg-transparent group-data-[revealed=true]:p-0"><div class="group-data-[revealed=true]:hidden">
+{%- if content.env_format and content.rows %}{% for row in content.rows %}<p class="break-all">{{ row.key }}=••••••••••••</p>{% endfor %}
+{%- else %}<p>•••••••••••• {{ content.line_count }} line{{ "" if content.line_count == 1 else "s" }}</p>{% endif -%}
+</div><div id="raw-value" data-value class="hidden group-data-[revealed=true]:block"></div></div>
+{%- if env.can_reveal %}
+<p class="hidden text-xs text-ink3 group-data-[revealed=true]:block">Revealed and logged to the audit trail. Hides again in 30 s unless you changed the text.</p>
+{%- endif %}
+{%- if env.can_reveal %}
+<div class="flex items-center gap-2">
+<button type="button" aria-pressed="false" hx-post="/environments/{{ env.id }}/reveal-raw?version={{ version }}" hx-target="#raw-value" hx-swap="innerHTML" class="inline-flex {{ button_classes }} group-data-[revealed=true]:hidden">{{ icon("eye", "size-4", "2.2") }}Reveal raw text</button>
+<button type="button" data-js="reveal-hide" aria-pressed="true" class="{{ button_classes }} hidden group-data-[revealed=true]:inline-flex group-data-[revealed=true]:border-accent group-data-[revealed=true]:bg-accent-soft">{{ icon("eye-off", "size-4", "2.2") }}Hide</button>
+</div>
+{%- endif %}
+</div>
+{%- endif %}
+{%- if env.can_edit %}
+{% include "fragments/editor_save.html" %}
+{%- endif %}
+</section>
+<aside aria-label="File details" data-fragment="file-sidepanel" class="rounded-panel border border-line bg-surface p-5 shadow-panel">
+<h2 class="mb-3.5 text-sm font-bold">Details</h2>
+<dl class="grid gap-3.5 text-[13px]">
+{%- set status_text %}{% if env.status == "never" %}Never deployed{% elif env.status == "pending" %}Pending: v{{ env.current }} saved, {% if env.deployed is not none %}v{{ env.deployed }} deployed{% else %}never deployed{% endif %}{% elif env.status == "deployed" %}Deployed: v{{ env.deployed }}{% else %}{{ env.status | capitalize }}: v{{ env.current }} saved{% endif %}{% endset %}
+{%- for label, value, mono in [
+  ("Status", status_text, false),
+  ("Target path", env.target_path, true),
+  ("Dist file", env.dist_path or "None", env.dist_path is not none),
+  ("Mode", env.file_mode, true),
+  ("Owner / group", (env.file_owner or "app user") ~ " : " ~ (env.file_group or "app user"), true),
+  ("Current version", ("v" ~ env.current ~ " · " ~ env.current_at.strftime("%Y-%m-%d %H:%M")) if env.current is not none else "None", false),
+  ("Deployed version", ("v" ~ env.deployed ~ " · " ~ env.deployed_at.strftime("%Y-%m-%d %H:%M")) if env.deployed is not none else "None", false),
+  ("Last editor", env.current_author or "None", false)
+] %}
+<div><dt class="text-xs font-bold uppercase tracking-wide text-ink3">{{ label }}</dt><dd class="mt-0.5 break-all{% if mono %} font-mono{% endif %}">{{ value }}</dd></div>
+{%- endfor %}
+</dl>
+</aside>
+</div>

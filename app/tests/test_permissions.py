@@ -5,7 +5,7 @@ Every test runs against the seed dataset in a real temporary SQLite database. It
 
     rentals
       prod
-        mysql: db, db_secrets
+        mysql: db, db_secrets, db_app
         web: web
       staging
         staging_web: staging_web
@@ -69,6 +69,7 @@ ALL_RENTALS = {
     "service:staging_web",
     "environment:db",
     "environment:db_secrets",
+    "environment:db_app",
     "environment:web",
     "environment:staging_web",
     "environment:staging_tuning",
@@ -92,6 +93,7 @@ DEPLOYMENT_PROD = {
     "service:web",
     "environment:db",
     "environment:db_secrets",
+    "environment:db_app",
     "environment:web",
 }
 
@@ -196,6 +198,7 @@ def tree(seed_data: SeedData) -> Tree:
     built.ids["environment:staging_tuning"] = figures.tuning.id
     built.ids["environment:staging_replica"] = figures.replica.id
     built.ids["environment:staging_ca"] = figures.ca.id
+    built.ids["environment:db_app"] = seed_data.editor.id
     return built
 
 
@@ -401,6 +404,7 @@ VISIBILITY_TABLE = [
             "service:web",
             "environment:db",
             "environment:db_secrets",
+            "environment:db_app",
             "environment:web",
         },
         {"project:rentals"},
@@ -694,7 +698,7 @@ async def test_permitted_environments_for_a_service(db: AsyncSession, tree: Tree
     assert (
         await permitted_environment_ids(db, viewer_scope, Capability.DEPLOY, service_id=mysql) == []
     )
-    assert len(await permitted_environment_ids(db, viewer_scope, Capability.VIEW)) == 7
+    assert len(await permitted_environment_ids(db, viewer_scope, Capability.VIEW)) == 8
 
 
 # Audit entries are in scope when their most specific id is in scope.
@@ -791,6 +795,7 @@ NARROWING_TABLE = [
             "service:web",
             "environment:db",
             "environment:db_secrets",
+            "environment:db_app",
             "environment:web",
         },
         id="project-owner-deployment-token",
@@ -798,7 +803,7 @@ NARROWING_TABLE = [
     pytest.param(
         ("project:rentals",),
         (("service", "mysql"),),
-        {"service:mysql", "environment:db", "environment:db_secrets"},
+        {"service:mysql", "environment:db", "environment:db_secrets", "environment:db_app"},
         id="project-owner-service-token",
     ),
     pytest.param(
