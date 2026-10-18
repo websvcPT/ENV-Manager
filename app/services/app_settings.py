@@ -70,12 +70,27 @@ class GeneralSettings:
 
 
 @dataclass(frozen=True)
+class BackupSettings:
+    """When backups run, how many are kept and the optional extra folder they are copied to.
+
+    ``schedule`` is ``off``, ``daily``, ``six_hours`` or ``weekly``. A retention of zero for
+    ``retention_count`` or ``retention_days`` means no limit of that kind.
+    """
+
+    schedule: str = "daily"
+    retention_count: int = 14
+    retention_days: int = 0
+    extra_destination: str = ""
+
+
+@dataclass(frozen=True)
 class StoredSettings:
     """Every typed section, as stored now."""
 
     security: SecuritySettings = field(default_factory=SecuritySettings)
     post_deploy: PostDeploySettings = field(default_factory=PostDeploySettings)
     general: GeneralSettings = field(default_factory=GeneralSettings)
+    backup: BackupSettings = field(default_factory=BackupSettings)
 
 
 @dataclass(frozen=True)
@@ -143,6 +158,7 @@ async def load_stored_settings(db: AsyncSession) -> StoredSettings:
         security=read_section("security", SecuritySettings, stored),
         post_deploy=read_section("post_deploy", PostDeploySettings, stored),
         general=read_section("general", GeneralSettings, stored),
+        backup=read_section("backup", BackupSettings, stored),
     )
 
 

@@ -9,10 +9,14 @@ import { stateFile, SUPERADMIN_STATE } from '../global-setup';
  * The audit log. The seeded history (the development seed command adds it) holds one entry of
  * an API token, which is what the superadmin specs narrow every view to: other specs write
  * entries all the time, so an unfiltered list is never asserted on its content or order. The
- * bulk entries of the action backup.create (55, no item scope) give the second page. Entries
- * are append-only, so the exports these specs make stay in the log.
+ * bulk entries of the action backup.create (55, no item scope) give the second page. Real
+ * backups write the same action (the Backup tab specs run them, and the schedule does at night),
+ * so every view of the bulk entries stops at the last day before any real one could exist: the
+ * seeded entries are all dated on or before 2026-09-30. Entries are append-only, so the exports
+ * these specs make stay in the log.
  */
 
+const SEEDED_BACKUPS_BEFORE = '2026-10-01';
 const WIDE_BREAKPOINT = 768;
 const TOKEN = 'api:token billing-ci';
 const TOKEN_QUERY = `actor=${encodeURIComponent(TOKEN)}`;
@@ -175,7 +179,7 @@ test.describe('superadmin', () => {
   });
 
   test('a second page loads with load more and keeps an expanded row', async ({ page }) => {
-    await page.goto('/audit?action=backup.create');
+    await page.goto(`/audit?action=backup.create&to=${SEEDED_BACKUPS_BEFORE}`);
     await expect(auditRows(page)).toHaveCount(50);
     await toggle(auditRows(page).first()).click();
     const firstId = await auditRows(page).first().getAttribute('id');
@@ -279,7 +283,7 @@ test.describe('superadmin', () => {
         );
       });
     });
-    await page.goto('/audit?action=backup.create');
+    await page.goto(`/audit?action=backup.create&to=${SEEDED_BACKUPS_BEFORE}`);
     await expect(auditRows(page)).toHaveCount(50);
     await toggle(auditRows(page).first()).click();
     await page.getByRole('button', { name: 'Load more' }).click();
@@ -295,7 +299,7 @@ test.describe('superadmin', () => {
   });
 
   test('fits the viewport and keeps a row toggle that can be touched', async ({ page }) => {
-    await page.goto('/audit?action=backup.create');
+    await page.goto(`/audit?action=backup.create&to=${SEEDED_BACKUPS_BEFORE}`);
     await expect(auditRows(page)).toHaveCount(50);
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
     if (!isWide(page)) {

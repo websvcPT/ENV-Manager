@@ -47,7 +47,8 @@ router = APIRouter()
 SECURITY_FRAGMENT = "fragments/settings_security.html"
 POST_DEPLOY_FRAGMENT = "fragments/settings_post_deploy.html"
 GENERAL_FRAGMENT = "fragments/settings_general.html"
-UNBUILT_TABS = ("smtp", "git", "backup", "notifications")
+TIME_ZONE_SETTING = "general.time_zone"
+UNBUILT_TABS = ("smtp", "git", "notifications")
 
 Database = Annotated[AsyncSession, Depends(get_db)]
 Stored = Annotated[StoredSettings, Depends(get_stored_settings)]
@@ -277,6 +278,8 @@ async def save_general_route(
             status_code=422,
         )
     changes = await save_general(db, clean, actor=_actor(request, context))
+    if any(change.setting == TIME_ZONE_SETTING for change in changes):
+        await request.app.state.backup_scheduler.reload()
     saved = _saved(bool(changes), "General settings saved", "They apply now.")
     return render(
         request,

@@ -11,19 +11,26 @@ from app.models.types import UtcDateTime, enum_values, utc_now
 
 
 class BackupTrigger(StrEnum):
-    """What caused a backup."""
+    """What caused a backup: a person, the schedule, the command line, or the application itself
+    before it changes the database (a migration) or replaces it (a restore)."""
 
     MANUAL = "manual"
     SCHEDULED = "scheduled"
     MIGRATION = "migration"
     CLI = "cli"
+    RESTORE = "restore"
 
 
 class BackupStatus(StrEnum):
-    """Outcome of a backup."""
+    """Outcome of a backup.
+
+    ``PARTIAL`` means the snapshot in the backup folder is complete but the copy to the extra
+    destination failed, so the backup can be restored but is not where it was meant to be.
+    """
 
     SUCCESS = "success"
     FAILURE = "failure"
+    PARTIAL = "partial"
 
 
 class AllowedPath(Base):

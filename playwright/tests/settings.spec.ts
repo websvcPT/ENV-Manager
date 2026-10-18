@@ -1,13 +1,13 @@
 import { existsSync } from 'node:fs';
 
-import { test as base, type Locator, type Page } from '@playwright/test';
+import { type Locator, type Page } from '@playwright/test';
 
 import { stateFile } from '../global-setup';
 import { createHostFolder, type HostFolder } from '../host-files';
 import { listProjects } from '../projects-api';
 import { serviceId } from '../services-api';
 import { addAllowedPath, listAllowedPaths, removeAllowedPath } from '../settings-api';
-import { acquireSettingsLock, releaseSettingsLock } from '../settings-lock';
+import { test } from '../settings-test';
 
 const WIDE_BREAKPOINT = 768;
 const TOUCH_TARGET = 44;
@@ -21,7 +21,7 @@ const TABS = [
   ['notifications', 'Notifications'],
   ['general', 'General'],
 ] as const;
-const UNBUILT = ['smtp', 'git', 'backup', 'notifications'] as const;
+const UNBUILT = ['smtp', 'git', 'notifications'] as const;
 const DEFAULT_TIMEOUTS = { idle: '30', absolute: '12' };
 
 /*
@@ -31,21 +31,6 @@ const DEFAULT_TIMEOUTS = { idle: '30', absolute: '12' };
  * holds a lock, changes only values no other spec reads (the session timeouts, the default
  * owner and group of a new deployment) and puts the defaults back.
  */
-const test = base.extend<{ settingsLock: void }>({
-  settingsLock: [
-    // Playwright reads the fixture's dependencies from this destructuring, which is empty.
-    // eslint-disable-next-line no-empty-pattern
-    async ({}, use) => {
-      await acquireSettingsLock();
-      try {
-        await use();
-      } finally {
-        releaseSettingsLock();
-      }
-    },
-    { auto: false, timeout: 5 * 60_000 },
-  ],
-});
 const { expect } = test;
 
 function isWide(page: Page): boolean {

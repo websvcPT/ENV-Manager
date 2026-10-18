@@ -1,0 +1,13 @@
+{#- The Backup tab: the schedule form, the list of backups with Run now, Download and Restore, and
+    the dialog that confirms a restore (loaded when it opens). Context: the settings tab context,
+    what fragments/settings_backup.html needs and backups (a BackupList). -#}
+{% extends "layouts/settings.html" %}
+{% from "macros/dialogs.html" import loaded_dialog %}
+{% from "macros/panels.html" import panel %}
+{% block tab %}
+{% call panel("Schedule and retention", "backup-title", fragment="settings-backup") %}
+{% include "fragments/settings_backup.html" %}
+{% endcall %}
+{% include "fragments/backup_list.html" %}
+{{ loaded_dialog("backup-restore", "Restore backup") }}
+{% endblock %}

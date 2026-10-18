@@ -149,6 +149,8 @@ async def web_app(
 ) -> AsyncIterator[FastAPI]:
     """The real application with its lifespan running on a temporary data folder and the seed.
 
+    The scheduler is paused, so no scheduled job fires in the middle of a test.
+
     The data folder starts as a copy of the seeded template, so the lifespan finds the database
     at head and the key check record in place, and takes no pre-migration backup.
     """
@@ -160,6 +162,7 @@ async def web_app(
     application = create_app()
     async with application.router.lifespan_context(application):
         application.state.docker_cli = DockerCli(socket_path=tmp_path / "no-docker.sock")
+        application.state.backup_scheduler.pause()
         yield application
     get_settings.cache_clear()
 

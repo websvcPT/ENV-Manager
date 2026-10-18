@@ -21,6 +21,7 @@ class AuditActor:
     user: User | None = None
     token: ApiToken | None = None
     ip_address: str | None = None
+    system_name: str | None = None
 
     @classmethod
     def for_user(cls, user: User, ip_address: str | None = None) -> AuditActor:
@@ -37,11 +38,18 @@ class AuditActor:
         """The command line tool, which acts without a user."""
         return cls(AuditActorType.CLI)
 
+    @classmethod
+    def system(cls, name: str) -> AuditActor:
+        """The application acting on its own, for example the scheduler, under a fixed name."""
+        return cls(AuditActorType.SYSTEM, system_name=name)
+
     @property
     def label(self) -> str:
         """The actor's name for audit entries and history."""
         if self.type is AuditActorType.CLI:
             return CLI_ACTOR_NAME
+        if self.type is AuditActorType.SYSTEM and self.system_name:
+            return self.system_name
         if self.token is not None:
             return f"token {self.token.name}"
         return self.user.name if self.user else "unknown"

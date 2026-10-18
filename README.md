@@ -65,7 +65,8 @@ secret, trusted proxies and allowed sources stay in environment variables.
 | Security | Idle and absolute session timeouts, failed logins before lockout per user, per address and for the API per address, lockout duration, minimum password length, and the two-factor policy (Optional, shown read-only). |
 | Post-deploy | The Docker socket status and the switch for post-deploy commands. |
 | General | Time zone and date format, the defaults of a new deployment, and the read-only diagnostics. |
-| SMTP, Git, Backup, Notifications | Not available yet: each shows its panel and says so. They arrive with the features they configure. |
+| Backup | Schedule, retention, an optional extra destination, the list of backups with Run now, Download and a confirmed Restore (see Backup and restore). |
+| SMTP, Git, Notifications | Not available yet: each shows its panel and says so. They arrive with the features they configure. |
 
 - **Allowed paths.** An entry is checked when it is added: absolute and normalized, an existing
   folder inside a host mount, never `/` or the data volume, and not already in the list (compared
@@ -92,6 +93,100 @@ secret, trusted proxies and allowed sources stay in environment variables.
   The diagnostics show whether error reporting and OpenTelemetry are on, the OTLP endpoint host
   (the host name only), the version, the environment, the trusted proxies, the allowed sources and
   the client address the application resolved for the request. No secret is shown.
+
+## Backup and restore
+
+A backup is a consistent copy of the SQLite database taken with SQLite's online backup, so the
+application keeps running and writing while it is made. It holds the database as it is: environment
+values, SMTP and git credentials are encrypted fields, and the master key is never in the database,
+so it is never in a backup. A backup is not secret-free, though: it also holds user names, email
+addresses, password hashes, structure and the audit log in the clear. Treat the file like the
+database.
+
+**Store the master key separately from the backups.** A backup is useless without the key it was
+made with: every value in it is unreadable, and a restore refuses a backup that the key in use
+cannot open. Keep the key (the `ENVMANAGER_KEY` value or the file behind `ENVMANAGER_KEY_FILE`) in a
+password manager or secret store that is not on the same disk or in the same backup destination as
+the backup files. A copy of the key next to the backups defeats the encryption.
+
+- **Where.** Backups are files named `envmanager-<time>-<reason>.db` in the backup folder, inside
+  the data volume (`/data/backups`). The folder is mode 0700 and every file 0600 (set when the
+  file is created, so there is no moment with wider permissions). A backup is written under a
+  temporary name and given its final name only when it is complete, and it is switched out of WAL
+  mode so it is one self-contained file.
+- **Who and why.** Each backup is recorded with its time, size, why it was taken (manual,
+  scheduled, command line, before a migration, before a restore), its outcome and, for a failure,
+  a fixed reason that never holds a path or a secret, and is audited (`backup.create`). The
+  automatic backup before a migration is recorded the next time the application starts.
+- **Outcome.** Success; Failed (no backup was written); or Not copied (the backup exists and can be
+  restored, but the copy to the extra destination failed). A failed or not copied newest backup
+  raises the banner every superadmin page shows until a later backup succeeds, and every backup,
+  whatever its outcome, is announced through the backup notifier (`app.state.backup_notifier`,
+  `app/services/backup_events.py`), which delivers nothing until notifications exist.
+- **Schedule and retention** (Settings, Backup). The schedule is Off, Daily at 02:00, Every 6 hours
+  or Weekly (Sunday at 02:00), in the display time zone of the General settings, so changing the
+  zone moves the run. Retention is a number of backups or a number of days; the stored settings keep
+  both limits and honour both when both are set. After every backup the oldest of our own files
+  beyond the limits are removed with their records; the newest backup is never removed, a failure
+  never removes anything, and the copies in the extra destination are never removed. A backup file
+  that cannot be removed keeps its record.
+- **Extra destination.** An optional folder that must lie inside the allowed paths, exist and be
+  writable; the real path is stored. It is checked again for every backup, with the allowed paths
+  read at that moment, and the file is created inside the folder opened without following symlinks
+  (the same confined write as deploy targets), so a link swapped in later cannot lead the copy
+  outside the allowed paths. A destination that left the allowed paths gets nothing and the
+  backup is recorded as Not copied. Nothing is ever deleted there.
+- **Scheduler.** APScheduler 3.11 runs inside the application with its default in-memory job store.
+  Nothing is persisted by APScheduler: the schedule is read from the settings at startup, after the
+  Backup or General settings are saved and after a restore, and replaces the job. The application is
+  one worker process (the start script and the deploy locks assume it); a second worker would run
+  every job twice, which the backup lock (shared between processes) turns into a skipped run. A run
+  that was due while the application was down is not made up. The same scheduler removes expired
+  pending sign-in steps every hour.
+- **Download.** Superadmin only, streamed from the backup folder without following links, never
+  cached, audited as `backup.download`.
+- **Run now** takes a manual backup at once. One backup or restore runs at a time (a lock file in
+  the data volume that also holds against the command line); another request is refused with a
+  message.
+
+### Restore
+
+Restore is offered for a backup that has a file, from the Settings screen (a confirm dialog that
+names the backup and says that current data is replaced) and from the command line. In order:
+
+1. The file is copied to a private working file and checked there: an intact SQLite database
+   that this application made (its migration record names a revision this version knows) whose
+   key check record opens with the master key in use now. A backup made with another key, a foreign
+   or damaged file, and a backup of a newer version are refused with a plain message and nothing
+   changes.
+2. A safety backup of the current data is taken (`pre-restore`); if that fails nothing is
+   restored.
+3. The working copy is prepared: brought to the current schema when the backup is older, stripped
+   of every session and pending sign-in so everyone must sign in again, given the records of the
+   backups that exist in the folder now, and given the audit entry of the restore (the audit log of
+   the replaced database is replaced with it, so entries made after the backup are kept only in the
+   safety backup).
+4. It is switched in through SQLite's online backup into the live database: one write
+   transaction, so the live data is replaced whole or not at all, the connections of the running
+   application stay valid and the journal mode stays WAL. A failure leaves the current data as it
+   was.
+
+Everyone is signed out, the person who restored included; the screen answer sends the browser to
+the sign-in page. Users and passwords are those of the backup, so a person created after it must be
+created again.
+
+```
+docker compose exec app envmanager backup create
+docker compose exec app envmanager backup restore envmanager-20261018T020000000000Z-scheduled.db
+docker compose exec app envmanager backup restore /path/to/downloaded.db --yes
+```
+
+`backup restore` takes a path, or a bare file name that is looked up in the backup folder, asks
+for confirmation (`--yes` skips it) and exits 1 when nothing was restored. `backup create` exits 1
+unless the backup is complete, so a cron job notices a failed copy. The command line cannot reach
+the scheduler of a running server: a restored schedule takes effect at the next start or the next
+save of the Backup settings. To recover onto an empty data volume, start the container with the
+same key, copy a downloaded backup in and run `backup restore`.
 
 ## Demo deployment
 

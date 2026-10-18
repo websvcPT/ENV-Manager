@@ -16,12 +16,14 @@ import grp
 import os
 import pwd
 import secrets
+import shutil
 import stat
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
+from typing import BinaryIO
 
 from app.services.confined_read import ConfinedReadError, split_relative
 from app.services.paths import AllowedPaths, PathValidationError, is_within
@@ -32,6 +34,8 @@ BACKUP_MODE = 0o600
 _TEMP_NAME_LIMIT = 100
 
 ChangeOwner = Callable[[int, int, int], None]
+Content = bytes | BinaryIO
+_COPY_CHUNK = 1024 * 1024
 
 
 class TargetProblem(StrEnum):
@@ -218,13 +222,15 @@ def _remove(directory_fd: int, name: str) -> None:
         os.unlink(name, dir_fd=directory_fd)
 
 
-def _create_file(directory_fd: int, name: str, data: bytes, mode: int) -> int:
+def _create_file(directory_fd: int, name: str, data: Content, mode: int) -> int:
     """Create a new file with the data and mode, and return its open descriptor.
 
-    The file is created exclusively and without following a symlink, so a file or link already at
-    the name makes this fail and is left alone. It is created with mode 0600 and given ``mode``
-    afterwards, so its content is never readable more widely than the final mode allows. A failure
-    after the file exists removes it again; the caller closes the descriptor it gets.
+    ``data`` is bytes or a binary stream that is copied in chunks, so a large file is never held
+    in memory. The file is created exclusively and without following a symlink, so a file or
+    link already at the name makes this fail and is left alone. It is created with mode 0600 and
+    given ``mode`` afterwards, so its content is never readable more widely than the final mode
+    allows. A failure after the file exists removes it again; the caller closes the descriptor it
+    gets.
     """
     descriptor = os.open(
         name,
@@ -234,7 +240,10 @@ def _create_file(directory_fd: int, name: str, data: bytes, mode: int) -> int:
     )
     try:
         with os.fdopen(descriptor, "wb", closefd=False) as handle:
-            handle.write(data)
+            if isinstance(data, bytes):
+                handle.write(data)
+            else:
+                shutil.copyfileobj(data, handle, _COPY_CHUNK)
             handle.flush()
         os.fchmod(descriptor, mode)
     except BaseException:
@@ -274,7 +283,7 @@ def _apply_owner(change_owner: ChangeOwner, descriptor: int, ownership: Ownershi
 def _replace_target(
     directory_fd: int,
     name: str,
-    data: bytes,
+    data: Content,
     mode: int,
     ownership: Ownership | None,
     change_owner: ChangeOwner,
@@ -311,7 +320,7 @@ def _replace_target(
 def write_target_file(
     location: TargetLocation,
     allowed: AllowedPaths,
-    data: bytes,
+    data: Content,
     *,
     mode: int = DEFAULT_FILE_MODE,
     ownership: Ownership | None = None,
@@ -320,7 +329,8 @@ def write_target_file(
 ) -> str | None:
     """Replace the target with ``data`` atomically and return the name of the backup, if any.
 
-    The folder is opened once; the backup (when asked for), the temporary file and the rename all
+    ``data`` is bytes or a binary stream (read from its current position to the end). The folder
+    is opened once; the backup (when asked for), the temporary file and the rename all
     use that descriptor. The temporary file is created exclusively without following links, filled,
     given its owner and mode and flushed to disk before it is renamed over the target, so readers
     see the old or the new file, never a partial one. A failure leaves the target as it was and

@@ -295,7 +295,7 @@ async def ensure_audit_figures(db: AsyncSession) -> None:
             actor_name="system",
             target_type="backup",
             target_name=f"backup-{index + 1:02d}",
-            details={"trigger": "schedule", "size_bytes": 1_048_576 + index},
+            details={"trigger": "scheduled", "size_bytes": 1_048_576 + index},
         )
         entry.created_at = _at(2026, 9, 30, 2, 0) - timedelta(days=index)
     await db.flush()

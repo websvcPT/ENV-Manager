@@ -15,7 +15,7 @@ from app.services.app_settings import StoredSettings, load_stored_settings
 from app.tests.conftest import sign_in
 
 TABS = ("paths", "smtp", "git", "backup", "security", "post-deploy", "notifications", "general")
-UNBUILT = ("smtp", "git", "backup", "notifications")
+UNBUILT = ("smtp", "git", "notifications")
 SETTINGS_ACTIONS = ("settings.update", "allowed_path.add", "allowed_path.remove")
 NON_SUPERADMINS = (
     "admin",
@@ -65,7 +65,8 @@ def error_of(page: str, field_id: str) -> str | None:
 def toast_of(page: str) -> tuple[str, str] | None:
     """The title and message of the toast in a response, None when there is none."""
     found = re.search(
-        r'<div role="status" data-fragment="toast".*?<p class="text-\[13px\] font-bold">([^<]+)</p>'
+        r'<div role="(?:status|alert)" data-fragment="toast".*?'
+        r'<p class="text-\[13px\] font-bold">([^<]+)</p>'
         r'<p class="text-\[13px\] text-ink2">([^<]+)</p>',
         page,
         re.DOTALL,

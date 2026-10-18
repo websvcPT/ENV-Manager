@@ -1,0 +1,6 @@
+{#- The banner area of the shell: one banner per problem the superadmin should act on. A
+    response that changes a problem (a backup that was just taken) sends it again with `oob` set,
+    so the page's banners are replaced by id. Context: banners (message, action_label and
+    action_href each) and oob. -#}
+{% from "macros/feedback.html" import banner %}
+<div id="banner-area" data-fragment="banner-area"{% if oob | default(false) %} hx-swap-oob="true"{% endif %}>{% for item in banners | default([]) %}{{ banner(item.message, item.action_label, item.action_href) }}{% endfor %}</div>

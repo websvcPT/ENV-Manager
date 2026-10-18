@@ -1,0 +1,5 @@
+{#- The answer to Run now: the refreshed list panel with the result toast, and the banner area
+    sent again out of band, because a backup that just failed or succeeded changes it. Context:
+    what fragments/backup_list.html needs; the banners are the request's own. -#}
+{% include "fragments/backup_list.html" %}
+{% with oob = true %}{% include "fragments/banner_area.html" %}{% endwith %}

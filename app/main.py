@@ -20,6 +20,9 @@ from app.core.middleware import install_middleware
 from app.core.migrations import migrate_database
 from app.core.observability import configure_otel, init_sentry
 from app.services.api_errors import ApiRefusal
+from app.services.backup_events import NoBackupNotifier
+from app.services.backup_run import BackupLocations, adopt_backups
+from app.services.backup_schedule import BackupScheduler
 from app.services.deploy_recovery import recover_interrupted_runs
 from app.services.docker_cli import DockerCli
 from app.services.key_check import ensure_key_check
@@ -42,6 +45,7 @@ from app.web.projects import router as projects_router
 from app.web.service_detail import router as service_detail_router
 from app.web.service_form import router as service_form_router
 from app.web.settings import router as settings_router
+from app.web.settings_backup import router as settings_backup_router
 from app.web.settings_paths import router as settings_paths_router
 from app.web.tokens import router as tokens_router
 from app.web.users import router as users_router
@@ -53,10 +57,11 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 @asynccontextmanager
 async def lifespan(application: FastAPI) -> AsyncIterator[None]:
-    """Check the master key, back up and migrate the database, then serve.
+    """Check the master key, back up and migrate the database, start the scheduler, then serve.
 
     A missing, malformed or mismatching master key stops startup before anything is served.
     Deploy runs left running by a process that is gone are closed before the first request.
+    The scheduler runs inside this process, which is assumed to be the only worker.
     """
     settings = get_settings()
     try:
@@ -66,6 +71,7 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         raise
     settings.data_path.mkdir(parents=True, exist_ok=True)
     engine = create_engine(settings.database_path)
+    scheduler: BackupScheduler | None = None
     try:
         await migrate_database(engine, settings.database_path, settings.backup_path)
         session_factory = create_session_factory(engine)
@@ -86,8 +92,20 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         application.state.lock_dir = settings.lock_path
         application.state.engine = engine
         application.state.session_factory = session_factory
+        locations = BackupLocations.from_settings(settings)
+        application.state.backup_locations = locations
+        application.state.backup_notifier = NoBackupNotifier()
+        await adopt_backups(session_factory, locations)
+        scheduler = BackupScheduler(
+            session_factory, locations, lambda: application.state.backup_notifier
+        )
+        application.state.backup_scheduler = scheduler
+        scheduler.start()
+        await scheduler.reload()
         yield
     finally:
+        if scheduler is not None:
+            scheduler.shutdown()
         await engine.dispose()
 
 
@@ -130,6 +148,7 @@ def create_app() -> FastAPI:
     application.include_router(tokens_router)
     application.include_router(account_router)
     application.include_router(settings_paths_router)
+    application.include_router(settings_backup_router)
     application.include_router(settings_router)
     application.include_router(api_router)
 

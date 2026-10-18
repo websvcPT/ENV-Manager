@@ -8,7 +8,7 @@ from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.crypto import CryptoService
-from app.core.display_time import DisplayTime
+from app.core.display_time import DisplayTime, display_of
 from app.core.sessions import SESSION_COOKIE_NAME
 from app.models import User, UserGroup, UserSession
 from app.services.app_settings import StoredSettings, load_stored_settings
@@ -18,6 +18,7 @@ from app.services.docker_cli import DockerCli
 from app.services.hook_runner import DockerHookRunner
 from app.services.permissions import AccessScope, Capability, load_user_scope
 from app.services.sessions import resolve_session
+from app.services.shell_banners import load_shell_banners
 
 
 @dataclass(frozen=True)
@@ -100,7 +101,14 @@ async def require_auth(
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "authentication required")
     context = AuthContext(user=resolved[1], session=resolved[0])
     request.state.auth = context
+    if context.user.group is UserGroup.SUPERADMIN and _is_page_request(request):
+        request.state.banners = await load_shell_banners(db, display_of(request))
     return context
+
+
+def _is_page_request(request: Request) -> bool:
+    """Whether the request may render a whole page (the only place banners are shown)."""
+    return request.method == "GET" and "HX-Request" not in request.headers
 
 
 async def resolve_optional_auth(request: Request) -> AuthContext | None:

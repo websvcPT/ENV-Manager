@@ -1,9 +1,10 @@
-"""Typer commands for bootstrapping and recovering user access and for deploying a service."""
+"""Typer commands for bootstrapping and recovering user access, deploying a service and backups."""
 
 import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import datetime
+from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -11,11 +12,13 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.core.crypto import build_crypto_service
+from app.core.crypto import CryptoError, build_crypto_service
 from app.core.db import create_engine, create_session_factory
 from app.core.migrations import migrate_database
 from app.models import (
     AuditActorType,
+    BackupStatus,
+    BackupTrigger,
     Deployment,
     DeployStatus,
     Environment,
@@ -43,16 +46,25 @@ from app.seeds import (
 from app.seeds import seed as seed_data
 from app.services import users as user_service
 from app.services.audit import AuditActor
+from app.services.backup_events import NoBackupNotifier
+from app.services.backup_inspect import RestoreRefusedError
+from app.services.backup_lock import BackupBusyError
+from app.services.backup_restore import restore_backup
+from app.services.backup_run import BackupLocations, run_backup
+from app.services.backup_view import format_size
 from app.services.deploy import DeployEngine
 from app.services.deploy_recovery import recover_interrupted_runs
 from app.services.deploy_types import DeployOutcome, DeployRequest, DeployRequestError
 from app.services.docker_cli import DockerCli
 from app.services.hook_runner import DockerHookRunner
+from app.services.key_check import ensure_key_check
 from app.services.permissions import cli_scope
 
 app = typer.Typer(help="ENV Manager administration.", no_args_is_help=True, add_completion=False)
 user_app = typer.Typer(help="Manage users.", no_args_is_help=True)
 app.add_typer(user_app, name="user")
+backup_app = typer.Typer(help="Create and restore backups.", no_args_is_help=True)
+app.add_typer(backup_app, name="backup")
 dev_app = typer.Typer(help="Development helpers.", no_args_is_help=True)
 app.add_typer(dev_app, name="dev")
 SEED_ENVIRONMENTS = {"development", "testing"}
@@ -279,6 +291,102 @@ def deploy_service(
     _print_deploy(target, outcome)
     if outcome.status is not DeployStatus.SUCCESS:
         raise typer.Exit(code=1)
+
+
+@backup_app.command("create")
+def create_backup_command() -> None:
+    """Take a backup now and print where it is. Exits 1 unless it is complete.
+
+    The backup is recorded and audited like one taken in the Settings screen, copied to the
+    extra destination when one is configured, and subject to the same retention.
+    """
+    settings = get_settings()
+    locations = BackupLocations.from_settings(settings)
+
+    async def operation(db: AsyncSession) -> tuple[str, BackupStatus, int | None, str | None]:
+        await ensure_key_check(db, build_crypto_service(settings.key, settings.key_file))
+        run = await run_backup(
+            db,
+            locations,
+            trigger=BackupTrigger.CLI,
+            actor=AuditActor.cli(),
+            notifier=NoBackupNotifier(),
+        )
+        record = run.record
+        return record.filename, record.status, record.size_bytes, record.error
+
+    try:
+        name, outcome, size, reason = run_command(operation)
+    except BackupBusyError as error:
+        typer.echo("error: another backup or restore is running", err=True)
+        raise typer.Exit(code=1) from error
+    except CryptoError as error:
+        typer.echo(f"error: {error}", err=True)
+        raise typer.Exit(code=1) from error
+    if outcome is BackupStatus.FAILURE:
+        typer.echo(f"error: the backup failed: {reason}", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(f"backup created: {locations.backup_dir / name} ({format_size(size or 0)})")
+    if outcome is BackupStatus.PARTIAL:
+        typer.echo(f"error: the backup was not copied to the extra destination: {reason}", err=True)
+        raise typer.Exit(code=1)
+
+
+def _backup_file(argument: Path, backup_dir: Path) -> Path:
+    """The file to restore: a bare name is looked up in the backup folder first."""
+    if len(argument.parts) == 1 and (backup_dir / argument).is_file():
+        return backup_dir / argument
+    return argument
+
+
+@backup_app.command("restore")
+def restore_backup_command(
+    file: Annotated[
+        Path, typer.Argument(help="Backup file: a path, or a file name in the backup folder.")
+    ],
+    yes: Annotated[bool, typer.Option("--yes", help="Do not ask for confirmation.")] = False,
+) -> None:
+    """Replace all current data with a backup made by this application and end every session.
+
+    A safety backup of the current data is taken first. A backup made with another master key,
+    or that is not a backup of this application, is refused and nothing changes. Exits 1 when
+    nothing was restored.
+    """
+    settings = get_settings()
+    locations = BackupLocations.from_settings(settings)
+    source = _backup_file(file, locations.backup_dir)
+    if not yes:
+        typer.confirm(
+            f"Replace all current data with {source.name}? Changes made since that backup are "
+            "lost, a safety backup of the current data is taken first and every session ends.",
+            abort=True,
+        )
+
+    async def operation(db: AsyncSession) -> tuple[str, int, str | None]:
+        result = await restore_backup(
+            db,
+            locations,
+            source=source,
+            label=source.name,
+            crypto=build_crypto_service(settings.key, settings.key_file),
+            actor=AuditActor.cli(),
+        )
+        return result.safety_backup, result.sessions_ended, result.upgraded_from
+
+    try:
+        safety, sessions, upgraded = run_command(operation)
+    except (RestoreRefusedError, CryptoError) as error:
+        typer.echo(f"error: {error}", err=True)
+        raise typer.Exit(code=1) from error
+    typer.echo(f"restored {source.name}")
+    typer.echo(f"safety backup of the replaced data: {locations.backup_dir / safety}")
+    typer.echo(f"{sessions} session(s) ended, everyone signs in again")
+    if upgraded is not None:
+        typer.echo(f"the backup was brought forward from schema revision {upgraded}")
+    typer.echo(
+        "A running server reads the restored backup schedule at its next start or the next "
+        "save of the Backup settings."
+    )
 
 
 def _require_development_environment(action: str) -> None:

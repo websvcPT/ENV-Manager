@@ -38,7 +38,7 @@ def _upgrade(connection: Connection) -> None:
     command.upgrade(build_config(connection), "head")
 
 
-async def _upgrade_with_foreign_keys_off(engine: AsyncEngine) -> None:
+async def upgrade_to_head(engine: AsyncEngine) -> None:
     """Upgrade on one connection with foreign key enforcement off, then check and restore it.
 
     Rebuilding a table that other tables reference would cascade deletes into them while
@@ -69,5 +69,5 @@ async def migrate_database(engine: AsyncEngine, database_path: Path, backup_dir:
     if current is not None and database_path.exists():
         backup = await create_backup(database_path, backup_dir, "pre-migration")
         log.info("database backed up to %s before migration", backup.name)
-    await _upgrade_with_foreign_keys_off(engine)
+    await upgrade_to_head(engine)
     log.info("database migrated from %s to %s", current, head)

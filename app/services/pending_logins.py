@@ -34,6 +34,17 @@ async def create_pending_login(
     return token
 
 
+async def purge_expired_pending_logins(db: AsyncSession, *, now: datetime | None = None) -> int:
+    """Remove every expired pending login and return how many went. The caller commits.
+
+    The scheduler runs this regularly, so rows do not wait for the next sign-in to be removed.
+    """
+    result = await db.execute(
+        delete(PendingLogin).where(PendingLogin.expires_at <= (now or utc_now()))
+    )
+    return int(result.rowcount or 0)  # type: ignore[attr-defined]
+
+
 async def consume_pending_login(
     db: AsyncSession, token: str, *, now: datetime | None = None
 ) -> int | None:

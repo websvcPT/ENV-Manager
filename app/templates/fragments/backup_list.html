@@ -1,0 +1,38 @@
+{#- The panel of backups: Run now, then one row per backup with its time and why it was taken, its
+    size and its outcome. A backup that has a file can be downloaded and restored; Restore opens
+    the confirm dialog of the page. A failed backup shows its reason; a backup that could not be
+    copied to the extra destination shows Not copied and its reason. Context: backups (a
+    BackupList) and result (none, or tone, title and message of a toast). -#}
+{% from "macros/badges.html" import badge %}
+{% from "macros/buttons.html" import button %}
+{% from "macros/feedback.html" import empty_state, toast %}
+{% from "macros/panels.html" import cell, panel, table %}
+{% from "macros/time.html" import moment with context %}
+{% set run_button %}{{ button("Run now", kind="primary-sm", extra_class="max-md:h-11", hx_post="/settings/backups", hx_target="#backups", hx_swap="outerHTML", hx_sync="this:drop") }}{% endset %}
+{% set action_class = "inline-flex min-h-11 items-center font-semibold hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus text-sm md:min-h-0" %}
+{% call panel("Backups", "backups-title", fragment="backup-list", actions=run_button, id="backups") %}
+{%- if backups.rows %}
+{% call table("Backups", ["Time", "Size", "Status", "Actions"], right_columns=[3], min_width_class="min-w-[620px]") %}
+{%- for row in backups.rows %}
+<tr data-fragment="backup-row" id="backup-{{ row.id }}"><td class="border-t border-line px-4 py-3.5 whitespace-nowrap">{{ moment(row.created_at) }}<span class="block text-xs text-ink2">{{ row.trigger }}</span></td>
+<td class="border-t border-line px-4 py-3.5 whitespace-nowrap">{% if row.size %}{{ row.size }}{% else %}<span class="text-ink3">None</span>{% endif %}</td>
+{%- call cell() %}{{ badge(row.badge) }}{% if row.error %}<span class="mt-1 block max-w-80 text-xs text-ink2">{{ row.error }}</span>{% endif %}{% endcall %}
+<td class="border-t border-line px-4 py-3.5 whitespace-nowrap text-right">
+{%- if row.actionable -%}
+<span class="inline-flex gap-4"><a href="/settings/backups/{{ row.id }}/download" class="{{ action_class }} text-link">Download<span class="sr-only"> backup of {{ display.text(row.created_at) }}</span></a><button type="button" data-js="dialog-open" data-target="backup-restore" aria-haspopup="dialog" hx-get="/settings/backups/{{ row.id }}/restore" hx-target="#backup-restore" hx-swap="innerHTML" class="{{ action_class }} text-danger">Restore<span class="sr-only"> backup of {{ display.text(row.created_at) }}</span></button></span>
+{%- elif row.status.value != "failure" -%}
+<span class="text-[13px] text-ink3">File removed</span>
+{%- endif -%}
+</td></tr>
+{%- endfor %}
+{% endcall %}
+{%- if backups.truncated %}
+<p class="px-4 py-3 text-[13px] text-ink2 md:px-5">Showing the newest {{ backups.rows | length }} of {{ backups.total }} backups.</p>
+{%- endif %}
+{%- else %}
+{{ empty_state("No backups yet", "Run one now, or wait for the schedule.", icon_name="restore") }}
+{%- endif %}
+{%- if result | default(none) %}
+{{ toast(result.tone, result.message, result.title, floating=true) }}
+{%- endif %}
+{% endcall %}

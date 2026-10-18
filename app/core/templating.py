@@ -28,6 +28,7 @@ def base_context(request: Request) -> dict[str, Any]:
         "current_user": user,
         "nav_items": nav_items_for(user.group) if user is not None else [],
         "user_initials": initials(user.name) if user is not None else "",
+        "banners": getattr(request.state, "banners", []),
     }
 
 
