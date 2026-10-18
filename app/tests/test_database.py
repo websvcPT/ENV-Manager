@@ -46,8 +46,14 @@ async def test_migrations_match_models(engine: AsyncEngine) -> None:
         assert await connection.run_sync(diff) == []
 
 
-async def test_first_migration_takes_no_backup(engine: AsyncEngine, backup_dir: Path) -> None:
+async def test_first_migration_takes_no_backup(database_path: Path, backup_dir: Path) -> None:
     """A brand new database has nothing to back up."""
+    fresh = create_engine(database_path)
+    try:
+        await migrate_database(fresh, database_path, backup_dir)
+    finally:
+        await fresh.dispose()
+    assert database_path.exists()
     assert not backup_dir.exists()
 
 

@@ -121,7 +121,7 @@ e2e-demo: ## Bring the demo override up, run the real-scenario tests and the Doc
 	@status=0; \
 	{ $(MAKE) --no-print-directory demo-up \
 		&& $(MAKE) --no-print-directory demo-reset \
-		&& docker compose exec -T app sh /app/scripts/test.sh app/real_scenarios \
+		&& docker compose exec -T app sh /app/scripts/test.sh -n 0 app/real_scenarios \
 		&& sh scripts/e2e-seed.sh \
 		&& docker compose -f docker-compose-e2e.yml run --rm playwright-demo; } || status=$$?; \
 	$(MAKE) --no-print-directory demo-reset || status=$$?; \

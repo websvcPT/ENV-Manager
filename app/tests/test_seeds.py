@@ -2,11 +2,12 @@
 
 import asyncio
 from collections.abc import Iterator
+from dataclasses import fields, is_dataclass
 from pathlib import Path
 
 import pyotp
 import pytest
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, inspect, select
 from sqlalchemy.ext.asyncio import AsyncEngine
 from typer.testing import CliRunner
 
@@ -24,12 +25,16 @@ from app.models import (
     AuditActorType,
     AuditEntry,
     AuditResult,
+    Base,
+    Deployment,
     DeployResult,
     DeployRun,
     Environment,
     EnvironmentVersion,
     LoginCounter,
     LoginCounterKind,
+    Project,
+    Service,
     ServiceHook,
     User,
 )
@@ -52,6 +57,7 @@ from app.seeds import (
 )
 from app.services import totp
 from app.tests.auth_helpers import make_user
+from app.tests.template_databases import SeededTemplate
 
 runner = CliRunner()
 
@@ -79,6 +85,55 @@ async def test_seed_creates_the_dataset(
         assert [version.number for version in versions] == [1, 2]
         assert crypto.decrypt_text(versions[1].content_encrypted) == "DB_HOST=db\nDB_PORT=3306\n"
         assert versions[1].content_hash == crypto.content_hash("DB_HOST=db\nDB_PORT=3306\n")
+
+
+def _referenced_rows(value: object) -> Iterator[Base]:
+    """The mapped objects a seed result names, however deep in tuples and dataclasses."""
+    if isinstance(value, Base):
+        yield value
+    elif isinstance(value, tuple):
+        for item in value:
+            yield from _referenced_rows(item)
+    elif is_dataclass(value):
+        for field in fields(value):
+            yield from _referenced_rows(getattr(value, field.name))
+
+
+async def test_the_references_of_every_copy_of_the_seed_name_its_own_rows(
+    seeded_database: AsyncEngine, seed_data: SeedData
+) -> None:
+    """Ids are deterministic, so the references built with the template match each copy."""
+    referenced = list(_referenced_rows(seed_data))
+    assert {type(row) for row in referenced} >= {
+        User,
+        Project,
+        Deployment,
+        Service,
+        Environment,
+        AllowedPath,
+        DeployRun,
+        ApiToken,
+    }
+    async with create_session_factory(seeded_database)() as db:
+        for expected in referenced:
+            columns = [attribute.key for attribute in inspect(type(expected)).column_attrs]
+            identity = inspect(expected).identity
+            assert identity is not None, expected
+            stored = await db.get(type(expected), identity)
+            assert stored is not None, (type(expected).__name__, identity)
+            assert {key: getattr(stored, key) for key in columns} == {
+                key: getattr(expected, key) for key in columns
+            }, (type(expected).__name__, identity)
+
+
+def test_a_test_changes_only_its_own_copy_of_the_seed_references(
+    seed_data: SeedData, seeded_template: SeededTemplate
+) -> None:
+    """The references handed to a test are copies, never the objects the template built."""
+    shared = seeded_template.data
+    assert seed_data is not shared and seed_data.users.viewer is not shared.users.viewer
+    seed_data.users.viewer.is_active = False
+    assert shared.users.viewer.is_active
 
 
 async def test_seeding_twice_is_refused(

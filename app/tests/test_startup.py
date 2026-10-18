@@ -4,6 +4,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from fastapi import FastAPI
 from sqlalchemy import text
 
 from app.config import get_settings
@@ -80,3 +81,13 @@ async def test_the_docker_cli_is_built_from_the_configured_socket(
         assert cli.socket_path == configured / "elsewhere.sock"
         assert cli.environment()["DOCKER_HOST"] == f"unix://{configured / 'elsewhere.sock'}"
         assert (await cli.status()).mounted is False
+
+
+async def test_the_seeded_application_starts_on_a_database_already_at_head(
+    web_app: FastAPI, tmp_path: Path
+) -> None:
+    """The lifespan finds the seeded copy migrated, so it takes no pre-migration backup."""
+    assert not (tmp_path / "backups").exists()
+    async with web_app.state.engine.connect() as connection:
+        count = (await connection.execute(text("SELECT count(*) FROM users"))).scalar()
+    assert count == 10

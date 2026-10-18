@@ -12,9 +12,7 @@ from typer.testing import CliRunner
 from app.cli.main import _print_deploy as print_deploy
 from app.cli.main import app
 from app.config import get_settings
-from app.core.crypto import build_crypto_service, generate_master_key
 from app.core.db import create_engine, create_session_factory
-from app.core.migrations import migrate_database
 from app.models import (
     AuditActorType,
     AuditEntry,
@@ -25,36 +23,38 @@ from app.models import (
     PostDeployStatus,
 )
 from app.models.types import utc_now
-from app.seeds import seed
 from app.services.deploy_lock import hold_deploy_lock
 from app.services.deploy_policy import HALT_DRIFT_MESSAGE
 from app.services.deploy_recovery import INTERRUPTED_REASON
 from app.services.deploy_types import DeployOutcome
 from app.services.hooks import PostDeployResult
 from app.tests.dist_helpers import relocate_deployments
+from app.tests.template_databases import SeededTemplate, copy_database
 
 runner = CliRunner()
 
 
 @pytest.fixture
-def roots(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, Path]]:
+def roots(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    seeded_template: SeededTemplate,
+    master_key: str,
+) -> Iterator[dict[str, Path]]:
     """A seeded database in the CLI's data folder, with the deployments on a real folder."""
     data_path = tmp_path / "data"
-    data_path.mkdir()
     monkeypatch.setenv("ENVMANAGER_DATA_PATH", str(data_path))
-    monkeypatch.setenv("ENVMANAGER_KEY", generate_master_key())
+    monkeypatch.setenv("ENVMANAGER_KEY", master_key)
     monkeypatch.delenv("ENVMANAGER_KEY_FILE", raising=False)
     monkeypatch.setenv("ENVMANAGER_DOCKER_SOCKET", str(tmp_path / "no-docker.sock"))
     get_settings.cache_clear()
     settings = get_settings()
-    crypto = build_crypto_service(settings.key, settings.key_file)
+    copy_database(seeded_template.path, settings.database_path)
 
     async def prepare() -> dict[str, Path]:
         engine = create_engine(settings.database_path)
         try:
-            await migrate_database(engine, settings.database_path, settings.backup_path)
             async with create_session_factory(engine)() as db:
-                await seed(db, crypto)
                 return await relocate_deployments(db, tmp_path / "host")
         finally:
             await engine.dispose()
