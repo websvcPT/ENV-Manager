@@ -1,0 +1,17 @@
+{#- Shared frame of the environment pages: page header with the file name and status, then the
+    section links. Pages extend this and fill the `tab` block. Context: env (an EditorHeader),
+    tab (edit or history) and is_viewer. -#}
+{% extends "layouts/app.html" %}
+{% from "macros/badges.html" import badge %}
+{% from "macros/panels.html" import page_header, tabs %}
+{% set active_nav = "projects" %}
+{% set breadcrumbs = [("Projects", "/projects"), (env.project_name, "/projects/" ~ env.project_id), (env.deployment_name, "/deployments/" ~ env.deployment_id), (env.service_name, "/services/" ~ env.service_id), (env.name, none)] %}
+{% block title %}{{ env.name }}{% endblock %}
+{% block content %}
+{% set subtitle %}Service {{ env.service_name }} · {% if env.current is not none %}version {{ env.current }} saved, {% if env.deployed is not none %}version {{ env.deployed }} deployed{% else %}never deployed{% endif %}{% else %}no version saved{% endif %}{% if env.current_author %} · last edited by {{ env.current_author }}{% endif %}{% endset %}
+{{ page_header(env.name, subtitle, mono=true, badges=badge(env.status)) }}
+{% set section_links = [{"label": "View" if is_viewer else "Edit", "href": "/environments/" ~ env.id}, {"label": "History", "href": "/environments/" ~ env.id ~ "/history"}] %}
+{% if env.can_check_dist %}{% set section_links = section_links + [{"label": "Compare to dist", "href": "/environments/" ~ env.id ~ "/dist"}] %}{% endif %}
+{{ tabs(section_links, "/environments/" ~ env.id ~ ("/history" if tab == "history" else "")) }}
+{% block tab %}{% endblock %}
+{% endblock %}

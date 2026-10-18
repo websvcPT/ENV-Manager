@@ -2,79 +2,23 @@
 
 import html
 import re
-from collections.abc import Mapping
-from dataclasses import dataclass
 
 import httpx
 import pytest
 from fastapi import FastAPI
 from sqlalchemy import select
 
-from app.core.csrf import CSRF_COOKIE_NAME
-from app.models import AuditEntry, Deployment, Environment, EnvironmentVersion, Service
-from app.seeds import EDITOR_ENVIRONMENT_NAME, EDITOR_SECRET_VALUES
+from app.models import AuditEntry, EnvironmentVersion
+from app.seeds import EDITOR_SECRET_VALUES
 from app.tests.conftest import sign_in
+from app.tests.web_helpers import HTMX, EnvironmentIds, assert_never_cached, main_of, post
 
-HTMX = {"HX-Request": "true"}
 CERTIFICATE_BODY = "c2VlZA=="
 EDITOR_VALUES = (*EDITOR_SECRET_VALUES, "db.internal.example.com", "TLSv1.2", "AQIEAgAAuTAN")
 EDITORS = ("root", "admin", "project_admin", "deployment_admin")
 VIEWERS = ("viewer",)
 EDITOR_ENV_ROLES = (*EDITORS, *VIEWERS)
 OUT_OF_SCOPE_FOR_EDITOR = ("env_scoped_admin", "env_scoped_viewer", "ungranted_admin")
-
-
-@dataclass(frozen=True)
-class EnvironmentIds:
-    """Ids of the seeded environments the tests use."""
-
-    editor: int
-    db: int
-    ca: int
-    api: int
-
-
-@pytest.fixture
-async def ids(web_app: FastAPI) -> EnvironmentIds:
-    """The seeded environment ids of the web application."""
-    async with web_app.state.session_factory() as db:
-        rows = (
-            await db.execute(
-                select(Deployment.name, Service.name, Environment.name, Environment.id)
-                .join(Service, Service.deployment_id == Deployment.id)
-                .join(Environment, Environment.service_id == Service.id)
-            )
-        ).all()
-    found = {
-        (deployment, service, name): environment for deployment, service, name, environment in rows
-    }
-    return EnvironmentIds(
-        editor=found[("prod", "mysql", EDITOR_ENVIRONMENT_NAME)],
-        db=found[("prod", "mysql", ".env.db")],
-        ca=found[("staging", "web", "web-ca.pem")],
-        api=found[("main", "api", ".env.api")],
-    )
-
-
-async def post(
-    http: httpx.AsyncClient, url: str, data: Mapping[str, object] | None = None
-) -> httpx.Response:
-    """Submit a form the way htmx does, with the CSRF header."""
-    await http.get("/healthz")
-    return await http.post(
-        url, data=data or {}, headers={**HTMX, "X-CSRFToken": http.cookies[CSRF_COOKIE_NAME]}
-    )
-
-
-def assert_never_cached(response: httpx.Response) -> None:
-    """Every page and fragment that can show values is uncacheable and varies on htmx."""
-    assert response.headers["cache-control"] == "no-store"
-    assert response.headers["vary"] == "HX-Request"
-
-
-def main_of(page: str) -> str:
-    """The page body without the sidebar and top bar."""
-    return page.split("<main", 1)[1].split("</main>", 1)[0]
 
 
 def masked_urls(environment: int, keys: tuple[str, ...]) -> list[tuple[str, dict[str, str]]]:

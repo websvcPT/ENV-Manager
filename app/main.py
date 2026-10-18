@@ -24,6 +24,7 @@ from app.web.deployments import router as deployments_router
 from app.web.editor import router as editor_router
 from app.web.environment_form import router as environment_form_router
 from app.web.errors import http_error_handler, unhandled_error_handler
+from app.web.history import router as history_router
 from app.web.project_detail import router as project_detail_router
 from app.web.projects import router as projects_router
 from app.web.service_detail import router as service_detail_router
@@ -95,6 +96,7 @@ def create_app() -> FastAPI:
     application.include_router(service_form_router)
     application.include_router(environment_form_router)
     application.include_router(editor_router)
+    application.include_router(history_router)
 
     @application.get("/healthz", include_in_schema=False)
     async def healthz() -> dict[str, str]:

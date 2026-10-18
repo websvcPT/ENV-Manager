@@ -1,0 +1,10 @@
+{#- File history: the version table and the diff of two versions under the shared environment
+    frame. Context: env (an EditorHeader), tab, is_viewer, versions, selected (the compared
+    numbers), diff, single, latest, and restored and source (version numbers, optional). -#}
+{% extends "layouts/environment.html" %}
+{% from "macros/feedback.html" import toast %}
+{% block tab %}
+{% include "fragments/version_table.html" %}
+{% include "fragments/diff_panel.html" %}
+{% if restored %}{{ toast("success", "Restored version " ~ source ~ " as version " ~ restored ~ ". Pending deploy.", floating=true) }}{% endif %}
+{% endblock %}

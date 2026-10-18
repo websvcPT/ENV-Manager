@@ -1,18 +1,9 @@
-{#- File editor: header, section links and the editor panel. Context: env (an EditorHeader),
-    content, mode, version, is_viewer and saved (the saved version number, optional). -#}
-{% extends "layouts/app.html" %}
-{% from "macros/badges.html" import badge %}
+{#- File editor: the editor panel under the shared environment frame. Context: env (an
+    EditorHeader), content, mode, version, is_viewer and saved (the saved version number,
+    optional). -#}
+{% extends "layouts/environment.html" %}
 {% from "macros/feedback.html" import note, toast %}
-{% from "macros/panels.html" import page_header, tabs %}
-{% set active_nav = "projects" %}
-{% set breadcrumbs = [("Projects", "/projects"), (env.project_name, "/projects/" ~ env.project_id), (env.deployment_name, "/deployments/" ~ env.deployment_id), (env.service_name, "/services/" ~ env.service_id), (env.name, none)] %}
-{% block title %}{{ env.name }}{% endblock %}
-{% block content %}
-{% set subtitle %}Service {{ env.service_name }} · {% if env.current is not none %}version {{ env.current }} saved, {% if env.deployed is not none %}version {{ env.deployed }} deployed{% else %}never deployed{% endif %}{% else %}no version saved{% endif %}{% if env.current_author %} · last edited by {{ env.current_author }}{% endif %}{% endset %}
-{{ page_header(env.name, subtitle, mono=true, badges=badge(env.status)) }}
-{% set section_links = [{"label": "View" if is_viewer else "Edit", "href": "/environments/" ~ env.id}, {"label": "History", "href": "/environments/" ~ env.id ~ "/history"}] %}
-{% if env.can_check_dist %}{% set section_links = section_links + [{"label": "Compare to dist", "href": "/environments/" ~ env.id ~ "/dist"}] %}{% endif %}
-{{ tabs(section_links, "/environments/" ~ env.id) }}
+{% block tab %}
 {% if is_viewer %}{{ note("Read-only view. Values stay masked and cannot be revealed or edited for the Viewer group.") }}{% endif %}
 {% include "fragments/editor_panel.html" %}
 {% if saved %}{{ toast("success", "Saved as version " ~ saved ~ ". Pending deploy.", floating=true) }}{% endif %}

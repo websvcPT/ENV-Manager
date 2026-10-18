@@ -136,6 +136,7 @@ async def editor_page(
         PAGE,
         {
             **_panel_context(access, content, mode),
+            "tab": "edit",
             "is_viewer": access.scope.group not in CAPABILITY_GROUPS[Capability.EDIT_VALUES],
             "saved": _saved_number(saved),
         },

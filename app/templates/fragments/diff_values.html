@@ -1,0 +1,8 @@
+{#- The answer to revealing a diff: only values, each aimed at its empty slot of the masked diff
+    as a partial swap. `revealed` maps a row index to its (left, right) values, None for a side
+    without one. -#}
+{%- for index, sides in revealed.items() -%}
+{%- for side, value in (("left", sides[0]), ("right", sides[1])) if value is not none -%}
+<template hx type="partial" hx-target="#diff-{{ side }}-{{ index }}" hx-swap="innerHTML">{% include "fragments/editor_value.html" %}</template>
+{%- endfor -%}
+{%- endfor -%}

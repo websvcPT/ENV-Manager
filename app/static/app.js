@@ -2,7 +2,8 @@
    Handlers are delegated from the document so content swapped in by htmx works without rebinding.
    Behaviours: theme toggle, dialogs, sidebar collapse, reveal hide and timer, removing a new
    variable row, row toggle, tree toggle, copy, dismiss, history back, picking a path into a
-   field, closing dialogs when the server asks, and a toast when an htmx request fails. */
+   field, limiting the version comparison to two versions, closing dialogs when the server asks,
+   and a toast when an htmx request fails. */
 (function () {
   'use strict';
 
@@ -168,6 +169,28 @@
       }
     }
   };
+
+  /* The history table compares two versions at most: choosing a third unchecks the earliest
+     choice. This runs in the capture phase so the form's own change handler (htmx) reads the
+     corrected choice. */
+  var pickCounter = 0;
+  document.addEventListener('change', function (event) {
+    var box = event.target;
+    if (!(box instanceof HTMLInputElement) || box.getAttribute('data-js') !== 'compare-version') {
+      return;
+    }
+    if (!box.checked) { return; }
+    box.setAttribute('data-picked', String(++pickCounter));
+    var checked = Array.prototype.slice.call(
+      document.querySelectorAll('[data-js=compare-version]:checked')
+    );
+    if (checked.length <= 2) { return; }
+    var earliest = checked.filter(function (other) { return other !== box; })
+      .sort(function (a, b) {
+        return Number(a.getAttribute('data-picked') || 0) - Number(b.getAttribute('data-picked') || 0);
+      })[0];
+    earliest.checked = false;
+  }, true);
 
   document.addEventListener('click', function (event) {
     if (!(event.target instanceof Element)) { return; }

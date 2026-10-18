@@ -1,0 +1,57 @@
+{#- The comparison of two versions: Changed, Added and Removed keys side by side with masked
+    values, or a prompt when exactly two versions are not chosen. No value is part of it: each
+    side of a key has an empty slot that the audited reveal answer fills and that app.js empties
+    again. Context: env (an EditorHeader), diff (a VersionDiff or none), single (fewer than two
+    versions exist) and latest (the newest version number). -#}
+{% from "macros/badges.html" import badge %}
+{% from "macros/buttons.html" import button %}
+{% from "macros/dialogs.html" import dialog %}
+{% from "macros/icons.html" import icon %}
+{% set grid_classes = "grid grid-cols-[120px_230px_minmax(0,1fr)_minmax(0,1fr)]" %}
+{% set reveal_classes = "h-10 max-md:h-11 items-center gap-2 rounded-btn border border-line-strong bg-surface px-4 text-sm font-semibold text-ink hover:bg-surface2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus" %}
+<section data-fragment="diff-panel" id="diff-panel" data-reveal-row data-revealed="false" aria-labelledby="dt" class="group overflow-hidden rounded-panel border border-line bg-surface shadow-panel">
+<div class="flex flex-wrap items-center gap-3 p-4 md:px-5">
+{%- if diff %}
+<h2 id="dt" class="text-lg font-bold">Comparing <span class="font-mono">v{{ diff.left }}</span> to <span class="font-mono">v{{ diff.right }}</span></h2>
+<span class="flex-1"></span>
+{%- if (env.can_reveal and diff.rows) or env.can_edit %}
+<div class="flex basis-full flex-wrap items-center gap-3 md:basis-auto">
+{%- if env.can_reveal and diff.rows %}
+<button type="button" aria-pressed="false" hx-post="/environments/{{ env.id }}/history/reveal?v={{ diff.left }}&amp;v={{ diff.right }}" hx-swap="none" class="inline-flex {{ reveal_classes }} group-data-[revealed=true]:hidden">{{ icon("eye", "size-4", "2") }}Reveal values (audited)</button>
+<button type="button" data-js="reveal-hide" aria-pressed="true" class="{{ reveal_classes }} hidden group-data-[revealed=true]:inline-flex group-data-[revealed=true]:border-accent group-data-[revealed=true]:bg-accent-soft">{{ icon("eye-off", "size-4", "2") }}Hide values</button>
+{%- endif %}
+{%- if env.can_edit %}
+{{ button("Restore v" ~ diff.left ~ " as new version", kind="danger", icon_name="restore", icon_stroke="2.2", extra_class="max-md:h-11", data_js="dialog-open", data_target="restore-dialog", aria_haspopup="dialog") }}
+{%- endif %}
+</div>
+{%- endif %}
+{%- else %}
+<h2 id="dt" class="text-lg font-bold">Compare versions</h2>
+{%- endif %}
+</div>
+{%- if diff and diff.rows %}
+<div class="relative overflow-x-auto"><div class="min-w-[760px]">
+<div class="{{ grid_classes }} bg-head text-xs font-semibold uppercase tracking-wide text-head-ink"><span class="px-4 py-2.5">Change</span><span class="px-4 py-2.5">Key</span><span class="px-4 py-2.5">v{{ diff.left }}</span><span class="px-4 py-2.5">v{{ diff.right }}</span></div>
+{%- for row in diff.rows %}
+<div data-fragment="diff-row" class="{{ grid_classes }} items-start border-t border-line"><div class="px-4 py-3">{{ badge(row.change.value) }}</div><div class="break-all px-4 py-3.5 font-mono text-[13px] font-semibold">{{ row.key }}</div>
+<div class="px-4 py-3.5 font-mono text-[13px] text-ink2">{% if row.change.value == "added" %}<span class="text-ink3">not set</span>{% else %}<span class="group-data-[revealed=true]:hidden">••••••••</span><span id="diff-left-{{ row.index }}" data-value class="hidden whitespace-pre-wrap break-all group-data-[revealed=true]:inline"></span>{% endif %}</div>
+<div class="px-4 py-3.5 font-mono text-[13px]">{% if row.change.value == "removed" %}<span class="text-ink3">removed</span>{% else %}<span class="group-data-[revealed=true]:hidden">••••••••</span><span id="diff-right-{{ row.index }}" data-value class="hidden whitespace-pre-wrap break-all group-data-[revealed=true]:inline"></span>{% endif %}</div></div>
+{%- endfor %}
+</div></div>
+{%- elif single %}
+<p class="border-t border-line px-5 py-8 text-center text-ink2">This file has one version. Save another version to compare.</p>
+{%- elif not diff %}
+<p class="border-t border-line px-5 py-8 text-center text-ink2">Select two versions in the table to compare them.</p>
+{%- elif diff.identical %}
+<p class="border-t border-line px-5 py-8 text-center text-ink2">These versions have the same content.</p>
+{%- else %}
+<p class="border-t border-line px-5 py-8 text-center text-ink2">No variables differ. The versions differ only in comments, blank lines or order.</p>
+{%- endif %}
+{%- if diff and (diff.unchanged or not env.can_reveal) %}
+<p class="border-t border-line bg-surface2 px-5 py-3 text-[13px] text-ink2">{% if diff.unchanged %}{{ diff.unchanged }} unchanged {{ "key" if diff.unchanged == 1 else "keys" }} hidden{% if not env.can_reveal %}. {% endif %}{% endif %}{% if not env.can_reveal %}Values are masked for the Viewer group.{% endif %}</p>
+{%- endif %}
+{%- if env.can_edit and diff %}
+{% set number = diff.left %}
+{% call dialog("restore-dialog", "Restore v" ~ diff.left ~ " as a new version") %}{% include "fragments/restore_form.html" %}{% endcall %}
+{%- endif %}
+</section>

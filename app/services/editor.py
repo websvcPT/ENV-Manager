@@ -198,7 +198,7 @@ async def load_editor_header(
     )
 
 
-async def _version(
+async def stored_version(
     db: AsyncSession, environment_id: int, number: int | None = None
 ) -> EnvironmentVersion | None:
     """A saved version of the environment: the one with this number, else the newest."""
@@ -220,7 +220,7 @@ async def load_editor_content(
     db: AsyncSession, crypto: CryptoService, environment_id: int
 ) -> EditorContent | None:
     """Names and sizes of the newest version, or None when nothing was saved yet."""
-    version = await _version(db, environment_id)
+    version = await stored_version(db, environment_id)
     if version is None:
         return None
     text = crypto.decrypt_text(version.content_encrypted)
@@ -247,7 +247,7 @@ async def variable_row(
     return next((row for row in content.rows if row.key == key), None)
 
 
-async def _audit_reveal(
+async def audit_reveal(
     db: AsyncSession,
     header: EditorHeader,
     version: EnvironmentVersion,
@@ -291,14 +291,14 @@ async def reveal_value(
     ``version`` defaults to the newest. Raises ``VariableNotFoundError`` for an unknown version
     or key; nothing is audited then.
     """
-    stored = await _version(db, header.id, version)
+    stored = await stored_version(db, header.id, version)
     if stored is None:
         raise VariableNotFoundError
     parsed = parse_env(crypto.decrypt_text(stored.content_encrypted))
     variable = parsed.variables.get(key) if parsed.is_env_format else None
     if variable is None:
         raise VariableNotFoundError
-    await _audit_reveal(db, header, stored, actor, ip_address, {"key": key})
+    await audit_reveal(db, header, stored, actor, ip_address, {"key": key})
     return variable.value
 
 
@@ -312,10 +312,10 @@ async def reveal_content(
     version: int | None = None,
 ) -> str:
     """The whole text of a version, after the reveal is audited."""
-    stored = await _version(db, header.id, version)
+    stored = await stored_version(db, header.id, version)
     if stored is None:
         raise VariableNotFoundError
-    await _audit_reveal(db, header, stored, actor, ip_address, {"scope": "file"})
+    await audit_reveal(db, header, stored, actor, ip_address, {"scope": "file"})
     return crypto.decrypt_text(stored.content_encrypted)
 
 
@@ -383,7 +383,7 @@ async def save_version(
     the same normalized text and the same version insert. Refused with ``EditorError`` when the
     page was loaded from an older version, nothing changed or the text cannot be stored.
     """
-    latest = await _version(db, header.id)
+    latest = await stored_version(db, header.id)
     if latest is None or latest.number != base_number:
         raise EditorError(STALE_MESSAGE)
     clean_comment = _clean_comment(comment)

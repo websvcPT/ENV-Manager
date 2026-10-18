@@ -1,0 +1,15 @@
+{#- The versions of an environment, newest first, with a checkbox per row to pick two to compare;
+    a change of the choice loads the diff panel. No content is part of it. Context: env (an
+    EditorHeader), versions (VersionRow list) and selected (the numbers checked). -#}
+{% from "macros/badges.html" import badge %}
+{% set head_classes = "bg-head px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-head-ink" %}
+<section data-fragment="version-table" id="version-table" aria-labelledby="vt" class="overflow-hidden rounded-panel border border-line bg-surface shadow-panel">
+<div class="flex flex-wrap items-center gap-2 p-4 md:px-5"><h2 id="vt" class="flex-1 text-lg font-bold">Versions</h2><p class="text-[13px] text-ink2">Select two versions to compare</p></div>
+<form hx-get="/environments/{{ env.id }}/diff" hx-trigger="change" hx-target="#diff-panel" hx-swap="outerHTML" hx-sync="this:replace">
+<div class="relative overflow-x-auto"><table class="w-full min-w-[720px] text-left"><caption class="sr-only">Versions of {{ env.name }}</caption><thead><tr><th scope="col" class="{{ head_classes }} w-10"><span class="sr-only">Compare</span></th><th scope="col" class="{{ head_classes }}">Version</th><th scope="col" class="{{ head_classes }}">Author</th><th scope="col" class="{{ head_classes }}">Time</th><th scope="col" class="{{ head_classes }}">Comment</th><th scope="col" class="{{ head_classes }}">Hash</th><th scope="col" class="{{ head_classes }}">Marker</th></tr></thead><tbody>
+{%- for version in versions %}
+<tr data-fragment="version-row" class="has-checked:bg-accent-soft"><td class="border-t border-line px-4 py-3.5"><label class="-m-[13px] flex size-11 items-center justify-center"><input type="checkbox" name="v" value="{{ version.number }}" data-js="compare-version"{% if version.number in selected %} checked{% endif %} aria-label="Compare version {{ version.number }}" class="block size-[18px] accent-accent"></label></td><th scope="row" class="border-t border-line px-4 py-3.5 text-left font-mono text-[13px] font-semibold">v{{ version.number }}</th><td class="border-t border-line px-4 py-3.5 text-ink2">{{ version.author or "None" }}</td><td class="border-t border-line px-4 py-3.5 whitespace-nowrap text-ink2">{{ version.created_at.strftime("%Y-%m-%d %H:%M") }}</td><td class="border-t border-line px-4 py-3.5">{% if version.comment %}{{ version.comment }}{% else %}<span class="text-ink3">None</span>{% endif %}</td><td class="border-t border-line px-4 py-3.5 font-mono text-[13px] text-ink2">{{ version.short_hash }}</td><td class="border-t border-line px-4 py-3.5">{% if version.deployed %}{{ badge("deployed") }}{% endif %}</td></tr>
+{%- endfor %}
+</tbody></table></div>
+</form>
+</section>

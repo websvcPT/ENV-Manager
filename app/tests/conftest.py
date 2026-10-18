@@ -15,6 +15,7 @@ from app.core.db import create_engine, create_session_factory
 from app.core.migrations import migrate_database
 from app.main import create_app
 from app.seeds import DEV_PASSWORD, SeedData, seed
+from app.tests.web_helpers import EnvironmentIds, environment_ids
 
 
 @pytest.fixture
@@ -94,3 +95,9 @@ async def sign_in(http: httpx.AsyncClient, name: str) -> None:
         },
     )
     assert response.status_code == 303
+
+
+@pytest.fixture
+async def ids(web_app: FastAPI) -> EnvironmentIds:
+    """The seeded environment ids of the web application."""
+    return await environment_ids(web_app)
