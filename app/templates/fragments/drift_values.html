@@ -1,0 +1,8 @@
+{#- The answer to revealing a drift view: only values, each aimed at its empty slot of the masked
+    view as a partial swap. `revealed` maps a row index to its values by column name (target,
+    deployed, managed); a column without a value for the row is absent. -#}
+{%- for index, columns in revealed.items() -%}
+{%- for column, value in columns.items() -%}
+<template hx type="partial" hx-target="#drift-{{ column }}-{{ index }}" hx-swap="innerHTML">{% include "fragments/editor_value.html" %}</template>
+{%- endfor -%}
+{%- endfor -%}

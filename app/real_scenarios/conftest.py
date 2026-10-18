@@ -11,13 +11,16 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
+import httpx
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.core.crypto import CryptoService, generate_master_key, parse_master_key
 from app.core.db import create_engine, create_session_factory
 from app.core.migrations import migrate_database
+from app.main import create_app
 from app.models import HookType, ServiceHook, User
 from app.seeds import SeedData, SeedDemo, seed
 from app.services.versions import create_version
@@ -181,6 +184,23 @@ async def world(demo: DemoStack, tmp_path: Path) -> World:
     finally:
         await engine.dispose()
     return World(data_path, key, seeded, crypto)
+
+
+@pytest.fixture
+async def web(world: World, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[httpx.AsyncClient]:
+    """The application on the world's data folder and key, reached in process."""
+    monkeypatch.setenv("ENVMANAGER_DATA_PATH", str(world.data_path))
+    monkeypatch.setenv("ENVMANAGER_KEY", world.key)
+    monkeypatch.delenv("ENVMANAGER_KEY_FILE", raising=False)
+    get_settings.cache_clear()
+    application = create_app()
+    async with application.router.lifespan_context(application):
+        transport = httpx.ASGITransport(app=application, raise_app_exceptions=False)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test", headers={"Accept": "text/html"}
+        ) as http:
+            yield http
+    get_settings.cache_clear()
 
 
 @dataclass(frozen=True)

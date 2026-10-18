@@ -1,0 +1,4 @@
+{#- The place where the drift view says why an action was refused: empty until then, swapped by
+    the import button and by a refused reveal. Context: error (a sentence, or none). -#}
+{% from "macros/feedback.html" import note %}
+<div id="drift-notice" data-fragment="drift-notice" aria-live="polite">{% if error %}<div class="px-4 pb-4 md:px-5">{{ note(error, tone="error") }}</div>{% endif %}</div>

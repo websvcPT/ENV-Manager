@@ -89,6 +89,11 @@ class EditorHeader:
     can_check_dist: bool
     item: ItemRef
 
+    @property
+    def can_deploy(self) -> bool:
+        """Whether the caller may deploy this file; checking its dist uses the same capability."""
+        return self.can_check_dist
+
 
 @dataclass(frozen=True)
 class VariableRow:

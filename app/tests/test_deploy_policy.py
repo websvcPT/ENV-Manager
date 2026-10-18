@@ -121,6 +121,30 @@ def test_a_drifted_target_is_backed_up_unless_the_policy_overwrites_it() -> None
         assert result.backup is backup
 
 
+def test_a_caller_can_ask_for_the_backup_even_under_the_overwrite_policy() -> None:
+    for policy in DriftPolicy:
+        result = plan_environment(
+            drift=DriftState.DRIFT,
+            unchanged=False,
+            check=make_check(),
+            drift_policy=policy,
+            missing_policy=MissingTargetPolicy.CREATE,
+            force=True,
+            backup_drifted=True,
+        )
+        assert result.backup is True
+    result = plan_environment(
+        drift=DriftState.IN_SYNC,
+        unchanged=False,
+        check=make_check(),
+        drift_policy=DriftPolicy.OVERWRITE,
+        missing_policy=MissingTargetPolicy.CREATE,
+        force=True,
+        backup_drifted=True,
+    )
+    assert result.backup is False
+
+
 def test_only_a_drifted_target_is_backed_up() -> None:
     for state in (DriftState.IN_SYNC, DriftState.MISSING):
         result = plan_environment(

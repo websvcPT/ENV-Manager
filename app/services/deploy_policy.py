@@ -3,8 +3,8 @@
 These are pure functions of what the checks found. A missing-keys block (or a dist check that
 could not run under the block policy) comes first, then a missing target, then drift. Force
 overrides every block and halt and is reported in the notes of the plan. A drifted target is
-backed up before it is replaced unless the policy is to overwrite it, so a forced deploy never
-destroys on-disk changes without a copy.
+backed up before it is replaced unless the policy is to overwrite it (a caller can still ask for
+the copy), so a forced deploy never destroys on-disk changes without a copy.
 """
 
 from dataclasses import dataclass
@@ -120,8 +120,13 @@ def plan_environment(
     drift_policy: DriftPolicy,
     missing_policy: MissingTargetPolicy,
     force: bool,
+    backup_drifted: bool = False,
 ) -> Plan:
-    """Apply the dist, missing target and drift policies to what the checks found."""
+    """Apply the dist, missing target and drift policies to what the checks found.
+
+    ``backup_drifted`` keeps a copy of a drifted target even under the overwrite policy, for the
+    caller that replaces the file on purpose after looking at the difference.
+    """
     block_message, notes, forced = _dist_gate(check, force)
     if block_message is not None:
         return Plan(Action.BLOCK, drift, block_message)
@@ -140,5 +145,7 @@ def plan_environment(
         forced = True
         notes.append(FORCED_DRIFT_NOTE)
     # A halting policy only reaches this point with force set; the drifted file is kept either way.
-    backup = drift is DriftState.DRIFT and drift_policy is not DriftPolicy.OVERWRITE
+    backup = drift is DriftState.DRIFT and (
+        drift_policy is not DriftPolicy.OVERWRITE or backup_drifted
+    )
     return Plan(Action.WRITE, drift, backup=backup, forced=forced, notes=tuple(notes))

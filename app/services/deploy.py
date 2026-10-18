@@ -38,7 +38,6 @@ from app.core.crypto import CryptoError, CryptoService
 from app.core.log import get_logger
 from app.models import (
     Deployment,
-    DeployResult,
     DeployResultStatus,
     DeployRun,
     DeployStatus,
@@ -53,6 +52,7 @@ from app.models import (
 )
 from app.models.types import utc_now
 from app.services.audit import AuditActor
+from app.services.deploy_baseline import load_baselines
 from app.services.deploy_events import (
     DeployFinished,
     DeployNotifier,
@@ -269,23 +269,10 @@ class DeployEngine:
 
     async def _load_baselines(self, db: AsyncSession, context: _Context) -> dict[int, str]:
         """The keyed hash of the last content this app wrote or found in each target."""
-        environment_ids = [environment.id for environment in context.environments]
-        rows = await db.execute(
-            select(DeployResult.environment_id, DeployResult.written_hash)
-            .join(DeployRun, DeployRun.id == DeployResult.run_id)
-            .where(
-                DeployResult.environment_id.in_(environment_ids),
-                DeployRun.dry_run.is_(False),
-                DeployResult.status.in_(_DEPLOYED),
-                DeployResult.written_hash.is_not(None),
-            )
-            .order_by(DeployResult.id)
+        baselines = await load_baselines(
+            db, [environment.id for environment in context.environments]
         )
-        return {
-            environment_id: written_hash
-            for environment_id, written_hash in rows.all()
-            if environment_id is not None and written_hash is not None
-        }
+        return {environment_id: found.written_hash for environment_id, found in baselines.items()}
 
     async def _examine(
         self,
@@ -376,6 +363,7 @@ class DeployEngine:
             drift_policy=environment.drift_policy or deployment.drift_policy,
             missing_policy=environment.missing_target_policy or deployment.missing_target_policy,
             force=request.force,
+            backup_drifted=request.backup_drifted,
         )
         findings = _Findings(check.outcome, plan.drift, current_hash, plan.forced, check)
         if plan.action is Action.BLOCK:

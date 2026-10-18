@@ -1,5 +1,8 @@
 """Helpers shared by the web tests of environment pages: htmx requests, ids and header checks."""
 
+import html
+import json
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 
@@ -66,3 +69,11 @@ def assert_never_cached(response: httpx.Response) -> None:
 def main_of(page: str) -> str:
     """The page body without the sidebar and top bar."""
     return page.split("<main", 1)[1].split("</main>", 1)[0]
+
+
+def hx_vals(page: str, path: str) -> dict[str, object]:
+    """The hx-vals of the control that posts to ``path``, as the browser would send them."""
+    found = re.search(rf'hx-post="{re.escape(path)}"[^>]*?hx-vals="([^"]*)"', page)
+    assert found, path
+    values: dict[str, object] = json.loads(html.unescape(found.group(1)))
+    return values

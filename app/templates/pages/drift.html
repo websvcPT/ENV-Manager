@@ -1,0 +1,76 @@
+{#- Drift view: the target on disk, the last deployed version and the managed version side by
+    side with masked values, and the actions that resolve a difference. No value is part of it:
+    each cell has an empty slot that the audited reveal answer fills and that app.js empties
+    again. Context: env (an EditorHeader), view (a DriftView), result_toast (tone and message,
+    or none) and deploy_timeout_ms. -#}
+{% extends "layouts/app.html" %}
+{% from "macros/badges.html" import badge %}
+{% from "macros/buttons.html" import button %}
+{% from "macros/dialogs.html" import dialog %}
+{% from "macros/feedback.html" import toast %}
+{% from "macros/icons.html" import icon %}
+{% from "macros/panels.html" import page_header %}
+{% set active_nav = "projects" %}
+{% set breadcrumbs = [("Projects", "/projects"), (env.project_name, "/projects/" ~ env.project_id), (env.deployment_name, "/deployments/" ~ env.deployment_id), (env.service_name, "/services/" ~ env.service_id), (env.name, none)] %}
+{% block title %}Drift · {{ env.name }}{% endblock %}
+{% block content %}
+{% set state_badges = {
+  "no_drift": ("deployed", "No drift"),
+  "drift": ("drift", "Drift"),
+  "never_deployed": ("never", "Never deployed"),
+  "missing": ("drift", "Target missing"),
+  "unreadable": ("failed", "Cannot read target"),
+  "outside": ("blocked", "Outside allowed paths")
+} %}
+{% set badge_key, badge_label = state_badges[view.kind.value] %}
+{% set comparison = view.comparison %}
+{% set can_overwrite = env.can_deploy and view.can_overwrite %}
+{% set can_import = env.can_edit and view.can_import %}
+{% set import_vals = {"base_version": view.managed.number, "target_hash": view.target_hash} | tojson | forceescape %}
+{% set reveal_vals = {"managed": view.managed.number, "deployed": view.deployed.number if view.deployed else "", "target": view.target_hash or "", "columns": "target,deployed,managed"} | tojson | forceescape %}
+{% set actions %}
+{%- if can_overwrite %}{{ button("Overwrite target…", kind="danger", icon_name="warning", icon_stroke="2.2", extra_class="max-md:h-11", data_js="dialog-open", data_target="overwrite-dialog", aria_haspopup="dialog") }}{% endif %}
+{%- if can_import %}{{ button("Import target as new version", extra_class="max-md:h-11", hx_post="/environments/" ~ env.id ~ "/import", hx_target="#drift-notice", hx_swap="outerHTML", hx_sync="this:drop", hx_vals=import_vals) }}{% endif %}
+{{ button("Cancel" if (can_overwrite or can_import) else "Back to service", href="/services/" ~ env.service_id, extra_class="max-md:h-11") }}
+{% endset %}
+{% set target_note %}{% if view.target.short_hash %}hash {{ view.target.short_hash }}… read {{ view.target.read_at.strftime("%H:%M") }}{% else %}{{ {"missing": "file not found", "outside": "outside the allowed paths", "unreadable": "cannot be read"}.get(view.kind.value, "not read") }}{% endif %}{% endset %}
+{% set columns_class = "grid grid-cols-[230px_repeat(3,minmax(0,1fr))]" %}
+{% set reveal_classes = "h-10 max-md:h-11 items-center gap-2 rounded-btn border border-line-strong bg-surface px-4 text-sm font-semibold text-ink hover:bg-surface2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus" %}
+{% set change_words = {"changed": "Changed", "added": "Added", "removed": "Removed"} %}
+{% macro cell(column, row, presence, absent_label, extra_class) -%}
+<div class="px-4 py-3.5 font-mono text-[13px]{{ extra_class }}">{% if presence.value == "set" %}<span class="group-data-[revealed=true]:hidden">••••••••</span><span id="drift-{{ column }}-{{ row.index }}" data-value class="hidden whitespace-pre-wrap break-all group-data-[revealed=true]:inline"></span>{% elif presence.value == "not_set" %}<span class="text-ink3">not set</span>{% else %}<span class="text-ink3">{{ absent_label }}</span>{% endif %}</div>
+{%- endmacro %}
+{{ page_header(env.name, view.message, mono=true, badges=badge(badge_key, badge_label), actions=actions) }}
+<section data-fragment="drift-view" id="drift-view" data-reveal-row data-revealed="false" aria-labelledby="dv" class="group overflow-hidden rounded-panel border border-line bg-surface shadow-panel">
+<div class="flex flex-wrap items-center gap-3 p-4 md:px-5"><h2 id="dv" class="flex-1 text-lg font-bold">Three-way comparison</h2>
+{%- if env.can_reveal and comparison.rows %}
+<div class="flex basis-full flex-wrap items-center gap-3 md:basis-auto">
+<button type="button" aria-pressed="false" hx-post="/environments/{{ env.id }}/drift/reveal" hx-vals="{{ reveal_vals }}" hx-swap="none" class="inline-flex {{ reveal_classes }} group-data-[revealed=true]:hidden">{{ icon("eye", "size-4", "2") }}Reveal values (audited)</button>
+<button type="button" data-js="reveal-hide" aria-pressed="true" class="{{ reveal_classes }} hidden group-data-[revealed=true]:inline-flex group-data-[revealed=true]:border-accent group-data-[revealed=true]:bg-accent-soft">{{ icon("eye-off", "size-4", "2") }}Hide values</button>
+</div>
+{%- endif %}
+</div>
+{% include "fragments/drift_notice.html" %}
+<div class="relative overflow-x-auto"><div class="min-w-[820px]">
+<div class="{{ columns_class }} bg-head text-xs font-semibold uppercase tracking-wide text-head-ink"><span class="px-4 py-2.5">Key</span><span class="px-4 py-2.5">Target on disk<span class="block font-normal normal-case tracking-normal">{{ target_note }}</span></span><span class="px-4 py-2.5">Last deployed{% if view.deployed %} v{{ view.deployed.number }}{% endif %}<span class="block font-normal normal-case tracking-normal">{% if view.deployed %}hash {{ view.deployed.short_hash }}… written {{ view.deployed.at.strftime("%Y-%m-%d") }}{% else %}never deployed{% endif %}</span></span><span class="px-4 py-2.5">Managed v{{ view.managed.number }}<span class="block font-normal normal-case tracking-normal">hash {{ view.managed.short_hash }}… latest version</span></span></div>
+{%- for row in comparison.rows %}
+<div data-fragment="drift-row" class="{{ columns_class }} items-start border-t border-line{% if row.disk_change %} bg-accent-soft{% endif %}"><div class="break-all px-4 py-3.5 font-mono text-[13px] font-semibold">{{ row.key }}
+{%- if row.disk_change %}<span data-change="disk-{{ row.disk_change.value }}" class="mt-1 flex items-center gap-1.5 font-sans text-xs font-semibold text-warn-fg">{{ icon("warning", "size-3", "2.6") }}{{ change_words[row.disk_change.value] }} on disk</span>{% endif %}
+{%- if row.managed_change %}<span data-change="managed-{{ row.managed_change.value }}" class="mt-1 flex items-center gap-1.5 font-sans text-xs font-semibold text-info-fg">{{ icon("clock", "size-3", "2.6") }}{{ change_words[row.managed_change.value] }} in managed</span>{% endif %}</div>
+{{ cell("target", row, row.target, "unavailable", "") }}{{ cell("deployed", row, row.deployed, "not deployed", " text-ink2") }}{{ cell("managed", row, row.managed, "unavailable", " text-ink2") }}</div>
+{%- endfor %}
+</div></div>
+{%- if not comparison.rows %}
+<p class="border-t border-line px-5 py-8 text-center text-ink2">{% if comparison.columns < 2 %}Nothing to compare. Only the managed version is available.{% elif comparison.text_only %}No variables differ. The files differ only in comments, blank lines, line breaks or order.{% else %}No keys differ between the columns.{% endif %}</p>
+{%- endif %}
+{%- if comparison.unchanged or not env.can_reveal %}
+<p class="border-t border-line bg-surface2 px-5 py-3 text-[13px] text-ink2">{% if comparison.unchanged %}{{ comparison.unchanged }} unchanged {{ "key" if comparison.unchanged == 1 else "keys" }} hidden{% if not env.can_reveal %}. {% endif %}{% endif %}{% if not env.can_reveal %}Values are masked for the Viewer group.{% endif %}</p>
+{%- endif %}
+</section>
+{%- if can_overwrite %}
+{% set managed_number = view.managed.number %}
+{% set error = none %}
+{% call dialog("overwrite-dialog", "Overwrite target file") %}{% include "fragments/drift_overwrite.html" %}{% endcall %}
+{%- endif %}
+{%- if result_toast %}{{ toast(result_toast[0], result_toast[1], floating=true) }}{% endif %}
+{% endblock %}

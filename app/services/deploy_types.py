@@ -29,6 +29,7 @@ class DeployRequest:
 
     ``environment_ids`` is None for every environment of the service the caller may deploy;
     ``versions`` maps an environment id to the version number to write (default: the newest).
+    ``backup_drifted`` keeps a copy of a drifted target whatever the drift policy says.
     """
 
     service_id: int
@@ -36,6 +37,7 @@ class DeployRequest:
     versions: dict[int, int] = field(default_factory=dict)
     dry_run: bool = False
     force: bool = False
+    backup_drifted: bool = False
 
 
 @dataclass(frozen=True)

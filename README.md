@@ -72,6 +72,17 @@ checks without writing or backing anything up, `--force` overrides missing-key b
 halts and is audited. A drifted file that a forced deploy replaces is backed up first, next to it
 (`<name>.bak-<UTC stamp>-<4 hex>`, mode 0600).
 
+## Drift view
+
+A file whose target changed outside the app has a drift view at `/environments/<id>/drift` (the
+Halted result of a deploy links to it). It reads the target from the host when the page is opened
+and shows it next to the last deployed version and the managed version, masked and compared key by
+key; revealing values is an audited request per column and they disappear after 30 seconds.
+Importing the target saves the file as it is on disk as a new version (refused when the file or
+the managed version changed since the page was opened). Overwriting the target is a forced deploy
+of that one file after a confirmation: the file it replaces is copied next to it first (mode 0600),
+whatever the drift policy says, and the post-deploy command of the service runs as for any deploy.
+
 ## Post-deploy commands
 
 A service can store commands that run once after its files were deployed, for example to

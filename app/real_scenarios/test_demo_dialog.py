@@ -8,14 +8,10 @@ files (mode, content, backups, what was not touched) and on the demo containers.
 import re
 import stat
 import time
-from collections.abc import AsyncIterator
 
 import httpx
-import pytest
 from sqlalchemy import select
 
-from app.config import get_settings
-from app.main import create_app
 from app.models import AuditEntry, DeployRun, PostDeployStatus
 from app.real_scenarios.conftest import DemoStack, Workloads, World
 from app.real_scenarios.helpers import MANAGED, snapshot
@@ -24,23 +20,6 @@ from app.tests.web_helpers import post
 
 DRIFTED_ENVIRONMENT = ".env.api"
 CREATED_ENVIRONMENT = "demo-ca.pem"
-
-
-@pytest.fixture
-async def web(world: World, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[httpx.AsyncClient]:
-    """The application on the world's data folder and key, reached in process."""
-    monkeypatch.setenv("ENVMANAGER_DATA_PATH", str(world.data_path))
-    monkeypatch.setenv("ENVMANAGER_KEY", world.key)
-    monkeypatch.delenv("ENVMANAGER_KEY_FILE", raising=False)
-    get_settings.cache_clear()
-    application = create_app()
-    async with application.router.lifespan_context(application):
-        transport = httpx.ASGITransport(app=application, raise_app_exceptions=False)
-        async with httpx.AsyncClient(
-            transport=transport, base_url="http://test", headers={"Accept": "text/html"}
-        ) as http:
-            yield http
-    get_settings.cache_clear()
 
 
 def chosen(*environments: int, force: bool = False, confirm: bool = False) -> dict[str, object]:
