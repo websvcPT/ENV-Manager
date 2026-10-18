@@ -1,0 +1,18 @@
+{#- The post-deploy switch form. The switch and Save are disabled while Docker cannot be used, and
+    a save is refused then. Context: docker (a DockerStatus), enabled (the switch as shown: on
+    only when stored on and Docker usable), error (none, or the refusal) and saved (none, or
+    tone, title and message of a toast). -#}
+{% from "macros/buttons.html" import button %}
+{% from "macros/feedback.html" import toast %}
+{% from "macros/icons.html" import icon %}
+{% set off = not docker.available %}
+<form id="post-deploy-switch" data-fragment="post-deploy-switch" hx-post="/settings/post-deploy" hx-target="this" hx-swap="outerHTML" class="flex flex-col gap-3">
+<label class="flex items-start gap-2.5 text-[13px] font-semibold"><input id="pd-enabled" type="checkbox" name="enabled"{% if enabled %} checked{% endif %}{% if off %} disabled{% endif %} class="mt-0.5 size-[18px] shrink-0 accent-accent disabled:cursor-not-allowed disabled:opacity-60"><span>Enable post-deploy commands<span class="block font-normal text-ink2">{% if not off %}Services with a command run it once after a deploy.{% elif not docker.mounted %}Unavailable until the Docker socket is mounted. Saving is refused.{% else %}Unavailable until Docker works. Saving is refused.{% endif %}</span></span></label>
+{%- if error %}
+<p role="alert" class="flex items-center gap-1.5 text-[13px] font-semibold text-danger">{{ icon("warning", "size-3.5", "2.4") }}{{ error }}</p>
+{%- endif %}
+<div>{{ button("Save settings", kind="primary-sm", type="submit", disabled=off, extra_class="max-md:h-11") }}</div>
+{%- if saved %}
+{{ toast(saved.tone, saved.message, saved.title, floating=true) }}
+{%- endif %}
+</form>

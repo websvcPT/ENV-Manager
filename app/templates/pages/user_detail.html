@@ -1,5 +1,6 @@
 {% extends "layouts/app.html" %}
 {% from "macros/audit.html" import RESULT_BADGES %}
+{% from "macros/time.html" import moment with context %}
 {% from "macros/badges.html" import badge %}
 {% from "macros/buttons.html" import button %}
 {% from "macros/dialogs.html" import loaded_dialog %}
@@ -34,7 +35,7 @@
 {%- if user.activity %}
 {% call table("Recent activity of " ~ user.name, ["Time", "Action", "Object", "Result"], min_width_class="min-w-[560px]") %}
 {%- for entry in user.activity %}
-<tr data-fragment="activity-row"><td class="border-t border-line px-4 py-3.5"><time datetime="{{ entry.created_at.strftime('%Y-%m-%dT%H:%M:%SZ') }}" title="UTC">{{ entry.created_at.strftime("%Y-%m-%d %H:%M") }}</time></td>
+<tr data-fragment="activity-row"><td class="border-t border-line px-4 py-3.5">{{ moment(entry.created_at) }}</td>
 <td class="border-t border-line px-4 py-3.5"><span class="font-mono text-[13px]">{{ entry.action }}</span></td>
 <td class="border-t border-line px-4 py-3.5">{% if entry.object_name %}{{ entry.object_name }}{% else %}<span class="text-ink3">None</span>{% endif %}</td>
 <td class="border-t border-line px-4 py-3.5">{{ badge(RESULT_BADGES[entry.result.value]) }}</td></tr>

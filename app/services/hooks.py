@@ -1,10 +1,12 @@
 """The post-deploy hook seam of the deploy engine.
 
 The engine calls a ``HookRunner`` once per real deploy after every selected environment was
-written or found unchanged, while it still holds the deploy lock. The runner decides everything
-about the command itself (availability, run only if changed, execution, timeout, output); the
-engine only records the ``PostDeployResult`` it returns. ``app.services.hook_runner`` holds the
-runner that executes the stored docker commands.
+written or found unchanged, while it still holds the deploy lock. Whether the feature is switched
+on in the settings is the engine's decision, made before the run is stored (so no runner is
+called and no run ever reads as running while the switch is off). The runner decides everything
+else about the command itself (availability, run only if changed, execution, timeout, output);
+the engine only records the ``PostDeployResult`` it returns. ``app.services.hook_runner`` holds
+the runner that executes the stored docker commands.
 """
 
 from dataclasses import dataclass, field
@@ -14,6 +16,8 @@ from typing import Protocol
 from app.models import PostDeployStatus
 from app.services.output_scrub import OutputScrubber
 from app.services.paths import AllowedPaths
+
+POST_DEPLOY_OFF_REASON = "Post-deploy commands are switched off in settings."
 
 
 @dataclass(frozen=True)

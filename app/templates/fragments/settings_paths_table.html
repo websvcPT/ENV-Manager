@@ -1,0 +1,24 @@
+{#- The allowed paths panel: one row per entry with its mounted and writable status and the
+    deployments under it. Remove opens the confirm dialog of the page. The panel refreshes when
+    an entry is added or removed. Context: rows (AllowedPathRow list). -#}
+{% from "macros/badges.html" import badge %}
+{% from "macros/buttons.html" import button %}
+{% from "macros/feedback.html" import note %}
+{% from "macros/panels.html" import cell, panel, table %}
+{% set add_button %}{{ button("Add path", kind="primary-sm", icon_name="plus", icon_stroke="2.2", extra_class="max-md:h-11", data_js="dialog-open", data_target="path-add", aria_haspopup="dialog", hx_get="/settings/paths/new", hx_target="#path-add", hx_swap="innerHTML") }}{% endset %}
+{% call panel("Allowed paths", "paths-title", fragment="paths-table", actions=add_button, id="paths-table", hx_get="/settings/paths/table", hx_trigger="paths-changed from:body", hx_swap="outerHTML") %}
+<p class="px-4 pb-3 text-[13px] text-ink2 md:px-5">The app may only read and write below these paths. Mounts are set in the Compose file; this list chooses which mounted roots are used.</p>
+{%- if rows %}
+{% call table("Allowed paths", ["Path", "Mounted", "Writable", "Deployments", "Actions"], right_columns=[4], min_width_class="min-w-[720px]") %}
+{%- for row in rows %}
+<tr data-fragment="path-row" id="path-{{ row.id }}"><th scope="row" class="border-t border-line px-4 py-3.5 text-left font-semibold"><span class="font-mono text-[13px]">{{ row.path }}</span>{% if row.note %}<span class="mt-0.5 block text-xs font-normal text-ink2">{{ row.note }}</span>{% endif %}</th>
+{%- call cell() %}{% if row.state == "ok" %}{{ badge("deployed", "Mounted") if row.mounted else badge("failed", "Not mounted") }}{% elif row.state == "missing" %}{{ badge("failed", "Missing") }}{% else %}{{ badge("drift", "Moved") }}{% endif %}{% endcall %}
+{%- call cell() %}{% if row.state != "ok" %}{{ badge("never", "Not checked") }}{% elif row.writable %}{{ badge("deployed", "Writable") }}{% else %}{{ badge("halted", "Read-only") }}{% endif %}{% endcall %}
+{%- call cell() %}{{ row.deployments }}{% endcall %}
+<td class="border-t border-line px-4 py-3.5 whitespace-nowrap text-right"><button type="button" data-js="dialog-open" data-target="path-remove" aria-haspopup="dialog" hx-get="/settings/paths/{{ row.id }}/remove" hx-target="#path-remove" hx-swap="innerHTML" class="inline-flex min-h-11 items-center font-semibold text-danger hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus text-sm md:min-h-0">Remove<span class="sr-only"> {{ row.path }}</span></button></td></tr>
+{%- endfor %}
+{% endcall %}
+{%- else %}
+<div class="mx-4 mb-4 md:mx-5">{{ note("The list is empty. The app runs but cannot create deployments until you add an allowed path.", tone="warn") }}</div>
+{%- endif %}
+{% endcall %}

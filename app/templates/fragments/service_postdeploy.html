@@ -1,7 +1,8 @@
 {#- The post-deploy panel of a service: the Docker status line and the command settings form for
     the superadmin, the last run (status for everyone, output for the groups that may read it).
     Context: service, post_deploy, is_viewer, docker (a DockerStatus, None unless the caller is
-    the superadmin), socket_path, form, errors and saved (see service_postdeploy_settings). -#}
+    the superadmin), post_deploy_enabled (the Settings switch, with docker), socket_path, form,
+    errors and saved (see service_postdeploy_settings). -#}
 {% from "macros/badges.html" import badge %}
 {% from "macros/feedback.html" import code_block %}
 {% from "macros/panels.html" import text_link %}
@@ -14,7 +15,8 @@
 {{ badge("blocked", "Docker socket not mounted") }}{{ text_link("Open post-deploy settings", "/settings/post-deploy") }}
 {%- else %}
 {{ badge("deployed", "Docker socket mounted") }}{{ "daemon reachable" if docker.reachable else "daemon not reachable" }} · {{ "compose v" ~ docker.compose_version if docker.compose_version else "compose not available" }}
-{%- if not docker.available %}{{ text_link("Open post-deploy settings", "/settings/post-deploy") }}{% endif %}
+{%- if not docker.available %}{{ text_link("Open post-deploy settings", "/settings/post-deploy") }}
+{%- elif not post_deploy_enabled %}{{ badge("skipped", "Switched off in settings") }}{{ text_link("Open post-deploy settings", "/settings/post-deploy") }}{% endif %}
 {%- endif %}</p>
 {%- endif %}</div>
 <div class="grid{% if wide %} md:grid-cols-2{% endif %}"><div class="flex min-w-0 flex-col gap-3.5 p-4 md:p-5{% if wide %} md:border-r md:border-line{% endif %}"><h3 class="text-xs font-bold uppercase tracking-wide text-ink3">Last run</h3>

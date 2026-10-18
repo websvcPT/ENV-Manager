@@ -22,8 +22,11 @@ from app.models import (
 )
 from app.real_scenarios.conftest import DemoStack, Workloads, World
 from app.real_scenarios.helpers import MANAGED, cli_runs, deploy_as, output, snapshot
+from app.services.app_settings import PostDeploySettings, save_section
+from app.services.audit import AuditActor
 from app.services.deploy_lock import hold_deploy_lock
 from app.services.hook_runner import NOT_CHANGED_REASON
+from app.services.hooks import POST_DEPLOY_OFF_REASON
 
 API_NAMES = {"DEMO_API_MODE", "DEMO_API_PORT", "DEMO_API_TOKEN"}
 NEW_API_KEYS = "DEMO_API_NEW_FLAG=on\nDEMO_API_NEW_LIMIT=9\n"
@@ -237,3 +240,37 @@ async def test_without_the_docker_socket_the_command_is_skipped_and_the_deploy_s
     assert (demo.targets / ".env.api").read_text(encoding="utf-8") == MANAGED[".env.api"]
     assert workloads.container_ids() == []
     assert os.path.exists("/var/run/docker.sock")
+
+
+async def test_with_the_settings_switch_off_the_command_is_skipped_and_the_deploy_succeeds(
+    demo: DemoStack, world: World, workloads: Workloads
+) -> None:
+    (demo.targets / ".env.api").unlink()
+    async with world.session() as db:
+        await save_section(
+            db, "post_deploy", PostDeploySettings(enabled=False), actor=AuditActor.cli()
+        )
+        await db.commit()
+
+    result = world.deploy("api", "--env", ".env.api")
+    assert result.returncode == 0, output(result)
+    assert "deploy of demo/stack/api: success" in result.stdout
+    assert f"post-deploy: skipped ({POST_DEPLOY_OFF_REASON})" in result.stdout
+    assert (demo.targets / ".env.api").read_text(encoding="utf-8") == MANAGED[".env.api"]
+    assert workloads.container_ids() == []
+
+    async with world.session() as db:
+        (run,) = await cli_runs(db)
+        assert run.post_deploy_status is PostDeployStatus.SKIPPED
+        assert run.post_deploy_reason == POST_DEPLOY_OFF_REASON
+
+    async with world.session() as db:
+        await save_section(
+            db, "post_deploy", PostDeploySettings(enabled=True), actor=AuditActor.cli()
+        )
+        await db.commit()
+    await world.save_version(world.demo_seed.env_api.id, MANAGED[".env.api"] + NEW_API_KEYS)
+    again = world.deploy("api", "--env", ".env.api")
+    assert again.returncode == 0, output(again)
+    assert "post-deploy: ran" in again.stdout
+    assert len(workloads.container_ids("api")) == 1

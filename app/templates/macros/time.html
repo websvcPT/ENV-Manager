@@ -1,0 +1,7 @@
+{#- Times for people, in the zone and date format of the General settings. `display` is the
+    request's DisplayTime (a global default of UTC applies where there is no request); import
+    this file with context so a macro that is itself imported with context can read it. The
+    machine readable value stays UTC, and the zone name is the title. -#}
+{% macro moment(value) -%}
+<time datetime="{{ value.strftime('%Y-%m-%dT%H:%M:%SZ') }}" title="{{ display.label }}">{{ display.text(value) }}</time>
+{%- endmacro %}

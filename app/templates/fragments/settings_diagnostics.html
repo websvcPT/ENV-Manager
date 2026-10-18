@@ -1,0 +1,21 @@
+{#- The read-only diagnostics panel: what was set at startup, with no secret. Error reporting and
+    tracing show as on or off, the tracing endpoint as a host name only. Context: diagnostics (a
+    Diagnostics). -#}
+{% from "macros/badges.html" import badge %}
+{% from "macros/panels.html" import panel %}
+{% macro item(label, id) -%}
+<div><dt class="text-xs font-bold uppercase tracking-wide text-ink3">{{ label }}</dt><dd id="{{ id }}" class="mt-0.5 break-all">{{ caller() }}</dd></div>
+{%- endmacro %}
+{% set note_text %}<span class="text-[13px] text-ink2">Read-only. Set at startup.</span>{% endset %}
+{% call panel("Diagnostics", "diagnostics-title", fragment="settings-diagnostics", actions=note_text) %}
+<div class="px-4 pb-5 md:px-5"><dl class="grid gap-x-8 gap-y-3.5 text-[13px] sm:grid-cols-2 lg:grid-cols-4">
+{% call item("Sentry", "diag-sentry") %}{{ badge("deployed", "On") if diagnostics.error_reporting else badge("never", "Off") }}{% endcall %}
+{% call item("OpenTelemetry", "diag-otel") %}{{ badge("deployed", "On") if diagnostics.tracing else badge("never", "Off") }}{% endcall %}
+{% call item("OTLP endpoint host", "diag-otel-host") %}<span class="font-mono">{{ diagnostics.tracing_host or "None" }}</span>{% endcall %}
+{% call item("Version", "diag-version") %}<span class="font-mono">v{{ diagnostics.version }}</span>{% endcall %}
+{% call item("Environment", "diag-environment") %}<span class="font-mono">{{ diagnostics.environment }}</span>{% endcall %}
+{% call item("Trusted proxies", "diag-proxies") %}<span class="font-mono">{{ diagnostics.trusted_proxies | join(", ") or "None" }}</span>{% endcall %}
+{% call item("Allowed sources", "diag-sources") %}<span class="font-mono">{{ diagnostics.allowed_sources | join(", ") or "Any address" }}</span>{% endcall %}
+{% call item("Your address", "diag-client") %}<span class="font-mono">{{ diagnostics.client_address or "Unknown" }}</span>{% endcall %}
+</dl></div>
+{% endcall %}

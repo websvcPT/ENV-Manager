@@ -2,7 +2,6 @@
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from dataclasses import replace
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -13,7 +12,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app import VERSION
 from app.api.errors import refusal_handler
 from app.api.v1 import router as api_router
-from app.config import Settings, get_settings
+from app.config import get_settings
 from app.core.crypto import CryptoError, build_crypto_service
 from app.core.db import create_engine, create_session_factory
 from app.core.log import configure_logging, get_logger
@@ -21,10 +20,10 @@ from app.core.middleware import install_middleware
 from app.core.migrations import migrate_database
 from app.core.observability import configure_otel, init_sentry
 from app.services.api_errors import ApiRefusal
-from app.services.auth_policy import AuthPolicy
 from app.services.deploy_recovery import recover_interrupted_runs
 from app.services.docker_cli import DockerCli
 from app.services.key_check import ensure_key_check
+from app.services.settings_events import NoSettingsNotifier
 from app.web.access_grid import router as access_grid_router
 from app.web.account import router as account_router
 from app.web.audit import router as audit_router
@@ -42,23 +41,14 @@ from app.web.project_detail import router as project_detail_router
 from app.web.projects import router as projects_router
 from app.web.service_detail import router as service_detail_router
 from app.web.service_form import router as service_form_router
+from app.web.settings import router as settings_router
+from app.web.settings_paths import router as settings_paths_router
 from app.web.tokens import router as tokens_router
 from app.web.users import router as users_router
 
 log = get_logger("main")
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
-
-
-def auth_policy_for(settings: Settings) -> AuthPolicy:
-    """The authentication limits: code defaults plus the development override of the address limit.
-
-    The override only exists in development and testing (the settings refuse it elsewhere).
-    """
-    policy = AuthPolicy()
-    if settings.login_ip_max_failures is not None:
-        policy = replace(policy, ip_max_failures=settings.login_ip_max_failures)
-    return policy
 
 
 @asynccontextmanager
@@ -90,7 +80,8 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         async with session_factory() as session:
             await recover_interrupted_runs(session, settings.lock_path)
         application.state.crypto = crypto
-        application.state.auth_policy = auth_policy_for(settings)
+        application.state.login_ip_max_failures = settings.login_ip_max_failures
+        application.state.settings_notifier = NoSettingsNotifier()
         application.state.docker_cli = DockerCli(socket_path=settings.docker_socket)
         application.state.lock_dir = settings.lock_path
         application.state.engine = engine
@@ -138,6 +129,8 @@ def create_app() -> FastAPI:
     application.include_router(access_grid_router)
     application.include_router(tokens_router)
     application.include_router(account_router)
+    application.include_router(settings_paths_router)
+    application.include_router(settings_router)
     application.include_router(api_router)
 
     @application.get("/healthz", include_in_schema=False)

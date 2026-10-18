@@ -9,6 +9,7 @@ from starlette.responses import HTMLResponse
 from starlette.templating import Jinja2Templates
 
 from app import VERSION
+from app.core.display_time import DisplayTime, display_of
 from app.core.navigation import initials, nav_items_for
 
 TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "templates"
@@ -21,6 +22,7 @@ def base_context(request: Request) -> dict[str, Any]:
     user = auth.user if auth is not None else None
     return {
         "csrf_token": getattr(request.state, "csrf_token", ""),
+        "display": display_of(request),
         "app_version": VERSION,
         "htmx_version": HTMX_VERSION,
         "current_user": user,
@@ -34,6 +36,7 @@ environment = Environment(
     autoescape=True,
     undefined=StrictUndefined,
 )
+environment.globals["display"] = DisplayTime()
 templates = Jinja2Templates(env=environment, context_processors=[base_context])
 
 

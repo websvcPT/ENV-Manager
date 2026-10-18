@@ -15,6 +15,7 @@ from app.core.log import get_logger
 from app.core.templating import render
 from app.models import ServiceHook
 from app.services.access_grid import NodeKind
+from app.services.app_settings import load_stored_settings
 from app.services.audit import AuditActor
 from app.services.docker_cli import DockerCli
 from app.services.hook_settings import (
@@ -149,6 +150,7 @@ def _form_of(hook: HookSettings | ServiceHook | None) -> HookForm:
 
 
 async def _settings_context(
+    db: AsyncSession,
     access: ServiceContext,
     cli: DockerCli,
     hook: HookSettings | ServiceHook | None,
@@ -162,6 +164,7 @@ async def _settings_context(
         return {"docker": None, "socket_path": "", "form": HookForm(), "errors": {}, "saved": None}
     return {
         "docker": await cli.status(),
+        "post_deploy_enabled": (await load_stored_settings(db)).post_deploy.enabled,
         "socket_path": str(cli.socket_path),
         "form": form or _form_of(hook),
         "errors": errors or {},
@@ -193,7 +196,7 @@ async def service_page(
         {
             **_flags(access),
             "can_deploy": bool(deployable) and not access.service.outside_allowed,
-            **await _settings_context(access, cli, post_deploy.hook),
+            **await _settings_context(db, access, cli, post_deploy.hook),
             "environments": rows,
             "pending": sum(1 for row in rows if row.status == "pending"),
             "history": history,
@@ -238,7 +241,7 @@ async def post_deploy_panel(
         POST_DEPLOY_FRAGMENT,
         {
             **_flags(access),
-            **await _settings_context(access, cli, post_deploy.hook),
+            **await _settings_context(db, access, cli, post_deploy.hook),
             "post_deploy": post_deploy,
         },
     )
@@ -263,7 +266,7 @@ async def save_post_deploy(
     except HookForbiddenError as error:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "not permitted") from error
     except HookSettingsError as error:
-        context = await _settings_context(access, cli, None, form=typed, errors=error.errors)
+        context = await _settings_context(db, access, cli, None, form=typed, errors=error.errors)
         return render(
             request,
             SETTINGS_FRAGMENT,
@@ -275,7 +278,7 @@ async def save_post_deploy(
     else:
         message = SAVED_MESSAGE if hook.commands else SAVED_EMPTY_MESSAGE
         saved = {"tone": "success", "title": "Post-deploy settings saved", "message": message}
-    context = await _settings_context(access, cli, hook, saved=saved)
+    context = await _settings_context(db, access, cli, hook, saved=saved)
     return render(request, SETTINGS_FRAGMENT, {**_flags(access), **context})
 
 

@@ -1,0 +1,28 @@
+{#- The security settings form. A refused save swaps this again with the reasons next to the
+    fields (422); a stored save swaps it with a toast. Context: form (SecurityForm), errors
+    (messages by field), saved (none, or tone, title and message of a toast) and
+    address_limit_fixed (the startup override sets the sign-in limit per address, so its field is
+    shown and not editable). -#}
+{% from "macros/buttons.html" import button %}
+{% from "macros/feedback.html" import toast %}
+{% from "macros/forms.html" import field, radio_option %}
+<form id="security" data-fragment="security" hx-post="/settings/security" hx-target="this" hx-swap="outerHTML" class="flex flex-col gap-4 px-4 pb-5 md:px-5">
+<div class="grid gap-4 md:grid-cols-2">
+{{ field("si", "Idle session timeout (minutes)", name="idle_timeout_minutes", value=form.idle_timeout_minutes, mono=true, error=errors.get("idle_timeout_minutes"), inputmode="numeric", autocomplete="off") }}
+{{ field("sa", "Absolute session timeout (hours)", name="absolute_timeout_hours", value=form.absolute_timeout_hours, mono=true, error=errors.get("absolute_timeout_hours"), hint="Applies to sessions that are already open.", inputmode="numeric", autocomplete="off") }}
+{{ field("sl", "Failed logins per user before lockout", name="user_max_failures", value=form.user_max_failures, mono=true, error=errors.get("user_max_failures"), inputmode="numeric", autocomplete="off") }}
+{{ field("sg", "Failed logins per address before lockout", name="ip_max_failures", value=form.ip_max_failures, mono=true, disabled=address_limit_fixed, hint=("Fixed by ENVMANAGER_LOGIN_IP_MAX_FAILURES, which is accepted in development and testing only." if address_limit_fixed else none), error=errors.get("ip_max_failures"), inputmode="numeric", autocomplete="off") }}
+{{ field("sk", "Failed API attempts per address before lockout", name="api_ip_max_failures", value=form.api_ip_max_failures, mono=true, error=errors.get("api_ip_max_failures"), inputmode="numeric", autocomplete="off") }}
+{{ field("sm", "Lockout duration (minutes)", name="lockout_minutes", value=form.lockout_minutes, mono=true, error=errors.get("lockout_minutes"), inputmode="numeric", autocomplete="off") }}
+{{ field("sp", "Minimum password length", name="min_password_length", value=form.min_password_length, mono=true, error=errors.get("min_password_length"), inputmode="numeric", autocomplete="off") }}
+</div>
+<fieldset class="min-w-0"><legend class="mb-2 text-[13px] font-semibold">Two-factor authentication policy</legend><div class="flex flex-col gap-2">
+{{ radio_option("tfa", "off", "Off", "TOTP is not offered.", disabled=true) }}
+{{ radio_option("tfa", "opt", "Optional", "Users can enable TOTP in their account.", checked=true) }}
+{{ radio_option("tfa", "req", "Required", "Every user must set up TOTP.", disabled=true) }}
+</div><p class="mt-2 text-xs text-ink2">Optional is the decided policy, so Off and Required cannot be chosen.</p></fieldset>
+<div class="flex flex-wrap items-center gap-3">{{ button("Save settings", kind="primary-sm", type="submit", extra_class="max-md:h-11") }}</div>
+{%- if saved %}
+{{ toast(saved.tone, saved.message, saved.title, floating=true) }}
+{%- endif %}
+</form>

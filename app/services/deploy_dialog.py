@@ -26,6 +26,7 @@ from app.models import (
     PostDeployStatus,
     ServiceHook,
 )
+from app.services.app_settings import load_stored_settings
 from app.services.audit import AuditActor
 from app.services.deploy import ENVIRONMENT_NOT_FOUND, SERVICE_NOT_FOUND, DeployEngine
 from app.services.deploy_types import (
@@ -37,6 +38,7 @@ from app.services.deploy_types import (
 from app.services.dist import DistSkipReason
 from app.services.docker_cli import DockerCli
 from app.services.hook_runner import DOCKER_UNAVAILABLE_REASON, NOT_CHANGED_REASON
+from app.services.hooks import POST_DEPLOY_OFF_REASON
 from app.services.permissions import AccessScope, Capability, permitted_environment_ids
 from app.services.service_detail import (
     STATUS_NEVER,
@@ -219,9 +221,10 @@ async def preview_post_deploy(
 ) -> PostDeployPreview:
     """Whether the stored command would run once after the selected environments.
 
-    The same conditions the runner applies at deploy time: nothing stopped (blocked, halted or
-    failed), something would change unless the command runs always or the deploy is forced, and
-    Docker usable. Docker is probed only when everything else lets the command run.
+    The same conditions the engine and the runner apply at deploy time: the feature switched on
+    in settings, nothing stopped (blocked, halted or failed), something would change unless the
+    command runs always or the deploy is forced, and Docker usable. Docker is probed only when
+    everything else lets the command run.
     """
     hook = await _stored_hook(db, header.id)
     if hook is None or not hook.commands.strip():
@@ -229,6 +232,8 @@ async def preview_post_deploy(
     command = hook.commands if header.can_view_command else None
     if not selected:
         return PostDeployPreview("idle", command=command)
+    if not (await load_stored_settings(db)).post_deploy.enabled:
+        return PostDeployPreview("skipped", POST_DEPLOY_OFF_REASON, command)
     if any(item.status in _STOPPED for item in selected):
         return PostDeployPreview("skipped", NOT_DEPLOYED_REASON, command)
     changes = any(item.status is DeployResultStatus.WOULD_WRITE for item in selected)

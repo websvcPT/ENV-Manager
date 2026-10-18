@@ -2,7 +2,7 @@
     an entry that does not exist and one outside the caller's scope. Context: row (an AuditRow or
     None). -#}
 {% extends "layouts/app.html" %}
-{% from "macros/audit.html" import AUDIT_COLUMNS, audit_row %}
+{% from "macros/audit.html" import AUDIT_COLUMNS, audit_row with context %}
 {% from "macros/buttons.html" import button %}
 {% from "macros/feedback.html" import empty_state %}
 {% from "macros/panels.html" import page_header, table %}

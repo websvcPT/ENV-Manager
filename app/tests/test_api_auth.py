@@ -15,6 +15,7 @@ from app.models import ApiToken, AuditResult, LoginCounter, LoginCounterKind, Us
 from app.models.types import utc_now
 from app.services.api_auth import authenticate_token, parse_bearer
 from app.services.api_errors import ApiRefusal, RefusalKind
+from app.services.app_settings import load_stored_settings, save_section
 from app.services.audit import AuditActor
 from app.services.auth_policy import AuthPolicy
 from app.services.tokens import find_token_by_secret, hash_secret, revoke_token
@@ -44,9 +45,14 @@ async def counter(world: ApiWorld, subject: str = ADDRESS) -> LoginCounter | Non
         )
 
 
-def allow_failures(world: ApiWorld, limit: int = 1000) -> None:
-    """Raise the failure limit so a test can send many bad tokens from one address."""
-    world.app.state.auth_policy = replace(world.app.state.auth_policy, api_ip_max_failures=limit)
+async def allow_failures(world: ApiWorld, limit: int = 1000) -> None:
+    """Raise the stored failure limit so a test can send many bad tokens from one address."""
+    async with world.session() as db:
+        security = (await load_stored_settings(db)).security
+        await save_section(
+            db, "security", replace(security, api_ip_max_failures=limit), actor=AuditActor.cli()
+        )
+        await db.commit()
 
 
 async def prod_mysql_dry_run(world: ApiWorld, secret: str) -> httpx.Response:
@@ -79,7 +85,7 @@ def test_the_header_is_read_strictly() -> None:
 async def test_every_bad_token_gets_the_same_answer(api_world: ApiWorld) -> None:
     """Missing, malformed, unknown, revoked, expired, stopped and cookie-only calls read alike."""
     world = api_world
-    allow_failures(world)
+    await allow_failures(world)
     revoked = await make_token(world, "admin", name="revoked")
     expired = await make_token(world, "admin", name="expired")
     owner_disabled = await make_token(world, "project_admin", name="disabled")

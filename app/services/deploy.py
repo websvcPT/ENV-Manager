@@ -51,6 +51,7 @@ from app.models import (
     ServiceHook,
 )
 from app.models.types import utc_now
+from app.services.app_settings import load_stored_settings
 from app.services.audit import AuditActor
 from app.services.deploy_baseline import load_baselines
 from app.services.deploy_events import (
@@ -79,6 +80,7 @@ from app.services.dist_check import DistCheck, evaluate_dist, record_dist_check
 from app.services.editor import stored_version
 from app.services.hook_runner import DockerHookRunner
 from app.services.hooks import (
+    POST_DEPLOY_OFF_REASON,
     HookRunner,
     PostDeployHook,
     PostDeployRequest,
@@ -504,7 +506,10 @@ class DeployEngine:
         status = overall_status(outcomes)
         deployed = all(outcome.status in _DEPLOYED for outcome in outcomes)
         has_command = bool(context.hook and context.hook.commands.strip())
-        if has_command and not deployed:
+        switched_off = has_command and not (await load_stored_settings(db)).post_deploy.enabled
+        if switched_off:
+            post_deploy = PostDeployResult(PostDeployStatus.SKIPPED, reason=POST_DEPLOY_OFF_REASON)
+        elif has_command and not deployed:
             post_deploy = PostDeployResult(
                 PostDeployStatus.SKIPPED, reason=POST_DEPLOY_NOT_RUN_REASON
             )
@@ -527,7 +532,7 @@ class DeployEngine:
             await record_dist_check(db, check, actor=actor)
         await db.commit()
 
-        if deployed:
+        if deployed and not switched_off:
             try:
                 post_deploy = await self._run_post_deploy(db, context, allowed, request, outcomes)
             except asyncio.CancelledError:

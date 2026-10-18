@@ -7,22 +7,27 @@ from pydantic import SecretStr, ValidationError
 
 from app.config import Settings
 from app.core.csrf import CSRF_COOKIE_NAME
-from app.main import auth_policy_for
-from app.services.auth_policy import AuthPolicy
+from app.services.app_settings import SecuritySettings
+from app.services.auth_policy import AuthPolicy, policy_from_settings
 
 
 def test_the_address_failure_limit_defaults_to_the_policy_default() -> None:
     """Unset, the sign-in limit per address is the code default."""
     settings = Settings(environment="production", csrf_secret=SecretStr("x" * 40))
     assert settings.login_ip_max_failures is None
-    assert auth_policy_for(settings) == AuthPolicy()
+    policy = policy_from_settings(
+        SecuritySettings(), ip_max_failures_override=settings.login_ip_max_failures
+    )
+    assert policy == AuthPolicy()
 
 
 @pytest.mark.parametrize("environment", ["development", "testing"])
 def test_a_higher_address_limit_is_accepted_in_development_and_testing(environment: str) -> None:
     """Browser specs share one client address, so these environments may raise the limit."""
     settings = Settings(environment=environment, login_ip_max_failures=500)
-    policy = auth_policy_for(settings)
+    policy = policy_from_settings(
+        SecuritySettings(), ip_max_failures_override=settings.login_ip_max_failures
+    )
     assert policy.ip_max_failures == 500
     assert policy.user_max_failures == AuthPolicy().user_max_failures
     assert policy.api_ip_max_failures == AuthPolicy().api_ip_max_failures
@@ -73,7 +78,7 @@ async def sign_in_failures(application: FastAPI, count: int) -> int:
 
 async def test_one_address_is_locked_at_the_default_limit(web_app: FastAPI) -> None:
     """Without the override twenty failed sign ins from one address lock it."""
-    assert web_app.state.auth_policy.ip_max_failures == 20
+    assert web_app.state.login_ip_max_failures is None
     assert await sign_in_failures(web_app, 19) == 401
     assert await sign_in_failures(web_app, 1) == 429
 
@@ -89,5 +94,5 @@ async def test_one_address_keeps_signing_in_under_a_raised_limit(
     raised_limit: None, web_app: FastAPI
 ) -> None:
     """The startup override reaches the live policy: the address is not locked at twenty."""
-    assert web_app.state.auth_policy.ip_max_failures == 60
+    assert web_app.state.login_ip_max_failures == 60
     assert await sign_in_failures(web_app, 25) == 401

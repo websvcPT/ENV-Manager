@@ -1,0 +1,12 @@
+{#- The lines under the path field of the add dialog: a hint, or one line per check with icon plus
+    text. Swapped into the field's message list while the person types; the answer to a typing
+    request (`with_button`) also puts the Add button back, disabled until every check passes.
+    Context: check (an EntryCheck) and optionally with_button. -#}
+{% from "macros/buttons.html" import button %}
+{% from "macros/icons.html" import icon %}
+{% if check.lines %}
+{% for line in check.lines %}<li class="flex items-center gap-2 text-[13px] {{ 'text-ok-fg' if line.ok else 'font-semibold text-err-fg' }}">{{ icon("check" if line.ok else "close", "size-3.5", "2.6") }}<span class="text-ink">{{ line.text }}</span></li>{% endfor %}
+{% else %}
+<li class="text-[13px] text-ink2">Enter the absolute path of a folder inside a mount. It is checked as you type.</li>
+{% endif %}
+{% if with_button | default(false) %}<template hx type="partial" hx-target="#path-add-submit" hx-swap="outerHTML">{{ button("Add path", kind="primary", type="submit", disabled=not check.ok, id="path-add-submit") }}</template>{% endif %}

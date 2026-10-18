@@ -12,6 +12,7 @@ from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.client_address import client_address
+from app.core.display_time import display_of
 from app.core.templating import render
 from app.models.types import utc_now
 from app.services.audit_export import export_chunks, record_export
@@ -78,7 +79,7 @@ async def audit_page(
             {"row": row},
             status_code=200 if row is not None else 404,
         )
-    filters = AuditFilters.parse(params)
+    filters = AuditFilters.parse(params, display_of(request).zone)
     options = await load_filter_options(db, visibility)
     page = await list_page(db, visibility, filters)
     return render(request, "pages/audit.html", _table_context(visibility, filters, options, page))
@@ -96,7 +97,7 @@ async def audit_table(
     The answer sets ``HX-Push-Url`` to the address of the same view as a full page.
     """
     visibility = await compute_visibility(db, scope)
-    filters = AuditFilters.parse(request.query_params)
+    filters = AuditFilters.parse(request.query_params, display_of(request).zone)
     page = await list_page(db, visibility, filters)
     context = _table_context(visibility, filters, FilterOptions((), (), (), ()), page)
     response = render(request, "fragments/audit_table_update.html", context)
@@ -117,7 +118,7 @@ async def audit_rows(
     A missing or malformed cursor answers the first page again.
     """
     visibility = await compute_visibility(db, scope)
-    filters = AuditFilters.parse(request.query_params)
+    filters = AuditFilters.parse(request.query_params, display_of(request).zone)
     cursor = Cursor.parse(request.query_params.get("before"))
     page = await list_page(db, visibility, filters, cursor=cursor)
     context = _table_context(visibility, filters, FilterOptions((), (), (), ()), page)
@@ -137,7 +138,7 @@ async def audit_export(
     entries the screen would show the caller, with spreadsheet formulas neutralized.
     """
     visibility = await compute_visibility(db, scope)
-    filters = AuditFilters.parse(request.query_params)
+    filters = AuditFilters.parse(request.query_params, display_of(request).zone)
     plan = await record_export(db, visibility, context.user, filters, client_address(request))
     await db.commit()
     stamp = utc_now().strftime("%Y%m%d-%H%M%S")

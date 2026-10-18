@@ -1,7 +1,8 @@
 import { request, type FullConfig } from '@playwright/test';
 
-import { removeLeftoverHostFolders } from './host-files';
+import { HOST_FOLDER_PREFIX, HOST_ROOT, removeLeftoverHostFolders } from './host-files';
 import { removeProjectsMatching } from './projects-api';
+import { removeAllowedPathsWithPrefix } from './settings-api';
 
 export const SUPERADMIN_STATE = '.auth/superadmin.json';
 
@@ -43,6 +44,13 @@ async function signInAndStore(
   await context.dispose();
 }
 
+/** Allowed paths that specs add are folders of the host root named e2e-host-...; remove leftovers. */
+async function removeLeftoverAllowedPaths(baseURL: string | undefined): Promise<void> {
+  const context = await request.newContext({ baseURL, storageState: SUPERADMIN_STATE });
+  await removeAllowedPathsWithPrefix(context, `${HOST_ROOT}/${HOST_FOLDER_PREFIX}`);
+  await context.dispose();
+}
+
 /** Projects that specs create are named e2e-...; remove those an interrupted run left behind. */
 async function removeLeftoverProjects(baseURL: string | undefined): Promise<void> {
   const context = await request.newContext({ baseURL, storageState: SUPERADMIN_STATE });
@@ -64,5 +72,6 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
     await signInAndStore(baseURL, SESSION_USERS[user], password, stateFile(user));
   }
   await removeLeftoverProjects(baseURL);
+  await removeLeftoverAllowedPaths(baseURL);
   removeLeftoverHostFolders();
 }

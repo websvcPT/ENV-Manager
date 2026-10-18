@@ -1,0 +1,16 @@
+{#- A Settings tab whose feature does not exist yet: the panel title and a note, no controls. The
+    text names what is missing and when the settings arrive. Context: the settings tab context. -#}
+{% extends "layouts/settings.html" %}
+{% from "macros/feedback.html" import note %}
+{% from "macros/panels.html" import panel %}
+{% set unbuilt = {
+  "smtp": ("SMTP", "The mail server, credentials, from address and test mail are not set up yet. They arrive with notifications, and the app sends no mail until then."),
+  "git": ("Private git repository", "Git sync is not available yet. The repository, credentials, branch and push triggers arrive with it, and nothing is pushed until then."),
+  "backup": ("Schedule and retention", "Scheduled backups, retention, the extra destination and the list of backups are not available yet. They arrive with backup and restore. The database is still backed up before every migration."),
+  "notifications": ("Notification events", "Notification events, recipients and the webhook are not available yet. They arrive with notifications, and nothing is sent until then.")
+} %}
+{% block tab %}
+{% call panel(unbuilt[settings_tab][0], "unbuilt-title", fragment="settings-" ~ settings_tab) %}
+<div class="px-4 pb-5 md:px-5">{{ note(unbuilt[settings_tab][1]) }}</div>
+{% endcall %}
+{% endblock %}

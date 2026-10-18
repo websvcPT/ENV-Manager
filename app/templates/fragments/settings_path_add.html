@@ -1,0 +1,16 @@
+{#- The add allowed path dialog content: the path field, the live checks and the buttons. A
+    refused path swaps this again with the reason under the field. Context: value (the typed
+    path), check (an EntryCheck) and optionally error. -#}
+{% from "macros/buttons.html" import button %}
+{% from "macros/dialogs.html" import dialog_body, dialog_footer, dialog_head %}
+{% from "macros/forms.html" import field %}
+<div data-fragment="path-add">
+{{ dialog_head("path-add", "Add allowed path") }}
+<form id="path-add-form" hx-post="/settings/paths" hx-target="#path-add" hx-swap="innerHTML">
+{% call dialog_body() %}
+{{ field("ap", "Absolute path", name="path", value=value, placeholder="/opt/example", error=error | default(none), mono=true, autocomplete="off", spellcheck="false") }}
+<ul id="ap-v" class="m-0 flex list-none flex-col gap-1.5" hx-get="/settings/paths/validate" hx-trigger="input changed delay:400ms from:#ap" hx-include="#ap" hx-swap="innerHTML" aria-live="polite">{% include "fragments/settings_path_checks.html" %}</ul>
+{% endcall %}
+{% call dialog_footer() %}{{ button("Cancel", extra_class="h-11", data_js="dialog-close") }}{{ button("Add path", kind="primary", type="submit", disabled=not check.ok, id="path-add-submit") }}{% endcall %}
+</form>
+</div>

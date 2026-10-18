@@ -8,7 +8,7 @@ or fragment must never turn a bad query into an error answer that htmx would swa
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta, tzinfo
 from urllib.parse import urlencode
 
 from sqlalchemy import ColumnElement, and_, or_
@@ -85,11 +85,13 @@ class AuditFilters:
     result: AuditResult | None = None
     date_from: date | None = None
     date_to: date | None = None
+    zone: tzinfo = UTC
 
     @classmethod
-    def parse(cls, raw: Mapping[str, str]) -> AuditFilters:
+    def parse(cls, raw: Mapping[str, str], zone: tzinfo = UTC) -> AuditFilters:
         """Filters from query parameters ``project``, ``actor``, ``action``, ``result``, ``from``
-        and ``to``. Whatever does not parse is dropped."""
+        and ``to``. Whatever does not parse is dropped. ``zone`` is the time zone the dates are
+        days of."""
         actor = _parse_actor(raw.get("actor"))
         return cls(
             project_id=parse_number(raw.get("project")),
@@ -99,6 +101,7 @@ class AuditFilters:
             result=_parse_result(raw.get("result")),
             date_from=_parse_date(raw.get("from")),
             date_to=_parse_date(raw.get("to")),
+            zone=zone,
         )
 
     @property
@@ -130,7 +133,10 @@ class AuditFilters:
         return bool(self.params())
 
     def conditions(self) -> list[ColumnElement[bool]]:
-        """The filters as conditions over ``AuditEntry``. Dates are UTC days, the last inclusive."""
+        """The filters as conditions over ``AuditEntry``.
+
+        Dates are calendar days of the display zone, the last one inclusive.
+        """
         found: list[ColumnElement[bool]] = []
         if self.project_id is not None:
             found.append(AuditEntry.project_id == self.project_id)
@@ -146,9 +152,10 @@ class AuditFilters:
         if self.result is not None:
             found.append(AuditEntry.result == self.result)
         if self.date_from is not None:
-            found.append(AuditEntry.created_at >= datetime.combine(self.date_from, time.min, UTC))
+            start = datetime.combine(self.date_from, time.min, self.zone)
+            found.append(AuditEntry.created_at >= start)
         if self.date_to is not None and self.date_to < LAST_DATE:
-            end = datetime.combine(self.date_to + timedelta(days=1), time.min, UTC)
+            end = datetime.combine(self.date_to + timedelta(days=1), time.min, self.zone)
             found.append(AuditEntry.created_at < end)
         return found
 

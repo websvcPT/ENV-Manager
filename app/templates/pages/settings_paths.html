@@ -1,0 +1,10 @@
+{#- The Allowed paths tab: the list of allowed paths with their status, and the dialogs that add
+    and remove an entry (both loaded when they open). Context: the settings tab context and rows
+    (AllowedPathRow list). -#}
+{% extends "layouts/settings.html" %}
+{% from "macros/dialogs.html" import loaded_dialog %}
+{% block tab %}
+{% include "fragments/settings_paths_table.html" %}
+{{ loaded_dialog("path-add", "Add allowed path") }}
+{{ loaded_dialog("path-remove", "Remove path", width="560") }}
+{% endblock %}

@@ -1,0 +1,9 @@
+{#- The Security tab: session timeouts, lockout limits, password length and the two-factor
+    policy. Context: the settings tab context and what fragments/settings_security.html needs. -#}
+{% extends "layouts/settings.html" %}
+{% from "macros/panels.html" import panel %}
+{% block tab %}
+{% call panel("Security", "security-title", fragment="settings-security") %}
+{% include "fragments/settings_security.html" %}
+{% endcall %}
+{% endblock %}

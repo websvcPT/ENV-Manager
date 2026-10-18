@@ -92,23 +92,29 @@ def read_mount_points(mountinfo: Path = MOUNTINFO) -> list[Path]:
     return mount_points
 
 
-def _is_host_mount(real_path: Path, mount_points: Iterable[Path]) -> bool:
-    """Whether ``real_path`` lies inside a mount other than the container root and system mounts."""
-    for mount_point in mount_points:
+def host_mount_of(real_path: Path, mount_points: Iterable[Path] | None = None) -> Path | None:
+    """The innermost mount point that holds ``real_path``, ignoring the container root and system
+    mounts, or None when the path is not inside a host mount."""
+    points = read_mount_points() if mount_points is None else mount_points
+    found: Path | None = None
+    for mount_point in points:
         if mount_point == ROOT:
             continue
         if any(is_within(mount_point, system) for system in SYSTEM_MOUNT_ROOTS):
             continue
-        if is_within(real_path, mount_point):
-            return True
-    return False
+        if is_within(real_path, mount_point) and (found is None or is_within(mount_point, found)):
+            found = mount_point
+    return found
 
 
 def path_status(real_path: Path, mount_points: Iterable[Path] | None = None) -> PathStatus:
     """Mounted and writable status of an existing real path."""
-    points = read_mount_points() if mount_points is None else mount_points
     writable = os.access(real_path, os.W_OK | os.X_OK)
-    return PathStatus(path=real_path, mounted=_is_host_mount(real_path, points), writable=writable)
+    return PathStatus(
+        path=real_path,
+        mounted=host_mount_of(real_path, mount_points) is not None,
+        writable=writable,
+    )
 
 
 def validate_allowed_entry(

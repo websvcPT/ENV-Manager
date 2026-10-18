@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.client_address import client_address
 from app.core.templating import render
 from app.models import Deployment, Project
+from app.services.app_settings import StoredSettings
 from app.services.deployments import (
     DeploymentForm,
     DeploymentFormError,
@@ -25,7 +26,7 @@ from app.services.deployments import (
 from app.services.path_browser import BrowseView, browse_directory, browse_top
 from app.services.paths import PathValidationError, load_allowed_paths
 from app.services.permissions import Capability
-from app.web.dependencies import AuthContext, get_db, require_capability
+from app.web.dependencies import AuthContext, get_db, get_stored_settings, require_capability
 from app.web.deployments import DeploymentContext, deployment_access
 from app.web.project_detail import ProjectContext, project_access
 
@@ -101,11 +102,12 @@ async def new_deployment_page(
     request: Request,
     access: Annotated[ProjectContext, Depends(project_access(Capability.MANAGE_STRUCTURE))],
     db: Annotated[AsyncSession, Depends(get_db)],
+    stored: Annotated[StoredSettings, Depends(get_stored_settings)],
 ) -> Response:
-    """The empty deployment form."""
+    """The deployment form, with the policies and file defaults of the General settings."""
     project = access.project
     context = _form_context(
-        DeploymentForm(),
+        DeploymentForm.from_defaults(stored.general),
         action=f"/projects/{project.id}/deployments",
         submit_label="Create deployment",
         cancel_href=f"/projects/{project.id}",

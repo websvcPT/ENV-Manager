@@ -23,6 +23,7 @@ from app.models import (
     Project,
     User,
 )
+from app.services.app_settings import GeneralSettings
 from app.services.audit import record_audit
 from app.services.paths import (
     AllowedPaths,
@@ -138,6 +139,18 @@ class DeploymentForm:
     file_mode: str = DEFAULT_FILE_MODE
     file_owner: str = ""
     file_group: str = ""
+
+    @classmethod
+    def from_defaults(cls, defaults: GeneralSettings) -> DeploymentForm:
+        """The pre-filled values of a new deployment: the defaults of the General settings."""
+        return cls(
+            dist_missing_policy=defaults.dist_missing_policy,
+            drift_policy=defaults.drift_policy,
+            missing_target_policy=defaults.missing_target_policy,
+            file_mode=defaults.file_mode,
+            file_owner=defaults.file_owner,
+            file_group=defaults.file_group,
+        )
 
     @classmethod
     def from_deployment(cls, deployment: Deployment) -> DeploymentForm:

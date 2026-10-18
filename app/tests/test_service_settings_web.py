@@ -10,6 +10,8 @@ from fastapi import FastAPI
 from sqlalchemy import select
 
 from app.models import AuditEntry, Deployment, HookType, Service, ServiceHook
+from app.services.app_settings import PostDeploySettings, save_section
+from app.services.audit import AuditActor
 from app.services.docker_cli import NOT_MOUNTED_REASON, DockerStatus
 from app.services.hook_settings import (
     CHECK_FAILED_MESSAGE,
@@ -531,3 +533,29 @@ async def test_the_compose_check_refuses_a_directory_outside_the_allowed_paths(
     )
     assert "The working directory is outside the allowed paths." in response.text
     assert docker.calls() == []
+
+
+async def test_the_status_line_says_when_the_settings_switch_is_off(
+    web_app: FastAPI, web_client: httpx.AsyncClient, ids: Ids, docker: FakeDocker
+) -> None:
+    """With Docker usable the line adds a badge and a link once the switch is turned off."""
+    await sign_in(web_client, "root")
+    for url, headers in (
+        (f"/services/{ids.staging_web}", {}),
+        (f"/services/{ids.staging_web}/postdeploy", HTMX),
+    ):
+        assert "Switched off in settings" not in status_line_of(
+            (await web_client.get(url, headers=headers)).text
+        )
+    async with web_app.state.session_factory() as db:
+        await save_section(
+            db, "post_deploy", PostDeploySettings(enabled=False), actor=AuditActor.cli()
+        )
+        await db.commit()
+    for url, headers in (
+        (f"/services/{ids.staging_web}", {}),
+        (f"/services/{ids.staging_web}/postdeploy", HTMX),
+    ):
+        line = status_line_of((await web_client.get(url, headers=headers)).text)
+        assert "Switched off in settings" in line and 'data-status="skipped"' in line
+        assert 'href="/settings/post-deploy"' in line

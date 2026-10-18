@@ -3,6 +3,7 @@
 import os
 from collections.abc import Mapping
 from typing import Any
+from urllib.parse import urlsplit
 
 import sentry_sdk
 from sentry_sdk.types import Breadcrumb, BreadcrumbHint, Event, Hint
@@ -136,7 +137,35 @@ def configure_otel(settings: Settings) -> bool:
     """
     for name, value in otel_resource_environment(settings.environment, os.environ).items():
         os.environ[name] = value
-    enabled = os.environ.get("FASTAPI_OTEL_AUTO_CONFIGURE", "").lower() == "true"
+    enabled = otel_enabled(os.environ)
     if enabled:
         log.info("OpenTelemetry export enabled")
     return enabled
+
+
+def otel_enabled(environ: Mapping[str, str]) -> bool:
+    """Whether FastAPI's OpenTelemetry export is switched on in the environment."""
+    return environ.get("FASTAPI_OTEL_AUTO_CONFIGURE", "").lower() == "true"
+
+
+def otel_endpoint_host(environ: Mapping[str, str]) -> str | None:
+    """The host name of the configured OTLP endpoint, and nothing else of the address.
+
+    The standard endpoint variable is read first, then the one for traces, metrics and logs.
+    Credentials, port, path and query of the address are never returned.
+    """
+    for name in (
+        "OTEL_EXPORTER_OTLP_ENDPOINT",
+        "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
+        "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT",
+        "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT",
+    ):
+        value = environ.get(name, "").strip()
+        if not value:
+            continue
+        try:
+            host = urlsplit(value if "//" in value else f"//{value}").hostname
+        except ValueError:
+            return None
+        return host or None
+    return None

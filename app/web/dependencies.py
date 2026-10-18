@@ -8,9 +8,11 @@ from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.crypto import CryptoService
+from app.core.display_time import DisplayTime
 from app.core.sessions import SESSION_COOKIE_NAME
 from app.models import User, UserGroup, UserSession
-from app.services.auth_policy import AuthPolicy
+from app.services.app_settings import StoredSettings, load_stored_settings
+from app.services.auth_policy import AuthPolicy, policy_from_settings
 from app.services.deploy import DeployEngine
 from app.services.docker_cli import DockerCli
 from app.services.hook_runner import DockerHookRunner
@@ -55,10 +57,31 @@ def get_deploy_engine(request: Request) -> DeployEngine:
     )
 
 
-def get_auth_policy(request: Request) -> AuthPolicy:
-    """The active authentication thresholds."""
-    policy: AuthPolicy = request.app.state.auth_policy
-    return policy
+async def get_stored_settings(
+    request: Request, db: Annotated[AsyncSession, Depends(get_db)]
+) -> StoredSettings:
+    """The typed settings as stored, read once per request.
+
+    Dependencies are cached for the length of a request, so every reader of the settings in one
+    request shares this answer. The page templates read the display settings from it.
+    """
+    stored = await load_stored_settings(db)
+    request.state.display = DisplayTime(stored.general.time_zone, stored.general.date_format)
+    return stored
+
+
+def auth_policy_of(request: Request, stored: StoredSettings) -> AuthPolicy:
+    """The authentication limits in force: the stored security settings and the startup override."""
+    return policy_from_settings(
+        stored.security, ip_max_failures_override=request.app.state.login_ip_max_failures
+    )
+
+
+async def get_auth_policy(
+    request: Request, stored: Annotated[StoredSettings, Depends(get_stored_settings)]
+) -> AuthPolicy:
+    """The authentication thresholds in force for this request, from the stored settings."""
+    return auth_policy_of(request, stored)
 
 
 async def require_auth(
@@ -90,8 +113,8 @@ async def resolve_optional_auth(request: Request) -> AuthContext | None:
     if not token:
         return None
     try:
-        policy: AuthPolicy = request.app.state.auth_policy
         async with request.app.state.session_factory() as db:
+            policy = auth_policy_of(request, await load_stored_settings(db))
             resolved = await resolve_session(db, token, policy)
     except Exception:
         return None

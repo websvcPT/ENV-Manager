@@ -1,0 +1,24 @@
+{#- The Post-deploy tab: the Docker socket status and the switch for post-deploy commands.
+    Context: the settings tab context, docker (a DockerStatus), socket_path and what
+    fragments/settings_post_deploy.html needs. -#}
+{% extends "layouts/settings.html" %}
+{% from "macros/badges.html" import badge %}
+{% from "macros/feedback.html" import note %}
+{% from "macros/panels.html" import cell, panel, table %}
+{% block tab %}
+{% call panel("Post-deploy commands", "post-deploy-title", fragment="settings-postdeploy") %}
+<div class="flex flex-col gap-4 px-4 pb-5 md:px-5">
+{%- if not docker.mounted %}
+{{ note("Post-deploy commands are off because the Docker socket is not mounted. Mount " ~ socket_path ~ " and add the host docker group with group_add, then recreate the container. The socket is root-equivalent on the host.", tone="warn") }}
+{%- elif not docker.available %}
+{{ note(docker.reason ~ " Post-deploy commands are off.", tone="warn") }}
+{%- endif %}
+{% call table("Docker socket status", ["Check", "Status"], min_width_class="min-w-[480px]") %}
+<tr id="docker-socket">{% call cell() %}Socket mounted{% endcall %}{% call cell() %}{{ badge("deployed", "Mounted") if docker.mounted else badge("failed", "Not mounted") }}{% endcall %}</tr>
+<tr id="docker-daemon">{% call cell() %}Daemon reachable{% endcall %}{% call cell() %}{% if not docker.mounted %}{{ badge("never", "Not checked") }}{% elif docker.reachable %}{{ badge("deployed", "Reachable") }}{% else %}{{ badge("failed", "Not reachable") }}{% endif %}{% endcall %}</tr>
+<tr id="docker-compose">{% call cell() %}Compose version{% endcall %}{% call cell() %}{% if docker.compose_version %}<span class="font-mono text-[13px]">v{{ docker.compose_version }}</span>{% else %}<span class="text-ink2">Unknown</span>{% endif %}{% endcall %}</tr>
+{% endcall %}
+{% include "fragments/settings_post_deploy.html" %}
+</div>
+{% endcall %}
+{% endblock %}

@@ -1,0 +1,28 @@
+{#- The general settings form. A refused save swaps this again with the reasons next to the fields
+    (422); a stored save swaps it with a toast. The defaults only pre-fill the new deployment
+    form. Context: form (GeneralForm), errors (messages by field), saved (none, or tone, title
+    and message of a toast), zones, date_formats, dist_choices, drift_choices and target_choices
+    (lists of value and label). -#}
+{% from "macros/buttons.html" import button %}
+{% from "macros/feedback.html" import toast %}
+{% from "macros/forms.html" import field, select_field %}
+<form id="general" data-fragment="general" hx-post="/settings/general" hx-target="this" hx-swap="outerHTML" class="flex flex-col gap-4 px-4 pb-5 md:px-5">
+<div class="grid gap-4 md:grid-cols-2">
+{{ select_field("tz", "Time zone", zones, selected=form.time_zone, name="time_zone", error=errors.get("time_zone")) }}
+{{ select_field("df", "Date format", date_formats, selected=form.date_format, name="date_format", error=errors.get("date_format")) }}
+</div>
+<p class="-mt-1 text-xs text-ink2">Times on the audit log, project activity and user activity are shown in this zone and format. They are stored in UTC.</p>
+<p class="text-xs font-bold uppercase tracking-wide text-ink3">Defaults for new deployments</p>
+<div class="grid gap-4 md:grid-cols-4">
+{{ select_field("d1", "Missing dist keys", dist_choices, selected=form.dist_missing_policy, name="dist_missing_policy", error=errors.get("dist_missing_policy")) }}
+{{ select_field("d2", "Drift", drift_choices, selected=form.drift_policy, name="drift_policy", error=errors.get("drift_policy")) }}
+{{ select_field("d3", "Missing target", target_choices, selected=form.missing_target_policy, name="missing_target_policy", error=errors.get("missing_target_policy")) }}
+{{ field("d4", "File mode", name="file_mode", value=form.file_mode, mono=true, error=errors.get("file_mode"), autocomplete="off", maxlength="4") }}
+{{ field("d5", "File owner", name="file_owner", value=form.file_owner, mono=true, placeholder="app user", error=errors.get("file_owner"), autocomplete="off", maxlength="64") }}
+{{ field("d6", "File group", name="file_group", value=form.file_group, mono=true, placeholder="app user", error=errors.get("file_group"), autocomplete="off", maxlength="64") }}
+</div>
+<div class="flex flex-wrap items-center gap-3">{{ button("Save settings", kind="primary-sm", type="submit", extra_class="max-md:h-11") }}</div>
+{%- if saved %}
+{{ toast(saved.tone, saved.message, saved.title, floating=true) }}
+{%- endif %}
+</form>

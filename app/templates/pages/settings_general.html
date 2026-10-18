@@ -1,0 +1,11 @@
+{#- The General tab: time zone, date format, the defaults of a new deployment and the read-only
+    diagnostics. Context: the settings tab context, what fragments/settings_general.html needs
+    and diagnostics (a Diagnostics). -#}
+{% extends "layouts/settings.html" %}
+{% from "macros/panels.html" import panel %}
+{% block tab %}
+{% call panel("General", "general-title", fragment="settings-general") %}
+{% include "fragments/settings_general.html" %}
+{% endcall %}
+{% include "fragments/settings_diagnostics.html" %}
+{% endblock %}

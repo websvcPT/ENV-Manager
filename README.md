@@ -44,10 +44,54 @@ address <address> is not an allowed source`, at most ten lines a minute with a c
 checks keep working. Behind a reverse proxy, list the proxy in `ENVMANAGER_TRUSTED_PROXIES` as well,
 or the proxy's address is the one that is checked and counted for every client.
 
-`ENVMANAGER_LOGIN_IP_MAX_FAILURES` (a number from 1 to 100000) replaces the limit of 20 failed
-sign ins per client address in 15 minutes. It exists for the development stack, whose browser
-specs all share one address, and is refused unless `ENVMANAGER_ENVIRONMENT` is `development` or
-`testing`.
+`ENVMANAGER_LOGIN_IP_MAX_FAILURES` (a number from 1 to 100000) replaces the limit of failed
+sign ins per client address (20 in 15 minutes unless Settings changes it). It exists for the
+development stack, whose browser specs all share one address, and is refused unless
+`ENVMANAGER_ENVIRONMENT` is `development` or `testing`. While it is set it wins over the stored
+value and the Security tab shows the field fixed (see Settings).
+
+## Settings
+
+The superadmin opens Settings from the sidebar (`/settings`, which opens the first tab). Every
+other group gets 403 and no link. A save is validated on the server, written with one audit entry
+that names every changed setting with its old and new value (a secret is never recorded, only
+that it changed) and applies to the next request: the settings are read per request, so nothing
+needs a restart. Settings never replace startup configuration: the master key, base URL, CSRF
+secret, trusted proxies and allowed sources stay in environment variables.
+
+| Tab | Content |
+| --- | --- |
+| Allowed paths | The list with mounted and writable status and the deployments under each entry, add with a live check, remove behind a confirm dialog. |
+| Security | Idle and absolute session timeouts, failed logins before lockout per user, per address and for the API per address, lockout duration, minimum password length, and the two-factor policy (Optional, shown read-only). |
+| Post-deploy | The Docker socket status and the switch for post-deploy commands. |
+| General | Time zone and date format, the defaults of a new deployment, and the read-only diagnostics. |
+| SMTP, Git, Backup, Notifications | Not available yet: each shows its panel and says so. They arrive with the features they configure. |
+
+- **Allowed paths.** An entry is checked when it is added: absolute and normalized, an existing
+  folder inside a host mount, never `/` or the data volume, and not already in the list (compared
+  on the real path, so a symlink to an entry is the same entry). The real path is stored. An entry
+  on a read-only mount is accepted and shown as Read-only. A stored entry whose folder is gone
+  reads Missing, one that now resolves elsewhere reads Moved and is ignored until it is added
+  again. Removing an entry deletes nothing on disk; the confirm dialog counts the deployments no
+  other entry covers, which are flagged as outside the allowed paths. Every add and remove is
+  audited and announced through the settings notification seam, which delivers nothing until
+  notifications exist.
+- **Security.** Idle and absolute timeouts, lockout limits and the password length apply to the
+  next request; a changed absolute timeout also recomputes the expiry of the sessions that are
+  already open. The failure window (15 minutes) is not a setting. The sign-in limit per address
+  can be fixed by `ENVMANAGER_LOGIN_IP_MAX_FAILURES` (development and testing only): while it is
+  set its field shows that value and cannot be edited, and the stored value is kept.
+- **Post-deploy.** The switch defaults to on. It can only be changed while Docker is usable. With
+  it off the deploy engine skips a service's stored command, records Skipped with the reason
+  "Post-deploy commands are switched off in settings.", and the deploy dialog preview and the
+  service page say the same. Force does not override it.
+- **General.** The time zone and date format apply to the times on the audit log, project
+  activity and user activity (stored times stay UTC; the audit date filters are days of that zone;
+  the CSV export stays UTC). The defaults (missing dist keys, drift, missing target, file mode,
+  owner and group) pre-fill the new deployment form; a deployment keeps its own values afterwards.
+  The diagnostics show whether error reporting and OpenTelemetry are on, the OTLP endpoint host
+  (the host name only), the version, the environment, the trusted proxies, the allowed sources and
+  the client address the application resolved for the request. No secret is shown.
 
 ## Demo deployment
 
@@ -294,7 +338,9 @@ recreate the Compose service that loads them. They need the Docker socket mounte
 container (`/var/run/docker.sock`, with the host docker group id in `group_add`); the docker CLI
 and compose plugin of the image do the rest. Without a reachable daemon and compose plugin the
 step is skipped with the reason and the deploy still counts as successful. `ENVMANAGER_DOCKER_SOCKET`
-changes the socket path (read by the web app and by the command line).
+changes the socket path (read by the web app and by the command line). The superadmin can also
+switch post-deploy commands off for the whole app in Settings (the Post-deploy tab), which skips
+every stored command with the reason.
 
 The superadmin edits the settings on the service page: working directory, commands, timeout,
 run only if changed, a Test command button (`docker compose config --quiet` in the typed working

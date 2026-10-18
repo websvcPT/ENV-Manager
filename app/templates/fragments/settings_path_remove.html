@@ -1,0 +1,22 @@
+{#- The confirm dialog content for removing an allowed path: states what happens to the
+    deployments under it. An entry that was removed meanwhile says so in place of the buttons.
+    Context: path_id, path, flagged (deployments no other entry covers) and gone. -#}
+{% from "macros/buttons.html" import button %}
+{% from "macros/dialogs.html" import dialog_body, dialog_footer, dialog_head %}
+{% from "macros/feedback.html" import note %}
+<div data-fragment="path-remove">
+{{ dialog_head("path-remove", "Path already removed" if gone else "Remove " ~ path) }}
+{%- if gone %}
+{% call dialog_body() %}{{ note("This path is no longer in the list.") }}{% endcall %}
+{% call dialog_footer() %}{{ button("Close", extra_class="h-11", data_js="dialog-close") }}{% endcall %}
+{%- else %}
+<form hx-post="/settings/paths/{{ path_id }}/remove" hx-target="#path-remove" hx-swap="innerHTML">
+{% call dialog_body() %}<p class="text-[15px]">Nothing is deleted.
+{%- if flagged == 0 %} No deployment is left outside the allowed paths.
+{%- elif flagged == 1 %} The 1 deployment under this path is flagged as outside allowed paths and cannot be deployed or checked until the path is allowed again or the deployment is moved.
+{%- else %} The {{ flagged }} deployments under this path are flagged as outside allowed paths and cannot be deployed or checked until the path is allowed again or the deployments are moved.
+{%- endif %}</p>{% endcall %}
+{% call dialog_footer() %}{{ button("Cancel", extra_class="h-11", data_js="dialog-close") }}{{ button("Remove path", kind="danger", type="submit", extra_class="h-11 text-[15px]") }}{% endcall %}
+</form>
+{%- endif %}
+</div>
