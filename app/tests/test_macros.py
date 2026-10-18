@@ -213,6 +213,16 @@ def test_loaded_dialog_has_loading_content_a_template_and_the_clear_on_close_mar
     assert "data-clear-on-close" not in plain and "has-[" not in plain and "w-[640px]" in plain
 
 
+def test_loaded_dialog_can_widen_for_a_result_wider_than_its_form() -> None:
+    """The created state of a token is drawn wider than the form that leads to it."""
+    wide = render_snippet(
+        "{% from 'macros/dialogs.html' import loaded_dialog %}"
+        "{{ loaded_dialog('token-create', 'Create API token', width='640', widens=true) }}"
+    )
+    assert "w-[640px]" in wide and "has-[[data-wide]]:w-[720px]" in wide
+    assert "has-[[data-narrow]]" not in wide
+
+
 def test_inline_error_in_a_dialog_is_a_rounded_block_and_can_drop_retry() -> None:
     """The band under a panel title becomes a block inside a dialog body."""
     band = render_snippet(

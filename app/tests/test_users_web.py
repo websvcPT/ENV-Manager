@@ -74,6 +74,13 @@ async def audit(web_app: FastAPI, action: str) -> list[AuditEntry]:
         )
 
 
+async def seeded_token_id(web_app: FastAPI) -> int:
+    """The id of the seeded token."""
+    async with web_app.state.session_factory() as db:
+        token_id: int = (await db.execute(select(ApiToken.id))).scalar_one()
+    return token_id
+
+
 async def stored_user(web_app: FastAPI, user_id: int) -> User:
     """A user as stored now."""
     async with web_app.state.session_factory() as db:
@@ -336,7 +343,7 @@ async def test_the_confirm_dialogs_state_the_effect_of_each_action(
     base = f"/users/{viewer.id}"
     page = (await web_client.get(f"{base}/confirm/disable?from=list", headers=HTMX)).text
     assert "Disable viewer" in page and "active sessions end now" in page
-    assert "API tokens stop working" in page
+    assert "All of their API tokens are revoked for good" in page
     assert f'hx-post="{base}/disable"' in page and 'name="from" value="list"' in page
     assert "Disable user" in page and "This is your own account" not in page
     url = f"{base}/confirm/group?from=detail&group=admin"
@@ -350,7 +357,7 @@ async def test_the_confirm_dialogs_state_the_effect_of_each_action(
         await web_client.get(f"/users/{ungranted.id}/confirm/enable?from=list", headers=HTMX)
     ).text
     assert "Enable ungranted_admin" in page
-    assert "API tokens that were not revoked work again" in page
+    assert "Their old API tokens stay revoked" in page
     await add_superadmin(web_app, "second")
     root = await user_named(web_app, "root")
     own = (await web_client.get(f"/users/{root.id}/confirm/group?group=admin", headers=HTMX)).text
@@ -407,13 +414,17 @@ async def test_disabling_ends_the_sessions_stops_the_tokens_and_is_audited(
         assert not (await stored_user(web_app, admin.id)).is_active
         token = (await db.execute(select(ApiToken))).scalars().first()
         assert token is not None and await load_token_scope(db, token) is None
+        assert token.revoked_at is not None
     (entry,) = await audit(web_app, "user.disable")
     assert (entry.actor_name, entry.target_name, entry.result) == (
         "root",
         "admin",
         AuditResult.SUCCESS,
     )
-    assert entry.details == {"sessions_ended": 1}
+    (revoked,) = await audit(web_app, "token.revoke")
+    assert (revoked.actor_name, revoked.target_name) == ("root", "billing-ci")
+    assert revoked.details == {"owner": "admin", "reason": "user_disabled"}
+    assert entry.details == {"sessions_ended": 1, "tokens_revoked": 1}
     page = await web_client.get("/users")
     row = next(cells for _, name, cells in ROW.findall(page.text) if name == "admin")
     assert "Disabled" in row and "/confirm/enable?from=list" in row
@@ -516,8 +527,12 @@ async def test_changing_the_group_applies_at_once_and_stops_tokens_of_a_new_view
     async with web_app.state.session_factory() as db:
         token = (await db.execute(select(ApiToken))).scalars().first()
         assert token is not None and await load_token_scope(db, token) is None
+        assert token.revoked_at is not None
     (entry,) = await audit(web_app, "user.group_change")
-    assert entry.details == {"from": "admin", "to": "viewer"} and entry.actor_name == "root"
+    assert entry.details == {"from": "admin", "to": "viewer", "tokens_revoked": 1}
+    assert entry.actor_name == "root"
+    (revoked,) = await audit(web_app, "token.revoke")
+    assert revoked.details == {"owner": "admin", "reason": "moved_to_viewer"}
 
 
 async def test_the_detail_page_shows_group_status_grants_tokens_and_activity(
@@ -541,8 +556,9 @@ async def test_the_detail_page_shows_group_status_grants_tokens_and_activity(
     assert "Recent activity" in body and "Open audit log" in body
     assert 'href="/audit?actor=user:admin"' in body
     assert "No activity yet" not in body
-    assert 'id="user-action"' in response.text
-    assert "Revoke" not in body
+    assert 'id="user-action"' in response.text and 'id="token-revoke"' in response.text
+    token_id = await seeded_token_id(web_app)
+    assert f'hx-get="/tokens/{token_id}/revoke"' in body
 
     ungranted = await user_named(web_app, "ungranted_admin")
     quiet = main_of((await web_client.get(f"/users/{ungranted.id}")).text)

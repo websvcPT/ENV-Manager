@@ -331,7 +331,7 @@ async def test_delete_is_blocked_while_a_token_is_restricted_inside(
     response = await post(web_client, f"/projects/{billing}/delete", confirm_name="billing")
     assert response.status_code == 422
     assert "billing-ci" in response.text
-    assert "Change or revoke them first." in response.text
+    assert "Revoke them first." in response.text
     async with web_app.state.session_factory() as db:
         assert await db.get(Project, billing) is not None
         token_stmt = select(ApiToken).where(ApiToken.name == "billing-ci")

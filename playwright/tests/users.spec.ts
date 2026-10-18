@@ -288,7 +288,7 @@ test.describe('superadmin: the users list', () => {
     const dialog = page.locator('#user-action[open]');
     await expect(dialog.getByRole('heading', { name: `Disable ${user.name}` })).toBeVisible();
     await expect(dialog.getByText('active sessions end now')).toBeVisible();
-    await expect(dialog.getByText('API tokens stop working')).toBeVisible();
+    await expect(dialog.getByText('All of their API tokens are revoked for good')).toBeVisible();
     await dialog.getByRole('button', { name: 'Cancel' }).click();
     await expect(page.locator('#user-action[open]')).toHaveCount(0);
     await expect(current.locator('td').nth(2)).toHaveText('Active');
@@ -301,7 +301,7 @@ test.describe('superadmin: the users list', () => {
 
     await current.getByRole('button', { name: `Enable ${user.name}` }).click();
     await expect(dialog.getByRole('heading', { name: `Enable ${user.name}` })).toBeVisible();
-    await expect(dialog.getByText('API tokens that were not revoked work again')).toBeVisible();
+    await expect(dialog.getByText('Their old API tokens stay revoked')).toBeVisible();
     await dialog.getByRole('button', { name: 'Enable user' }).click();
     await expect(page.locator('#user-action[open]')).toHaveCount(0);
     await expect(current.locator('td').nth(2)).toHaveText('Active');
@@ -332,10 +332,15 @@ test.describe('superadmin: the user detail', () => {
       page.locator('#user-grants [data-fragment="grant-tree"] input:checked'),
     ).toHaveCount(2);
     const tokens = page.locator('[data-fragment="user-tokens"]');
-    await expect(tokens.locator('th[scope="col"]')).toHaveText(['Name', 'Last used', 'Status']);
+    await expect(tokens.locator('th[scope="col"]')).toHaveText([
+      'Name',
+      'Last used',
+      'Status',
+      'Actions',
+    ]);
     const token = tokens.locator('[data-fragment="token-row"]', { hasText: 'billing-ci' });
     await expect(token).toContainText('Active');
-    await expect(tokens.getByRole('button', { name: /revoke/i })).toHaveCount(0);
+    await expect(token.getByRole('button', { name: /^Revoke/ })).toHaveCount(1);
     const activity = page.locator('[data-fragment="user-activity"]');
     await expect(activity.getByRole('link', { name: 'Open audit log' })).toHaveAttribute(
       'href',

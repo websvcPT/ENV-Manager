@@ -12,7 +12,10 @@ from app.cli.main import app
 from app.config import get_settings
 from app.core.db import create_engine, create_session_factory
 from app.core.passwords import verify_password
-from app.models import AuditEntry, User
+from app.models import ApiToken, AuditEntry, User
+from app.services.audit import AuditActor
+from app.services.permissions import load_user_scope
+from app.services.tokens import create_token
 
 runner = CliRunner()
 
@@ -27,7 +30,7 @@ def cli_data_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[P
     get_settings.cache_clear()
 
 
-def _read_rows[Row: (User, AuditEntry)](data_path: Path, model: type[Row]) -> list[Row]:
+def _read_rows[Row: (User, AuditEntry, ApiToken)](data_path: Path, model: type[Row]) -> list[Row]:
     """Rows of one model read back from the CLI's database."""
 
     async def read() -> list[Row]:
@@ -133,3 +136,37 @@ def test_passwd_sets_a_new_password_and_unknown_user_fails(cli_data_path: Path) 
     missing = runner.invoke(app, ["user", "passwd", "ghost"])
     assert missing.exit_code == 1
     assert "no user named" in missing.output
+
+
+def test_disable_revokes_the_users_api_tokens_and_enable_does_not_bring_them_back(
+    cli_data_path: Path,
+) -> None:
+    runner.invoke(app, ["user", "create", "root", "root@example.test", "--group", "superadmin"])
+    runner.invoke(app, ["user", "create", "adm", "adm@example.test", "--group", "admin"])
+
+    async def make_token() -> None:
+        engine = create_engine(cli_data_path / "envmanager.db")
+        try:
+            async with create_session_factory(engine)() as db:
+                owner = (await db.execute(select(User).where(User.name == "adm"))).scalar_one()
+                await create_token(
+                    db,
+                    owner,
+                    await load_user_scope(db, owner),
+                    name="ci",
+                    operations=["deploy"],
+                    restriction="",
+                    expires="",
+                    actor=AuditActor.for_user(owner),
+                )
+        finally:
+            await engine.dispose()
+
+    asyncio.run(make_token())
+    assert runner.invoke(app, ["user", "disable", "adm"]).exit_code == 0
+    assert runner.invoke(app, ["user", "enable", "adm"]).exit_code == 0
+    (token,) = _read_rows(cli_data_path, ApiToken)
+    assert token.revoked_at is not None
+    revoked = [entry for entry in _audit(cli_data_path) if entry.action == "token.revoke"]
+    assert [(entry.actor_name, entry.target_name) for entry in revoked] == [("cli", "ci")]
+    assert revoked[0].details == {"owner": "adm", "reason": "user_disabled"}

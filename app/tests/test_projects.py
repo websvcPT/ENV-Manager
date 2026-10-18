@@ -1,6 +1,7 @@
 """Project service: the scoped list and superadmin create, rename and delete."""
 
 from collections.abc import AsyncIterator
+from datetime import timedelta
 
 import pytest
 from sqlalchemy import func, select
@@ -8,6 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.core.db import create_session_factory
 from app.models import (
+    ApiToken,
+    ApiTokenRestriction,
     AuditEntry,
     AuditResult,
     Deployment,
@@ -15,7 +18,9 @@ from app.models import (
     Project,
     User,
 )
+from app.models.types import utc_now
 from app.seeds import SeedData
+from app.services.audit import AuditActor
 from app.services.permissions import load_user_scope
 from app.services.projects import (
     InvalidProjectNameError,
@@ -28,6 +33,7 @@ from app.services.projects import (
     rename_project,
     validate_project_name,
 )
+from app.services.tokens import create_token, revoke_token
 
 
 @pytest.fixture
@@ -213,3 +219,58 @@ async def test_deleted_ids_are_never_reused(db: AsyncSession, seed_data: SeedDat
     await delete_project(db, created, actor=seed_data.users.superadmin)
     again = await create_project(db, name="temp", actor=seed_data.users.superadmin)
     assert again.id > created.id
+
+
+async def test_a_revoked_token_no_longer_holds_its_project(
+    db: AsyncSession, seed_data: SeedData
+) -> None:
+    """A revoked token can never be used again, so deleting the project removes its restriction."""
+    token = seed_data.tokens[0]
+    token_row = await db.get(ApiToken, token.id)
+    assert token_row is not None
+    await revoke_token(db, token_row, AuditActor.for_user(seed_data.users.admin))
+    await delete_project(db, seed_data.projects.billing, actor=seed_data.users.superadmin)
+    names = (await db.execute(select(Project.name))).scalars().all()
+    assert names == ["rentals"]
+    assert (await db.execute(select(ApiTokenRestriction))).first() is None
+    kept = await db.get(ApiToken, token.id)
+    assert kept is not None and kept.revoked_at is not None
+    (entry,) = await _audit(db, "project.delete")
+    assert entry.result is AuditResult.SUCCESS
+
+
+async def test_an_expired_token_no_longer_holds_its_project(
+    db: AsyncSession, seed_data: SeedData
+) -> None:
+    token_row = await db.get(ApiToken, seed_data.tokens[0].id)
+    assert token_row is not None
+    token_row.expires_at = utc_now() - timedelta(minutes=1)
+    await db.commit()
+    await delete_project(db, seed_data.projects.billing, actor=seed_data.users.superadmin)
+    assert (await db.execute(select(ApiTokenRestriction))).first() is None
+
+
+async def test_only_the_dead_tokens_restrictions_go_with_the_project(
+    db: AsyncSession, seed_data: SeedData
+) -> None:
+    """A live token restricted elsewhere keeps its restriction; one inside blocks the delete."""
+    admin = seed_data.users.admin
+    scope = await load_user_scope(db, admin)
+    kept = await create_token(
+        db,
+        admin,
+        scope,
+        name="rentals-ci",
+        operations=["deploy"],
+        restriction=f"project:{seed_data.projects.rentals.id}",
+        expires="",
+        actor=AuditActor.for_user(admin),
+    )
+    seeded = await db.get(ApiToken, seed_data.tokens[0].id)
+    assert seeded is not None
+    await revoke_token(db, seeded, AuditActor.for_user(admin))
+    await delete_project(db, seed_data.projects.billing, actor=seed_data.users.superadmin)
+    rows = (await db.execute(select(ApiTokenRestriction))).scalars().all()
+    assert [row.token_id for row in rows] == [kept.token.id]
+    with pytest.raises(ProjectInUseError, match="rentals-ci"):
+        await delete_project(db, seed_data.projects.rentals, actor=seed_data.users.superadmin)

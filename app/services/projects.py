@@ -25,6 +25,7 @@ from app.models import (
 from app.services.audit import CLI_ACTOR_NAME, record_audit
 from app.services.grants import projects_reached
 from app.services.permissions import AccessScope, Capability, ItemLevel, compute_visibility
+from app.services.tokens import is_live
 
 MAX_PROJECT_NAME_LENGTH = 100
 PROJECT_NAME_PATTERN = re.compile(r"[a-z0-9][a-z0-9-]*")
@@ -147,13 +148,15 @@ async def rename_project(
     return project
 
 
-async def _restricting_token_names(db: AsyncSession, project: Project) -> list[str]:
-    """Names of the API tokens restricted to the project or anything below it."""
+async def _restrictions_below(
+    db: AsyncSession, project: Project
+) -> list[tuple[ApiToken, ApiTokenRestriction]]:
+    """The tokens and restriction rows that point at the project or anything below it."""
     deployment_ids = select(Deployment.id).where(Deployment.project_id == project.id)
     service_ids = select(Service.id).where(Service.deployment_id.in_(deployment_ids))
     environment_ids = select(Environment.id).where(Environment.service_id.in_(service_ids))
     stmt = (
-        select(ApiToken.name)
+        select(ApiToken, ApiTokenRestriction)
         .join(ApiTokenRestriction, ApiTokenRestriction.token_id == ApiToken.id)
         .where(
             (ApiTokenRestriction.project_id == project.id)
@@ -161,10 +164,9 @@ async def _restricting_token_names(db: AsyncSession, project: Project) -> list[s
             | ApiTokenRestriction.service_id.in_(service_ids)
             | ApiTokenRestriction.environment_id.in_(environment_ids)
         )
-        .distinct()
-        .order_by(ApiToken.name)
+        .order_by(ApiToken.name, ApiToken.id)
     )
-    return list((await db.execute(stmt)).scalars())
+    return [(token, restriction) for token, restriction in (await db.execute(stmt)).all()]
 
 
 async def delete_project(
@@ -172,10 +174,13 @@ async def delete_project(
 ) -> None:
     """Delete a project with everything under it, and audit it.
 
-    Refused while an API token is restricted to the project or something inside it: dropping
-    that restriction would widen the token, so the token must be changed or revoked first.
+    Refused while a usable API token is restricted to the project or something inside it:
+    dropping that restriction would widen the token, so the token must be revoked first. A token
+    that is revoked or expired can never be used again, so its restriction rows are removed with
+    the project instead of keeping the project from being deleted.
     """
-    tokens = await _restricting_token_names(db, project)
+    restricting = await _restrictions_below(db, project)
+    tokens = sorted({token.name for token, _ in restricting if is_live(token)})
     if tokens:
         await record_audit(
             db,
@@ -194,8 +199,11 @@ async def delete_project(
         raise ProjectInUseError(
             "API tokens are restricted to this project or its contents: "
             + ", ".join(tokens)
-            + ". Change or revoke them first."
+            + ". Revoke them first."
         )
+    for _, restriction in restricting:
+        await db.delete(restriction)
+    await db.flush()
     deployments = (
         await db.execute(
             select(func.count()).select_from(Deployment).where(Deployment.project_id == project.id)

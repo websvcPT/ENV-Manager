@@ -29,6 +29,7 @@ from app.services.grants import (
     require_existing,
 )
 from app.services.sessions import revoke_user_sessions
+from app.services.tokens import REASON_MOVED_TO_VIEWER, REASON_USER_DISABLED, revoke_user_tokens
 
 MAX_NAME_LENGTH = 100
 MAX_EMAIL_LENGTH = 320
@@ -268,9 +269,9 @@ async def set_user_active(
 ) -> int:
     """Enable or disable a user, audit it, and end the sessions of a disabled user.
 
-    Disabling the last active superadmin is refused and the refusal is audited. A disabled
-    user's API tokens stop working at once because token scopes check the owner on every call.
-    Returns the number of sessions that were ended.
+    Disabling the last active superadmin is refused and the refusal is audited. Disabling a user
+    also revokes all of their API tokens for good, each with its own audit entry, so enabling the
+    account later never brings an old token back. Returns the number of sessions that were ended.
     """
     action = "user.enable" if active else "user.disable"
     if not active and await is_last_active_superadmin(db, user):
@@ -285,7 +286,13 @@ async def set_user_active(
         )
         raise LastSuperadminError("The last active superadmin cannot be disabled.")
     user.is_active = active
-    ended = await revoke_user_sessions(db, user.id) if not active else 0
+    ended = 0
+    details: dict[str, object] = {}
+    if not active:
+        ended = await revoke_user_sessions(db, user.id)
+        actor = AuditActor(actor_type, user=actor_user, ip_address=ip_address)
+        revoked = await revoke_user_tokens(db, user, actor, reason=REASON_USER_DISABLED)
+        details["tokens_revoked"] = revoked
     await record_audit(
         db,
         action=action,
@@ -297,7 +304,7 @@ async def set_user_active(
         target_type="user",
         target_id=user.id,
         target_name=user.name,
-        details={"sessions_ended": ended},
+        details={"sessions_ended": ended, **details},
     )
     await db.commit()
     return ended
@@ -315,9 +322,9 @@ async def set_user_group(
     """Move a user to another group and audit it; returns whether the group changed.
 
     Demoting the last active superadmin is refused and the refusal is audited. The change
-    applies to the user's next request, sessions and API tokens included, because scopes are
-    loaded per request: a token of a user moved to viewer stops working. Grants are kept, but
-    superadmins ignore them.
+    applies to the user's next request, because scopes are loaded per request. Moving a user to
+    viewer revokes all of their API tokens for good, each with its own audit entry, so promoting
+    them again never brings an old token back. Grants are kept, but superadmins ignore them.
     """
     previous = user.group
     if group is previous:
@@ -334,6 +341,12 @@ async def set_user_group(
         )
         raise LastSuperadminError("The last active superadmin cannot be demoted.")
     user.group = group
+    details: dict[str, object] = {"from": previous.value, "to": group.value}
+    if group is UserGroup.VIEWER:
+        actor = AuditActor(actor_type, user=actor_user, ip_address=ip_address)
+        details["tokens_revoked"] = await revoke_user_tokens(
+            db, user, actor, reason=REASON_MOVED_TO_VIEWER
+        )
     await record_audit(
         db,
         action="user.group_change",
@@ -345,7 +358,7 @@ async def set_user_group(
         target_type="user",
         target_id=user.id,
         target_name=user.name,
-        details={"from": previous.value, "to": group.value},
+        details=details,
     )
     await db.commit()
     return True

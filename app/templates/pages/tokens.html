@@ -1,0 +1,16 @@
+{#- The API tokens page. A superadmin sees every token with its owner, an admin sees their own.
+    Context: rows (TokenRow list), show_owner (superadmin). -#}
+{% extends "layouts/app.html" %}
+{% from "macros/buttons.html" import button %}
+{% from "macros/dialogs.html" import loaded_dialog %}
+{% from "macros/panels.html" import page_header %}
+{% set active_nav = "tokens" %}
+{% set breadcrumbs = [("API tokens", none)] %}
+{% block title %}API tokens{% endblock %}
+{% block content %}
+{% set header_actions %}{{ button("Create token", kind="primary", icon_name="plus", icon_stroke="2.2", data_js="dialog-open", data_target="token-create", aria_haspopup="dialog", hx_get="/tokens/new", hx_target="#token-create", hx_swap="innerHTML") }}{% endset %}
+{{ page_header("API tokens", "Your tokens and the tokens of other users." if show_owner else "Your tokens. A token acts as you and never exceeds your access.", actions=header_actions) }}
+{% include "fragments/tokens_table.html" %}
+{{ loaded_dialog("token-create", "Create API token", width="640", clear_on_close=true, widens=true) }}
+{{ loaded_dialog("token-revoke", "Revoke token", width="560") }}
+{% endblock %}

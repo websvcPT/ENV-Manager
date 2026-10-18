@@ -12,7 +12,7 @@
 {% block content %}
 {% set UPDATES = {
   "group": ("Group changed", user.name ~ " is now " ~ ("an " if user.group.value == "admin" else "a ") ~ user.group.value.capitalize() ~ "."),
-  "disabled": ("User disabled", "Sessions ended and API tokens stopped working."),
+  "disabled": ("User disabled", "Sessions ended and API tokens revoked."),
   "enabled": ("User enabled", user.name ~ " can sign in again.")
 } %}
 {% set header_badges %}{{ badge(user.group.value) }}{% if user.is_active %}{{ badge("deployed", "Active") }}{% else %}{{ badge("never", "Disabled") }}{% endif %}{% endset %}
@@ -27,19 +27,7 @@
 {% endcall %}
 {% include "fragments/user_grants.html" %}
 </div>
-{% call panel("API tokens", "p-tokens", fragment="user-tokens") %}
-{%- if user.tokens %}
-{% call table("Tokens of " ~ user.name, ["Name", "Last used", "Status"], min_width_class="min-w-[560px]") %}
-{%- for token in user.tokens %}
-<tr data-fragment="token-row"><th scope="row" class="border-t border-line px-4 py-3.5 text-left font-semibold"><span class="font-mono text-[13px]">{{ token.name }}</span></th>
-<td class="border-t border-line px-4 py-3.5">{% if token.last_used_at %}<time datetime="{{ token.last_used_at.strftime('%Y-%m-%dT%H:%M:%SZ') }}" title="UTC">{{ token.last_used_at.strftime("%Y-%m-%d %H:%M") }}</time>{% else %}Never{% endif %}</td>
-<td class="border-t border-line px-4 py-3.5"><span class="inline-flex flex-col items-start gap-0.5">{% if token.status.value == "active" %}{{ badge("deployed", "Active") }}{% else %}{{ badge("never", token.status.value.capitalize()) }}{% endif %}{% if token.reason %}<span class="text-xs text-ink2">{{ token.reason }}</span>{% endif %}</span></td></tr>
-{%- endfor %}
-{% endcall %}
-{%- else %}
-{{ empty_state("No API tokens", user.name ~ " has not created any API tokens.", "key") }}
-{%- endif %}
-{% endcall %}
+{% include "fragments/user_tokens.html" %}
 {% set activity_link %}{{ text_link("Open audit log", "/audit?actor=user:" ~ (user.name | urlencode)) }}{% endset %}
 {% call panel("Recent activity", "p-activity", fragment="user-activity", actions=activity_link) %}
 {%- if user.activity %}
@@ -59,4 +47,5 @@
 {{ toast("success", UPDATES[updated][1], UPDATES[updated][0], floating=true) }}
 {%- endif %}
 {{ loaded_dialog("user-action", "User", width="560") }}
+{{ loaded_dialog("token-revoke", "Revoke token", width="560") }}
 {% endblock %}

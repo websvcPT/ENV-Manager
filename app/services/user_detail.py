@@ -5,26 +5,15 @@ Everything here is for the superadmin, who sees every account, so nothing is sco
 
 from dataclasses import dataclass
 from datetime import datetime
-from enum import StrEnum
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import ApiToken, AuditEntry, AuditResult, User, UserGroup
-from app.models.types import utc_now
 from app.services.grants import GrantTarget, list_grants, projects_reached
-from app.services.permissions import token_is_usable
+from app.services.tokens import TokenStatus, token_status
 
 ACTIVITY_LIMIT = 10
-
-
-class TokenStatus(StrEnum):
-    """How an API token stands: usable, or why it is not."""
-
-    ACTIVE = "active"
-    REVOKED = "revoked"
-    EXPIRED = "expired"
-    STOPPED = "stopped"
 
 
 @dataclass(frozen=True)
@@ -42,13 +31,17 @@ class UserRow:
 
 @dataclass(frozen=True)
 class TokenRow:
-    """A token of the user. ``reason`` says why an otherwise valid token is stopped."""
+    """A token of the user. ``reason`` says why an otherwise valid token is stopped.
+
+    ``revocable`` is True while revoking the token still changes something.
+    """
 
     id: int
     name: str
     last_used_at: datetime | None
     status: TokenStatus
     reason: str | None
+    revocable: bool
 
 
 @dataclass(frozen=True)
@@ -95,19 +88,10 @@ async def list_user_rows(db: AsyncSession) -> list[UserRow]:
 
 
 def token_row(token: ApiToken, owner: User, *, now: datetime | None = None) -> TokenRow:
-    """The status of a token: revoked, expired, stopped by its owner's state, or active."""
-    moment = now or utc_now()
-    reason: str | None = None
-    if token.revoked_at is not None:
-        status = TokenStatus.REVOKED
-    elif token.expires_at is not None and token.expires_at <= moment:
-        status = TokenStatus.EXPIRED
-    elif not token_is_usable(token, owner, now=moment):
-        status = TokenStatus.STOPPED
-        reason = "User disabled" if not owner.is_active else "Viewers cannot use tokens"
-    else:
-        status = TokenStatus.ACTIVE
-    return TokenRow(token.id, token.name, token.last_used_at, status, reason)
+    """The row of a token: its status (see ``token_status``) and whether it can be revoked."""
+    status, reason = token_status(token, owner, now=now)
+    revocable = status in (TokenStatus.ACTIVE, TokenStatus.STOPPED)
+    return TokenRow(token.id, token.name, token.last_used_at, status, reason, revocable)
 
 
 async def load_user_detail(db: AsyncSession, user_id: int) -> UserDetail | None:

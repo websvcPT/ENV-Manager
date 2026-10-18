@@ -83,6 +83,26 @@ the managed version changed since the page was opened). Overwriting the target i
 of that one file after a confirmation: the file it replaces is copied next to it first (mode 0600),
 whatever the drift policy says, and the post-deploy command of the service runs as for any deploy.
 
+## API tokens
+
+Admins and superadmins create tokens for themselves on the API tokens page (viewers get 403 and
+no link). A token has a name (unique among the owner's tokens that are not revoked), the
+operations it may use (Deploy, Read last deployment), an optional restriction to one project,
+deployment or service the owner reaches, and an optional expiry date (the token works through the
+end of that day, UTC). The secret (`envm_` and 48 hex characters) is shown once, with a Copy
+button and example requests that read it from `ENVM_TOKEN`; only its SHA-256 hash and a 13
+character prefix (shown in the table to recognise the token) are stored, and neither the secret
+nor the hash reaches the audit log or the application log. The table shows the status (Active,
+Revoked, Expired, Stopped), when and from which address the token was last used.
+
+Owners revoke their own tokens after a confirmation; the superadmin sees every token and revokes
+any of them, also from the tokens panel of a user. A revoked token stops at its next use and its
+entries stay in the audit log. Disabling a user, or moving them to viewer, revokes all of their
+tokens for good: enabling or promoting them later does not bring a token back, they create new
+ones. A revoked or expired token no longer keeps its project from being deleted: its restriction rows
+are removed with the project; a token that can still be used refuses the deletion until it is
+revoked.
+
 ## Post-deploy commands
 
 A service can store commands that run once after its files were deployed, for example to

@@ -23,10 +23,12 @@ from app.models import (
 from app.models.types import utc_now
 from app.seeds import SeedData
 from app.services import users as users_module
+from app.services.audit import AuditActor
 from app.services.auth_policy import AuthPolicy
 from app.services.grants import GrantError, GrantTarget, list_grants
-from app.services.permissions import load_token_scope
+from app.services.permissions import load_token_scope, load_user_scope
 from app.services.sessions import create_session
+from app.services.tokens import create_token, revoke_token
 from app.services.users import (
     InvalidUserError,
     LastSuperadminError,
@@ -362,7 +364,7 @@ async def test_set_user_group_changes_the_group_and_audits_it(engine: AsyncEngin
             AuditResult.SUCCESS,
             "root",
         )
-        assert entry.details == {"from": "admin", "to": "viewer"}
+        assert entry.details == {"from": "admin", "to": "viewer", "tokens_revoked": 0}
         assert (entry.target_type, entry.target_name) == ("user", "kim")
 
 
@@ -407,27 +409,125 @@ async def test_a_superadmin_can_be_demoted_while_another_is_active(engine: Async
             )
 
 
-async def test_tokens_stop_when_the_owner_is_disabled_or_moved_to_viewer(
+async def _live_token(db: AsyncSession, owner: User, name: str) -> ApiToken:
+    """A fresh token for a seeded user, created the way the create form does."""
+    created = await create_token(
+        db,
+        owner,
+        await load_user_scope(db, owner),
+        name=name,
+        operations=["deploy"],
+        restriction="",
+        expires="",
+        actor=AuditActor.for_user(owner),
+    )
+    return created.token
+
+
+async def _revoke_entries(db: AsyncSession) -> list[AuditEntry]:
+    """The token.revoke audit entries, oldest first."""
+    rows = await db.execute(
+        select(AuditEntry).where(AuditEntry.action == "token.revoke").order_by(AuditEntry.id)
+    )
+    return list(rows.scalars())
+
+
+async def test_disabling_the_owner_revokes_every_token_for_good(
     seeded_database: AsyncEngine, seed_data: SeedData
 ) -> None:
-    """The next token call finds the owner's state, so nothing needs to be revoked or ended."""
+    """Enabling the user later never brings an old token back; they create new ones."""
     factory = create_session_factory(seeded_database)
     async with factory() as db:
-        token = (await db.execute(select(ApiToken))).scalars().first()
-        assert token is not None
-        owner = await db.get(User, token.owner_id)
+        owner = await db.get(User, seed_data.users.admin.id)
         assert owner is not None
-        assert await load_token_scope(db, token) is not None
+        seeded = (await db.execute(select(ApiToken))).scalars().one()
+        extra = await _live_token(db, owner, "extra")
+        earlier = await _live_token(db, owner, "earlier")
+        await revoke_token(db, earlier, AuditActor.for_user(owner))
+        stamp = earlier.revoked_at
+        assert await load_token_scope(db, seeded) is not None
 
-        await set_user_group(db, owner, UserGroup.VIEWER, actor_type=CLI)
-        assert await load_token_scope(db, token) is None
-        await set_user_group(db, owner, UserGroup.ADMIN, actor_type=CLI)
-        assert await load_token_scope(db, token) is not None
+        await set_user_active(db, owner, False, actor_type=CLI, ip_address="10.0.0.9")
+        assert await load_token_scope(db, seeded) is None
+        assert seeded.revoked_at is not None and extra.revoked_at is not None
+        assert earlier.revoked_at == stamp
 
-        await set_user_active(db, owner, False, actor_type=CLI)
-        assert await load_token_scope(db, token) is None
         await set_user_active(db, owner, True, actor_type=CLI)
-        assert await load_token_scope(db, token) is not None
+        assert await load_token_scope(db, seeded) is None
+        assert await load_token_scope(db, extra) is None
+
+        entries = await _revoke_entries(db)
+        assert [(e.target_name, e.details) for e in entries[1:]] == [
+            ("billing-ci", {"owner": "admin", "reason": "user_disabled"}),
+            ("extra", {"owner": "admin", "reason": "user_disabled"}),
+        ]
+        assert {(e.actor_name, e.ip_address) for e in entries[1:]} == {("cli", "10.0.0.9")}
+        disable = (
+            await db.execute(select(AuditEntry).where(AuditEntry.action == "user.disable"))
+        ).scalar_one()
+        assert disable.details == {"sessions_ended": 0, "tokens_revoked": 2}
+        enable = (
+            await db.execute(select(AuditEntry).where(AuditEntry.action == "user.enable"))
+        ).scalar_one()
+        assert enable.details == {"sessions_ended": 0}
+        fresh = await _live_token(db, owner, "after-enable")
+        assert await load_token_scope(db, fresh) is not None
+
+
+async def test_moving_the_owner_to_viewer_revokes_every_token_for_good(
+    seeded_database: AsyncEngine, seed_data: SeedData
+) -> None:
+    factory = create_session_factory(seeded_database)
+    async with factory() as db:
+        owner = await db.get(User, seed_data.users.admin.id)
+        root = await db.get(User, seed_data.users.superadmin.id)
+        assert owner is not None and root is not None
+        seeded = (await db.execute(select(ApiToken))).scalars().one()
+
+        await set_user_group(
+            db, owner, UserGroup.VIEWER, actor_type=AuditActorType.USER, actor_user=root
+        )
+        assert seeded.revoked_at is not None and await load_token_scope(db, seeded) is None
+        (revoked,) = await _revoke_entries(db)
+        assert (revoked.actor_name, revoked.target_name) == ("root", "billing-ci")
+        assert revoked.details == {"owner": "admin", "reason": "moved_to_viewer"}
+        change = (
+            await db.execute(select(AuditEntry).where(AuditEntry.action == "user.group_change"))
+        ).scalar_one()
+        assert change.details == {"from": "admin", "to": "viewer", "tokens_revoked": 1}
+
+        await set_user_group(db, owner, UserGroup.ADMIN, actor_type=CLI)
+        assert await load_token_scope(db, seeded) is None
+        assert len(await _revoke_entries(db)) == 1
+
+
+async def test_other_group_changes_and_refused_changes_leave_tokens_alone(
+    seeded_database: AsyncEngine, seed_data: SeedData
+) -> None:
+    factory = create_session_factory(seeded_database)
+    async with factory() as db:
+        admin = await db.get(User, seed_data.users.admin.id)
+        root = await db.get(User, seed_data.users.superadmin.id)
+        assert admin is not None and root is not None
+        seeded = (await db.execute(select(ApiToken))).scalars().one()
+        await set_user_group(db, admin, UserGroup.SUPERADMIN, actor_type=CLI)
+        assert await load_token_scope(db, seeded) is not None
+        await set_user_group(db, admin, UserGroup.ADMIN, actor_type=CLI)
+        assert await load_token_scope(db, seeded) is not None
+
+        roots_token = await _live_token(db, root, "roots")
+        with pytest.raises(LastSuperadminError):
+            await set_user_active(db, root, False, actor_type=CLI)
+        with pytest.raises(LastSuperadminError):
+            await set_user_group(db, root, UserGroup.VIEWER, actor_type=CLI)
+        assert roots_token.revoked_at is None and await _revoke_entries(db) == []
+        changes = await db.execute(
+            select(AuditEntry)
+            .where(AuditEntry.action == "user.group_change")
+            .order_by(AuditEntry.id)
+        )
+        change = changes.scalars().first()
+        assert change is not None and "tokens_revoked" not in change.details
 
 
 async def test_the_generated_password_is_never_logged_or_audited(

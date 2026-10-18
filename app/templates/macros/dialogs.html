@@ -29,9 +29,11 @@
 {#- A dialog whose content is loaded by the request of the control that opens it (`hx-get` or
     `hx-post` targeting `#<id>` with an innerHTML swap). `app.js` puts the loading content back
     whenever the dialog opens, and also when it closes if `clear_on_close` is set, so nothing
-    from an earlier answer (a one-time secret) stays in the page. -#}
-{% macro loaded_dialog(id, title, width="640", clear_on_close=false, narrows=false) -%}
-<dialog id="{{ id }}" aria-labelledby="{{ id }}-t" data-loading="{{ id }}-loading"{% if clear_on_close %} data-clear-on-close{% endif %} class="m-auto max-h-[92vh] {{ DIALOG_WIDTHS[width] }}{% if narrows %} has-[[data-narrow]]:w-[560px]{% endif %} max-w-[calc(100%_-_1.5rem)] overflow-auto rounded-dialog bg-surface p-0 text-ink shadow-dialog backdrop:bg-scrim">{{ dialog_loading(id, title) }}</dialog>
+    from an earlier answer (a one-time secret) stays in the page. A content fragment that carries
+    `data-narrow` makes the dialog 560 px wide when `narrows` is set, and `data-wide` makes it
+    720 px wide when `widens` is set (a result that is wider than the form that led to it). -#}
+{% macro loaded_dialog(id, title, width="640", clear_on_close=false, narrows=false, widens=false) -%}
+<dialog id="{{ id }}" aria-labelledby="{{ id }}-t" data-loading="{{ id }}-loading"{% if clear_on_close %} data-clear-on-close{% endif %} class="m-auto max-h-[92vh] {{ DIALOG_WIDTHS[width] }}{% if narrows %} has-[[data-narrow]]:w-[560px]{% endif %}{% if widens %} has-[[data-wide]]:w-[720px]{% endif %} max-w-[calc(100%_-_1.5rem)] overflow-auto rounded-dialog bg-surface p-0 text-ink shadow-dialog backdrop:bg-scrim">{{ dialog_loading(id, title) }}</dialog>
 <template id="{{ id }}-loading">{{ dialog_loading(id, title) }}</template>
 {%- endmacro %}
 

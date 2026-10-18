@@ -1,0 +1,13 @@
+{#- Pieces shared by the API tokens screens: the status badge and the Revoke control. -#}
+{% from "macros/badges.html" import badge %}
+
+{#- The status of a token: Active in the success tone, every other status muted, with the reason
+    a stopped token cannot be used under it. `status` is a TokenStatus value. -#}
+{% macro token_status_badge(status, reason=none) -%}
+<span class="inline-flex flex-col items-start gap-0.5">{% if status == "active" %}{{ badge("deployed", "Active") }}{% else %}{{ badge("never", status | capitalize) }}{% endif %}{% if reason %}<span class="text-xs text-ink2">{{ reason }}</span>{% endif %}</span>
+{%- endmacro %}
+
+{#- The Revoke control of a token row: opens the confirm dialog, loaded for that token. -#}
+{% macro revoke_button(token_id, token_name) -%}
+<button type="button" data-js="dialog-open" data-target="token-revoke" aria-haspopup="dialog" hx-get="/tokens/{{ token_id }}/revoke" hx-target="#token-revoke" hx-swap="innerHTML" class="inline-flex min-h-11 items-center font-semibold text-danger hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus text-sm md:min-h-0">Revoke<span class="sr-only"> {{ token_name }}</span></button>
+{%- endmacro %}

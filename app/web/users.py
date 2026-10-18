@@ -30,6 +30,7 @@ CREATED_FRAGMENT = "fragments/user_created.html"
 CONFIRM_FRAGMENT = "fragments/user_confirm.html"
 GRANTS_FRAGMENT = "fragments/user_grants.html"
 TABLE_FRAGMENT = "fragments/users_table.html"
+TOKENS_FRAGMENT = "fragments/user_tokens.html"
 ACTIONS = ("disable", "enable", "group")
 ORIGINS = ("list", "detail")
 FORM_FIELDS = ("name", "email", "group", "grants")
@@ -202,6 +203,17 @@ async def user_page(
     """The user detail: group, status, editable grants, tokens and recent activity."""
     context = await _detail_context(db, user_id)
     return render(request, "pages/user_detail.html", {**context, "updated": updated})
+
+
+@router.get("/users/{user_id:int}/tokens", include_in_schema=False)
+async def user_tokens(
+    request: Request, user_id: int, db: Database, _context: ManageUsers
+) -> Response:
+    """The API tokens panel of a user, refreshed after one of their tokens is revoked."""
+    detail = await load_user_detail(db, user_id)
+    if detail is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "user not found")
+    return render(request, TOKENS_FRAGMENT, {"user": detail})
 
 
 @router.post("/users/{user_id:int}/grants", include_in_schema=False)
@@ -378,7 +390,7 @@ async def disable_user_route(
     context: ManageUsers,
     origin: Annotated[str, Form(alias="from")] = "list",
 ) -> Response:
-    """Disable a user: sessions end now and their API tokens stop working."""
+    """Disable a user: sessions end now and their API tokens are revoked."""
     return await _apply_action(request, db, context.user, user_id, "disable", origin, "")
 
 

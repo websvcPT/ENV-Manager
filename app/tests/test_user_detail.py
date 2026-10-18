@@ -12,13 +12,8 @@ from app.models import ApiToken, AuditActorType, AuditResult, User, UserGroup
 from app.models.types import utc_now
 from app.seeds import SeedData
 from app.services.audit import record_audit
-from app.services.user_detail import (
-    ACTIVITY_LIMIT,
-    TokenStatus,
-    list_user_rows,
-    load_user_detail,
-    token_row,
-)
+from app.services.tokens import TokenStatus
+from app.services.user_detail import ACTIVITY_LIMIT, list_user_rows, load_user_detail, token_row
 
 
 @pytest.fixture
@@ -85,6 +80,23 @@ async def test_a_token_is_active_revoked_expired_or_stopped_by_its_owner(
     owner.is_active = False
     revoked = token_row(token, owner, now=now)
     assert (revoked.status, revoked.reason) == (TokenStatus.REVOKED, None)
+    assert not revoked.revocable
+
+
+async def test_only_a_token_that_still_changes_something_can_be_revoked(
+    db: AsyncSession, seed_data: SeedData
+) -> None:
+    token = (await db.execute(select(ApiToken))).scalars().first()
+    assert token is not None
+    owner = await db.get(User, seed_data.users.admin.id)
+    assert owner is not None
+    now = utc_now()
+    assert token_row(token, owner, now=now).revocable
+    owner.is_active = False
+    assert token_row(token, owner, now=now).revocable
+    owner.is_active = True
+    token.expires_at = now - timedelta(minutes=1)
+    assert not token_row(token, owner, now=now).revocable
 
 
 async def test_the_detail_holds_grants_tokens_and_the_users_own_recent_entries(

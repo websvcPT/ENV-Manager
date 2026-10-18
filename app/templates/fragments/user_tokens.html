@@ -1,0 +1,20 @@
+{#- The API tokens panel of the user detail: name, last used, status and, while it still changes
+    something, Revoke, which opens the confirm dialog of the page. The panel refreshes itself when
+    a token changes. Context: user (UserDetail). -#}
+{% from "macros/feedback.html" import empty_state %}
+{% from "macros/panels.html" import panel, table %}
+{% from "macros/tokens.html" import revoke_button, token_status_badge %}
+{% call panel("API tokens", "p-tokens", fragment="user-tokens", id="user-tokens", hx_get="/users/" ~ user.id ~ "/tokens", hx_trigger="token-changed from:body", hx_swap="outerHTML") %}
+{%- if user.tokens %}
+{% call table("Tokens of " ~ user.name, ["Name", "Last used", "Status", "Actions"], right_columns=[3], min_width_class="min-w-[560px]") %}
+{%- for token in user.tokens %}
+<tr data-fragment="token-row" id="token-{{ token.id }}"><th scope="row" class="border-t border-line px-4 py-3.5 text-left font-semibold"><span class="font-mono text-[13px]">{{ token.name }}</span></th>
+<td class="border-t border-line px-4 py-3.5">{% if token.last_used_at %}<time datetime="{{ token.last_used_at.strftime('%Y-%m-%dT%H:%M:%SZ') }}" title="UTC">{{ token.last_used_at.strftime("%Y-%m-%d %H:%M") }}</time>{% else %}Never{% endif %}</td>
+<td class="border-t border-line px-4 py-3.5">{{ token_status_badge(token.status.value, token.reason) }}</td>
+<td class="border-t border-line px-4 py-3.5 whitespace-nowrap text-right">{% if token.revocable %}{{ revoke_button(token.id, token.name) }}{% endif %}</td></tr>
+{%- endfor %}
+{% endcall %}
+{%- else %}
+{{ empty_state("No API tokens", user.name ~ " has not created any API tokens.", "key") }}
+{%- endif %}
+{% endcall %}

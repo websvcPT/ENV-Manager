@@ -9,7 +9,7 @@
 {% from "macros/feedback.html" import inline_error, note %}
 {% from "macros/icons.html" import icon %}
 {% set GROUP_EFFECTS = {
-  "viewer": "Viewers read the items they are granted. They cannot edit, deploy or reveal values, and their API tokens stop working.",
+  "viewer": "Viewers read the items they are granted. They cannot edit, deploy or reveal values, and all of their API tokens are revoked for good.",
   "admin": "Admins edit values, deploy and reveal values within their grants, and can use API tokens.",
   "superadmin": "Superadmins reach every project and manage users, grants and settings. Grants no longer limit them."
 } %}
@@ -28,9 +28,9 @@
 <input type="hidden" name="from" value="{{ origin }}">{% if action == "group" %}<input type="hidden" name="group" value="{{ target_value }}">{% endif %}
 {% call dialog_body() %}<div class="flex items-start gap-3.5"><span class="flex size-10 shrink-0 items-center justify-center rounded-full {{ "bg-danger-soft text-danger" if action == "disable" else "bg-info-bg text-info-fg" }}">{{ icon("warning" if action == "disable" else "info", "size-5", "2.2") }}</span><p class="text-[15px] text-ink">
 {%- if action == "disable" -%}
-The user can no longer sign in and active sessions end now. Their API tokens stop working. Their audit entries stay. You can enable the account again.{% if is_self %} This is your own account: you will be signed out now.{% endif %}
+The user can no longer sign in and active sessions end now. All of their API tokens are revoked for good. Their audit entries stay. You can enable the account again, and they can then create new tokens.{% if is_self %} This is your own account: you will be signed out now.{% endif %}
 {%- elif action == "enable" -%}
-The user can sign in again with their current password. API tokens that were not revoked work again.
+The user can sign in again with their current password. Their old API tokens stay revoked, so they need to create new ones.
 {%- else -%}
 Move {{ user_name }} from {{ current_group }} to {{ target_group }}. The change applies now. {{ GROUP_EFFECTS[target_value] }}{% if is_self %} This is your own account, so you may lose access to this page.{% endif %}
 {%- endif -%}

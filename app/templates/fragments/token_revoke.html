@@ -1,0 +1,19 @@
+{#- The confirm dialog content for revoking a token, loaded into the shared token dialog. A token
+    that is already revoked shows that in place of the buttons. Context: token_id, token_name,
+    owner_name (shown only when someone else's token is revoked), refusal (none or revoked). -#}
+{% from "macros/buttons.html" import button %}
+{% from "macros/dialogs.html" import dialog_body, dialog_footer, dialog_head %}
+{% from "macros/feedback.html" import note %}
+{% from "macros/icons.html" import icon %}
+<div data-fragment="token-revoke">
+{{ dialog_head("token-revoke", "Revoke token " ~ token_name, ("Owner " ~ owner_name) if owner_name else none) }}
+{%- if refusal == "revoked" %}
+{% call dialog_body() %}{{ note(token_name ~ " is already revoked.") }}{% endcall %}
+{% call dialog_footer() %}{{ button("Close", extra_class="h-11", data_js="dialog-close") }}{% endcall %}
+{%- else %}
+<form hx-post="/tokens/{{ token_id }}/revoke" hx-target="#token-revoke" hx-swap="innerHTML">
+{% call dialog_body() %}<div class="flex items-start gap-3.5"><span class="flex size-10 shrink-0 items-center justify-center rounded-full bg-danger-soft text-danger">{{ icon("warning", "size-5", "2.2") }}</span><p class="text-[15px] text-ink">The token stops working immediately. Calls made with it stay in the audit log.</p></div>{% endcall %}
+{% call dialog_footer() %}{{ button("Cancel", extra_class="h-11", data_js="dialog-close") }}{{ button("Revoke token", kind="danger", type="submit", extra_class="h-11 text-[15px]") }}{% endcall %}
+</form>
+{%- endif %}
+</div>
