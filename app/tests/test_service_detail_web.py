@@ -77,10 +77,10 @@ def row_actions(page: str, name: str) -> list[str]:
     return re.findall(r"<a [^>]*>([^<]+)</a>", cell)
 
 
-async def test_superadmin_sees_everything_and_the_read_only_command(
+async def test_superadmin_sees_everything_and_the_command_settings(
     web_client: httpx.AsyncClient, ids: ServiceIds
 ) -> None:
-    """Header, every status, the stored command, output and history for the superadmin."""
+    """Header, every status, the stored command in its form, output and history."""
     await sign_in(web_client, "root")
     response = await web_client.get(f"/services/{ids.staging_web}")
     page = response.text
@@ -104,7 +104,7 @@ async def test_superadmin_sees_everything_and_the_read_only_command(
     assert "Read-only view" not in page and "Deploy service" not in page
     assert "Command settings" in page and "Superadmin" in page
     assert "docker compose up -d --no-deps {service_name}" in page
-    assert "/opt/rentals/staging (deployment root)" in page
+    assert 'placeholder="/opt/rentals/staging"' in page
     assert "web recreated" in page and "exit code 0" in page and "by admin" in page
     assert page.count('data-fragment="history-row"') == 2
     assert ">Success<" in page and ">Blocked<" in page

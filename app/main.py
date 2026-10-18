@@ -18,6 +18,7 @@ from app.core.migrations import migrate_database
 from app.core.observability import configure_otel, init_sentry
 from app.services.auth_policy import AuthPolicy
 from app.services.deploy_recovery import recover_interrupted_runs
+from app.services.docker_cli import DockerCli
 from app.services.key_check import ensure_key_check
 from app.web.auth import router as auth_router
 from app.web.deployment_form import router as deployment_form_router
@@ -67,6 +68,7 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
             await recover_interrupted_runs(session, settings.lock_path)
         application.state.crypto = crypto
         application.state.auth_policy = AuthPolicy()
+        application.state.docker_cli = DockerCli(socket_path=settings.docker_socket)
         application.state.engine = engine
         application.state.session_factory = session_factory
         yield

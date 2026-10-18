@@ -1,7 +1,30 @@
 # Browser specs (`make e2e`): the official Playwright image runs the specs in `playwright/`
 # against the development stack (`make up-bg`) over its Compose network. The image tag must
 # match the exact @playwright/test version in playwright/package.json.
+#
+# The demo service runs the specs in `playwright/docker-tests` against the stack with the demo
+# override up (`make e2e-demo`), where the app reaches the host Docker daemon. It also gets the
+# demo folder of the host, which the specs use as a deployment root.
 name: env-manager-e2e
+
+x-browser: &browser
+  image: mcr.microsoft.com/playwright:v1.64.1-noble
+  user: "${APP_UID:-1000}:${APP_GID:-1000}"
+  init: true
+  ipc: host
+  working_dir: /e2e
+  depends_on:
+    node-modules-owner:
+      condition: service_completed_successfully
+  volumes:
+    - ./playwright:/e2e
+    # Dependencies install to /node_modules, a named volume outside the repository, so no
+    # root-owned or generated files land in the working tree.
+    - ./playwright/package.json:/package.json:ro
+    - ./playwright/package-lock.json:/package-lock.json:ro
+    - node-modules:/node_modules
+  networks:
+    - default
 
 services:
   node-modules-owner:
@@ -12,30 +35,24 @@ services:
     command: chown ${APP_UID:-1000}:${APP_GID:-1000} /node_modules
 
   playwright:
-    image: mcr.microsoft.com/playwright:v1.64.1-noble
-    user: "${APP_UID:-1000}:${APP_GID:-1000}"
-    init: true
-    ipc: host
-    working_dir: /e2e
-    depends_on:
-      node-modules-owner:
-        condition: service_completed_successfully
+    <<: *browser
     environment:
       HOME: /tmp
       E2E_BASE_URL: http://envmanager:8080
       # Development dataset login, development and testing only.
       E2E_USER: root
       E2E_PASSWORD: dev-only-password
-    volumes:
-      - ./playwright:/e2e
-      # Dependencies install to /node_modules, a named volume outside the repository, so no
-      # root-owned or generated files land in the working tree.
-      - ./playwright/package.json:/package.json:ro
-      - ./playwright/package-lock.json:/package-lock.json:ro
-      - node-modules:/node_modules
     command: sh -c "npm ci --prefix / --no-audit --no-fund && /node_modules/.bin/playwright test"
-    networks:
-      - default
+
+  playwright-demo:
+    <<: *browser
+    environment:
+      HOME: /tmp
+      E2E_BASE_URL: http://envmanager:8080
+      E2E_USER: root
+      E2E_PASSWORD: dev-only-password
+      E2E_DEMO_ROOT: ${DEMO_ROOT:-}
+    command: sh -c "npm ci --prefix / --no-audit --no-fund && /node_modules/.bin/playwright test -c playwright.docker.config.ts"
 
 volumes:
   node-modules:

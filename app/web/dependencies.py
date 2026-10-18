@@ -11,6 +11,7 @@ from app.core.crypto import CryptoService
 from app.core.sessions import SESSION_COOKIE_NAME
 from app.models import User, UserGroup, UserSession
 from app.services.auth_policy import AuthPolicy
+from app.services.docker_cli import DockerCli
 from app.services.permissions import AccessScope, Capability, load_user_scope
 from app.services.sessions import resolve_session
 
@@ -33,6 +34,12 @@ def get_crypto(request: Request) -> CryptoService:
     """The application crypto service."""
     crypto: CryptoService = request.app.state.crypto
     return crypto
+
+
+def get_docker_cli(request: Request) -> DockerCli:
+    """The application-wide docker CLI on the configured Docker socket."""
+    cli: DockerCli = request.app.state.docker_cli
+    return cli
 
 
 def get_auth_policy(request: Request) -> AuthPolicy:

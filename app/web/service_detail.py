@@ -1,16 +1,27 @@
-"""Service detail routes: the page and its refreshable panels."""
+"""Service detail routes: the page, its refreshable panels and the post-deploy settings."""
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import Response
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.crypto import CryptoService
 from app.core.log import get_logger
 from app.core.templating import render
+from app.models import ServiceHook
+from app.services.audit import AuditActor
+from app.services.docker_cli import DockerCli
+from app.services.hook_settings import (
+    HookForbiddenError,
+    HookForm,
+    HookSettingsError,
+    check_compose_setup,
+    save_post_deploy_hook,
+)
 from app.services.permissions import (
     CAPABILITY_GROUPS,
     CAPABILITY_TARGETS,
@@ -21,21 +32,34 @@ from app.services.permissions import (
     Target,
 )
 from app.services.service_detail import (
+    HookSettings,
     ServiceHeader,
     load_environment_rows,
     load_post_deploy,
     load_service_header,
     load_service_history,
 )
-from app.web.dependencies import AuthContext, get_db, get_scope, require_auth
+from app.web.dependencies import (
+    AuthContext,
+    get_crypto,
+    get_db,
+    get_docker_cli,
+    get_scope,
+    require_auth,
+)
 
 log = get_logger(__name__)
 router = APIRouter()
 
 ENVIRONMENTS_FRAGMENT = "fragments/service_environments.html"
 POST_DEPLOY_FRAGMENT = "fragments/service_postdeploy.html"
+SETTINGS_FRAGMENT = "fragments/service_postdeploy_settings.html"
+TEST_RESULT_FRAGMENT = "fragments/service_test_result.html"
 HISTORY_FRAGMENT = "fragments/service_history.html"
 ADDED_TOASTS = ("service", "environment")
+SAVED_MESSAGE = "They apply from the next deploy."
+SAVED_EMPTY_MESSAGE = "No command is set, so deploys run none."
+NOTHING_STORED_MESSAGE = "No command is set, so nothing was stored."
 
 
 @dataclass(frozen=True)
@@ -81,6 +105,11 @@ def service_access(
     return load
 
 
+def _client_ip(request: Request) -> str | None:
+    """The client address as resolved by the proxy header middleware."""
+    return request.client.host if request.client else None
+
+
 def _flags(access: ServiceContext) -> dict[str, Any]:
     """What every panel template needs besides its rows: the service and what may be edited."""
     return {
@@ -90,11 +119,45 @@ def _flags(access: ServiceContext) -> dict[str, Any]:
     }
 
 
+def _form_of(hook: HookSettings | ServiceHook | None) -> HookForm:
+    """The settings form as it reads for a stored command, the defaults when there is none."""
+    if hook is None:
+        return HookForm()
+    return HookForm(
+        working_directory=hook.working_directory or "",
+        commands=hook.commands,
+        timeout=str(hook.timeout_seconds),
+        run_only_if_changed=hook.run_only_if_changed,
+    )
+
+
+async def _settings_context(
+    access: ServiceContext,
+    cli: DockerCli,
+    hook: HookSettings | ServiceHook | None,
+    *,
+    form: HookForm | None = None,
+    errors: dict[str, str] | None = None,
+    saved: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """What the settings form needs; only the superadmin gets the Docker status and the form."""
+    if not access.service.can_view_command:
+        return {"docker": None, "socket_path": "", "form": HookForm(), "errors": {}, "saved": None}
+    return {
+        "docker": await cli.status(),
+        "socket_path": str(cli.socket_path),
+        "form": form or _form_of(hook),
+        "errors": errors or {},
+        "saved": saved,
+    }
+
+
 @router.get("/services/{service_id:int}", include_in_schema=False)
 async def service_page(
     request: Request,
     access: Annotated[ServiceContext, Depends(service_access())],
     db: Annotated[AsyncSession, Depends(get_db)],
+    cli: Annotated[DockerCli, Depends(get_docker_cli)],
     added: str = "",
 ) -> Response:
     """The service page: header, explanation, environments, post-deploy panel and history.
@@ -109,6 +172,7 @@ async def service_page(
         "pages/service.html",
         {
             **_flags(access),
+            **await _settings_context(access, cli, post_deploy.hook),
             "environments": rows,
             "pending": sum(1 for row in rows if row.status == "pending"),
             "history": history,
@@ -143,11 +207,77 @@ async def post_deploy_panel(
     request: Request,
     access: Annotated[ServiceContext, Depends(service_access())],
     db: Annotated[AsyncSession, Depends(get_db)],
+    cli: Annotated[DockerCli, Depends(get_docker_cli)],
 ) -> Response:
     """The post-deploy panel, refreshed when a deploy finishes."""
     history = await load_service_history(db, access.service)
     post_deploy = await load_post_deploy(db, access.service, history)
-    return render(request, POST_DEPLOY_FRAGMENT, {**_flags(access), "post_deploy": post_deploy})
+    return render(
+        request,
+        POST_DEPLOY_FRAGMENT,
+        {
+            **_flags(access),
+            **await _settings_context(access, cli, post_deploy.hook),
+            "post_deploy": post_deploy,
+        },
+    )
+
+
+@router.post("/services/{service_id:int}/postdeploy", include_in_schema=False)
+async def save_post_deploy(
+    request: Request,
+    access: Annotated[ServiceContext, Depends(service_access(Capability.MANAGE_STRUCTURE))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    cli: Annotated[DockerCli, Depends(get_docker_cli)],
+    working_directory: Annotated[str, Form()] = "",
+    commands: Annotated[str, Form()] = "",
+    timeout: Annotated[str, Form()] = "",
+    run_only_if_changed: Annotated[str | None, Form()] = None,
+) -> Response:
+    """Save the post-deploy settings (superadmin). A refusal swaps the form with its reasons."""
+    typed = HookForm(working_directory, commands, timeout, run_only_if_changed is not None)
+    actor = AuditActor.for_user(access.auth.user, _client_ip(request))
+    try:
+        hook = await save_post_deploy_hook(db, cli, access.scope, actor, access.service.id, typed)
+    except HookForbiddenError as error:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "not permitted") from error
+    except HookSettingsError as error:
+        context = await _settings_context(access, cli, None, form=typed, errors=error.errors)
+        return render(
+            request,
+            SETTINGS_FRAGMENT,
+            {**_flags(access), **context},
+            status_code=422,
+        )
+    if hook is None:
+        saved = {"tone": "info", "title": "Nothing to save", "message": NOTHING_STORED_MESSAGE}
+    else:
+        message = SAVED_MESSAGE if hook.commands else SAVED_EMPTY_MESSAGE
+        saved = {"tone": "success", "title": "Post-deploy settings saved", "message": message}
+    context = await _settings_context(access, cli, hook, saved=saved)
+    return render(request, SETTINGS_FRAGMENT, {**_flags(access), **context})
+
+
+@router.post("/services/{service_id:int}/postdeploy/test", include_in_schema=False)
+async def test_post_deploy(
+    request: Request,
+    access: Annotated[ServiceContext, Depends(service_access(Capability.MANAGE_STRUCTURE))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    cli: Annotated[DockerCli, Depends(get_docker_cli)],
+    crypto: Annotated[CryptoService, Depends(get_crypto)],
+    working_directory: Annotated[str, Form()] = "",
+) -> Response:
+    """Run the Compose check in the typed working directory (superadmin); the answer is a line."""
+    actor = AuditActor.for_user(access.auth.user, _client_ip(request))
+    try:
+        check = await check_compose_setup(
+            db, crypto, cli, access.scope, actor, access.service.id, working_directory
+        )
+    except HookForbiddenError as error:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "not permitted") from error
+    except HookSettingsError as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "service not found") from error
+    return render(request, TEST_RESULT_FRAGMENT, {"check": check})
 
 
 @router.get("/services/{service_id:int}/history", include_in_schema=False)

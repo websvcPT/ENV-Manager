@@ -19,16 +19,11 @@ from app.models import (
     DeployRun,
     DeployStatus,
     PostDeployStatus,
-    User,
 )
 from app.real_scenarios.conftest import DemoStack, Workloads, World
-from app.real_scenarios.helpers import MANAGED, cli_runs, output, snapshot
-from app.services.audit import AuditActor
-from app.services.deploy import DeployEngine
+from app.real_scenarios.helpers import MANAGED, cli_runs, deploy_as, output, snapshot
 from app.services.deploy_lock import hold_deploy_lock
-from app.services.deploy_types import DeployOutcome, DeployRequest
-from app.services.hook_runner import NOT_CHANGED_REASON, DockerHookRunner
-from app.services.permissions import load_user_scope
+from app.services.hook_runner import NOT_CHANGED_REASON
 
 API_NAMES = {"DEMO_API_MODE", "DEMO_API_PORT", "DEMO_API_TOKEN"}
 NEW_API_KEYS = "DEMO_API_NEW_FLAG=on\nDEMO_API_NEW_LIMIT=9\n"
@@ -56,22 +51,6 @@ def processes_running(argument: str) -> list[str]:
         if argument in text and any(Path(word).name.startswith("docker") for word in text):
             found.append(" ".join(text))
     return found
-
-
-async def deploy_as(world: World, user_name: str, service_id: int) -> DeployOutcome:
-    """Deploy a whole service in this process as a seeded user, with the real runner."""
-    async with world.session() as db:
-        user = await db.scalar(select(User).where(User.name == user_name))
-        assert user is not None
-        engine = DeployEngine(
-            world.crypto, world.data_path / "locks", hook_runner=DockerHookRunner()
-        )
-        return await engine.run(
-            db,
-            await load_user_scope(db, user),
-            AuditActor.for_user(user),
-            DeployRequest(service_id=service_id),
-        )
 
 
 async def test_a_changed_managed_version_recreates_the_api_container_once_with_the_new_key_names(

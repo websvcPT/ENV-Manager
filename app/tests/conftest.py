@@ -16,6 +16,7 @@ from app.core.migrations import migrate_database
 from app.main import create_app
 from app.seeds import DEV_PASSWORD, SeedData, seed
 from app.services.deploy import DeployEngine
+from app.services.docker_cli import DockerCli
 from app.tests.deploy_helpers import Harness, RecordingNotifier, RecordingRunner, set_deployment
 from app.tests.dist_helpers import relocate_deployments
 from app.tests.web_helpers import EnvironmentIds, environment_ids
@@ -76,6 +77,7 @@ async def web_app(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> AsyncItera
     get_settings.cache_clear()
     application = create_app()
     async with application.router.lifespan_context(application):
+        application.state.docker_cli = DockerCli(socket_path=tmp_path / "no-docker.sock")
         async with application.state.session_factory() as session:
             await seed(session, application.state.crypto)
         yield application

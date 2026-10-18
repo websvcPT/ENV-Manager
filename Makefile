@@ -113,13 +113,17 @@ demo-reset: ## Restore the demo target files to the baseline (drift, identical, 
 	sh scripts/demo-reset.sh
 
 # Real-scenario tests (app/real_scenarios, outside the default test run) deploy the demo stack
-# through the real CLI onto the host folder mounted at its host path. The demo override is
-# always taken down again, and the target files left at the baseline, whether or not they pass.
-e2e-demo: ## Bring the demo override up, run the real-scenario tests inside the app container, take it down
+# through the real CLI onto the host folder mounted at its host path. The browser specs in
+# playwright/docker-tests run against the same stack, whose app reaches the host Docker daemon.
+# The demo override is always taken down again, and the target files left at the baseline,
+# whether or not they pass.
+e2e-demo: ## Bring the demo override up, run the real-scenario tests and the Docker browser specs, take it down
 	@status=0; \
 	{ $(MAKE) --no-print-directory demo-up \
 		&& $(MAKE) --no-print-directory demo-reset \
-		&& docker compose exec -T app sh /app/scripts/test.sh app/real_scenarios; } || status=$$?; \
+		&& docker compose exec -T app sh /app/scripts/test.sh app/real_scenarios \
+		&& sh scripts/e2e-seed.sh \
+		&& docker compose -f docker-compose-e2e.yml run --rm playwright-demo; } || status=$$?; \
 	$(MAKE) --no-print-directory demo-reset || status=$$?; \
 	$(MAKE) --no-print-directory demo-down || status=$$?; \
 	exit $$status

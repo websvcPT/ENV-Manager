@@ -68,7 +68,7 @@ async function expectLayout(page: Page): Promise<void> {
 }
 
 test.describe('superadmin', () => {
-  test('shows the header, every status, the read-only command and the history', async ({
+  test('shows the header, every status, the command settings and the history', async ({
     page,
     browser,
   }) => {
@@ -111,7 +111,7 @@ test.describe('superadmin', () => {
     await expect(postDeploy.locator('[data-fragment="postdeploy-settings"]')).toContainText(
       'docker compose up -d --no-deps {service_name}',
     );
-    await expect(postDeploy.getByRole('button')).toHaveCount(0);
+    await expect(postDeploy.getByRole('button')).toHaveText(['Test command', 'Save settings']);
 
     await expect(page.locator('#hist [data-fragment="history-row"]')).toHaveCount(2);
   });
@@ -139,7 +139,7 @@ test.describe('superadmin', () => {
     ).toHaveCount(2);
     await expect(page.locator('#hist [data-fragment="empty-state"]')).toContainText('No deploys yet');
     await expect(page.locator('#postdeploy')).toContainText('No deploys yet.');
-    await expect(page.locator('#postdeploy')).toContainText('No post-deploy command is set');
+    await expect(page.locator('#postdeploy #cmds')).toHaveValue('');
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
   });
 

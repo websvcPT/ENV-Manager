@@ -17,6 +17,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
+from app.services.output_scrub import OutputScrubber
+
 OUTPUT_PART_BYTES = 4096
 READ_CHUNK_BYTES = 65536
 DRAIN_GRACE_SECONDS = 2.0
@@ -54,11 +56,24 @@ class BoundedOutput:
         prefix = "\n" if self._last not in {b"", b"\n"} else ""
         self.add((prefix + text).encode("utf-8"))
 
-    def text(self) -> str:
-        """The kept output as text, with a marker where bytes were left out."""
+    def text(self, scrubber: OutputScrubber | None = None) -> str:
+        """The kept output as text, with a marker where bytes were left out.
+
+        With a ``scrubber`` the known values are replaced before the bytes are decoded. When
+        output was left out, the two kept parts are scrubbed on their own and a value that the
+        cut split between a kept part and the omitted bytes is replaced as well.
+        """
         omitted = self._total - len(self._head) - len(self._tail)
-        marker = f"\n[... {omitted} bytes omitted ...]\n".encode() if omitted else b""
-        data = bytes(self._head) + marker + bytes(self._tail)
+        head, tail = bytes(self._head), bytes(self._tail)
+        if omitted:
+            if scrubber is not None:
+                head, tail = scrubber.scrub_head(head), scrubber.scrub_tail(tail)
+            marker = f"\n[... {omitted} bytes omitted ...]\n".encode()
+            data = head + marker + tail
+        else:
+            data = head + tail
+            if scrubber is not None:
+                data = scrubber.scrub_bytes(data)
         return data.decode("utf-8", errors="replace").replace("\x00", "")
 
 

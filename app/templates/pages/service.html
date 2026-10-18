@@ -1,6 +1,7 @@
 {#- Service detail: header, section links, explanation, environments, post-deploy panel and
     deploy history. Context: service (a ServiceHeader), environments, pending, history,
-    post_deploy, can_manage_structure, is_viewer, added (service or environment, optional). -#}
+    post_deploy, can_manage_structure, is_viewer, added (service or environment, optional) and
+    the settings form values of the post-deploy panel (docker, socket_path, form, errors, saved). -#}
 {% extends "layouts/app.html" %}
 {% from "macros/badges.html" import badge %}
 {% from "macros/feedback.html" import note, toast %}

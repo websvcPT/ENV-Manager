@@ -14,6 +14,7 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.crypto import CryptoService
 from app.models import AuditResult, Deployment, HookType, Service, ServiceHook
 from app.services.audit import AuditActor, record_actor_audit
 from app.services.docker_cli import DockerCli
@@ -22,6 +23,7 @@ from app.services.hook_process import BoundedOutput, run_process
 from app.services.hook_runner import WorkingDirectoryError, resolve_working_directory
 from app.services.paths import PathValidationError, load_allowed_paths
 from app.services.permissions import AccessScope, Capability
+from app.services.scrub_values import load_scrubber
 
 ACTION_SAVE = "service.hook_save"
 ACTION_CHECK = "service.hook_check"
@@ -196,6 +198,7 @@ async def save_post_deploy_hook(
 
 async def check_compose_setup(
     db: AsyncSession,
+    crypto: CryptoService,
     cli: DockerCli,
     scope: AccessScope,
     actor: AuditActor,
@@ -205,12 +208,14 @@ async def check_compose_setup(
     """Run ``docker compose config --quiet`` in the working directory and report the outcome.
 
     A blank working directory means the deployment root. The directory is resolved against the
-    allowed paths now. The check is audited (outcome only). Raises ``HookForbiddenError`` for
-    anyone but the superadmin and ``HookSettingsError`` when the service does not exist.
+    allowed paths now. The check is audited (outcome only). The output of a failed check is
+    scrubbed of the configuration values of the deployment, like post-deploy output. Raises
+    ``HookForbiddenError`` for anyone but the superadmin and ``HookSettingsError`` when the
+    service does not exist.
     """
     _require_superadmin(scope)
     service, deployment = await _load_service(db, service_id)
-    result = await _run_compose_check(db, cli, deployment, working_directory)
+    result = await _run_compose_check(db, crypto, cli, deployment, working_directory)
     await record_actor_audit(
         db,
         actor,
@@ -229,7 +234,11 @@ async def check_compose_setup(
 
 
 async def _run_compose_check(
-    db: AsyncSession, cli: DockerCli, deployment: Deployment, working_directory: str
+    db: AsyncSession,
+    crypto: CryptoService,
+    cli: DockerCli,
+    deployment: Deployment,
+    working_directory: str,
 ) -> ComposeCheck:
     """The compose check itself, without permission checks or audit."""
     status = await cli.status()
@@ -258,5 +267,6 @@ async def _run_compose_check(
     if outcome.timed_out:
         return ComposeCheck(False, CHECK_TIMED_OUT_MESSAGE)
     if outcome.exit_code != 0:
-        return ComposeCheck(False, CHECK_FAILED_MESSAGE, output.text() or None)
+        scrubber = await load_scrubber(db, crypto, deployment.id)
+        return ComposeCheck(False, CHECK_FAILED_MESSAGE, output.text(scrubber) or None)
     return ComposeCheck(True, CHECK_OK_MESSAGE)

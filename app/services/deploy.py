@@ -20,11 +20,15 @@ database write transaction is never held across file work or the post-deploy com
 committed before the hook runs, with its post-deploy state set to running and no finish time, and
 updated in a second short transaction afterwards, so a page never reads a final state while the
 command is still executing. ``app.services.deploy_recovery`` closes a run a crash left running.
+
+Post-deploy output is scrubbed of the deployment's configuration values
+(``app.services.scrub_values``) before it is stored on the run, written to the audit entry,
+returned to the caller or shown.
 """
 
 import asyncio
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
 
 from sqlalchemy import select
@@ -80,8 +84,10 @@ from app.services.hooks import (
     PostDeployRequest,
     PostDeployResult,
 )
+from app.services.output_scrub import OutputScrubber
 from app.services.paths import AllowedPaths, PathValidationError, load_allowed_paths
 from app.services.permissions import AccessScope, Capability, permitted_environment_ids
+from app.services.scrub_values import load_scrubber
 from app.services.target_files import (
     BackupRequest,
     ChangeOwner,
@@ -111,6 +117,7 @@ UNCHANGED_MESSAGE = "The target already matches this version."
 POST_DEPLOY_NOT_RUN_REASON = "Not run because an environment was not deployed."
 POST_DEPLOY_ROOT_REASON = "Not run because the deployment is outside the allowed paths."
 POST_DEPLOY_ERROR_REASON = "The post-deploy runner failed unexpectedly."
+SCRUBBER_FAILED_REASON = "The command was not run because its output could not be protected."
 
 _DEPLOYED = (DeployResultStatus.WRITTEN, DeployResultStatus.UNCHANGED)
 
@@ -530,7 +537,7 @@ class DeployEngine:
 
         if deployed:
             try:
-                post_deploy = await self._run_post_deploy(context, allowed, request, outcomes)
+                post_deploy = await self._run_post_deploy(db, context, allowed, request, outcomes)
             except asyncio.CancelledError:
                 await self._close_cancelled(db, context, actor, request, run, outcomes)
                 raise
@@ -618,16 +625,32 @@ class DeployEngine:
 
     async def _run_post_deploy(
         self,
+        db: AsyncSession,
         context: _Context,
         allowed: AllowedPaths,
         request: DeployRequest,
         outcomes: tuple[EnvironmentOutcome, ...],
     ) -> PostDeployResult:
-        """Call the hook runner once; a runner that fails counts as a failed post-deploy."""
+        """Call the hook runner once; a runner that fails counts as a failed post-deploy.
+
+        When a command is stored, the values of the deployment's files are loaded first and
+        removed from whatever the runner returns, so no output, whichever runner produced it,
+        reaches the run record, the audit entry or a caller with a configuration value in it. If
+        the values cannot be loaded the command is not run.
+        """
         try:
             root = allowed.resolve(context.deployment.root_path)
         except PathValidationError:
             return PostDeployResult(PostDeployStatus.SKIPPED, reason=POST_DEPLOY_ROOT_REASON)
+        scrubber = OutputScrubber()
+        if context.hook is not None and context.hook.commands.strip():
+            try:
+                scrubber = await load_scrubber(
+                    db, self.crypto, context.deployment.id, context.versions.values()
+                )
+            except Exception as error:
+                log.error("output scrubbing values could not be loaded: %s", type(error).__name__)
+                return PostDeployResult(PostDeployStatus.FAILED, reason=SCRUBBER_FAILED_REASON)
         hook_request = PostDeployRequest(
             service_id=context.service.id,
             service_name=context.service.name,
@@ -638,12 +661,20 @@ class DeployEngine:
             changed=any(outcome.status is DeployResultStatus.WRITTEN for outcome in outcomes),
             force=request.force,
             allowed=allowed,
+            scrubber=scrubber,
         )
         try:
-            return await self.hook_runner.run_post_deploy(hook_request)
+            result = await self.hook_runner.run_post_deploy(hook_request)
         except Exception as error:
             log.error("post-deploy runner failed: %s", type(error).__name__)
             return PostDeployResult(PostDeployStatus.FAILED, reason=POST_DEPLOY_ERROR_REASON)
+        if not scrubber:
+            return result
+        return replace(
+            result,
+            output=scrubber.scrub_text(result.output) if result.output else result.output,
+            reason=scrubber.scrub_text(result.reason) if result.reason else result.reason,
+        )
 
     async def _refuse(
         self,

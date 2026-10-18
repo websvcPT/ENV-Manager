@@ -66,3 +66,17 @@ async def test_startup_refused_with_wrong_key(
     with pytest.raises(KeyMismatchError):
         async with application.router.lifespan_context(application):
             pass
+
+
+async def test_the_docker_cli_is_built_from_the_configured_socket(
+    configured: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The application-wide docker CLI talks to ``ENVMANAGER_DOCKER_SOCKET``."""
+    monkeypatch.setenv("ENVMANAGER_DOCKER_SOCKET", str(configured / "elsewhere.sock"))
+    get_settings.cache_clear()
+    application = create_app()
+    async with application.router.lifespan_context(application):
+        cli = application.state.docker_cli
+        assert cli.socket_path == configured / "elsewhere.sock"
+        assert cli.environment()["DOCKER_HOST"] == f"unix://{configured / 'elsewhere.sock'}"
+        assert (await cli.status()).mounted is False

@@ -21,6 +21,7 @@ from app.services.hook_runner import (
     DockerHookRunner,
 )
 from app.services.hooks import PostDeployHook, PostDeployRequest, PostDeployResult
+from app.services.output_scrub import OutputScrubber
 from app.services.paths import AllowedPaths
 from app.tests.fake_docker import FakeDocker
 from app.tests.test_hook_process import wait_until_gone
@@ -59,6 +60,7 @@ class Setup:
         root: Path | None = None,
         deployment: str = "stack",
         service: str = "api",
+        scrubber: OutputScrubber | None = None,
     ) -> PostDeployRequest:
         """A request for the service; ``commands`` None means the service has no hook."""
         hook = (
@@ -76,6 +78,7 @@ class Setup:
             changed=changed,
             force=force,
             allowed=self.allowed,
+            scrubber=scrubber or OutputScrubber(),
         )
 
     async def run(self, commands: str | None = COMMAND, **options: Any) -> PostDeployResult:
@@ -362,3 +365,30 @@ async def test_expected_outcomes_never_log_at_error_level_or_leak_the_command(
     assert not [record for record in caplog.records if record.levelno >= logging.ERROR]
     assert "secret-subcommand-xyz" not in caplog.text
     assert "secret-subcommand-xyz" not in f"{result.reason} {result.output}"
+
+
+async def test_the_scrubber_of_the_request_removes_values_from_the_output(setup: Setup) -> None:
+    setup.fake.behavior('echo "password=seed-secret port=3306 pool=4"; exit 0')
+    result = await setup.run(scrubber=OutputScrubber(["seed-secret", "3306", "4"]))
+    assert result.status is PostDeployStatus.RAN
+    assert result.output == "password=**** port=**** pool=4\n"
+
+
+async def test_a_failed_command_output_is_scrubbed_too(setup: Setup) -> None:
+    setup.fake.behavior('echo "bad seed-secret" >&2; exit 2')
+    result = await setup.run(scrubber=OutputScrubber(["seed-secret"]))
+    assert result.status is PostDeployStatus.FAILED and result.output == "bad ****\n"
+
+
+async def test_a_value_split_by_the_cut_of_long_output_is_scrubbed_at_both_edges(
+    setup: Setup,
+) -> None:
+    setup.fake.behavior(
+        "head -c 4090 /dev/zero | tr '\\0' x; printf seed-secret; "
+        "head -c 100 /dev/zero | tr '\\0' z; printf seed-secret; "
+        "head -c 4091 /dev/zero | tr '\\0' y; exit 0"
+    )
+    result = await setup.run(scrubber=OutputScrubber(["seed-secret"]))
+    assert result.output is not None and "bytes omitted" in result.output
+    assert "seed" not in result.output and "ecret" not in result.output
+    assert result.output.count("****") == 2

@@ -22,11 +22,14 @@
 <div role="status" class="flex items-center gap-3 bg-warn-bg px-4 py-2.5 text-sm font-semibold text-warn-fg md:px-8">{{ icon("warning", "size-4", "2") }}<span class="flex-1">{{ message }}</span><a href="{{ action_href }}" class="underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ action_label }}</a></div>
 {%- endmacro %}
 
-{#- Tells a scoped user what they see without naming what they may not. `tone` is info or warn. -#}
+{#- Tells a scoped user what they see without naming what they may not. `tone` is info or warn;
+    success and error report the result of an action in place. -#}
 {% macro note(message, tone="info") -%}
 {%- set tones = {
   "info": ("bg-info-bg text-info-fg", "info"),
-  "warn": ("bg-warn-bg text-warn-fg", "warning")
+  "warn": ("bg-warn-bg text-warn-fg", "warning"),
+  "success": ("bg-ok-bg text-ok-fg", "check"),
+  "error": ("bg-err-bg text-err-fg", "close")
 } -%}
 {%- set tone_classes, icon_name = tones[tone] -%}
 <div role="note" class="flex items-start gap-3 rounded-btn px-4 py-3 text-[13px] font-semibold {{ tone_classes }}">{{ icon(icon_name, "size-[18px] mt-px", "2.2") }}<p class="text-ink">{{ message }}</p></div>

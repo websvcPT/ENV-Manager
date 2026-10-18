@@ -26,8 +26,8 @@
 <div class="flex flex-col gap-1.5{% if extra_class %} {{ extra_class }}{% endif %}"><label for="{{ id }}" class="text-[13px] font-semibold">{{ label }}</label><select id="{{ id }}" name="{{ name if name else id }}"{% if error %} aria-describedby="{{ id }}-e" aria-invalid="true"{% elif hint %} aria-describedby="{{ id }}-h"{% endif %}{{ attrs(kwargs) }} class="h-10 w-full rounded-ctl border {{ "border-danger" if error else "border-line-strong" }} bg-surface px-3 text-sm text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-60 placeholder:text-ink3">{% for option_value, option_label in options %}<option value="{{ option_value }}"{% if option_value == selected %} selected{% endif %}>{{ option_label }}</option>{% endfor %}</select>{{ field_message(id, hint, error) }}</div>
 {%- endmacro %}
 
-{% macro checkbox(name, label, checked=false, disabled=false, value=none) -%}
-<label class="flex items-start gap-2.5 text-[13px] font-semibold"><input type="checkbox" name="{{ name }}"{% if value is not none %} value="{{ value }}"{% endif %}{% if checked %} checked{% endif %}{% if disabled %} disabled{% endif %}{{ attrs(kwargs) }} class="mt-0.5 size-[18px] shrink-0 accent-accent"><span>{{ label }}</span></label>
+{% macro checkbox(name, label, checked=false, disabled=false, value=none, extra_class="") -%}
+<label class="flex items-start gap-2.5 text-[13px] font-semibold{% if extra_class %} {{ extra_class }}{% endif %}"><input type="checkbox" name="{{ name }}"{% if value is not none %} value="{{ value }}"{% endif %}{% if checked %} checked{% endif %}{% if disabled %} disabled{% endif %}{{ attrs(kwargs) }} class="mt-0.5 size-[18px] shrink-0 accent-accent"><span>{{ label }}</span></label>
 {%- endmacro %}
 
 {#- One radio option inside a fieldset; the checked option takes the soft accent fill, also after the choice changes. -#}

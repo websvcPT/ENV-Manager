@@ -1,0 +1,15 @@
+{#- The result line of the compose check, a live region that Test command swaps. Without a
+    result it holds the hint. A failed check shows the reason and the truncated output (scrubbed
+    of the configuration values before it gets here). Context: check (optional; a ComposeCheck). -#}
+{% from "macros/feedback.html" import code_block, note %}
+{% set check = check | default(none) %}
+<div id="test-result" data-fragment="test-result" aria-live="polite" class="flex flex-col gap-2 text-[13px] text-ink2">
+{%- if check is none %}
+docker compose config --quiet checks the path and the Compose file.
+{%- else %}
+{{ note(check.message, tone="success" if check.ok else "error") }}
+{%- if check.output %}
+<div hx-ignore>{{ code_block(check.output) }}</div>
+{%- endif %}
+{%- endif %}
+</div>

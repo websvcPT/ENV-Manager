@@ -37,7 +37,7 @@ mounts the Docker socket.
 | `make demo-up` | Restores the baseline when no target file exists yet, restarts the app container with `docker-compose-demo.yml` (the Docker socket, the host docker group id in `group_add`, and `demo/` mounted at the same absolute path as on the host), waits for it and seeds the demo project. |
 | `make demo-reset` | Restores the demo target files to the baseline. Database state (versions, deploy results) is not touched. |
 | `make demo-down` | Stops the demo workloads (Compose project `env-manager-demo`) and recreates the app container from the default stack, without the socket. |
-| `make e2e-demo` | Runs `make demo-up` and `make demo-reset`, then the real-scenario tests in `app/real_scenarios` inside the app container, then `make demo-reset` and `make demo-down`, whether or not the tests pass. |
+| `make e2e-demo` | Runs `make demo-up` and `make demo-reset`, then the real-scenario tests in `app/real_scenarios` inside the app container, then the browser specs in `playwright/docker-tests` (the post-deploy settings against the real daemon), then `make demo-reset` and `make demo-down`, whether or not they pass. |
 
 The real-scenario tests are outside the default test run. Each one seeds a throwaway database,
 runs the real `envmanager deploy` command against the demo stack on the mounted host folder and
@@ -79,7 +79,13 @@ recreate the Compose service that loads them. They need the Docker socket mounte
 container (`/var/run/docker.sock`, with the host docker group id in `group_add`); the docker CLI
 and compose plugin of the image do the rest. Without a reachable daemon and compose plugin the
 step is skipped with the reason and the deploy still counts as successful. `ENVMANAGER_DOCKER_SOCKET`
-changes the socket path (read by the command line today, by the web app with the settings form).
+changes the socket path (read by the web app and by the command line).
+
+The superadmin edits the settings on the service page: working directory, commands, timeout,
+run only if changed, a Test command button (`docker compose config --quiet` in the typed working
+directory) and Save settings. The panel header shows the socket status (mounted, daemon
+reachable, compose version); while Docker is not usable the fields are disabled with the reason
+and a save is refused.
 
 - One command per line, split into words and run without a shell: no pipes, redirects or `&&`
   (an unquoted operator is refused), and the first word must be exactly `docker`. The
@@ -98,3 +104,13 @@ changes the socket path (read by the command line today, by the web app with the
   visible to everyone with access to the service, the output to admins in scope and the
   superadmin, the command text to the superadmin only.
 - Only the superadmin stores commands, and saving is refused while Docker is not usable.
+- Output is scrubbed before it is stored (run and audit entry), returned or shown: every occurrence
+  of a value from the newest saved version of every file of the deployment, and of the versions
+  the deploy wrote, is replaced with `****`, longest values first. Compose prints the files of its
+  whole project (`docker compose config` prints them all), so the scrub set covers the deployment
+  and includes files the deploying user has no access to. The values are decrypted in memory only.
+  Known limits: values shorter than four characters are not scrubbed (they would match inside
+  ordinary words and numbers), a value that a command re-encodes (quoted or escaped differently
+  than Compose prints it, base64, hashed) is not recognized, a value that exists only on disk (a
+  drifted target file) is not in the set, and a value that only appears in a comment line of a
+  file is not a value. The output of a failed Test command is scrubbed the same way.

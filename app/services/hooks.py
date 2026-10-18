@@ -7,11 +7,12 @@ engine only records the ``PostDeployResult`` it returns. ``app.services.hook_run
 runner that executes the stored docker commands.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
 from app.models import PostDeployStatus
+from app.services.output_scrub import OutputScrubber
 from app.services.paths import AllowedPaths
 
 
@@ -32,6 +33,9 @@ class PostDeployRequest:
     ``hook`` is None when the service has no command. ``changed`` is True when at least one
     environment was written; ``force`` repeats the force flag of the deploy. ``allowed`` is the
     allowed path list loaded for this deploy, which a working directory must lie in.
+    ``scrubber`` knows the configuration values that must not appear in the output; the engine
+    removes them again from whatever a runner returns, a runner that keeps output uses it to
+    protect values at the edges of the kept part as well.
     """
 
     service_id: int
@@ -43,6 +47,7 @@ class PostDeployRequest:
     changed: bool
     force: bool
     allowed: AllowedPaths
+    scrubber: OutputScrubber = field(default_factory=OutputScrubber)
 
 
 @dataclass(frozen=True)

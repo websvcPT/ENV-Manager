@@ -253,6 +253,7 @@ async def test_the_compose_check_runs_compose_config_in_the_working_directory(
     h = harness
     result = await check_compose_setup(
         h.db,
+        h.crypto,
         fake.cli(),
         await h.scope_of("superadmin"),
         AuditActor.for_user(h.seed.users.superadmin),
@@ -279,6 +280,7 @@ async def test_a_failing_compose_check_returns_its_truncated_output(
     fake.behavior("echo 'no configuration file provided' >&2; exit 1")
     result = await check_compose_setup(
         h.db,
+        h.crypto,
         fake.cli(),
         await h.scope_of("superadmin"),
         AuditActor.for_user(h.seed.users.superadmin),
@@ -299,6 +301,7 @@ async def test_the_compose_check_refuses_a_directory_it_may_not_use(
     directory = str(tmp_path if kind == "outside" else h.roots["staging"] / "nope")
     result = await check_compose_setup(
         h.db,
+        h.crypto,
         fake.cli(),
         await h.scope_of("superadmin"),
         AuditActor.for_user(h.seed.users.superadmin),
@@ -315,6 +318,7 @@ async def test_the_compose_check_reports_unavailable_docker_without_running_it(
     h = harness
     result = await check_compose_setup(
         h.db,
+        h.crypto,
         fake.cli(mounted=False),
         await h.scope_of("superadmin"),
         AuditActor.for_user(h.seed.users.superadmin),
@@ -332,6 +336,7 @@ async def test_only_the_superadmin_may_run_the_compose_check(
     with pytest.raises(HookForbiddenError):
         await check_compose_setup(
             h.db,
+            h.crypto,
             fake.cli(),
             await h.scope_of("admin"),
             AuditActor.for_user(h.seed.users.admin),

@@ -153,7 +153,9 @@ class DockerHookRunner:
                 reason = f"{subject} exited with code {result.exit_code}."
                 return self._failed(request, output, result.exit_code, reason)
         log.info("post-deploy command of service %s ran", request.service_id)
-        return PostDeployResult(PostDeployStatus.RAN, exit_code=0, output=output.text() or None)
+        return PostDeployResult(
+            PostDeployStatus.RAN, exit_code=0, output=output.text(request.scrubber) or None
+        )
 
     @staticmethod
     def _failed(
@@ -164,6 +166,6 @@ class DockerHookRunner:
         return PostDeployResult(
             PostDeployStatus.FAILED,
             exit_code=exit_code,
-            output=output.text() or None,
+            output=output.text(request.scrubber) or None,
             reason=reason,
         )
