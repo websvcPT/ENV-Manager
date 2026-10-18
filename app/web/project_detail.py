@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.templating import render
 from app.models import Project
+from app.services.paths import load_allowed_paths
 from app.services.permissions import AccessScope, Capability
 from app.services.project_detail import (
     ProjectDetail,
@@ -56,7 +57,7 @@ def project_access(
         scope: Annotated[AccessScope, Depends(get_scope)],
         db: Annotated[AsyncSession, Depends(get_db)],
     ) -> ProjectContext:
-        project = await load_project_detail(db, scope, project_id)
+        project = await load_project_detail(db, scope, project_id, await load_allowed_paths(db))
         if project is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "project not found")
         if capability is not None and not scope.can(capability):

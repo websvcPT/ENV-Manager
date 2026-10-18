@@ -1,0 +1,50 @@
+{#- Dist checks of a deployment: one row per file in the caller's scope with the outcome of a
+    check run now. Context: deployment (a DeploymentDetail) and checks (empty while the
+    deployment is outside the allowed paths). -#}
+{% extends "layouts/app.html" %}
+{% from "macros/badges.html" import dist_badge %}
+{% from "macros/buttons.html" import button %}
+{% from "macros/feedback.html" import empty_state, note %}
+{% from "macros/icons.html" import icon %}
+{% from "macros/panels.html" import cell, page_header, panel, row_header, table, text_link %}
+{% set active_nav = "projects" %}
+{% set breadcrumbs = [("Projects", "/projects"), (deployment.project_name, "/projects/" ~ deployment.project_id), (deployment.name, "/deployments/" ~ deployment.id), ("Dist check", none)] %}
+{% block title %}Dist check · {{ deployment.name }}{% endblock %}
+{% block content %}
+<nav aria-label="Breadcrumb" class="-mb-2 md:hidden"><a href="/deployments/{{ deployment.id }}" class="inline-flex min-h-11 items-center gap-1 text-ink2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ icon("chevron-left", "size-4", "2.2") }}{{ deployment.project_name }} / {{ deployment.name }}</a></nav>
+{% set subtitle %}Deployment <strong class="text-ink">{{ deployment.name }}</strong> in {{ deployment.project_name }}{% if checks %} · checked {{ checks[0].checked_at.strftime("%Y-%m-%d %H:%M") }} by {{ checks[0].checked_by }}{% endif %}{% endset %}
+{% set actions %}{% if not deployment.outside_allowed %}{{ button("Run check again", href="/deployments/" ~ deployment.id ~ "/dist", icon_name="check", icon_stroke="2.4", extra_class="max-md:h-11") }}{% endif %}{{ button("Back to deployment", href="/deployments/" ~ deployment.id, extra_class="max-md:h-11") }}{% endset %}
+{{ page_header("Dist check", subtitle, actions=actions) }}
+{% if deployment.outside_allowed %}
+{{ note("This deployment is outside the allowed paths. It cannot be deployed or checked until the path is allowed again or the deployment is moved.", tone="warn") }}
+{% else %}
+{% call panel("Files", "dist-files-title", fragment="dist-files") %}
+{%- if checks %}
+<div class="hidden md:block">
+{% call table("Dist check of each file", ["File", "Dist file", "Result", "Missing", "Extra", "Empty", "Actions"], right_columns=[6], min_width_class="min-w-[900px]") %}
+{%- for check in checks %}
+{%- set report = check.report %}
+{%- set compared = report is not none and report.skipped is none %}
+{%- set file_name %}<a href="/environments/{{ check.subject.environment_id }}/dist" class="font-mono text-[13px] font-semibold text-ink hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ check.subject.name }}</a><span class="mt-0.5 block text-xs text-ink2">Service {{ check.subject.service_name }}</span>{% endset %}
+<tr data-fragment="dist-row">{{ row_header(file_name, mono=false) }}
+<td class="border-t border-line px-4 py-3.5 whitespace-nowrap">{% if check.subject.dist_path %}<span class="font-mono text-[13px] text-ink2">{{ check.subject.dist_path }}</span>{% else %}<span class="text-ink3">None linked</span>{% endif %}</td>
+{% call cell() %}{{ dist_badge(check.outcome.value) }}{% if check.problem_message or check.skip_message %}<span class="mt-1 block max-w-xs text-xs text-ink2">{{ check.problem_message or check.skip_message }}</span>{% endif %}{% endcall %}
+{% call cell() %}{% if compared %}{{ report.missing | length }}{% else %}<span class="text-ink3">None</span>{% endif %}{% endcall %}
+{% call cell() %}{% if compared %}{{ report.extra | length }}{% else %}<span class="text-ink3">None</span>{% endif %}{% endcall %}
+{% call cell() %}{% if compared %}{{ report.empty | length }}{% else %}<span class="text-ink3">None</span>{% endif %}{% endcall %}
+<td class="border-t border-line px-4 py-3.5 whitespace-nowrap text-right">{{ text_link("Open report", "/environments/" ~ check.subject.environment_id ~ "/dist") }}</td></tr>
+{%- endfor %}
+{% endcall %}
+</div>
+<ul class="m-0 list-none md:hidden">
+{%- for check in checks %}
+{%- set report = check.report %}
+<li data-fragment="dist-item" class="flex flex-col gap-2 border-t border-line p-4"><div class="flex items-center justify-between gap-2"><a href="/environments/{{ check.subject.environment_id }}/dist" class="break-all font-mono text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ check.subject.name }}</a>{{ dist_badge(check.outcome.value) }}</div><p class="text-[13px] text-ink2">Service {{ check.subject.service_name }} · dist file {% if check.subject.dist_path %}<span class="break-all font-mono text-xs">{{ check.subject.dist_path }}</span>{% else %}none linked{% endif %}</p>{% if check.problem_message or check.skip_message %}<p class="text-[13px] text-ink2">{{ check.problem_message or check.skip_message }}</p>{% endif %}{% if report is not none and report.skipped is none %}<p class="text-[13px] text-ink2">{{ report.missing | length }} missing · {{ report.extra | length }} extra · {{ report.empty | length }} empty</p>{% endif %}<div class="flex gap-2">{{ button("Open report", href="/environments/" ~ check.subject.environment_id ~ "/dist", extra_class="h-11 flex-1") }}</div></li>
+{%- endfor %}
+</ul>
+{%- else %}
+{{ empty_state("No files to check", "No file of this deployment is in your scope.") }}
+{%- endif %}
+{% endcall %}
+{% endif %}
+{% endblock %}

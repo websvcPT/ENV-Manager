@@ -45,6 +45,7 @@ from app.seeds import (
     seed,
 )
 from app.services.dist import DistSkipReason, compare_text_to_dist
+from app.services.dist_check import DistOutcome, evaluate_dist
 from app.services.env_parser import parse_env
 from app.services.permissions import (
     Capability,
@@ -188,6 +189,23 @@ async def test_demo_dist_comparison_covers_clean_blocked_and_skipped(
     assert skipped.skipped is DistSkipReason.ENVIRONMENT_NOT_ENV_FORMAT
     dist_certificate = (STACK_DIR / "environments" / "demo-ca.pem-dist").read_text(encoding="utf-8")
     assert not parse_env(dist_certificate).is_env_format
+
+
+async def test_demo_dist_checks_read_the_committed_templates(
+    engine: AsyncEngine, demo_data: SeedData, crypto: CryptoService
+) -> None:
+    """A real check of each demo file: two pass, the secrets file blocks, the certificate skips."""
+    demo = _demo(demo_data)
+    outcomes = {}
+    async with create_session_factory(engine)() as db:
+        for name, environment in _environments(demo).items():
+            outcomes[name] = await evaluate_dist(db, crypto, environment.id, checked_by="root")
+    assert outcomes[".env.api"].outcome is DistOutcome.PASSED
+    assert outcomes[".env.db"].outcome is DistOutcome.PASSED
+    blocked = outcomes[".env.db.secrets"]
+    assert blocked.outcome is DistOutcome.BLOCKED
+    assert blocked.report is not None and blocked.report.missing == ("DEMO_DB_BACKUP_PASSWORD",)
+    assert outcomes["demo-ca.pem"].outcome is DistOutcome.SKIPPED
 
 
 async def test_demo_baseline_has_one_drifted_identical_and_missing_targets(

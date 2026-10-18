@@ -47,13 +47,15 @@ export async function seededEnvironmentId(
 
 /**
  * Create an environment with pasted content through the add environment form post, as the
- * caller of `request` (the superadmin), and return its id.
+ * caller of `request` (the superadmin), and return its id. `distPath` links a dist file below
+ * the deployment root.
  */
 export async function createEnvironment(
   request: APIRequestContext,
   service: number,
   name: string,
   content: string,
+  distPath = '',
 ): Promise<number> {
   const response = await request.post(`/services/${service}/environments/new`, {
     form: {
@@ -61,7 +63,7 @@ export async function createEnvironment(
       new_service: '',
       name,
       target_path: `environments/${name}`,
-      dist_path: '',
+      dist_path: distPath,
       file_mode: '',
       file_owner: '',
       file_group: '',

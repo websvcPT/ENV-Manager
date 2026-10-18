@@ -23,7 +23,14 @@ from app.models import (
     User,
     UserGroup,
 )
-from app.services.permissions import AccessScope, Capability, ItemLevel, compute_visibility
+from app.services.paths import AllowedPaths
+from app.services.permissions import (
+    CAPABILITY_GROUPS,
+    AccessScope,
+    Capability,
+    ItemLevel,
+    compute_visibility,
+)
 from app.services.projects import LastDeploy, latest_runs, member_counts
 
 ACTIVITY_LIMIT = 50
@@ -35,7 +42,8 @@ class DeploymentRow:
 
     ``root_path`` is None for a deployment the caller reaches only as the parent of a granted
     environment, which is shown by name only. ``flags`` holds the distinct non-success outcomes
-    of the latest run of the services in scope.
+    of the latest run of the services in scope. ``can_check_dist`` is True when the caller may run
+    dist checks and the deployment has files in scope and does not lie outside the allowed paths.
     """
 
     id: int
@@ -44,6 +52,7 @@ class DeploymentRow:
     files: int
     last_deploy: LastDeploy | None
     flags: tuple[DeployStatus, ...]
+    can_check_dist: bool
 
 
 @dataclass(frozen=True)
@@ -92,7 +101,7 @@ class MemberAccess:
 
 
 async def load_project_detail(
-    db: AsyncSession, scope: AccessScope, project_id: int
+    db: AsyncSession, scope: AccessScope, project_id: int, allowed: AllowedPaths
 ) -> ProjectDetail | None:
     """The project as the caller sees it, or None when it is outside the caller's scope."""
     visibility = await compute_visibility(db, scope)
@@ -137,6 +146,7 @@ async def load_project_detail(
         )
     ).all()
 
+    can_check_group = scope.active and scope.group in CAPABILITY_GROUPS[Capability.DEPLOY]
     rows: list[DeploymentRow] = []
     for deployment in deployments:
         runs = [
@@ -150,18 +160,23 @@ async def load_project_detail(
             for status in DeployStatus
             if status is not DeployStatus.SUCCESS and any(run.status is status for run, _ in runs)
         )
+        files = sum(1 for _id, _name, owner in environments if owner == deployment.id)
+        outside_allowed = deployment.id in full_deployments and not allowed.contains(
+            deployment.root_path
+        )
         rows.append(
             DeploymentRow(
                 id=deployment.id,
                 name=deployment.name,
                 root_path=deployment.root_path if deployment.id in full_deployments else None,
-                files=sum(1 for _id, _name, owner in environments if owner == deployment.id),
+                files=files,
                 last_deploy=(
                     LastDeploy(newest[0].status, newest[0].started_at, newest[1])
                     if newest
                     else None
                 ),
                 flags=flags,
+                can_check_dist=can_check_group and files > 0 and not outside_allowed,
             )
         )
 

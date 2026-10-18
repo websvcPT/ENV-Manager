@@ -1,0 +1,11 @@
+{#- Compare to dist: the report of a check run now under the shared environment frame. Context:
+    env (an EditorHeader), check, can_edit, tab, is_viewer, and added and added_version (key count
+    and version number, optional, shown after the missing keys were added). -#}
+{% extends "layouts/environment.html" %}
+{% from "macros/feedback.html" import toast %}
+{% block title %}Compare to dist · {{ env.name }}{% endblock %}
+{% block header %}{% include "fragments/dist_header.html" %}{% endblock %}
+{% block tab %}
+{% include "fragments/dist_report.html" %}
+{% if added %}{{ toast("success", "Added " ~ added ~ (" missing key" if added == "1" else " missing keys") ~ " with empty values as version " ~ added_version ~ ". Pending deploy.", floating=true) }}{% endif %}
+{% endblock %}

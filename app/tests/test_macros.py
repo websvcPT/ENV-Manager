@@ -35,6 +35,25 @@ def test_role_badge_accepts_a_user_group() -> None:
     assert "bg-ink text-surface" in page and "Superadmin" in page
 
 
+def test_dist_badge_maps_each_outcome_to_the_handoff_badges() -> None:
+    """Blocked, warning, passed, skipped and failed checks use the shared tones and labels."""
+    expected = {
+        "blocked": ("bg-err-bg text-err-fg", "Blocked"),
+        "warning": ("bg-warn-bg text-warn-fg", "Warning"),
+        "passed": ("bg-ok-bg text-ok-fg", "Passed"),
+        "skipped": ("bg-mute-bg text-mute-fg", "Skipped"),
+        "failed": ("bg-err-bg text-err-fg", "Check failed"),
+    }
+    for outcome, (tone, label) in expected.items():
+        badge = render_snippet(
+            "{% from 'macros/badges.html' import dist_badge %}{{ dist_badge(outcome) }}",
+            outcome=outcome,
+        )
+        assert tone in badge and badge.endswith(f"{label}</span>"), outcome
+    with pytest.raises(UndefinedError):
+        render_snippet("{% from 'macros/badges.html' import dist_badge %}{{ dist_badge('nope') }}")
+
+
 def test_unknown_badge_and_icon_names_fail_loudly() -> None:
     """A typo is an error, not a silently empty control."""
     with pytest.raises(UndefinedError):

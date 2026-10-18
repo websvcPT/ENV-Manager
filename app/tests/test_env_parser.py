@@ -176,3 +176,13 @@ def test_single_quoted_escapes_differ_from_compose() -> None:
         "B": "a\\b",
         "C": "x\\ny",
     }
+
+
+def test_line_numbers_skip_the_blank_lines_before_a_variable() -> None:
+    parsed = parse_env("A=1\n\n\nB=2\n# comment\n\nC=3\n")
+    assert [parsed.variables[key].line for key in ("A", "B", "C")] == [1, 4, 7]
+
+
+def test_problem_lines_skip_the_blank_lines_before_the_problem() -> None:
+    parsed = parse_env("A=1\n\n\nBAD KEY=2\n\nB=3\nC='open\n")
+    assert parsed.problem_lines == (4, 7)

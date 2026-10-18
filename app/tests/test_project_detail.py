@@ -3,11 +3,13 @@
 from collections.abc import AsyncIterator
 
 import pytest
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.core.db import create_session_factory
-from app.models import DeployStatus, User, UserGroup
+from app.models import AllowedPath, DeployStatus, User, UserGroup
 from app.seeds import SeedData
+from app.services.paths import load_allowed_paths
 from app.services.permissions import load_user_scope
 from app.services.project_detail import (
     ProjectDetail,
@@ -26,7 +28,8 @@ async def db(seeded_database: AsyncEngine) -> AsyncIterator[AsyncSession]:
 
 async def _detail(db: AsyncSession, user: User, project_id: int) -> ProjectDetail | None:
     """The project as a user sees it."""
-    return await load_project_detail(db, await load_user_scope(db, user), project_id)
+    scope = await load_user_scope(db, user)
+    return await load_project_detail(db, scope, project_id, await load_allowed_paths(db))
 
 
 async def test_superadmin_sees_every_deployment_with_state(
@@ -155,3 +158,26 @@ async def test_disabled_users_are_not_members(db: AsyncSession, seed_data: SeedD
     await db.commit()
     names = {m.name for m in await list_members(db, seed_data.projects.rentals.id)}
     assert "viewer" not in names
+
+
+async def test_check_dist_row_action_follows_group_files_and_allowed_paths(
+    db: AsyncSession, seed_data: SeedData
+) -> None:
+    """Checkers see it on deployments with files inside the allowed paths; viewers never."""
+    users, rentals = seed_data.users, seed_data.projects.rentals.id
+    for user in (users.superadmin, users.admin, users.deployment_admin):
+        detail = await _detail(db, user, rentals)
+        assert detail is not None
+        assert all(row.can_check_dist for row in detail.deployments), user.name
+    scoped = await _detail(db, users.env_scoped_admin, rentals)
+    assert scoped is not None and [row.can_check_dist for row in scoped.deployments] == [True]
+    viewer = await _detail(db, users.viewer, rentals)
+    assert viewer is not None and not any(row.can_check_dist for row in viewer.deployments)
+    billing = await _detail(db, users.superadmin, seed_data.projects.billing.id)
+    assert billing is not None
+    by_name = {row.name: row for row in billing.deployments}
+    assert by_name["main"].can_check_dist and not by_name["legacy"].can_check_dist
+    await db.execute(delete(AllowedPath))
+    await db.commit()
+    outside = await _detail(db, users.superadmin, rentals)
+    assert outside is not None and not any(row.can_check_dist for row in outside.deployments)

@@ -58,6 +58,15 @@ class ParsedEnv:
         return tuple(key for key, variable in self.variables.items() if variable.empty)
 
 
+def _leading_line_breaks(source: str) -> int:
+    """Line breaks before the first character of a binding's source.
+
+    The tokenizer folds the blank lines before a statement into that statement and reports the
+    line where they start, so the line of the statement itself lies this many lines further on.
+    """
+    return source[: len(source) - len(source.lstrip())].count("\n")
+
+
 def parse_env(text: str) -> ParsedEnv:
     """Parse ``text`` as an env file.
 
@@ -69,7 +78,7 @@ def parse_env(text: str) -> ParsedEnv:
     duplicates: list[str] = []
     problems: list[int] = []
     for binding in parse_stream(io.StringIO(text)):
-        line = binding.original.line
+        line = binding.original.line + _leading_line_breaks(binding.original.string)
         if binding.error or (binding.key is not None and not _VALID_KEY.fullmatch(binding.key)):
             problems.append(line)
             continue

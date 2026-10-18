@@ -1,0 +1,4 @@
+{#- The answer to running the check again: the report, and the page header (outcome, time and
+    person of the check) as a partial swap. Context: env, check, can_edit and error. -#}
+{% include "fragments/dist_report.html" %}
+<template hx type="partial" hx-target="[data-fragment=page-header]" hx-swap="outerHTML">{% include "fragments/dist_header.html" %}</template>

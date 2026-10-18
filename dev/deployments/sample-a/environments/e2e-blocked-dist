@@ -1,0 +1,5 @@
+# Dist template of the report specs. The defaults below must never show on a screen.
+DB_HOST=
+DB_PORT=e2e-dist-default-Hv51
+DB_NAME=
+DB_USER=

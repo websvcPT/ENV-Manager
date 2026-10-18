@@ -1,0 +1,55 @@
+{#- The dist report: policy outcome, the three counts and one table per kind of difference, or
+    the reason the comparison was skipped or could not run. It holds key names, dist line
+    numbers and counts only, never a value. Context: env, check, can_edit and error (optional,
+    a refused add of the missing keys). -#}
+{% from "macros/buttons.html" import button %}
+{% from "macros/feedback.html" import note %}
+{% from "macros/icons.html" import icon %}
+{% from "macros/panels.html" import cell, panel, row_header, table %}
+{% set report = check.report %}
+{% set outcome = check.outcome.value %}
+{% set banners = {
+  "blocked": ("bg-err-bg text-err-fg", "ban", "Blocked: keys missing", "Policy is block. A deploy of this environment stops until the missing keys are added."),
+  "warning": ("bg-warn-bg text-warn-fg", "warning", "Warning: keys missing", "Policy is warn and continue. A deploy proceeds and reports the missing " ~ ("key." if report and report.missing | length == 1 else "keys.")),
+  "passed": ("bg-ok-bg text-ok-fg", "check", "No keys missing", "Every key of the dist file is in the environment."),
+  "failed": ("bg-err-bg text-err-fg", "close", "The check could not run", check.problem_message)
+} %}
+<div id="dist-report" data-fragment="dist-report" class="flex flex-col gap-5">
+{%- if error %}
+<p role="alert" class="flex items-center gap-1.5 text-[13px] font-semibold text-danger">{{ icon("warning", "size-3.5", "2.4") }}{{ error }}</p>
+{%- endif %}
+{%- if outcome == "skipped" %}
+{{ note(check.skip_message) }}
+{%- else %}
+{%- set banner_tone, banner_icon, banner_title, banner_message = banners[outcome] %}
+<div role="{{ 'status' if outcome == 'passed' else 'alert' }}" class="flex items-start gap-4 rounded-panel p-4 {{ banner_tone }}">{{ icon(banner_icon, "size-7 mt-0.5", "2.4") }}<div><p class="text-lg font-bold">{{ banner_title }}</p><p class="text-ink">{{ banner_message }}</p></div></div>
+{%- if report %}
+{%- set cards = [
+  ("bg-err-bg text-err-fg", "ban", report.missing | length, "Missing keys"),
+  ("bg-info-bg text-info-fg", "plus", report.extra | length, "Extra keys"),
+  ("bg-warn-bg text-warn-fg", "warning", report.empty | length, "Empty values")
+] %}
+<ul class="grid list-none gap-3 sm:grid-cols-3" aria-label="Summary">
+{%- for tone, icon_name, count, label in cards %}
+<li class="rounded-panel border border-line bg-surface shadow-panel flex items-center gap-3.5 p-4"><span class="flex size-10 items-center justify-center rounded-full {{ tone }}">{{ icon(icon_name, "size-5", "2.2") }}</span><div><p class="text-2xl font-bold leading-none">{{ count }}</p><p class="mt-1 text-[13px] text-ink2">{{ label }}</p></div></li>
+{%- endfor %}
+</ul>
+{%- set tables = [
+  ("missing", "Keys in dist missing from the environment", "Dist line", report.missing),
+  ("extra", "Keys in the environment not in dist", "Note", report.extra),
+  ("empty", "Keys with empty values", "Note", report.empty)
+] %}
+{%- for kind, title, detail_column, keys in tables if keys %}
+{% set add_action %}{% if kind == "missing" and can_edit %}{{ button("Add missing keys to the editor", kind="primary-sm", icon_name="plus", icon_stroke="2.4", extra_class="max-md:h-11", hx_post="/environments/" ~ env.id ~ "/add-missing?base=" ~ check.version, hx_target="#dist-report", hx_swap="outerHTML") }}{% endif %}{% endset %}
+{% call panel(title, "dist-" ~ kind ~ "-title", fragment="dist-table", actions=add_action) %}
+{% call table(title, ["Key", detail_column], min_width_class="min-w-[480px]") %}
+{%- for key in keys %}
+{%- set key_name %}<span class="font-mono text-[13px]">{{ key }}</span>{% endset %}
+<tr>{{ row_header(key_name, mono=false) }}{% call cell() %}{% if kind == "missing" %}<span class="text-ink2">Line {{ report.missing_lines[loop.index0] }}</span>{% elif kind == "extra" %}<span class="text-ink2">Not in dist. Allowed, no policy applies.</span>{% else %}<span class="text-ink2">Value is empty in the environment.</span>{% endif %}{% endcall %}</tr>
+{%- endfor %}
+{% endcall %}
+{% endcall %}
+{%- endfor %}
+{%- endif %}
+{%- endif %}
+</div>

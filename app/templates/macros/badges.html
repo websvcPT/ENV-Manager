@@ -59,3 +59,16 @@
 {{ badge(status) }}
 {%- endif -%}
 {%- endmacro %}
+
+{#- Badge for a dist check outcome value (blocked, warning, passed, skipped or failed). -#}
+{% macro dist_badge(outcome) -%}
+{%- set badges = {
+  "blocked": ("blocked", none),
+  "warning": ("drift", "Warning"),
+  "passed": ("proceed", "Passed"),
+  "skipped": ("never", "Skipped"),
+  "failed": ("failed", "Check failed")
+} -%}
+{%- set key, label = badges[outcome] -%}
+{{ badge(key, label) }}
+{%- endmacro %}

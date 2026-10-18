@@ -13,7 +13,7 @@
 <td class="border-t border-line px-4 py-3.5">{{ row.files }}</td>
 <td class="border-t border-line px-4 py-3.5">{% if row.last_deploy %}{{ deploy_status_badge(row.last_deploy.status.value) }}<span class="mt-1 block text-xs text-ink2">{{ row.last_deploy.started_at.strftime("%Y-%m-%d %H:%M") }}{% if row.last_deploy.actor %} · {{ row.last_deploy.actor }}{% endif %}</span>{% else %}{{ badge("never", "No deploys yet") }}{% endif %}</td>
 <td class="border-t border-line px-4 py-3.5">{% if row.flags %}<span class="flex flex-wrap gap-1.5">{% for flag in row.flags %}{{ deploy_status_badge(flag.value) }}{% endfor %}</span>{% else %}<span class="inline-flex items-center gap-1.5 text-[13px] text-ink2">{{ icon("check", "size-3.5", "2.4") }}No flags</span>{% endif %}</td>
-<td class="border-t border-line px-4 py-3.5 whitespace-nowrap text-right"><span class="inline-flex gap-4">{{ text_link("Open", "/deployments/" ~ row.id) }}</span></td></tr>
+<td class="border-t border-line px-4 py-3.5 whitespace-nowrap text-right"><span class="inline-flex gap-4">{{ text_link("Open", "/deployments/" ~ row.id) }}{% if row.can_check_dist %}{{ text_link("Check dist", "/deployments/" ~ row.id ~ "/dist") }}{% endif %}</span></td></tr>
 {%- endfor %}
 {% endcall %}
 {%- elif can_manage_structure -%}

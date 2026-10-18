@@ -38,19 +38,20 @@ export async function deploymentId(
 
 /**
  * Create a deployment in a project through the same form post the page sends, as the caller of
- * `request` (the superadmin), and return its id.
+ * `request` (the superadmin), and return its id. `distMissingPolicy` is block or warn.
  */
 export async function createDeployment(
   request: APIRequestContext,
   projectId: number,
   name: string,
   root: string,
+  distMissingPolicy: 'block' | 'warn' = 'block',
 ): Promise<number> {
   const response = await request.post(`/projects/${projectId}/deployments`, {
     form: {
       name,
       root,
-      dist_missing_policy: 'block',
+      dist_missing_policy: distMissingPolicy,
       drift_policy: 'halt',
       missing_target_policy: 'create',
       file_mode: '0600',

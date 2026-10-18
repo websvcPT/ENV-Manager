@@ -1,19 +1,18 @@
-"""Tests for the dist comparison: report content, dist file reading and the seeded flow."""
+"""Tests for the dist comparison: report content, dist file reading and the seeded links."""
 
 from pathlib import Path
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from app.core.crypto import CryptoService
 from app.core.db import create_session_factory
-from app.models import Deployment, Environment, EnvironmentVersion
+from app.models import Environment
 from app.seeds import SeedData
 from app.services.dist import (
     MAX_DIST_BYTES,
     DistError,
+    DistProblem,
     DistSkipReason,
-    check_environment_dist,
     compare_text_to_dist,
     read_dist_file,
 )
@@ -118,120 +117,6 @@ def test_read_dist_file_refuses_binary_and_oversized_files(host: Path) -> None:
         read_dist_file(allowed, str(host / "deploy"), "big")
 
 
-@pytest.fixture
-async def relocated(seeded_database: AsyncEngine, seed_data: SeedData, host: Path) -> Path:
-    """Point the seeded rentals prod deployment at a real folder and return the folder."""
-    async with create_session_factory(seeded_database)() as db:
-        deployment = await db.get(Deployment, seed_data.deployments.rentals_prod.id)
-        assert deployment is not None
-        deployment.root_path = str(host / "deploy")
-        await db.commit()
-    return host / "deploy"
-
-
-async def test_check_environment_dist_on_the_seeded_environment(
-    seeded_database: AsyncEngine,
-    seed_data: SeedData,
-    crypto: CryptoService,
-    relocated: Path,
-    host: Path,
-) -> None:
-    (relocated / "environments" / ".env.db-dist").write_text("DB_HOST=\nDB_PORT=\nDB_NAME=\n")
-    async with create_session_factory(seeded_database)() as db:
-        report = await check_environment_dist(
-            db, crypto, AllowedPaths([host]), seed_data.envs.db.id
-        )
-    assert report.skipped is None
-    assert report.missing == ("DB_NAME",)
-    assert report.extra == ()
-    assert report.empty == ()
-
-
-async def test_check_uses_the_latest_version(
-    seeded_database: AsyncEngine,
-    seed_data: SeedData,
-    crypto: CryptoService,
-    relocated: Path,
-    host: Path,
-) -> None:
-    (relocated / "environments" / ".env.db-dist").write_text("DB_HOST=\nDB_PORT=\n")
-    content = "DB_HOST=db\nDB_PORT=\nNEW=1\n"
-    async with create_session_factory(seeded_database)() as db:
-        db.add(
-            EnvironmentVersion(
-                environment_id=seed_data.envs.db.id,
-                number=3,
-                content_encrypted=crypto.encrypt(content),
-                content_hash=crypto.content_hash(content),
-            )
-        )
-        await db.commit()
-        report = await check_environment_dist(
-            db, crypto, AllowedPaths([host]), seed_data.envs.db.id
-        )
-    assert report.extra == ("NEW",)
-    assert report.empty == ("DB_PORT",)
-
-
-async def test_check_skips_a_non_env_environment(
-    seeded_database: AsyncEngine,
-    seed_data: SeedData,
-    crypto: CryptoService,
-    relocated: Path,
-    host: Path,
-) -> None:
-    (relocated / "environments" / ".env.db-dist").write_text("DB_HOST=\n")
-    certificate = "-----BEGIN CERTIFICATE-----\nMIIBabc+/==\n-----END CERTIFICATE-----\n"
-    async with create_session_factory(seeded_database)() as db:
-        db.add(
-            EnvironmentVersion(
-                environment_id=seed_data.envs.db.id,
-                number=3,
-                content_encrypted=crypto.encrypt(certificate),
-                content_hash=crypto.content_hash(certificate),
-            )
-        )
-        await db.commit()
-        report = await check_environment_dist(
-            db, crypto, AllowedPaths([host]), seed_data.envs.db.id
-        )
-    assert report.skipped is DistSkipReason.ENVIRONMENT_NOT_ENV_FORMAT
-
-
-async def test_check_refuses_environments_without_a_dist_link_or_missing_ones(
-    seeded_database: AsyncEngine,
-    seed_data: SeedData,
-    crypto: CryptoService,
-    relocated: Path,
-    host: Path,
-) -> None:
-    allowed = AllowedPaths([host])
-    async with create_session_factory(seeded_database)() as db:
-        with pytest.raises(DistError, match="no dist file linked"):
-            await check_environment_dist(db, crypto, allowed, seed_data.envs.db_secrets.id)
-        with pytest.raises(DistError, match="does not exist"):
-            await check_environment_dist(db, crypto, allowed, 9999)
-        with pytest.raises(DistError, match="does not exist or is not a regular file"):
-            await check_environment_dist(db, crypto, allowed, seed_data.envs.db.id)
-
-
-async def test_check_refuses_when_the_deployment_left_the_allowed_paths(
-    seeded_database: AsyncEngine,
-    seed_data: SeedData,
-    crypto: CryptoService,
-    relocated: Path,
-    tmp_path: Path,
-) -> None:
-    (relocated / "environments" / ".env.db-dist").write_text("DB_HOST=\n")
-    other_root = tmp_path / "unrelated"
-    other_root.mkdir()
-    async with create_session_factory(seeded_database)() as db:
-        with pytest.raises(DistError, match="outside the allowed paths"):
-            await check_environment_dist(
-                db, crypto, AllowedPaths([other_root]), seed_data.envs.db.id
-            )
-
-
 async def test_seed_links_dist_files(seeded_database: AsyncEngine, seed_data: SeedData) -> None:
     async with create_session_factory(seeded_database)() as db:
         db_env = await db.get(Environment, seed_data.envs.db.id)
@@ -240,3 +125,41 @@ async def test_seed_links_dist_files(seeded_database: AsyncEngine, seed_data: Se
     assert db_env.dist_path == "environments/.env.db-dist"
     assert secrets is not None
     assert secrets.dist_path is None
+
+
+def test_missing_keys_carry_the_line_of_their_definition_in_the_dist_file() -> None:
+    report = compare_text_to_dist(
+        "A=1\n",
+        "# template\nA=\n\nFIRST=\nMULTI='one\ntwo'\nLAST=\n",
+    )
+    assert report.missing == ("FIRST", "MULTI", "LAST")
+    assert report.missing_lines == (4, 5, 7)
+
+
+def test_report_never_carries_a_dist_default_value() -> None:
+    report = compare_text_to_dist("A=1\n", "A=\nSECRET_DEFAULT_KEY=hunter2-default\n")
+    assert report.missing == ("SECRET_DEFAULT_KEY",)
+    assert "hunter2-default" not in repr(report)
+
+
+def test_dist_errors_name_the_problem_and_never_a_host_path(host: Path, tmp_path: Path) -> None:
+    allowed = AllowedPaths([host])
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (host / "other").mkdir()
+    (host / "other" / "secret").write_text("A=\n")
+    (host / "deploy" / "link").symlink_to(host / "other" / "secret")
+    (host / "deploy" / "escape").symlink_to(elsewhere)
+    cases = [
+        (str(elsewhere), ".env-dist", DistProblem.ROOT_OUTSIDE),
+        (str(host / "deploy"), "link", DistProblem.LEAVES_ROOT),
+        (str(host / "deploy"), "escape/.env-dist", DistProblem.LEAVES_ROOT),
+        (str(host / "deploy"), "/etc/passwd", DistProblem.NOT_RELATIVE),
+        (str(host / "deploy"), "missing", DistProblem.NOT_A_FILE),
+    ]
+    for root, dist_path, problem in cases:
+        with pytest.raises(DistError) as raised:
+            read_dist_file(allowed, root, dist_path)
+        assert raised.value.problem is problem
+        for hidden in (str(host), str(elsewhere), str(tmp_path)):
+            assert hidden not in str(raised.value)
