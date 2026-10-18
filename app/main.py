@@ -20,6 +20,7 @@ from app.services.auth_policy import AuthPolicy
 from app.services.deploy_recovery import recover_interrupted_runs
 from app.services.docker_cli import DockerCli
 from app.services.key_check import ensure_key_check
+from app.web.audit import router as audit_router
 from app.web.auth import router as auth_router
 from app.web.deploy_dialog import router as deploy_dialog_router
 from app.web.deployment_form import router as deployment_form_router
@@ -110,6 +111,7 @@ def create_app() -> FastAPI:
     application.include_router(history_router)
     application.include_router(drift_router)
     application.include_router(dist_report_router)
+    application.include_router(audit_router)
 
     @application.get("/healthz", include_in_schema=False)
     async def healthz() -> dict[str, str]:

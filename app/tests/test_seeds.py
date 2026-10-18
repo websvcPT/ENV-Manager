@@ -21,7 +21,9 @@ from app.models import (
     AllowedPath,
     ApiToken,
     ApiTokenRestriction,
+    AuditActorType,
     AuditEntry,
+    AuditResult,
     DeployResult,
     DeployRun,
     Environment,
@@ -33,12 +35,18 @@ from app.models import (
 )
 from app.models.types import utc_now
 from app.seeds import (
+    BULK_ACTION,
+    BULK_COUNT,
+    DELETED_PROJECT_ID,
     DEV_ALLOWED_ROOT,
     DEV_PASSWORD,
     DEV_TOTP_SECRET,
+    FIRST_FIGURE_DAY,
+    LAST_FIGURE_DAY,
     SeedData,
     SeedError,
     ensure_activity,
+    ensure_audit_figures,
     ensure_service_figures,
     seed,
 )
@@ -348,3 +356,83 @@ async def test_service_figures_are_added_once_and_content_is_ciphertext(
     assert [version.number for version in stored] == [1, 2]
     assert all("WORKERS" not in version.content_encrypted for version in stored)
     assert crypto.decrypt_text(stored[1].content_encrypted) == "WORKERS=4\n"
+
+
+async def test_the_plain_dataset_leaves_the_audit_figures_out(
+    seeded_database: AsyncEngine, seed_data: SeedData
+) -> None:
+    """Tests that read the audit log by action find only the entries they wrote."""
+    async with create_session_factory(seeded_database)() as db:
+        found = (
+            await db.execute(
+                select(func.count()).select_from(AuditEntry).where(AuditEntry.action == BULK_ACTION)
+            )
+        ).scalar_one()
+        total = (await db.execute(select(func.count()).select_from(AuditEntry))).scalar_one()
+    assert found == 0 and total == 4
+
+
+async def test_audit_figures_cover_every_kind_of_entry_and_are_added_once(
+    seeded_database: AsyncEngine, seed_data: SeedData
+) -> None:
+    """Every actor kind, scope level and result, a deleted project and a second page of entries."""
+    async with create_session_factory(seeded_database)() as db:
+        for _ in range(2):
+            await ensure_audit_figures(db)
+            await db.commit()
+        entries = list((await db.execute(select(AuditEntry))).scalars())
+        version_ids = set((await db.execute(select(EnvironmentVersion.id))).scalars())
+    figures = entries[4:]
+    assert len(figures) == 9 + BULK_COUNT
+    assert {entry.actor_type for entry in figures} == set(AuditActorType)
+    assert {entry.result for entry in figures} == set(AuditResult)
+    assert sum(1 for entry in figures if entry.action == BULK_ACTION) == BULK_COUNT
+    assert any(entry.project_id == DELETED_PROJECT_ID for entry in figures)
+    assert any(entry.project_id is None and entry.action == "user.create" for entry in figures)
+    assert any(entry.environment_id for entry in figures)
+    assert any(entry.service_id and not entry.environment_id for entry in figures)
+    assert any(entry.deployment_id and not entry.service_id for entry in figures)
+    assert any(entry.project_id and not entry.deployment_id for entry in figures)
+    versioned = [entry for entry in figures if entry.version_ids]
+    assert versioned and all(set(entry.version_ids) <= version_ids for entry in versioned)
+    assert all(entry.created_at.date() <= LAST_FIGURE_DAY for entry in figures)
+    assert all(entry.created_at.date() >= FIRST_FIGURE_DAY for entry in figures)
+    assert all(entry.ip_address for entry in figures if entry.actor_type is AuditActorType.API)
+
+
+def _audit_figure_count(data_path: Path, *, delete_them: bool = False) -> int:
+    """How many bulk audit figures the CLI database holds, optionally deleting them first."""
+
+    async def count() -> int:
+        engine = create_engine(data_path / "envmanager.db")
+        try:
+            async with create_session_factory(engine)() as db:
+                if delete_them:
+                    await db.execute(delete(AuditEntry).where(AuditEntry.action == BULK_ACTION))
+                    await db.commit()
+                return (
+                    await db.execute(
+                        select(func.count())
+                        .select_from(AuditEntry)
+                        .where(AuditEntry.action == BULK_ACTION)
+                    )
+                ).scalar_one()
+        finally:
+            await engine.dispose()
+
+    return asyncio.run(count())
+
+
+def test_dev_seed_adds_the_audit_figures_to_a_new_and_to_an_older_database(
+    cli_environment: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The command creates the figures with the dataset and completes a database without them."""
+    monkeypatch.setenv("ENVMANAGER_ENVIRONMENT", "development")
+    get_settings.cache_clear()
+    assert runner.invoke(app, ["dev", "seed"]).exit_code == 0
+    assert _audit_figure_count(cli_environment) == BULK_COUNT
+    assert _audit_figure_count(cli_environment, delete_them=True) == 0
+    assert runner.invoke(app, ["dev", "seed"]).exit_code == 1
+    assert _audit_figure_count(cli_environment) == BULK_COUNT
+    assert runner.invoke(app, ["dev", "seed"]).exit_code == 1
+    assert _audit_figure_count(cli_environment) == BULK_COUNT

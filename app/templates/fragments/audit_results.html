@@ -1,0 +1,20 @@
+{#- The results of the audit log under its filters: the table, or an empty state. While a filter
+    request is in flight the panel carries htmx-request, which swaps the content for a skeleton.
+    Context: page, filters, more_href. -#}
+{% from "macros/audit.html" import AUDIT_COLUMNS %}
+{% from "macros/feedback.html" import empty_state, skeleton %}
+{% from "macros/panels.html" import table %}
+<div id="audit-results" data-fragment="audit-results">
+<div class="group-[.htmx-request]:hidden">
+{%- if page.rows -%}
+{% call table("Audit log", AUDIT_COLUMNS, min_width_class="min-w-[900px]") %}
+{% include "fragments/audit_more.html" %}
+{% endcall %}
+{%- elif filters.active -%}
+{{ empty_state("No entries match", "Change the filters or the date range.", "shield") }}
+{%- else -%}
+{{ empty_state("No entries yet", "Actions in your scope will be listed here.", "shield") }}
+{%- endif -%}
+</div>
+{{ skeleton(6, "Loading audit log", "hidden group-[.htmx-request]:flex") }}
+</div>

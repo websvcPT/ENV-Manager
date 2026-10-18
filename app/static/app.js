@@ -158,9 +158,15 @@
       if (row) { row.remove(); }
     },
     'row-toggle': function (button) {
-      var row = document.getElementById(button.getAttribute('aria-controls'));
+      var id = button.getAttribute('aria-controls');
+      var row = document.getElementById(id);
       var open = button.getAttribute('aria-expanded') === 'true';
-      button.setAttribute('aria-expanded', String(!open));
+      /* A row can carry more than one toggle (one per breakpoint); they all follow the row. */
+      document.querySelectorAll('[data-js=row-toggle]').forEach(function (other) {
+        if (other.getAttribute('aria-controls') === id) {
+          other.setAttribute('aria-expanded', String(!open));
+        }
+      });
       if (row) { row.classList.toggle('hidden', open); }
     },
     'tree-toggle': function (button) {

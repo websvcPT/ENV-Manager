@@ -13,13 +13,14 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import null, select
+from sqlalchemy import ColumnElement, and_, null, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
     AccessGrant,
     ApiToken,
     ApiTokenRestriction,
+    AuditEntry,
     Deployment,
     Environment,
     GrantLevel,
@@ -227,6 +228,42 @@ class Visibility:
             if item_id is not None:
                 return self.can_see(level, item_id)
         return False
+
+    def audit_entry_clause(self) -> ColumnElement[bool]:
+        """The SQL form of ``includes_audit_entry`` for queries over ``AuditEntry``.
+
+        The same rule: the most specific scope id of the entry decides, and an entry with no
+        scope id or one whose item no longer exists is visible only without restriction.
+        """
+        if self.unrestricted:
+            return true()
+        no_environment = AuditEntry.environment_id.is_(None)
+        no_service = AuditEntry.service_id.is_(None)
+        no_deployment = AuditEntry.deployment_id.is_(None)
+        return or_(
+            and_(
+                AuditEntry.environment_id.is_not(None),
+                AuditEntry.environment_id.in_(self.full[ItemLevel.ENVIRONMENT]),
+            ),
+            and_(
+                no_environment,
+                AuditEntry.service_id.is_not(None),
+                AuditEntry.service_id.in_(self.full[ItemLevel.SERVICE]),
+            ),
+            and_(
+                no_environment,
+                no_service,
+                AuditEntry.deployment_id.is_not(None),
+                AuditEntry.deployment_id.in_(self.full[ItemLevel.DEPLOYMENT]),
+            ),
+            and_(
+                no_environment,
+                no_service,
+                no_deployment,
+                AuditEntry.project_id.is_not(None),
+                AuditEntry.project_id.in_(self.full[ItemLevel.PROJECT]),
+            ),
+        )
 
 
 def _item_query(level: ItemLevel) -> tuple[Any, Any]:

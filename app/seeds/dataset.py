@@ -48,6 +48,10 @@ Access:
     totp_user              admin without grants, second factor on (DEV_TOTP_SECRET)
     totp_user_alt          the same, a second account so parallel browser runs never share a code
 
+The audit log figures (``app/seeds/audit_figures.py``) are not part of ``seed``: tests that read the
+audit log by action would find entries they did not write. The development seed command and the
+audit log tests add them with ``ensure_audit_figures``.
+
 The demo project (``app/seeds/demo.py``) is added only when a demo root is passed to ``seed``;
 it brings grants for project_admin (the project) and env_scoped_admin (its .env.db file) and
 leaves every other user's view untouched.

@@ -327,6 +327,30 @@ test.describe('deploying', () => {
     await expect(page.locator('#hist [data-fragment="history-row"]')).toHaveCount(1);
   });
 
+  test('the result links the audit entry, which the log shows expanded with its version', async ({
+    page,
+    request,
+    scratch,
+    host,
+  }) => {
+    const { service } = await world(request, scratch.id, host);
+    await createEnvironment(request, service, '.env.new', 'NEW=1\n');
+    await openDialog(page, service);
+    await submit(page).click();
+    await expect(banner(page)).toHaveAttribute('data-tone', 'ok');
+    await dialog(page)
+      .getByRole('link', { name: /^View audit entry #\d+$/ })
+      .click();
+    await expect(page).toHaveURL(/\/audit\?entry=\d+$/);
+    const id = new URL(page.url()).searchParams.get('entry');
+    await expect(page.locator(`#audit-entry-${id}`)).toContainText('service.deploy');
+    await expect(page.locator(`#audit-entry-${id}`)).toContainText('web');
+    const details = page.locator(`#audit-detail-${id}`);
+    await expect(details).toBeVisible();
+    await expect(details).toContainText('Version: .env.new v1');
+    await expect(details).toContainText(`Entry #${id}`);
+  });
+
   test('a drifted file halts the deploy, links the drift view and is left as it is', async ({
     page,
     request,

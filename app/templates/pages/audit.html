@@ -1,0 +1,15 @@
+{% extends "layouts/app.html" %}
+{% from "macros/audit.html" import audit_export %}
+{% from "macros/feedback.html" import note %}
+{% from "macros/panels.html" import page_header %}
+{% set active_nav = "audit" %}
+{% set breadcrumbs = [("Audit log", none)] %}
+{% block title %}Audit log{% endblock %}
+{% block content %}
+{{ page_header("Audit log", "Entries for the projects, deployments and environments granted to you." if scoped else "All entries.", actions=audit_export(export_href)) }}
+{% if scoped %}{{ note("Showing entries within your granted scope only.") }}{% endif %}
+<section id="audit-table" data-fragment="audit-table" aria-label="Audit entries" class="group rounded-panel border border-line bg-surface shadow-panel overflow-hidden">
+<div class="p-4 md:px-5">{% include "fragments/audit_filters.html" %}</div>
+{% include "fragments/audit_results.html" %}
+</section>
+{% endblock %}

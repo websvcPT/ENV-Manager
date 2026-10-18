@@ -47,8 +47,8 @@
 {%- endmacro %}
 
 {#- In-flight placeholder rows for a table or list. -#}
-{% macro skeleton(rows=3) -%}
-<div aria-busy="true" data-fragment="skeleton" class="flex flex-col gap-0"><p class="sr-only" role="status">Loading</p>{% for _ in range(rows) %}<div class="flex items-center gap-4 border-t border-line px-5 py-4 motion-safe:animate-pulse"><span class="h-4 w-40 rounded bg-mute-bg"></span><span class="h-4 flex-1 rounded bg-mute-bg"></span><span class="h-6 w-24 rounded-full bg-mute-bg"></span><span class="hidden h-4 w-20 rounded bg-mute-bg md:block"></span></div>{% endfor %}</div>
+{% macro skeleton(rows=3, label="Loading", extra_class="flex") -%}
+<div aria-busy="true" data-fragment="skeleton" class="{{ extra_class }} flex-col gap-0"><p class="sr-only" role="status">{{ label }}</p>{% for _ in range(rows) %}<div class="flex items-center gap-4 border-t border-line px-5 py-4 motion-safe:animate-pulse"><span class="h-4 w-40 rounded bg-mute-bg"></span><span class="h-4 flex-1 rounded bg-mute-bg"></span><span class="h-6 w-24 rounded-full bg-mute-bg"></span><span class="hidden h-4 w-20 rounded bg-mute-bg md:block"></span></div>{% endfor %}</div>
 {%- endmacro %}
 
 {#- Command text, output and examples; focusable so keyboards can scroll it. -#}

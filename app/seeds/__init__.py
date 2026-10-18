@@ -1,5 +1,14 @@
 """Reusable seed data for development, tests and browser specs."""
 
+from app.seeds.audit_figures import (
+    BULK_ACTION,
+    BULK_COUNT,
+    DELETED_PROJECT_ID,
+    DELETED_PROJECT_NAME,
+    FIRST_FIGURE_DAY,
+    LAST_FIGURE_DAY,
+    ensure_audit_figures,
+)
 from app.seeds.dataset import (
     DEV_ALLOWED_ROOT,
     DEV_PASSWORD,
@@ -32,6 +41,10 @@ from app.seeds.demo import (
 )
 
 __all__ = [
+    "BULK_ACTION",
+    "BULK_COUNT",
+    "DELETED_PROJECT_ID",
+    "DELETED_PROJECT_NAME",
     "DEMO_DEPLOYMENT_NAME",
     "DEMO_FILES",
     "DEMO_HOOK_COMMAND",
@@ -43,6 +56,8 @@ __all__ = [
     "DEV_TOTP_SECRET",
     "EDITOR_ENVIRONMENT_NAME",
     "EDITOR_SECRET_VALUES",
+    "FIRST_FIGURE_DAY",
+    "LAST_FIGURE_DAY",
     "TOTP_ALT_USER_NAME",
     "TOTP_USER_NAME",
     "DemoFile",
@@ -51,6 +66,7 @@ __all__ = [
     "SeedError",
     "SeedServiceFigures",
     "ensure_activity",
+    "ensure_audit_figures",
     "ensure_demo_project",
     "ensure_deployment_history",
     "ensure_dev_host_paths",

@@ -1,0 +1,5 @@
+{#- The answer to changing a filter: the results, and the export link of the new filters as a
+    partial swap. Context: page, filters, more_href, export_href. -#}
+{% from "macros/audit.html" import audit_export %}
+{% include "fragments/audit_results.html" %}
+<template hx type="partial" hx-target="#audit-export" hx-swap="outerHTML">{{ audit_export(export_href) }}</template>

@@ -1,0 +1,45 @@
+{#- Audit log pieces: one entry as a table row with its expandable details row, the load more
+    row and the export link. Details are escaped text inside hx-ignore; they never hold a
+    secret value, and a key that names one is already replaced by the service. -#}
+{% from "macros/badges.html" import badge %}
+{% from "macros/buttons.html" import button %}
+{% from "macros/feedback.html" import code_block %}
+{% from "macros/icons.html" import icon %}
+
+{% set RESULT_BADGES = {"success": "success", "failure": "failed", "blocked": "blocked", "halted": "halted"} %}
+{% set CELL = "border-t border-line px-4 py-3.5" %}
+{% set details_label %}<span class="sr-only">Details</span>{% endset %}
+{% set AUDIT_COLUMNS = ["Time", "Actor", "Source IP", "Action", "Object", "Result", details_label] %}
+
+{#- `row` is an AuditRow. `expanded` opens the details row on first render. -#}
+{% macro audit_row(row, expanded=false) -%}
+<tr data-fragment="audit-row" id="audit-entry-{{ row.id }}"><td class="{{ CELL }} whitespace-nowrap"><div class="flex items-center gap-3"><button type="button" data-js="row-toggle" aria-controls="audit-detail-{{ row.id }}" aria-expanded="{{ 'true' if expanded else 'false' }}" aria-label="Show details" class="inline-flex size-11 shrink-0 items-center justify-center rounded-full border border-line-strong text-ink hover:bg-surface2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus md:hidden">{{ icon("chevron-down", "size-3.5", "2.4") }}</button><time datetime="{{ row.created_at.strftime('%Y-%m-%dT%H:%M:%SZ') }}" title="UTC">{{ row.created_at.strftime("%Y-%m-%d %H:%M") }}</time></div></td><td class="{{ CELL }}"><span class="font-semibold">{{ row.actor }}</span> <span class="ml-1 rounded-md bg-mute-bg px-1.5 py-px text-[11px] font-semibold text-mute-fg">{{ row.actor_kind }}</span></td><td class="{{ CELL }} font-mono text-[13px] text-ink2">{% if row.ip_address %}{{ row.ip_address }}{% else %}<span class="font-sans text-sm text-ink3">None</span>{% endif %}</td><td class="{{ CELL }}"><span class="font-mono text-[13px]">{{ row.action }}</span></td><td class="{{ CELL }}">{% if row.object_name %}{{ row.object_name }}{% else %}<span class="text-ink3">None</span>{% endif %}</td><td class="{{ CELL }}">{{ badge(RESULT_BADGES[row.result.value]) }}</td><td class="{{ CELL }}"><button type="button" data-js="row-toggle" aria-controls="audit-detail-{{ row.id }}" aria-expanded="{{ 'true' if expanded else 'false' }}" aria-label="Show details" class="hidden size-8 shrink-0 items-center justify-center rounded-ctl border border-line-strong text-ink hover:bg-surface2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus md:inline-flex">{{ icon("chevron-down", "size-3.5", "2.4") }}</button></td></tr>
+<tr id="audit-detail-{{ row.id }}"{% if not expanded %} class="hidden"{% endif %}><td colspan="7" class="border-t border-line bg-surface2 px-5 py-4 text-[13px]"><div hx-ignore class="sticky left-5 max-w-[calc(100vw_-_4.5rem)] md:static md:max-w-none">
+<p class="mb-1 text-xs font-bold uppercase tracking-wide text-ink3">Details</p>
+{%- for line in row.details %}
+{%- if line.code %}
+<p class="mt-1.5 text-ink2">{{ line.key }}:</p>
+<div class="mt-1">{{ code_block(line.text) }}</div>
+{%- else %}
+<p class="whitespace-pre-line"><span class="text-ink2">{{ line.key }}:</span> {{ line.text }}</p>
+{%- endif %}
+{%- endfor %}
+{%- if row.versions %}
+<p><span class="text-ink2">{{ "Versions" if row.versions | length > 1 else "Version" }}:</span> {{ row.versions | join(", ") }}</p>
+{%- endif %}
+{%- if not row.details and not row.versions %}
+<p class="text-ink2">No details recorded.</p>
+{%- endif %}
+<p class="mt-1 text-ink2">Entry #{{ row.id }}{% if row.short_trace %} · trace id {{ row.short_trace }}{% endif %}</p>
+</div></td></tr>
+{%- endmacro %}
+
+{#- The last row of a page that has more: loading it appends the next rows in its place. -#}
+{% macro audit_more(href) -%}
+<tr data-fragment="audit-more"><td colspan="7" class="{{ CELL }} text-center">{{ button("Load more", hx_get=href, hx_target="closest tr", hx_swap="outerHTML", hx_sync="this:drop", extra_class="h-11 md:h-10") }}</td></tr>
+{%- endmacro %}
+
+{#- The export link of the current filters. -#}
+{% macro audit_export(href) -%}
+<a id="audit-export" href="{{ href }}" download class="inline-flex h-11 items-center justify-center gap-2 rounded-btn border border-line-strong bg-surface px-4 text-sm font-semibold text-ink hover:bg-surface2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus md:h-10">{{ icon("arrow-down", "size-4", "2.2") }}Export CSV</a>
+{%- endmacro %}

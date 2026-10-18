@@ -32,6 +32,7 @@ from app.seeds import (
     TOTP_USER_NAME,
     SeedError,
     ensure_activity,
+    ensure_audit_figures,
     ensure_demo_project,
     ensure_deployment_history,
     ensure_dev_host_paths,
@@ -286,6 +287,9 @@ def seed_dataset() -> None:
 
     An already seeded database is left alone except for users, deploy runs and tokens that
     were added to the dataset later, and it always allows the development deployments directory.
+    It also adds the audit history figures that the audit log screen needs (every kind of actor
+    and scope, and a second page of entries), which the plain dataset leaves out so tests that
+    read the audit log find only what they wrote.
     When ENVMANAGER_DEMO_ROOT is set the demo project rooted below it is created or completed too,
     on a new and on an already seeded database.
     """
@@ -296,6 +300,7 @@ def seed_dataset() -> None:
         crypto = build_crypto_service(settings.key, settings.key_file)
         try:
             await seed_data(db, crypto, demo_root=settings.demo_root)
+            await ensure_audit_figures(db)
             await ensure_dev_host_paths(db)
             await db.commit()
         except SeedError:
@@ -305,6 +310,7 @@ def seed_dataset() -> None:
             await ensure_deployment_history(db)
             await ensure_service_figures(db, crypto)
             await ensure_editor_figures(db, crypto)
+            await ensure_audit_figures(db)
             if settings.demo_root is not None:
                 await ensure_demo_project(db, crypto, settings.demo_root)
             await ensure_dev_host_paths(db)

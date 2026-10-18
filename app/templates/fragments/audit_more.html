@@ -1,0 +1,9 @@
+{#- Table rows of one page of the audit log, then the load more row when older entries remain.
+    Context: page (an AuditPage) and more_href. -#}
+{% from "macros/audit.html" import audit_more, audit_row %}
+{%- for row in page.rows %}
+{{ audit_row(row) }}
+{%- endfor %}
+{%- if more_href %}
+{{ audit_more(more_href) }}
+{%- endif %}

@@ -1,0 +1,24 @@
+{#- One audit entry shown expanded, or the not-found state. The not-found state is the same for
+    an entry that does not exist and one outside the caller's scope. Context: row (an AuditRow or
+    None). -#}
+{% extends "layouts/app.html" %}
+{% from "macros/audit.html" import AUDIT_COLUMNS, audit_row %}
+{% from "macros/buttons.html" import button %}
+{% from "macros/feedback.html" import empty_state %}
+{% from "macros/panels.html" import page_header, table %}
+{% set active_nav = "audit" %}
+{% set breadcrumbs = [("Audit log", "/audit"), ("Entry" if row else "Not found", none)] %}
+{% block title %}Audit log{% endblock %}
+{% block content %}
+{% set back_action %}{{ button("Show all entries", href="/audit") }}{% endset %}
+{{ page_header("Audit log", ("Entry #" ~ row.id ~ ".") if row else "Entry not found.", actions=back_action) }}
+<section id="audit-entry" data-fragment="audit-entry" aria-label="Audit entry" class="rounded-panel border border-line bg-surface shadow-panel overflow-hidden">
+{%- if row -%}
+{% call table("Audit entry", AUDIT_COLUMNS, min_width_class="min-w-[900px]") %}
+{{ audit_row(row, expanded=true) }}
+{% endcall %}
+{%- else -%}
+{{ empty_state("Entry not found", "There is no audit entry with this number that you can open.", "search") }}
+{%- endif -%}
+</section>
+{% endblock %}
