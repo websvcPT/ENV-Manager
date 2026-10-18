@@ -1,8 +1,9 @@
 """Failure counters with a lockout, persisted so a restart does not clear them.
 
-Sign-in counts failures per user name and per client address; the API counts failed bearer token
-attempts per client address under a kind of its own, so the two never lock each other out.
-Counting is one atomic statement, so concurrent failures from one subject are never lost.
+Sign-in and the account screens (password change, removing the second factor) count failures per
+user name and per client address; the API counts failed bearer token attempts per client address
+under a kind of its own, so the two never lock each other out. Counting is one atomic statement,
+so concurrent failures from one subject are never lost.
 """
 
 from datetime import datetime, timedelta
@@ -11,8 +12,9 @@ from sqlalchemy import and_, case, literal, null, or_, select
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import LoginCounter, LoginCounterKind
+from app.models import AuditActorType, AuditResult, LoginCounter, LoginCounterKind, User
 from app.models.types import UtcDateTime
+from app.services.audit import record_audit
 from app.services.auth_policy import AuthPolicy
 
 
@@ -80,3 +82,60 @@ async def register_failure(
         counter.locked_until = now + policy.lockout_duration
         return True
     return False
+
+
+async def register_attempt_failure(
+    db: AsyncSession,
+    policy: AuthPolicy,
+    *,
+    subject: str,
+    ip_address: str | None,
+    now: datetime,
+) -> list[str]:
+    """Count one failed credential check against the name and the client address.
+
+    Returns which of the two ("user", "ip") reached their limit and are now locked. Sign in and
+    the account screens share these counters, so a guess costs the same wherever it is made.
+    """
+    locked: list[str] = []
+    if subject and await register_failure(
+        db, LoginCounterKind.USER, subject, policy.user_max_failures, policy, now
+    ):
+        locked.append("user")
+    if ip_address and await register_failure(
+        db, LoginCounterKind.IP, ip_address, policy.ip_max_failures, policy, now
+    ):
+        locked.append("ip")
+    return locked
+
+
+async def record_lockouts(
+    db: AsyncSession,
+    policy: AuthPolicy,
+    *,
+    user: User | None,
+    ip_address: str | None,
+    locked: list[str],
+) -> None:
+    """Audit each lockout that a failed attempt started. The caller commits."""
+    for scope in locked:
+        await record_audit(
+            db,
+            action="login.lockout",
+            result=AuditResult.BLOCKED,
+            actor_type=AuditActorType.USER,
+            actor_user=user,
+            ip_address=ip_address,
+            details={"scope": scope, "minutes": policy.lockout_duration.total_seconds() // 60},
+        )
+
+
+async def current_lock(
+    db: AsyncSession, *, subject: str, ip_address: str | None, now: datetime
+) -> timedelta | None:
+    """How long the name or the client address stays locked, or None when neither is."""
+    counters = [
+        await get_counter(db, LoginCounterKind.USER, subject),
+        await get_counter(db, LoginCounterKind.IP, ip_address) if ip_address else None,
+    ]
+    return remaining_lock(counters, now)

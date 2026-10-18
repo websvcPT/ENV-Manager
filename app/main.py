@@ -25,6 +25,7 @@ from app.services.deploy_recovery import recover_interrupted_runs
 from app.services.docker_cli import DockerCli
 from app.services.key_check import ensure_key_check
 from app.web.access_grid import router as access_grid_router
+from app.web.account import router as account_router
 from app.web.audit import router as audit_router
 from app.web.auth import router as auth_router
 from app.web.deploy_dialog import router as deploy_dialog_router
@@ -124,6 +125,7 @@ def create_app() -> FastAPI:
     application.include_router(users_router)
     application.include_router(access_grid_router)
     application.include_router(tokens_router)
+    application.include_router(account_router)
     application.include_router(api_router)
 
     @application.get("/healthz", include_in_schema=False)

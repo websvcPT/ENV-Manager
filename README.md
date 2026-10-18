@@ -83,6 +83,23 @@ the managed version changed since the page was opened). Overwriting the target i
 of that one file after a confirmation: the file it replaces is copied next to it first (mode 0600),
 whatever the drift policy says, and the post-deploy command of the service runs as for any deploy.
 
+## Account
+
+Every signed-in user, in any group, has an Account page (`/account`, from the account menu) with
+four panels. Change password asks for the current password, a new one of at least the minimum
+length (confirmed by typing it twice) that differs from the current one; the user's other
+sessions and any unfinished second factor sign in end with the change, the session that made it
+stays, and the audit entry holds counts only. Two-factor authentication is optional: setup shows a
+QR code drawn by the server (an SVG that is never cached or logged) and the key as text, and
+turns on only when a valid code from the authenticator is entered. The secret reaches the
+database, encrypted, only then; until then it lives in a short-lived HttpOnly cookie. Removing it
+needs the current password and a fresh code (the code that turned it on cannot be reused). Wrong
+passwords and wrong codes on these screens count on the same lockout counters as sign in.
+Active sessions lists the user's live sessions (device from the browser's user agent, address,
+when signed in and last seen, this one marked) with a confirmed revoke on each other session and
+Sign out other sessions. The theme preference (light, dark or match the system) is kept in the
+browser and shared with the theme buttons.
+
 ## API tokens
 
 Admins and superadmins create tokens for themselves on the API tokens page (viewers get 403 and

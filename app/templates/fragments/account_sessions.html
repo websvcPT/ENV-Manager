@@ -1,0 +1,19 @@
+{#- The active sessions panel: the user's live sessions, the current one first and marked, with a
+    confirmed Revoke on each other one and Sign out other sessions in the header. Refreshes when
+    a session ends. Context: sessions (SessionRow list), others (how many are not the current
+    one). -#}
+{% from "macros/account.html" import moment, revoke_session_button %}
+{% from "macros/buttons.html" import button %}
+{% from "macros/panels.html" import panel, table %}
+{% set header_actions %}{% if others %}{{ button("Sign out other sessions", extra_class="h-11 md:h-10", data_js="dialog-open", data_target="session-revoke", aria_haspopup="dialog", hx_get="/account/sessions/revoke-others", hx_target="#session-revoke", hx_swap="innerHTML") }}{% endif %}{% endset %}
+{% call panel("Active sessions", "account-sessions-title", fragment="account-sessions", id="account-sessions", actions=header_actions, hx_get="/account/sessions", hx_trigger="sessions-changed from:body", hx_swap="outerHTML") %}
+{% call table("Active sessions", ["Device", "IP", "Last active", "Actions"], right_columns=[3], min_width_class="min-w-[560px]") %}
+{%- for row in sessions %}
+<tr data-fragment="session-row" id="session-{{ row.id }}"{% if row.current %} data-current="true"{% endif %}>
+<td class="border-t border-line px-4 py-3.5">{{ row.device }}{% if row.current %} <span class="ml-1 text-xs font-semibold text-ok-fg">This session</span>{% endif %}<span class="block text-xs text-ink2">Signed in {{ moment(row.created_at) }}</span></td>
+<td class="border-t border-line px-4 py-3.5"><span class="font-mono text-[13px]">{{ row.ip_address or "Unknown" }}</span></td>
+<td class="border-t border-line px-4 py-3.5 whitespace-nowrap">{{ moment(row.last_seen_at) }}</td>
+<td class="border-t border-line px-4 py-3.5 whitespace-nowrap text-right">{% if not row.current %}{{ revoke_session_button(row.id, row.device) }}{% endif %}</td></tr>
+{%- endfor %}
+{% endcall %}
+{% endcall %}

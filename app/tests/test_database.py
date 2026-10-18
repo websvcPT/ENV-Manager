@@ -276,3 +276,31 @@ async def test_the_upgrade_refuses_users_that_share_an_email_and_changes_nothing
         assert any("pre-migration" in backup.name for backup in backup_dir.iterdir())
     finally:
         await engine.dispose()
+
+
+async def test_the_second_factor_time_column_is_added_and_removed_in_place(
+    database_path: Path, backup_dir: Path
+) -> None:
+    """Migration 0011 adds a nullable time; going back drops it and keeps the email index."""
+    engine = create_engine(database_path)
+    try:
+        await migrate_database(engine, database_path, backup_dir)
+        async with engine.begin() as connection:
+            ann = {"name": "ann", "email": "ann@example.test"}
+            await connection.execute(text(USER_INSERT), ann)
+            columns = (await connection.execute(text("PRAGMA table_info(users)"))).all()
+            assert [row[1] for row in columns if row[1] == "totp_enabled_at"] == ["totp_enabled_at"]
+            assert next(row[3] for row in columns if row[1] == "totp_enabled_at") == 0
+            stored = await connection.execute(text("SELECT totp_enabled_at FROM users"))
+            assert stored.scalar_one() is None
+            await connection.run_sync(lambda sync: command.downgrade(build_config(sync), "0010"))
+        async with engine.connect() as connection:
+            info = await connection.execute(text("PRAGMA table_info(users)"))
+            names = [row[1] for row in info.all()]
+            index = await connection.execute(
+                text("SELECT count(*) FROM sqlite_master WHERE name = 'uq_users_email_lower'")
+            )
+            kept = (await connection.execute(text("SELECT count(*) FROM users"))).scalar_one()
+        assert "totp_enabled_at" not in names and index.scalar_one() == 1 and kept == 1
+    finally:
+        await engine.dispose()

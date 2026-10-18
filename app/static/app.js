@@ -1,8 +1,8 @@
 /* ENV Manager page behaviour. Vanilla JS in an external file (strict CSP, no inline scripts).
    Handlers are delegated from the document so content swapped in by htmx works without rebinding.
-   Behaviours: theme toggle, dialogs (one that held a one-time secret is emptied when it
-   closes), sidebar collapse, reveal hide and timer, removing a new
-   variable row, row toggle, tree toggle, copy, dismiss, history back, picking a path into a
+   Behaviours: theme toggle and preference (light, dark or follow the system), dialogs (one that
+   held a one-time secret is emptied when it closes), sidebar collapse, reveal hide and timer,
+   removing a new variable row, row toggle, tree toggle, copy, dismiss, history back, picking a path into a
    field, limiting the version comparison to two versions, closing dialogs when the server asks,
    the deploy dialog (loading content, chosen environments, closing when the load fails), and a
    toast when an htmx request fails (an access grid checkbox goes back to the stored state). */
@@ -23,15 +23,56 @@
     try { localStorage.setItem(key, value); } catch (error) { /* storage unavailable */ }
   }
 
+  /* The theme preference is light, dark or system (follow the operating system), kept in the
+     browser; nothing is stored on the server. Light is the preference until one is chosen. */
+  var THEME_CHOICES = ['light', 'dark', 'system'];
+  var colorScheme = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+
+  function themePreference() {
+    var stored = readStored(THEME_KEY);
+    return THEME_CHOICES.indexOf(stored) >= 0 ? stored : 'light';
+  }
+
   /* Theme is applied while the head script runs so the page never paints in the wrong theme.
      A ?theme= parameter overrides the stored choice for review. */
-  var themeParam = new URLSearchParams(location.search).get('theme');
-  root.classList.toggle('dark', (themeParam || readStored(THEME_KEY) || 'light') === 'dark');
+  function applyTheme() {
+    var param = new URLSearchParams(location.search).get('theme');
+    var choice = THEME_CHOICES.indexOf(param) >= 0 ? param : themePreference();
+    var dark = choice === 'dark' || (choice === 'system' && !!colorScheme && colorScheme.matches);
+    root.classList.toggle('dark', dark);
+  }
+
+  applyTheme();
 
   function syncThemeLabels() {
     var dark = root.classList.contains('dark');
     document.querySelectorAll('[data-js=theme-toggle]').forEach(function (button) {
       button.setAttribute('aria-label', dark ? 'Switch to light theme' : 'Switch to dark theme');
+    });
+  }
+
+  /* The account page's options show the stored preference, whichever way it was changed. */
+  function syncThemeChoices() {
+    var preference = themePreference();
+    document.querySelectorAll('[data-js=theme-choice]').forEach(function (option) {
+      option.checked = option.value === preference;
+    });
+  }
+
+  document.addEventListener('change', function (event) {
+    var option = event.target;
+    if (!(option instanceof HTMLInputElement) || option.getAttribute('data-js') !== 'theme-choice') {
+      return;
+    }
+    writeStored(THEME_KEY, option.value);
+    applyTheme();
+    syncThemeLabels();
+  });
+
+  if (colorScheme) {
+    colorScheme.addEventListener('change', function () {
+      applyTheme();
+      syncThemeLabels();
     });
   }
 
@@ -152,6 +193,7 @@
       var dark = root.classList.toggle('dark');
       writeStored(THEME_KEY, dark ? 'dark' : 'light');
       syncThemeLabels();
+      syncThemeChoices();
     },
     'dialog-open': function (control) {
       var dialog = document.getElementById(control.getAttribute('data-target'));
@@ -308,11 +350,13 @@
   });
   document.addEventListener('htmx:after:swap', function () {
     syncThemeLabels();
+    syncThemeChoices();
     armReveals();
   });
 
   document.addEventListener('DOMContentLoaded', function () {
     syncThemeLabels();
+    syncThemeChoices();
     setNavCollapsed(readStored(NAV_KEY) === 'true');
   });
 })();

@@ -1,0 +1,22 @@
+{#- The signed-in user's own account: change password, two-factor authentication, active
+    sessions and the theme preference. Open to every group. Context: password (the password
+    panel state), totp (the two-factor panel state), sessions (the sessions panel state); see
+    the fragments. -#}
+{% extends "layouts/app.html" %}
+{% from "macros/badges.html" import role_badge %}
+{% from "macros/dialogs.html" import loaded_dialog %}
+{% from "macros/panels.html" import page_header %}
+{% set breadcrumbs = [("Account", none)] %}
+{% block title %}Account{% endblock %}
+{% block content %}
+{% set header_badges %}{{ role_badge(current_user.group) }}{% endset %}
+{{ page_header("Account", current_user.name ~ " · " ~ current_user.email, badges=header_badges) }}
+<div class="grid max-w-5xl items-start gap-5 lg:grid-cols-2">
+{% include "fragments/account_password.html" %}
+{% include "fragments/account_totp.html" %}
+{% include "fragments/account_sessions.html" %}
+{% include "fragments/account_theme.html" %}
+</div>
+{{ loaded_dialog("totp-remove", "Remove two-factor", width="560", clear_on_close=true) }}
+{{ loaded_dialog("session-revoke", "Sign out session", width="560") }}
+{% endblock %}

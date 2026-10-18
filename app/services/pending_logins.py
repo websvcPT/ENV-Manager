@@ -54,3 +54,13 @@ async def consume_pending_login(
     if row is None or row.expires_at <= moment:
         return None
     return int(row.user_id)
+
+
+async def discard_user_pending_logins(db: AsyncSession, user_id: int) -> int:
+    """Remove every pending login of a user.
+
+    A password step passed before a password change can then not be finished afterwards. The
+    caller commits.
+    """
+    result = await db.execute(delete(PendingLogin).where(PendingLogin.user_id == user_id))
+    return int(result.rowcount or 0)  # type: ignore[attr-defined]

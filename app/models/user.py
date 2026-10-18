@@ -60,6 +60,7 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     totp_secret: Mapped[str | None] = mapped_column(Text, default=None)
     totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    totp_enabled_at: Mapped[datetime | None] = mapped_column(UtcDateTime, default=None)
     totp_last_step: Mapped[int | None] = mapped_column(Integer, default=None)
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utc_now, onupdate=utc_now)

@@ -1,0 +1,11 @@
+{#- The theme preference panel. The choice lives in the browser: `app.js` stores it, applies it
+    and checks the stored option when the page loads, so the server holds nothing. -#}
+{% from "macros/forms.html" import radio_option %}
+{% from "macros/panels.html" import panel %}
+{% call panel("Theme", "account-theme-title", fragment="account-theme", id="account-theme") %}
+<div class="px-4 pb-5 md:px-5"><fieldset class="min-w-0"><legend class="mb-2 text-[13px] font-semibold">Preference</legend><div class="flex flex-col gap-2">
+{{ radio_option("theme", "light", "Light", checked=true, data_js="theme-choice") }}
+{{ radio_option("theme", "dark", "Dark", data_js="theme-choice") }}
+{{ radio_option("theme", "system", "Match system", data_js="theme-choice") }}
+</div></fieldset></div>
+{% endcall %}

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum
 
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.crypto import CryptoService
@@ -20,7 +20,12 @@ from app.models.types import utc_now
 from app.services import totp
 from app.services.audit import record_audit
 from app.services.auth_policy import AuthPolicy
-from app.services.lockout import get_counter, register_failure, remaining_lock
+from app.services.lockout import (
+    get_counter,
+    record_lockouts,
+    register_attempt_failure,
+    remaining_lock,
+)
 from app.services.pending_logins import consume_pending_login, create_pending_login
 from app.services.sessions import create_session
 
@@ -176,7 +181,7 @@ async def complete_totp_login(
     reason = "invalid_totp_code"
     step = totp.matching_step(user, code, crypto, now=moment)
     if step is not None:
-        if await _claim_step(db, user, step):
+        if await totp.claim_step(db, user, step):
             return await _succeed(db, policy, user, ip_address, user_agent, subject, moment)
         reason = "reused_totp_code"
 
@@ -186,16 +191,6 @@ async def complete_totp_login(
         await db.commit()
         return LoginResult(LoginStatus.INVALID, pending_token=pending)
     return failed
-
-
-async def _claim_step(db: AsyncSession, user: User, step: int) -> bool:
-    """Record a time step as used unless it, or a later one, already was. Atomic in one UPDATE."""
-    claimed = await db.execute(
-        update(User)
-        .where(User.id == user.id, or_(User.totp_last_step.is_(None), User.totp_last_step < step))
-        .values(totp_last_step=step)
-    )
-    return claimed.rowcount == 1  # type: ignore[attr-defined, no-any-return]
 
 
 async def _fail(
@@ -208,15 +203,9 @@ async def _fail(
     now: datetime,
 ) -> LoginResult:
     """Count and audit a failed attempt, locking the name or address at the limit."""
-    locked_subjects: list[str] = []
-    if subject and await register_failure(
-        db, LoginCounterKind.USER, subject, policy.user_max_failures, policy, now
-    ):
-        locked_subjects.append("user")
-    if ip_address and await register_failure(
-        db, LoginCounterKind.IP, ip_address, policy.ip_max_failures, policy, now
-    ):
-        locked_subjects.append("ip")
+    locked_subjects = await register_attempt_failure(
+        db, policy, subject=subject, ip_address=ip_address, now=now
+    )
     await record_audit(
         db,
         action="login.failure",
@@ -226,16 +215,7 @@ async def _fail(
         ip_address=ip_address,
         details={"reason": reason},
     )
-    for kind in locked_subjects:
-        await record_audit(
-            db,
-            action="login.lockout",
-            result=AuditResult.BLOCKED,
-            actor_type=AuditActorType.USER,
-            actor_user=user,
-            ip_address=ip_address,
-            details={"scope": kind, "minutes": policy.lockout_duration.total_seconds() // 60},
-        )
+    await record_lockouts(db, policy, user=user, ip_address=ip_address, locked=locked_subjects)
     await db.commit()
     if locked_subjects:
         return LoginResult(LoginStatus.LOCKED, retry_after=policy.lockout_duration)

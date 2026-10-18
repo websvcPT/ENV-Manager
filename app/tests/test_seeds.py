@@ -204,7 +204,7 @@ async def test_seeded_second_factor_user_accepts_the_dev_secret(
         user = (
             await db.execute(select(User).where(User.name == seed_data.users.totp_user.name))
         ).scalar_one()
-        assert user.totp_enabled
+        assert user.totp_enabled and user.totp_enabled_at is not None
         assert totp.verify_code(user, pyotp.TOTP(DEV_TOTP_SECRET).now(), crypto)
         assert not totp.verify_code(user, "000000", crypto)
 

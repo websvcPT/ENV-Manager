@@ -101,3 +101,62 @@ def test_enable_marks_the_confirmation_code_as_used(crypto: CryptoService) -> No
     assert user.totp_last_step == pyotp.TOTP(secret).timecode(utc_now())
     totp.disable(user)
     assert user.totp_last_step is None
+
+
+def test_enable_records_when_it_was_turned_on_and_disable_clears_it(
+    crypto: CryptoService,
+) -> None:
+    """The date the account page shows is set by enabling and cleared by removing."""
+    user = make_user()
+    user.id = 1
+    secret = totp.generate_secret()
+    totp.store_secret(user, secret, crypto)
+    assert user.totp_enabled_at is None
+    moment = utc_now()
+    assert totp.enable(user, pyotp.TOTP(secret).now(), crypto, now=moment) is True
+    assert user.totp_enabled_at == moment
+    totp.disable(user)
+    assert user.totp_enabled_at is None
+
+
+def test_activate_stores_the_confirmed_secret_as_ciphertext_and_marks_the_step_used(
+    crypto: CryptoService,
+) -> None:
+    """A secret that no code confirmed yet is not on the user; activating puts it there sealed."""
+    user = make_user()
+    user.id = 1
+    secret = totp.generate_secret()
+    assert user.totp_secret is None
+    moment = utc_now()
+    step = totp.step_for_secret(secret, pyotp.TOTP(secret).at(moment), now=moment)
+    assert step == pyotp.TOTP(secret).timecode(moment)
+    totp.activate(user, secret, step or 0, crypto, now=moment)
+    assert user.totp_enabled and user.totp_enabled_at == moment and user.totp_last_step == step
+    assert user.totp_secret is not None and secret not in user.totp_secret
+    assert totp.read_secret(user, crypto) == secret
+
+
+def test_step_for_secret_needs_no_stored_secret_and_refuses_junk() -> None:
+    """The window check works on a plain secret, for a setup that is still pending."""
+    secret = totp.generate_secret()
+    generator = pyotp.TOTP(secret)
+    moment = utc_now()
+    code = generator.at(moment)
+    assert totp.step_for_secret(secret, f"{code[:3]} {code[3:]}", now=moment)
+    assert totp.step_for_secret(secret, "12ab56", now=moment) is None
+    assert totp.step_for_secret(secret, "", now=moment) is None
+
+
+async def test_claim_step_accepts_a_newer_step_once(
+    engine: AsyncEngine, crypto: CryptoService
+) -> None:
+    """A step is claimed once; the same or an older step is refused afterwards."""
+    factory = create_session_factory(engine)
+    async with factory() as db:
+        user = make_user()
+        db.add(user)
+        await db.flush()
+        assert await totp.claim_step(db, user, 100) is True
+        assert await totp.claim_step(db, user, 100) is False
+        assert await totp.claim_step(db, user, 99) is False
+        assert await totp.claim_step(db, user, 101) is True

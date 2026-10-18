@@ -1,0 +1,11 @@
+{#- Pieces of the account screens. -#}
+
+{#- The Revoke control of a session row: opens the confirm dialog, loaded for that session. -#}
+{% macro revoke_session_button(session_id, device) -%}
+<button type="button" data-js="dialog-open" data-target="session-revoke" aria-haspopup="dialog" hx-get="/account/sessions/{{ session_id }}/revoke" hx-target="#session-revoke" hx-swap="innerHTML" class="inline-flex min-h-11 items-center font-semibold text-danger hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus text-sm md:min-h-0">Revoke<span class="sr-only"> session on {{ device }}</span></button>
+{%- endmacro %}
+
+{#- A time in UTC as the account tables show it: date and minutes, the full stamp in markup. -#}
+{% macro moment(value) -%}
+<time datetime="{{ value.strftime('%Y-%m-%dT%H:%M:%SZ') }}" title="UTC">{{ value.strftime("%Y-%m-%d %H:%M") }}</time>
+{%- endmacro %}

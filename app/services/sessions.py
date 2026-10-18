@@ -84,9 +84,17 @@ async def revoke_session(db: AsyncSession, user_session: UserSession) -> None:
     await db.commit()
 
 
-async def revoke_user_sessions(db: AsyncSession, user_id: int) -> int:
-    """End every session of a user and return how many there were. The caller commits."""
-    result = await db.execute(delete(UserSession).where(UserSession.user_id == user_id))
+async def revoke_user_sessions(
+    db: AsyncSession, user_id: int, *, keep_session_id: int | None = None
+) -> int:
+    """End the sessions of a user, all but ``keep_session_id`` if given, and return how many.
+
+    The caller commits.
+    """
+    statement = delete(UserSession).where(UserSession.user_id == user_id)
+    if keep_session_id is not None:
+        statement = statement.where(UserSession.id != keep_session_id)
+    result = await db.execute(statement)
     return int(result.rowcount or 0)  # type: ignore[attr-defined]
 
 

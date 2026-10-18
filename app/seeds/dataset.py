@@ -94,6 +94,7 @@ from app.models import (
     User,
     UserGroup,
 )
+from app.models.types import utc_now
 from app.seeds.demo import SeedDemo, ensure_demo_project
 from app.services import totp
 from app.services.audit import record_audit
@@ -273,6 +274,7 @@ async def ensure_totp_user(
     await db.flush()
     totp.store_secret(user, DEV_TOTP_SECRET, crypto)
     user.totp_enabled = True
+    user.totp_enabled_at = utc_now()
     return user
 
 
