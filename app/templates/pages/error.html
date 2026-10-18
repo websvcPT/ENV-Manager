@@ -1,8 +1,10 @@
-{#- Error page. The handler passes `layout` (application shell or bare), `code`, `heading`,
-    `message` and, for a server error, `request_id`. -#}
+{#- Error page. The handler passes `layout` (application shell or bare), `show_brand` (true on
+    the bare layout, which has no sidebar to carry the brand), `code`, `heading`, `message` and,
+    for a server error, `request_id`. -#}
 {% extends layout %}
 {% from "macros/buttons.html" import button %}
+{% from "macros/shell.html" import brand_lockup %}
 {% block title %}{{ code }}{% endblock %}
 {% block content %}
-<section data-fragment="system-state" class="rounded-panel border border-line bg-surface shadow-panel mx-auto flex w-full max-w-xl flex-col items-center gap-4 px-6 py-14 text-center"><p class="font-mono text-5xl font-bold text-ink3">{{ code }}</p><h1 class="text-2xl font-bold">{{ heading }}</h1><p class="text-ink2">{{ message }}</p>{% if request_id %}<p class="rounded-ctl bg-mute-bg px-3 py-1.5 font-mono text-[13px] text-mute-fg">Request id {{ request_id }}</p>{% endif %}<div class="flex flex-wrap justify-center gap-3">{{ button("Go to projects", kind="primary", href="/projects") }}{{ button("Go back", href="/projects", data_js="history-back") }}</div></section>
+<section data-fragment="system-state" class="rounded-panel border border-line bg-surface shadow-panel mx-auto flex w-full max-w-xl flex-col items-center gap-4 px-6 py-14 text-center">{% if show_brand %}{{ brand_lockup("h-20 w-auto") }}{% endif %}<p class="font-mono text-5xl font-bold text-ink3">{{ code }}</p><h1 class="text-2xl font-bold">{{ heading }}</h1><p class="text-ink2">{{ message }}</p>{% if request_id %}<p class="rounded-ctl bg-mute-bg px-3 py-1.5 font-mono text-[13px] text-mute-fg">Request id {{ request_id }}</p>{% endif %}<div class="flex flex-wrap justify-center gap-3">{{ button("Go to projects", kind="primary", href="/projects") }}{{ button("Go back", href="/projects", data_js="history-back") }}</div></section>
 {% endblock %}

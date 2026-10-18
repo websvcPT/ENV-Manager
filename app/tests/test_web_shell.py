@@ -3,6 +3,7 @@
 import html
 import json
 import re
+import struct
 from pathlib import Path
 
 import httpx
@@ -18,6 +19,8 @@ from app.web.dependencies import require_auth, require_group
 NAV_PATTERN = re.compile(r'<nav aria-label="Primary".*?</nav>', re.DOTALL)
 TEMPLATES = Path(__file__).resolve().parent.parent / "templates"
 STATIC = Path(__file__).resolve().parent.parent / "static"
+BRAND = "/static/brand"
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 
 def sidebar_links(page: str) -> list[str]:
@@ -102,6 +105,112 @@ async def test_head_configures_htmx_and_loads_only_local_assets(
     assert "/static/app.js" in sources and "/static/style.css" in sources
     for source in sources:
         assert (await web_client.get(source)).status_code == 200
+
+
+def region(page: str, pattern: str) -> str:
+    """The first part of a page that matches a pattern, which must exist."""
+    match = re.search(pattern, page, re.DOTALL)
+    assert match is not None
+    return match.group(0)
+
+
+async def test_shell_marks_follow_the_surface_they_sit_on(web_client: httpx.AsyncClient) -> None:
+    """Navy sidebar and menu take the transparent mark, the top bar the solid tile."""
+    await sign_in(web_client, "viewer")
+    page = (await web_client.get("/projects")).text
+    sidebar = region(page, r'<nav aria-label="Primary".*?</nav>')
+    menu = region(page, r'<dialog id="mobile-menu".*?</dialog>')
+    top_bar = region(page, r"<header.*?</header>")
+    for navy in (sidebar, menu):
+        assert f'src="{BRAND}/env-mark-transparent.svg" alt=""' in navy
+        assert "env-mark-solid" not in navy
+    assert f'src="{BRAND}/env-mark-solid.svg" alt=""' in top_bar
+    assert "env-mark-transparent" not in top_bar
+    for part in (sidebar, menu, top_bar):
+        assert "ENV Manager" in part
+
+
+async def test_lockup_appears_only_on_pages_without_the_shell(
+    web_client: httpx.AsyncClient,
+) -> None:
+    """Sign in, session expired and the anonymous error page carry the lockup, the shell not."""
+    lockup = f'src="{BRAND}/env-vertical-solid.svg" alt=""'
+    for path in ("/login", "/session-expired", "/does-not-exist"):
+        assert lockup in (await web_client.get(path)).text, path
+    login = region((await web_client.get("/login")).text, r'<div id="login-card".*?</h1>')
+    assert login.index(lockup) < login.index("ENV Manager")
+    await sign_in(web_client, "viewer")
+    for path in ("/projects", "/does-not-exist"):
+        assert lockup not in (await web_client.get(path)).text, path
+
+
+async def test_every_page_head_links_the_favicons(web_client: httpx.AsyncClient) -> None:
+    """Bare pages, the shell and error pages declare the SVG icon, the PNG and the touch icon."""
+    pages = [(await web_client.get("/login")).text]
+    await sign_in(web_client, "viewer")
+    pages += [(await web_client.get(path)).text for path in ("/projects", "/does-not-exist")]
+    for page in pages:
+        head = region(page, r"<head>.*?</head>")
+        assert f'<link rel="icon" href="{BRAND}/env-mark-solid.svg" type="image/svg+xml">' in head
+        assert (
+            f'<link rel="icon" href="{BRAND}/favicon-32.png" type="image/png" sizes="32x32">'
+            in head
+        )
+        assert (
+            f'<link rel="apple-touch-icon" href="{BRAND}/apple-touch-icon.png" sizes="180x180">'
+            in head
+        )
+
+
+@pytest.mark.parametrize(
+    ("name", "media_type", "png_size"),
+    [
+        ("env-mark-solid.svg", "image/svg+xml", None),
+        ("env-mark-transparent.svg", "image/svg+xml", None),
+        ("env-vertical-solid.svg", "image/svg+xml", None),
+        ("favicon-32.png", "image/png", (32, 32)),
+        ("apple-touch-icon.png", "image/png", (180, 180)),
+    ],
+)
+async def test_brand_files_are_served_with_the_media_type_nosniff_needs(
+    web_client: httpx.AsyncClient,
+    name: str,
+    media_type: str,
+    png_size: tuple[int, int] | None,
+) -> None:
+    """A wrong media type would break the image silently under nosniff."""
+    response = await web_client.get(f"{BRAND}/{name}")
+    assert response.status_code == 200
+    assert response.headers["content-type"].split(";")[0] == media_type
+    assert response.headers["x-content-type-options"] == "nosniff"
+    if png_size is not None:
+        assert response.content[:8] == PNG_SIGNATURE
+        assert struct.unpack(">II", response.content[16:24]) == png_size
+
+
+def test_apple_touch_icon_is_opaque() -> None:
+    """iOS paints transparent pixels black, so the icon has no alpha channel."""
+    data = (STATIC / "brand" / "apple-touch-icon.png").read_bytes()
+    color_type = data[25]
+    assert color_type in (0, 2)
+
+
+@pytest.mark.parametrize("path", sorted((STATIC / "brand").glob("*.svg")), ids=lambda p: p.name)
+def test_served_svgs_carry_a_drawing_and_nothing_else(path: Path) -> None:
+    """One svg root sized by a viewBox, no content manifest, script, style or event handler."""
+    text = path.read_text(encoding="utf-8")
+    assert re.match(r'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 \d+ \d+"[^>]*>', text)
+    assert text.count("<svg") == 1 and text.rstrip().endswith("</svg>")
+    assert not re.search(r"metadata|c2pa|<script|\sstyle=|\son\w+=|href=", text, re.IGNORECASE)
+    assert chr(0x2014) not in text
+    assert len(text) < 4000
+
+
+def test_every_brand_file_is_used_by_a_template() -> None:
+    """Only the brand files the application uses are kept."""
+    templates = "".join(path.read_text(encoding="utf-8") for path in TEMPLATES.rglob("*.html"))
+    for path in (STATIC / "brand").iterdir():
+        assert f"{BRAND}/{path.name}" in templates, path.name
 
 
 async def test_rendered_page_has_no_inline_script_or_style(web_client: httpx.AsyncClient) -> None:

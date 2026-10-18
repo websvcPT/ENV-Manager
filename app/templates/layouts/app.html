@@ -14,7 +14,7 @@
 {% block body %}
 <div class="flex min-h-screen">
 <nav aria-label="Primary" data-nav data-collapsed="false" class="group sticky top-0 hidden h-screen w-58 shrink-0 flex-col gap-1.5 bg-nav p-3 data-[collapsed=true]:w-18 md:flex">
-  <div class="mb-3 flex h-11 items-center gap-3 px-1">{{ logo_mark("size-9") }}<span class="whitespace-nowrap text-base font-bold text-white group-data-[collapsed=true]:hidden">ENV Manager</span></div>
+  <div class="mb-3 flex h-11 items-center gap-3 px-1">{{ logo_mark("size-9", true) }}<span class="whitespace-nowrap text-base font-bold text-white group-data-[collapsed=true]:hidden">ENV Manager</span></div>
   <ul class="flex list-none flex-col gap-1.5">{% for item in nav_items %}{{ nav_link(item, active_nav, true) }}{% endfor %}</ul>
   <div class="grow"></div>
   <button type="button" data-js="nav-toggle" aria-expanded="true" aria-label="Collapse navigation" class="flex h-11 items-center gap-3 rounded-btn border border-white/15 px-3 text-sm font-semibold text-nav-ink hover:bg-white/10 group-data-[collapsed=true]:justify-center focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">
@@ -39,6 +39,6 @@
 </div>
 {{ account_menu(current_user, csrf_token) }}
 <dialog id="mobile-menu" aria-label="Navigation" class="m-0 h-full max-h-none w-72 max-w-none bg-nav p-3 text-nav-ink backdrop:bg-scrim md:hidden">
-  <div class="mb-3 flex h-11 items-center gap-3 px-1">{{ logo_mark("size-9") }}<span class="flex-1 text-base font-bold text-white">ENV Manager</span><button type="button" data-js="dialog-close" aria-label="Close menu" class="inline-flex size-11 items-center justify-center rounded-btn text-nav-ink hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ icon("close", "size-5", "2") }}</button></div>
+  <div class="mb-3 flex h-11 items-center gap-3 px-1">{{ logo_mark("size-9", true) }}<span class="flex-1 text-base font-bold text-white">ENV Manager</span><button type="button" data-js="dialog-close" aria-label="Close menu" class="inline-flex size-11 items-center justify-center rounded-btn text-nav-ink hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ icon("close", "size-5", "2") }}</button></div>
   <ul class="flex list-none flex-col gap-1.5" data-collapsed="false">{% for item in nav_items %}{{ nav_link(item, active_nav) }}{% endfor %}</ul></dialog>
 {% endblock %}

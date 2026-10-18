@@ -270,3 +270,27 @@ def test_grant_tree_offers_projects_deployments_and_environments_with_services_a
         tree=[{"id": 1, "name": "<b>x</b>", "deployments": []}],
     )
     assert "<b>x</b>" not in escaped and "&lt;b&gt;x&lt;/b&gt;" in escaped
+
+
+def test_logo_mark_is_a_decorative_image_that_follows_the_surface() -> None:
+    """The solid tile is the default; the navy sidebar and menu ask for the transparent drawing."""
+    solid = render_snippet(
+        "{% from 'macros/shell.html' import logo_mark %}{{ logo_mark('size-7') }}"
+    )
+    assert solid.startswith('<img src="/static/brand/env-mark-solid.svg" alt="" ')
+    assert 'class="size-7 shrink-0"' in solid and 'width="64" height="64"' in solid
+    on_nav = render_snippet(
+        "{% from 'macros/shell.html' import logo_mark %}{{ logo_mark('size-9', true) }}"
+    )
+    assert on_nav.startswith('<img src="/static/brand/env-mark-transparent.svg" alt="" ')
+    assert 'class="size-9 shrink-0"' in on_nav
+    assert "aria-hidden" not in solid + on_nav and ">E<" not in solid + on_nav
+
+
+def test_brand_lockup_is_the_vertical_solid_drawing_with_the_caller_size() -> None:
+    """The lockup is decorative: the product name stays as heading text beside it."""
+    lockup = render_snippet(
+        "{% from 'macros/shell.html' import brand_lockup %}{{ brand_lockup('h-24 w-auto') }}"
+    )
+    assert lockup.startswith('<img src="/static/brand/env-vertical-solid.svg" alt="" ')
+    assert 'class="h-24 w-auto shrink-0"' in lockup and 'width="108" height="116"' in lockup

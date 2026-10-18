@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
+import { expectImageLoaded, renderedSize } from './images';
 import { totpCode } from './totp';
 
 // Development dataset values (development and testing only).
@@ -33,6 +34,26 @@ test.describe('sign in page', () => {
     await expect(card.locator('a[href*="recover"], a[href*="forgot"]')).toHaveCount(0);
     await expect(page.locator('[data-fragment="login-message"]')).toHaveCount(0);
     await expect(page.locator('[data-js="theme-toggle"]')).toBeVisible();
+  });
+
+  test('draws the brand lockup above the product name', async ({ page }) => {
+    for (const [path, fragment] of [
+      ['/login', 'login-card'],
+      ['/session-expired', 'session-expired'],
+    ]) {
+      await page.goto(path);
+      const card = page.locator(`[data-fragment="${fragment}"]`);
+      const lockup = card.locator('img');
+      await expectImageLoaded(lockup);
+      await expect(lockup).toHaveAttribute('src', '/static/brand/env-vertical-solid.svg');
+      await expect(lockup).toHaveAttribute('alt', '');
+      expect((await renderedSize(lockup)).height, path).toBe(96);
+      const lockupBox = await lockup.boundingBox();
+      const headingBox = await card.locator('h1').boundingBox();
+      expect(lockupBox?.y ?? 0, path).toBeLessThan(headingBox?.y ?? 0);
+    }
+    await page.goto('/login');
+    await expect(page.locator('[data-fragment="login-card"] h1')).toHaveText('ENV Manager');
   });
 
   test('has no horizontal overflow at 360px in every state', async ({ page }) => {

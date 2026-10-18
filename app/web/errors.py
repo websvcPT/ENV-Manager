@@ -66,6 +66,7 @@ def error_page(
         request.state.auth = auth
     context = {
         "layout": APP_LAYOUT if auth is not None else BARE_LAYOUT,
+        "show_brand": auth is None,
         "code": status_code,
         "heading": heading,
         "message": message,

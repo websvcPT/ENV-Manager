@@ -1,5 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
+import { expectImageLoaded, renderedSize } from './images';
+
 const WIDE_BREAKPOINT = 768;
 
 declare global {
@@ -40,6 +42,49 @@ test.describe('layout', () => {
       await expect(page.locator('#mobile-menu[open]')).toBeVisible();
       await page.locator('#mobile-menu [data-js="dialog-close"]').click();
       await expect(page.locator('#mobile-menu[open]')).toHaveCount(0);
+    }
+  });
+
+  test('draws the brand mark from the served files at each size', async ({ page }) => {
+    await page.goto('/projects');
+    if (isWide(page)) {
+      const mark = page.locator('[data-nav] img');
+      await expectImageLoaded(mark);
+      await expect(mark).toHaveAttribute('src', '/static/brand/env-mark-transparent.svg');
+      await expect(mark).toHaveAttribute('alt', '');
+      expect(await renderedSize(mark)).toEqual({ width: 36, height: 36 });
+      await expect(page.locator('header img')).toBeHidden();
+      await expect(page.locator('[data-nav]')).toContainText('ENV Manager');
+    } else {
+      const mark = page.locator('header img');
+      await expectImageLoaded(mark);
+      await expect(mark).toHaveAttribute('src', '/static/brand/env-mark-solid.svg');
+      await expect(mark).toHaveAttribute('alt', '');
+      expect(await renderedSize(mark)).toEqual({ width: 28, height: 28 });
+      await expect(page.locator('header')).toContainText('ENV Manager');
+
+      await page.locator('[data-js="menu-open"]').click();
+      const menuMark = page.locator('#mobile-menu img');
+      await expectImageLoaded(menuMark);
+      await expect(menuMark).toHaveAttribute('src', '/static/brand/env-mark-transparent.svg');
+      expect(await renderedSize(menuMark)).toEqual({ width: 36, height: 36 });
+      await expect(page.locator('#mobile-menu')).toContainText('ENV Manager');
+    }
+  });
+
+  test('links favicons that are served with their media type', async ({ page }) => {
+    await page.goto('/projects');
+    const icons = [
+      ['link[rel="icon"][type="image/svg+xml"]', 'image/svg+xml'],
+      ['link[rel="icon"][type="image/png"][sizes="32x32"]', 'image/png'],
+      ['link[rel="apple-touch-icon"][sizes="180x180"]', 'image/png'],
+    ];
+    for (const [selector, mediaType] of icons) {
+      const href = await page.locator(selector).getAttribute('href');
+      expect(href, selector).toMatch(/^\/static\/brand\//);
+      const response = await page.request.get(String(href));
+      expect(response.status(), selector).toBe(200);
+      expect(response.headers()['content-type'], selector).toContain(mediaType);
     }
   });
 
@@ -107,6 +152,18 @@ test.describe('sidebar', () => {
     await page.reload();
     await expect(nav).toHaveAttribute('data-collapsed', 'false');
   });
+
+  test('keeps the mark at full size when collapsed and hides the name', async ({ page }) => {
+    await page.goto('/projects');
+    const nav = page.locator('[data-nav]');
+    await nav.locator('[data-js="nav-toggle"]').click();
+    await expect(nav).toHaveAttribute('data-collapsed', 'true');
+    const mark = nav.locator('img');
+    await expectImageLoaded(mark);
+    await expect(mark).toBeVisible();
+    expect(await renderedSize(mark)).toEqual({ width: 36, height: 36 });
+    await expect(nav.getByText('ENV Manager', { exact: true })).toBeHidden();
+  });
 });
 
 test.describe('security policy', () => {
@@ -144,6 +201,22 @@ test.describe('error pages', () => {
     await expect(state.locator('h1')).toBeVisible();
     await expect(state.locator('a[href="/projects"]').first()).toBeVisible();
     await expect(page.locator('header [data-js="theme-toggle"]')).toBeVisible();
+    await expect(state.locator('img')).toHaveCount(0);
+  });
+});
+
+test.describe('error pages without a session', () => {
+  test.use({ storageState: { cookies: [], origins: [] } });
+
+  test('draws the brand lockup on the page without the shell', async ({ page }) => {
+    const response = await page.goto('/does-not-exist');
+    expect(response?.status()).toBe(404);
+    await expect(page.locator('[data-nav]')).toHaveCount(0);
+    const lockup = page.locator('[data-fragment="system-state"] img');
+    await expectImageLoaded(lockup);
+    await expect(lockup).toHaveAttribute('src', '/static/brand/env-vertical-solid.svg');
+    await expect(lockup).toHaveAttribute('alt', '');
+    expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
   });
 });
 

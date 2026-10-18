@@ -2,8 +2,16 @@
 {% from "macros/forms.html" import csrf_field %}
 {% from "macros/icons.html" import icon %}
 
-{% macro logo_mark(size_class) -%}
-<span class="{{ size_class }} flex shrink-0 items-center justify-center rounded-btn bg-accent font-mono font-extrabold text-accent-ink" aria-hidden="true">E</span>
+{#- The brand mark as a decorative image: the product name always sits next to it as text. The
+    transparent drawing is for the navy sidebar and menu (its white parts need a dark ground);
+    the solid tile reads on the light and dark surfaces of the top bar and the cards. -#}
+{% macro logo_mark(size_class, on_nav=false) -%}
+<img src="{{ '/static/brand/env-mark-transparent.svg' if on_nav else '/static/brand/env-mark-solid.svg' }}" alt="" width="64" height="64" class="{{ size_class }} shrink-0">
+{%- endmacro %}
+
+{#- The vertical lockup (mark above the ENV wordmark on a solid tile) for pages without the shell. -#}
+{% macro brand_lockup(size_class) -%}
+<img src="/static/brand/env-vertical-solid.svg" alt="" width="108" height="116" class="{{ size_class }} shrink-0">
 {%- endmacro %}
 
 {#- One navigation link. `collapsible` adds the sidebar variants that hide the label and
