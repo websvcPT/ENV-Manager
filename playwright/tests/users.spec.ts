@@ -13,6 +13,7 @@ import {
   type CreatedUser,
 } from '../users-api';
 import { createProject, deleteProjectIfPresent } from '../projects-api';
+import { totpCode } from './totp';
 
 const WIDE_BREAKPOINT = 768;
 const SAMPLE_A = '/srv/deployments/sample-a';
@@ -102,6 +103,18 @@ async function openCreate(page: Page) {
   const dialog = page.locator('#user-create[open]');
   await expect(dialog.locator('#un')).toBeVisible();
   return dialog;
+}
+
+/** Turn two-factor sign-in on for the user the page is signed in as, through the account page. */
+async function turnOnTwoFactor(page: Page, user: CreatedUser): Promise<void> {
+  await page.goto('/account');
+  await page.locator('#totp button[hx-post="/account/totp/setup"]').click();
+  await expect(page.locator('#totp-qr')).toBeVisible();
+  const secret = ((await page.locator('#totp-secret').textContent()) ?? '').replace(/ /g, '');
+  await page.locator('#tp').fill(user.password);
+  await page.locator('#tc').fill(totpCode(secret));
+  await page.locator('#account-totp-form button[type="submit"]').click();
+  await expect(page.locator('#totp [data-status="deployed"]')).toHaveText('Enabled');
 }
 
 /** Sign in through the login form in a browser of its own and return the page. */
@@ -416,6 +429,79 @@ test.describe('superadmin: the user detail', () => {
     await expect(page.locator('[data-fragment="page-header"]')).toContainText('Active');
   });
 
+  test('resets two-factor after a confirm dialog, ends their sessions and drops the code step', async ({
+    page,
+    browser,
+    makeUser,
+  }) => {
+    const user = await makeUser('admin');
+    const theirs = await signedInAs(browser, user);
+    await turnOnTwoFactor(theirs, user);
+
+    await page.goto(`/users/${user.id}`);
+    const header = page.locator('[data-fragment="page-header"]');
+    await expect(header).toContainText('Two-factor on');
+    const reset = header.getByRole('button', { name: 'Reset two-factor' });
+    if (!isWide(page)) {
+      expect((await reset.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+    }
+    expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+    await reset.click();
+    const dialog = page.locator('#user-action[open]');
+    await expect(dialog).toContainText(`Reset two-factor for ${user.name}`);
+    await expect(dialog).toContainText('they sign in with their password alone');
+    await expect(dialog).toContainText('lost their authenticator');
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect(page.locator('#user-action[open]')).toHaveCount(0);
+    await expect(header).toContainText('Two-factor on');
+
+    await reset.click();
+    await dialog.getByRole('button', { name: 'Reset two-factor' }).click();
+    await expect(page).toHaveURL(new RegExp(`/users/${user.id}\\?updated=two-factor-reset$`));
+    await expect(page.locator('[data-fragment="toast"]')).toContainText('Two-factor reset');
+    await expect(header).not.toContainText('Two-factor on');
+    await expect(header.getByRole('button', { name: 'Reset two-factor' })).toHaveCount(0);
+
+    await theirs.reload();
+    await expect(theirs).toHaveURL(/\/login/);
+    await theirs.context().close();
+    const again = await signedInAs(browser, user);
+    await again.goto('/account');
+    await expect(again.locator('#totp [data-status="never"]')).toHaveText('Not enabled');
+    await again.context().close();
+  });
+
+  test('offers the reset on a user who has two-factor and says when there is none', async ({
+    page,
+    request,
+  }) => {
+    const users = new Map(await listUsers(request).then((all) => all.map(([id, name]) => [name, id])));
+    const withFactor = users.get('totp_user');
+    const without = users.get('viewer');
+    expect(withFactor).toBeDefined();
+    expect(without).toBeDefined();
+    await page.goto(`/users/${withFactor}`);
+    const header = page.locator('[data-fragment="page-header"]');
+    await expect(header).toContainText('Two-factor on');
+    await header.getByRole('button', { name: 'Reset two-factor' }).click();
+    const dialog = page.locator('#user-action[open]');
+    await expect(dialog.getByRole('button', { name: 'Reset two-factor' })).toBeVisible();
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+
+    await page.goto(`/users/${without}`);
+    await expect(page.locator('[data-fragment="page-header"]')).not.toContainText('Two-factor on');
+    await expect(page.getByRole('button', { name: 'Reset two-factor' })).toHaveCount(0);
+    const refused = await page.request.get(`/users/${without}/confirm/reset-2fa`, {
+      headers: { 'HX-Request': 'true' },
+    });
+    expect(await refused.text()).toContain('viewer has no two-factor sign-in to reset.');
+    const post = await page.request.post(`/users/${without}/reset-2fa`, {
+      form: { from: 'detail' },
+      headers: await csrfHeaders(page.request),
+    });
+    expect(post.status()).toBe(409);
+  });
+
   test('edits the grant tree, applies it at once and refuses a page that is out of date', async ({
     page,
     browser,
@@ -497,7 +583,14 @@ for (const role of REFUSED_ROLES) {
     test('has no Users link and is refused every users page and action', async ({ page }) => {
       await page.goto('/projects');
       await expect(page.locator('nav[aria-label="Primary"] a[href="/users"]')).toHaveCount(0);
-      for (const url of ['/users', '/users/table', '/users/new', '/users/1', '/users/1/confirm/disable']) {
+      for (const url of [
+        '/users',
+        '/users/table',
+        '/users/new',
+        '/users/1',
+        '/users/1/confirm/disable',
+        '/users/1/confirm/reset-2fa',
+      ]) {
         const response = await page.request.get(url);
         expect(response.status(), url).toBe(403);
       }
@@ -510,6 +603,7 @@ for (const role of REFUSED_ROLES) {
         ['/users/1/disable', { from: 'list' }],
         ['/users/1/enable', { from: 'list' }],
         ['/users/1/group', { group: 'viewer' }],
+        ['/users/1/reset-2fa', { from: 'detail' }],
         ['/users/1/grants', { base: '' }],
       ] as const) {
         const response = await page.request.post(url, { form, headers });

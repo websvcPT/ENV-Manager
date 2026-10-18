@@ -18,11 +18,17 @@ from app.models import (
     AuditResult,
     Deployment,
     Environment,
+    PendingLogin,
     Project,
     User,
     UserGroup,
+    UserSession,
 )
+from app.services import totp
+from app.services.auth_policy import AuthPolicy
+from app.services.pending_logins import create_pending_login
 from app.services.permissions import load_token_scope
+from app.services.sessions import create_session
 from app.tests.conftest import sign_in
 from app.tests.web_helpers import HTMX, assert_never_cached, main_of, post
 
@@ -154,6 +160,7 @@ async def test_nobody_but_the_superadmin_reaches_the_users_screens_or_their_acti
         "/users/1",
         "/users/1/confirm/disable",
         "/users/1/confirm/group?group=admin",
+        "/users/1/confirm/reset-2fa",
     ):
         for headers in ({}, HTMX):
             response = await web_client.get(url, headers=headers)
@@ -167,6 +174,7 @@ async def test_nobody_but_the_superadmin_reaches_the_users_screens_or_their_acti
         (f"/users/{victim.id}/disable", {}),
         (f"/users/{victim.id}/enable", {}),
         (f"/users/{victim.id}/group", {"group": "superadmin"}),
+        (f"/users/{victim.id}/reset-2fa", {}),
         (f"/users/{victim.id}/grants", {"grant": ["project:1"], "base": ""}),
         (f"/users/{root.id}/disable", {}),
     ):
@@ -392,6 +400,118 @@ async def test_a_confirm_dialog_refuses_what_changes_nothing_or_cannot_be_done(
         "/users/987654/confirm/disable",
     ):
         assert (await web_client.get(url, headers=HTMX)).status_code == 404, url
+
+
+async def totp_user(web_app: FastAPI) -> User:
+    """The seeded user who has two-factor sign-in on."""
+    user = await user_named(web_app, "totp_user")
+    assert user.totp_enabled
+    return user
+
+
+async def test_the_reset_dialog_says_what_it_does_and_refuses_what_it_cannot(
+    web_client: httpx.AsyncClient, web_app: FastAPI
+) -> None:
+    await sign_in(web_client, "root")
+    target = await totp_user(web_app)
+    url = f"/users/{target.id}/confirm/reset-2fa?from=detail"
+    page = (await web_client.get(url, headers=HTMX)).text
+    assert "Reset two-factor for totp_user" in page
+    assert "they sign in with their password alone" in page and "lost their authenticator" in page
+    assert "active sessions end now" in page and "waiting for a code is cancelled" in page
+    assert f'hx-post="/users/{target.id}/reset-2fa"' in page
+    assert 'name="from" value="detail"' in page
+    assert ">Reset two-factor</button>" in page
+    viewer = await user_named(web_app, "viewer")
+    none = (await web_client.get(f"/users/{viewer.id}/confirm/reset-2fa")).text
+    assert "viewer has no two-factor sign-in to reset." in none and "<form" not in none
+    root = await user_named(web_app, "root")
+    await enable_totp_for(web_app, "root")
+    own = (await web_client.get(f"/users/{root.id}/confirm/reset-2fa")).text
+    assert "This is your own account. Remove two-factor from your Account page" in own
+    assert "<form" not in own and "Reset two-factor</button>" not in own
+
+
+async def enable_totp_for(web_app: FastAPI, name: str) -> None:
+    """Turn the second factor on for a user directly, with a secret nobody needs to know."""
+    async with web_app.state.session_factory() as db:
+        user = (await db.execute(select(User).where(User.name == name))).scalar_one()
+        totp.activate(user, totp.generate_secret(), 1, web_app.state.crypto)
+        await db.commit()
+
+
+async def test_resetting_turns_the_factor_off_ends_sessions_and_pending_sign_ins(
+    web_client: httpx.AsyncClient, web_app: FastAPI
+) -> None:
+    await sign_in(web_client, "root")
+    target = await totp_user(web_app)
+    async with web_app.state.session_factory() as db:
+        user = await db.get(User, target.id)
+        assert user is not None
+        await create_session(db, user, AuthPolicy())
+        await create_pending_login(db, user, AuthPolicy())
+        await db.commit()
+    response = await post(web_client, f"/users/{target.id}/reset-2fa", {"from": "detail"})
+    assert response.status_code == 200
+    assert response.headers["hx-redirect"] == f"/users/{target.id}?updated=two-factor-reset"
+    stored = await stored_user(web_app, target.id)
+    assert (stored.totp_enabled, stored.totp_secret, stored.totp_last_step) == (False, None, None)
+    async with web_app.state.session_factory() as db:
+        for model in (UserSession, PendingLogin):
+            count = await db.scalar(
+                select(func.count()).select_from(model).where(model.user_id == target.id)
+            )
+            assert count == 0, model
+    (entry,) = await audit(web_app, "user.totp_reset")
+    assert (entry.actor_name, entry.target_name, entry.result) == (
+        "root",
+        "totp_user",
+        AuditResult.SUCCESS,
+    )
+    assert entry.details == {"sessions_ended": 1, "pending_logins_ended": 1}
+    page = (await web_client.get(f"/users/{target.id}?updated=two-factor-reset")).text
+    assert "Two-factor reset" in page and "totp_user signs in with the password alone." in page
+    assert "Two-factor on" not in page and "/confirm/reset-2fa" not in page
+
+
+async def test_from_the_list_a_reset_refreshes_the_table(
+    web_client: httpx.AsyncClient, web_app: FastAPI
+) -> None:
+    await sign_in(web_client, "root")
+    target = await totp_user(web_app)
+    response = await post(web_client, f"/users/{target.id}/reset-2fa", {"from": "list"})
+    assert response.status_code == 204
+    assert not (await stored_user(web_app, target.id)).totp_enabled
+
+
+async def test_a_reset_that_cannot_be_done_is_refused_with_the_dialog_and_changes_nothing(
+    web_client: httpx.AsyncClient, web_app: FastAPI
+) -> None:
+    await sign_in(web_client, "root")
+    viewer = await user_named(web_app, "viewer")
+    none = await post(web_client, f"/users/{viewer.id}/reset-2fa", {"from": "detail"})
+    assert none.status_code == 409 and "viewer has no two-factor sign-in to reset." in none.text
+    await enable_totp_for(web_app, "root")
+    root = await user_named(web_app, "root")
+    own = await post(web_client, f"/users/{root.id}/reset-2fa", {"from": "detail"})
+    assert own.status_code == 409 and "This is your own account." in own.text
+    assert (await stored_user(web_app, root.id)).totp_enabled
+    assert (await web_client.get("/projects")).status_code == 200
+    assert await audit(web_app, "user.totp_reset") == []
+    assert (await post(web_client, "/users/987654/reset-2fa", {})).status_code == 404
+
+
+async def test_the_detail_page_shows_whether_two_factor_is_on_and_offers_the_reset_only_then(
+    web_client: httpx.AsyncClient, web_app: FastAPI
+) -> None:
+    await sign_in(web_client, "root")
+    target = await totp_user(web_app)
+    on = (await web_client.get(f"/users/{target.id}")).text
+    assert "Two-factor on" in on
+    assert f'hx-get="/users/{target.id}/confirm/reset-2fa?from=detail"' in on
+    viewer = await user_named(web_app, "viewer")
+    off = (await web_client.get(f"/users/{viewer.id}")).text
+    assert "Two-factor on" not in off and "/confirm/reset-2fa" not in off
 
 
 async def test_disabling_ends_the_sessions_stops_the_tokens_and_is_audited(

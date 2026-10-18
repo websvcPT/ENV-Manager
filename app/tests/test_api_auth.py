@@ -315,6 +315,24 @@ async def test_the_address_comes_from_a_trusted_proxy(
     assert {entry.ip_address for entry in await audit_entries(world)} >= {"203.0.113.9"}
 
 
+async def test_junk_a_client_prepends_to_the_forwarded_list_still_counts_under_its_address(
+    trusted_proxy: None, api_world: ApiWorld
+) -> None:
+    """The proxy appends the real address after whatever the client sent, so junk before it
+    cannot make a request lose its address and escape the counter or the audit entry.
+    """
+    world = api_world
+    junk = {"X-Forwarded-For": "unknown, <script>, 203.0.113.9"}
+    await world.http.get(
+        "/api/v1/services/1/deployments/last", headers={**junk, **bearer(UNKNOWN_SECRET)}
+    )
+    stored = await counter(world, "203.0.113.9")
+    assert stored is not None and stored.failures == 1
+    assert await counter(world, ADDRESS) is None
+    failures = [e for e in await audit_entries(world) if e.action == "token.auth_failure"]
+    assert {entry.ip_address for entry in failures} == {"203.0.113.9"}
+
+
 async def test_forwarded_headers_are_ignored_without_a_trusted_proxy(api_world: ApiWorld) -> None:
     """Without a configured proxy a client cannot choose the address that is counted."""
     world = api_world

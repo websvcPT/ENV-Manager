@@ -10,11 +10,15 @@ from typer.testing import CliRunner
 
 from app.cli.main import app
 from app.config import get_settings
+from app.core.crypto import CryptoService
 from app.core.db import create_engine, create_session_factory
 from app.core.passwords import verify_password
 from app.models import ApiToken, AuditEntry, User
+from app.services import totp
 from app.services.audit import AuditActor
+from app.services.auth_policy import AuthPolicy
 from app.services.permissions import load_user_scope
+from app.services.sessions import create_session
 from app.services.tokens import create_token
 
 runner = CliRunner()
@@ -170,3 +174,40 @@ def test_disable_revokes_the_users_api_tokens_and_enable_does_not_bring_them_bac
     revoked = [entry for entry in _audit(cli_data_path) if entry.action == "token.revoke"]
     assert [(entry.actor_name, entry.target_name) for entry in revoked] == [("cli", "ci")]
     assert revoked[0].details == {"owner": "adm", "reason": "user_disabled"}
+
+
+def test_reset_2fa_turns_the_factor_off_and_audits_as_cli(
+    cli_data_path: Path, crypto: CryptoService
+) -> None:
+    """The superadmin's recovery for a lost authenticator, from the command line."""
+    runner.invoke(app, ["user", "create", "adm", "adm@example.test", "--group", "admin"])
+
+    async def turn_on() -> None:
+        engine = create_engine(cli_data_path / "envmanager.db")
+        try:
+            async with create_session_factory(engine)() as db:
+                user = (await db.execute(select(User).where(User.name == "adm"))).scalar_one()
+                totp.activate(user, totp.generate_secret(), 5, crypto)
+                await create_session(db, user, AuthPolicy())
+                await db.commit()
+        finally:
+            await engine.dispose()
+
+    asyncio.run(turn_on())
+    result = runner.invoke(app, ["user", "reset-2fa", "ADM"])
+    assert result.exit_code == 0, result.output
+    assert "two-factor sign-in reset for ADM, 1 session(s) ended" in result.output
+    (user,) = _users(cli_data_path)
+    assert (user.totp_enabled, user.totp_secret, user.totp_enabled_at) == (False, None, None)
+    (entry,) = [e for e in _audit(cli_data_path) if e.action == "user.totp_reset"]
+    assert (entry.actor_type.value, entry.actor_name, entry.target_name) == ("cli", "cli", "adm")
+    assert entry.details == {"sessions_ended": 1, "pending_logins_ended": 0}
+    again = runner.invoke(app, ["user", "reset-2fa", "adm"])
+    assert again.exit_code == 1
+    assert "adm has no two-factor sign-in to reset." in again.output
+
+
+def test_reset_2fa_of_an_unknown_user_fails() -> None:
+    missing = runner.invoke(app, ["user", "reset-2fa", "ghost"])
+    assert missing.exit_code == 1
+    assert "no user named" in missing.output

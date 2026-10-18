@@ -1,8 +1,10 @@
 {#- The two-factor authentication panel in its three states. Context: state (off, setup or on),
-    totp_notice (none or "expired", the setup ran out), setup (secret_text, the secret in groups of
-    four, and setup_id, which tells one setup's QR image from the next; setup state only),
-    code_error (message under the code field, setup state only). The signed-in user supplies
-    the date the factor was turned on. The panel refreshes when the factor is removed. -#}
+    totp_notice (none, "expired" when the setup ran out, or "locked" after too many failed
+    attempts, setup state), totp_wait (the lockout time left, shown with "locked"), setup
+    (secret_text, the secret in groups of four, and setup_id, which tells one setup's QR image from
+    the next; setup state only), totp_errors (messages by field: current_password, code; setup
+    state only). The signed-in user supplies the date the factor was turned on. The panel refreshes
+    when the factor is removed. The form never echoes the password or the code. -#}
 {% from "macros/badges.html" import badge %}
 {% from "macros/buttons.html" import button %}
 {% from "macros/feedback.html" import note %}
@@ -14,9 +16,13 @@
 <ol class="m-0 flex list-decimal flex-col gap-3 pl-5 text-[13px]">
 <li>Scan the QR code with an authenticator app.<div class="mt-2 size-36 overflow-hidden rounded-btn border border-line-strong"><img id="totp-qr" src="/account/totp/qr.svg?v={{ setup.setup_id }}" alt="QR code to scan with an authenticator app" width="144" height="144" class="size-full"></div></li>
 <li>Or enter this key: <span id="totp-secret" hx-ignore class="select-all font-mono">{{ setup.secret_text }}</span></li>
-<li>Enter the 6-digit code to confirm.</li>
+<li>Enter your current password and the 6-digit code to confirm.</li>
 </ol>
-{{ field("tc", "Authentication code", name="code", placeholder="000000", mono=true, error=code_error, extra_class="max-w-xs", autocomplete="one-time-code", inputmode="numeric", maxlength="7") }}
+{%- if totp_notice == "locked" %}
+<div role="alert">{{ note("Too many failed attempts. Try again in " ~ totp_wait ~ ".", "error") }}</div>
+{%- endif %}
+{{ field("tp", "Current password", name="current_password", type="password", error=totp_errors.current_password, extra_class="max-w-xs", autocomplete="current-password") }}
+{{ field("tc", "Authentication code", name="code", placeholder="000000", mono=true, error=totp_errors.code, extra_class="max-w-xs", autocomplete="one-time-code", inputmode="numeric", maxlength="7") }}
 <div class="flex gap-2.5">{{ button("Enable two-factor", kind="primary-sm", type="submit", extra_class="h-11 md:h-10") }}{{ button("Cancel", extra_class="h-11 md:h-10", hx_get="/account/totp", hx_target="closest [data-fragment=account-totp]", hx_swap="outerHTML") }}</div>
 </form>
 {%- elif state == "on" %}

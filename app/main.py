@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -12,7 +13,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app import VERSION
 from app.api.errors import refusal_handler
 from app.api.v1 import router as api_router
-from app.config import get_settings
+from app.config import Settings, get_settings
 from app.core.crypto import CryptoError, build_crypto_service
 from app.core.db import create_engine, create_session_factory
 from app.core.log import configure_logging, get_logger
@@ -49,6 +50,17 @@ log = get_logger("main")
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
+def auth_policy_for(settings: Settings) -> AuthPolicy:
+    """The authentication limits: code defaults plus the development override of the address limit.
+
+    The override only exists in development and testing (the settings refuse it elsewhere).
+    """
+    policy = AuthPolicy()
+    if settings.login_ip_max_failures is not None:
+        policy = replace(policy, ip_max_failures=settings.login_ip_max_failures)
+    return policy
+
+
 @asynccontextmanager
 async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     """Check the master key, back up and migrate the database, then serve.
@@ -78,7 +90,7 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         async with session_factory() as session:
             await recover_interrupted_runs(session, settings.lock_path)
         application.state.crypto = crypto
-        application.state.auth_policy = AuthPolicy()
+        application.state.auth_policy = auth_policy_for(settings)
         application.state.docker_cli = DockerCli(socket_path=settings.docker_socket)
         application.state.lock_dir = settings.lock_path
         application.state.engine = engine

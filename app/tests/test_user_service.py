@@ -1,4 +1,4 @@
-"""Tests for the user service: creation, password resets, enable or disable and the guard."""
+"""Tests for the user service: creation, password and two-factor resets, enable or disable."""
 
 import string
 from datetime import timedelta
@@ -7,6 +7,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
+from app.core.crypto import CryptoService
 from app.core.db import create_session_factory
 from app.core.passwords import GENERATED_PASSWORD_LENGTH, generate_password, verify_password
 from app.models import (
@@ -17,27 +18,33 @@ from app.models import (
     GrantLevel,
     LoginCounter,
     LoginCounterKind,
+    PendingLogin,
     User,
     UserGroup,
+    UserSession,
 )
 from app.models.types import utc_now
 from app.seeds import SeedData
+from app.services import totp
 from app.services import users as users_module
 from app.services.audit import AuditActor
 from app.services.auth_policy import AuthPolicy
 from app.services.grants import GrantError, GrantTarget, list_grants
+from app.services.pending_logins import create_pending_login
 from app.services.permissions import load_token_scope, load_user_scope
 from app.services.sessions import create_session
 from app.services.tokens import create_token, revoke_token
 from app.services.users import (
     InvalidUserError,
     LastSuperadminError,
+    TwoFactorNotOnError,
     UserExistsError,
     UserNotFoundError,
     create_user,
     get_user_by_name,
     list_users,
     reset_password,
+    reset_two_factor,
     set_user_active,
     set_user_group,
 )
@@ -164,6 +171,96 @@ async def test_reset_password_replaces_hash_ends_sessions_and_clears_lockout(
         entry = (await db.execute(select(AuditEntry))).scalar_one()
         assert entry.action == "user.password_reset"
         assert entry.details == {"sessions_ended": 1}
+
+
+async def test_reset_two_factor_clears_the_factor_and_ends_sessions_and_pending_sign_ins(
+    engine: AsyncEngine, crypto: CryptoService
+) -> None:
+    """A lost authenticator: the factor is gone and nothing opened with the old password stays."""
+    factory = create_session_factory(engine)
+    async with factory() as db:
+        user = make_user("frank")
+        db.add(user)
+        await db.flush()
+        secret = totp.generate_secret()
+        totp.activate(user, secret, 123, crypto)
+        await create_session(db, user, AuthPolicy())
+        await create_session(db, user, AuthPolicy())
+        await create_pending_login(db, user, AuthPolicy())
+        other = make_user("gina")
+        db.add(other)
+        await db.flush()
+        await create_session(db, other, AuthPolicy())
+        await create_pending_login(db, other, AuthPolicy())
+        await db.commit()
+    async with factory() as db:
+        user = await get_user_by_name(db, "frank")
+        ended = await reset_two_factor(db, user, actor_type=CLI)
+    assert ended == 2
+    async with factory() as db:
+        stored = await get_user_by_name(db, "frank")
+        assert (stored.totp_enabled, stored.totp_secret, stored.totp_enabled_at) == (
+            False,
+            None,
+            None,
+        )
+        assert stored.totp_last_step is None
+        remaining = (await db.execute(select(UserSession.user_id))).scalars().all()
+        assert remaining == [(await get_user_by_name(db, "gina")).id]
+        waiting = (await db.execute(select(PendingLogin.user_id))).scalars().all()
+        assert waiting == remaining
+        entry = (await db.execute(select(AuditEntry))).scalar_one()
+        assert (entry.action, entry.result, entry.actor_name, entry.target_name) == (
+            "user.totp_reset",
+            AuditResult.SUCCESS,
+            "cli",
+            "frank",
+        )
+        assert entry.details == {"sessions_ended": 2, "pending_logins_ended": 1}
+        assert secret not in repr([entry.details, entry.target_name])
+
+
+async def test_reset_two_factor_refuses_a_user_who_has_none_and_audits_nothing(
+    engine: AsyncEngine,
+) -> None:
+    factory = create_session_factory(engine)
+    async with factory() as db:
+        db.add(make_user("hank"))
+        await db.commit()
+    async with factory() as db:
+        user = await get_user_by_name(db, "hank")
+        with pytest.raises(TwoFactorNotOnError, match="hank has no two-factor sign-in to reset"):
+            await reset_two_factor(db, user, actor_type=CLI)
+    async with factory() as db:
+        assert (await db.execute(select(AuditEntry))).first() is None
+
+
+async def test_reset_two_factor_by_a_user_names_them_as_the_actor(
+    engine: AsyncEngine, crypto: CryptoService
+) -> None:
+    factory = create_session_factory(engine)
+    async with factory() as db:
+        admin, target = make_user("root", UserGroup.SUPERADMIN), make_user("ivy")
+        db.add_all([admin, target])
+        await db.flush()
+        totp.activate(target, totp.generate_secret(), 7, crypto)
+        await db.commit()
+    async with factory() as db:
+        root, ivy = await get_user_by_name(db, "root"), await get_user_by_name(db, "ivy")
+        await reset_two_factor(
+            db,
+            ivy,
+            actor_type=AuditActorType.USER,
+            actor_user=root,
+            ip_address="203.0.113.7",
+        )
+    async with factory() as db:
+        entry = (await db.execute(select(AuditEntry))).scalar_one()
+        assert (entry.actor_type, entry.actor_name, entry.ip_address) == (
+            AuditActorType.USER,
+            "root",
+            "203.0.113.7",
+        )
 
 
 async def test_last_active_superadmin_cannot_be_disabled(engine: AsyncEngine) -> None:

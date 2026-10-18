@@ -15,9 +15,9 @@ import { totpCode } from './totp';
  * The account page. Every flow that changes a password, the second factor or a session runs on a
  * scratch user created through the app and disabled when the test ends: the seeded users and the
  * stored sessions other specs sign in with are only read here. Wrong passwords and codes count on
- * the per-address lockout counter that every spec shares (20 in 15 minutes, and the login specs
- * already use most of it), so the whole spec makes one wrong password per project and no wrong
- * code; refusals that need no credential check (empty fields) cover the other error states.
+ * the per-address lockout counter that every spec shares (the development stack raises that limit
+ * far above what a full run uses), so the spec makes only the few wrong credentials it needs per
+ * project; refusals that need no credential check (empty fields) cover the other error states.
  */
 
 const WIDE_BREAKPOINT = 768;
@@ -101,9 +101,10 @@ async function startSetup(page: Page): Promise<string> {
   return text.replace(/ /g, '');
 }
 
-async function enableTotp(page: Page): Promise<string> {
+async function enableTotp(page: Page, user: CreatedUser): Promise<string> {
   await openAccount(page);
   const secret = await startSetup(page);
+  await page.locator('#tp').fill(user.password);
   await page.locator('#tc').fill(totpCode(secret));
   await page.locator('#account-totp-form button[type="submit"]').click();
   await expect(page.locator('#totp [data-status="deployed"]')).toHaveText('Enabled');
@@ -261,16 +262,35 @@ test.describe('two-factor authentication', () => {
     const second = await startSetup(page);
     expect(second).not.toBe(first);
 
-    await page.locator('#tc').fill('000000');
-    await page.locator('#account-totp-form button[type="submit"]').click();
-    await expect(page.locator('#tc-e')).toHaveText('The code is incorrect or expired.');
-    expect((await page.locator('#totp-secret').textContent())?.replace(/ /g, '')).toBe(second);
-    await page.locator('#tc').fill('');
-    await page.locator('#account-totp-form button[type="submit"]').click();
+    const submit = page.locator('#account-totp-form button[type="submit"]');
+    const shownSecret = async () =>
+      (await page.locator('#totp-secret').textContent())?.replace(/ /g, '');
+    await submit.click();
+    await expect(page.locator('#tp-e')).toHaveText('Enter your current password.');
+    await page.locator('#tp').fill(user.password);
+    await submit.click();
     await expect(page.locator('#tc-e')).toHaveText('Enter the 6-digit code.');
+    await expect(page.locator('#tp')).toHaveValue('');
 
+    await page.locator('#tp').fill(user.password);
+    await page.locator('#tc').fill('000000');
+    await submit.click();
+    await expect(page.locator('#tc-e')).toHaveText('The code is incorrect or expired.');
+    expect(await shownSecret()).toBe(second);
+    await expect(page.locator('#tp')).toHaveValue('');
+    await expect(page.locator('#tc')).toHaveValue('');
+
+    await page.locator('#tp').fill('not the password at all');
     await page.locator('#tc').fill(totpCode(second));
-    await page.locator('#account-totp-form button[type="submit"]').click();
+    await submit.click();
+    await expect(page.locator('#tp-e')).toHaveText('The current password is incorrect.');
+    expect(await shownSecret()).toBe(second);
+    await expect(page.locator('#tp')).toHaveValue('');
+    await expect(page.locator('#totp [data-status="deployed"]')).toHaveCount(0);
+
+    await page.locator('#tp').fill(user.password);
+    await page.locator('#tc').fill(totpCode(second));
+    await submit.click();
     await expect(page.locator('#totp [data-status="deployed"]')).toHaveText('Enabled');
     await expect(page.locator('#totp')).toContainText('Authenticator app configured on');
     await expect(page.locator('#totp-secret')).toHaveCount(0);
@@ -305,7 +325,7 @@ test.describe('two-factor authentication', () => {
   test('is asked for at the next sign in', async ({ browser, makeUser }, testInfo) => {
     const user = await makeUser('viewer');
     const page = await signIn(browser, user, testInfo);
-    const secret = await enableTotp(page);
+    const secret = await enableTotp(page, user);
     await page.context().close();
 
     const nextStep = totpCode(secret, Date.now() + 30000);
@@ -319,7 +339,7 @@ test.describe('two-factor authentication', () => {
   }, testInfo) => {
     const user = await makeUser('admin');
     const page = await signIn(browser, user, testInfo);
-    const secret = await enableTotp(page);
+    const secret = await enableTotp(page, user);
 
     await page.locator('#totp button[data-target="totp-remove"]').click();
     const dialog = page.locator('#totp-remove[open]');
@@ -427,7 +447,7 @@ test.describe('theme preference', () => {
     await openAccount(page);
     const root = page.locator('html');
     const option = (value: string) => page.locator(`#account-theme input[value="${value}"]`);
-    await expect(option('light')).toBeChecked();
+    await expect(option('system')).toBeChecked();
 
     await option('dark').check();
     await expect(root).toHaveClass(/dark/);
@@ -450,6 +470,28 @@ test.describe('theme preference', () => {
     await expect(option('system')).toBeChecked();
     await expect(root).not.toHaveClass(/dark/);
     await page.evaluate(() => localStorage.removeItem('env-theme'));
+  });
+
+  test('is Match system when nothing is stored and follows the operating system', async ({
+    page,
+  }) => {
+    await openAccount(page);
+    const root = page.locator('html');
+    await page.evaluate(() => localStorage.removeItem('env-theme'));
+
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await page.reload();
+    await expect(root).toHaveClass(/dark/);
+    await expect(page.locator('#account-theme input[value="system"]')).toBeChecked();
+    await expect(page.locator('#account-theme input:checked')).toHaveCount(1);
+    expect(await stored(page)).toBeNull();
+
+    await page.emulateMedia({ colorScheme: 'light' });
+    await expect(root).not.toHaveClass(/dark/);
+    await page.reload();
+    await expect(root).not.toHaveClass(/dark/);
+    await expect(page.locator('#account-theme input[value="system"]')).toBeChecked();
+    expect(await stored(page)).toBeNull();
   });
 
   test('follows the theme buttons of the page', async ({ page }) => {

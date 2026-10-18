@@ -1,4 +1,5 @@
-"""User administration routes (superadmin): list, create, group, enable or disable, grants."""
+"""User administration routes (superadmin): list, create, group, enable or disable, two-factor
+reset and grants."""
 
 import json
 from typing import Annotated, Any
@@ -7,6 +8,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, sta
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.client_address import client_address
 from app.core.templating import render
 from app.models import AuditActorType, User, UserGroup
 from app.services import users as user_service
@@ -31,7 +33,7 @@ CONFIRM_FRAGMENT = "fragments/user_confirm.html"
 GRANTS_FRAGMENT = "fragments/user_grants.html"
 TABLE_FRAGMENT = "fragments/users_table.html"
 TOKENS_FRAGMENT = "fragments/user_tokens.html"
-ACTIONS = ("disable", "enable", "group")
+ACTIONS = ("disable", "enable", "group", "reset-2fa")
 ORIGINS = ("list", "detail")
 FORM_FIELDS = ("name", "email", "group", "grants")
 GROUP_LABELS = {group.value: group.value.capitalize() for group in UserGroup}
@@ -39,11 +41,6 @@ GROUP_LABELS = {group.value: group.value.capitalize() for group in UserGroup}
 ManageUsers = Annotated[AuthContext, Depends(require_capability(Capability.MANAGE_USERS))]
 ManageGrants = Annotated[AuthContext, Depends(require_capability(Capability.MANAGE_GRANTS))]
 Database = Annotated[AsyncSession, Depends(get_db)]
-
-
-def _client_ip(request: Request) -> str | None:
-    """The client address as resolved by the proxy header middleware."""
-    return request.client.host if request.client else None
 
 
 def _group_of(value: str) -> UserGroup | None:
@@ -141,7 +138,7 @@ async def create_user_route(
                 group=chosen_group,
                 actor_type=AuditActorType.USER,
                 actor_user=context.user,
-                ip_address=_client_ip(request),
+                ip_address=client_address(request),
                 grants=targets,
             )
         except (user_service.UserError, GrantError) as error:
@@ -232,7 +229,7 @@ async def save_grants_route(
     once and tells other panels with ``grants-changed``.
     """
     user = await _user_row(db, user_id)
-    actor = AuditActor.for_user(context.user, _client_ip(request))
+    actor = AuditActor.for_user(context.user, client_address(request))
     try:
         desired = parse_targets(grant or [])
         started_from = parse_targets([key for key in base.split(",") if key])
@@ -257,6 +254,7 @@ def _confirm_context(
         "disable": f"{user.name} is already disabled.",
         "enable": f"{user.name} is already active.",
         "group": f"{user.name} is already in the {GROUP_LABELS[user.group.value]} group.",
+        "reset-2fa": f"{user.name} has no two-factor sign-in to reset.",
     }
     return {
         "action": action,
@@ -284,9 +282,12 @@ async def _confirm_view(
         "disable": not user.is_active,
         "enable": user.is_active,
         "group": target is user.group,
+        "reset-2fa": not user.totp_enabled,
     }
     if already[action]:
         refusal = "unchanged"
+    elif action == "reset-2fa" and user.id == actor.id:
+        refusal = "self"
     elif (
         action == "disable" or (action == "group" and target is not UserGroup.SUPERADMIN)
     ) and await user_service.is_last_active_superadmin(db, user):
@@ -342,14 +343,19 @@ async def _apply_action(
     origin: str,
     group: str,
 ) -> Response:
-    """Run a confirmed disable, enable or group change and answer for the page it came from.
+    """Run a confirmed disable, enable, group change or two-factor reset; answer for its page.
 
     The last active superadmin cannot be disabled or demoted: the service audits the refusal
-    and the dialog shows it. A change that would leave the account as it is does nothing.
+    and the dialog shows it. A change that would leave the account as it is does nothing. A
+    two-factor reset of one's own account, or of an account that has none, is refused with the
+    dialog (409): the Account page removes one's own second factor, with the password and a code.
     """
     user = await _user_row(db, user_id)
     origin = origin if origin in ORIGINS else "list"
-    ip_address = _client_ip(request)
+    ip_address = client_address(request)
+    if action == "reset-2fa" and (user.id == actor.id or not user.totp_enabled):
+        view = await _confirm_view(db, actor, user, action, origin, group)
+        return render(request, CONFIRM_FRAGMENT, view, status_code=409)
     try:
         if action == "group":
             target = _group_of(group)
@@ -364,6 +370,15 @@ async def _apply_action(
                 ip_address=ip_address,
             )
             updated = "group"
+        elif action == "reset-2fa":
+            await user_service.reset_two_factor(
+                db,
+                user,
+                actor_type=AuditActorType.USER,
+                actor_user=actor,
+                ip_address=ip_address,
+            )
+            updated = "two-factor-reset"
         else:
             active = action == "enable"
             if user.is_active is not active:
@@ -376,7 +391,7 @@ async def _apply_action(
                     ip_address=ip_address,
                 )
             updated = "enabled" if active else "disabled"
-    except user_service.LastSuperadminError:
+    except user_service.LastSuperadminError, user_service.TwoFactorNotOnError:
         view = await _confirm_view(db, actor, user, action, origin, group)
         return render(request, CONFIRM_FRAGMENT, view, status_code=409)
     return _done(user, actor, origin, updated)
@@ -417,3 +432,15 @@ async def change_group_route(
 ) -> Response:
     """Move a user to another group, effective from their next request."""
     return await _apply_action(request, db, context.user, user_id, "group", origin, group)
+
+
+@router.post("/users/{user_id:int}/reset-2fa", include_in_schema=False)
+async def reset_two_factor_route(
+    request: Request,
+    user_id: int,
+    db: Database,
+    context: ManageUsers,
+    origin: Annotated[str, Form(alias="from")] = "list",
+) -> Response:
+    """Turn off a user's two-factor sign-in (a lost authenticator): sessions end now."""
+    return await _apply_action(request, db, context.user, user_id, "reset-2fa", origin, "")

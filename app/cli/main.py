@@ -172,6 +172,18 @@ def reset_user_password(name: Annotated[str, typer.Argument(help="Sign-in name."
     typer.echo("This password is shown once and cannot be recovered.")
 
 
+@user_app.command("reset-2fa")
+def reset_user_two_factor(name: Annotated[str, typer.Argument(help="Sign-in name.")]) -> None:
+    """Turn off a user's two-factor sign-in (a lost authenticator) and end their sessions."""
+
+    async def operation(db: AsyncSession) -> int:
+        user = await user_service.get_user_by_name(db, name)
+        return await user_service.reset_two_factor(db, user, actor_type=AuditActorType.CLI)
+
+    ended = run_command(operation)
+    typer.echo(f"two-factor sign-in reset for {name.strip()}, {ended} session(s) ended")
+
+
 class DeployTargetError(Exception):
     """The service or file named on the deploy command line does not exist."""
 

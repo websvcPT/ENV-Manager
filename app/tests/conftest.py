@@ -42,6 +42,21 @@ def no_inherited_demo_root(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("ENVMANAGER_DEMO_ROOT", raising=False)
 
 
+@pytest.fixture(autouse=True)
+def no_inherited_network_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Start from the defaults of the proxy, source and lockout settings.
+
+    The development container raises the sign-in failure limit per address for browser specs,
+    and an environment file could list proxies or allowed sources; tests that need a value set it.
+    """
+    for name in (
+        "ENVMANAGER_TRUSTED_PROXIES",
+        "ENVMANAGER_ALLOWED_SOURCES",
+        "ENVMANAGER_LOGIN_IP_MAX_FAILURES",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+
 @pytest.fixture(scope="session")
 def master_key() -> str:
     """The master key of the test session: seeded ciphertexts and hashes depend on it."""

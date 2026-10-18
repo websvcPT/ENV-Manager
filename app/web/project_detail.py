@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import RedirectResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.client_address import client_address
 from app.core.templating import render
 from app.models import Project
 from app.services.access_grid import NodeKind
@@ -74,11 +75,6 @@ async def _project_row(db: AsyncSession, access: ProjectContext) -> Project:
     if project is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "project not found")
     return project
-
-
-def _client_ip(request: Request) -> str | None:
-    """The client address as resolved by the proxy header middleware."""
-    return request.client.host if request.client else None
 
 
 def _page_context(access: ProjectContext, tab: str, **extra: Any) -> dict[str, Any]:
@@ -175,7 +171,7 @@ async def rename_route(
     project = await _project_row(db, access)
     try:
         await rename_project(
-            db, project, name=name, actor=access.auth.user, ip_address=_client_ip(request)
+            db, project, name=name, actor=access.auth.user, ip_address=client_address(request)
         )
     except ProjectError as error:
         return render(
@@ -213,7 +209,7 @@ async def delete_route(
     else:
         try:
             await delete_project(
-                db, project, actor=access.auth.user, ip_address=_client_ip(request)
+                db, project, actor=access.auth.user, ip_address=client_address(request)
             )
         except ProjectInUseError as refused:
             error = str(refused)

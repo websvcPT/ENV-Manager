@@ -1,9 +1,9 @@
 """A signed-in user's own account: password change and the second factor.
 
-Checks that prove a credential (the current password, an authenticator code when removing the
-second factor) count their failures on the same name and address counters as sign in, and are
-refused while either is locked. Every outcome is audited with counts and reasons only: no
-password, code or secret is ever recorded.
+Checks that prove a credential (the current password, also when turning the second factor on, and
+an authenticator code when removing it) count their failures on the same name and address
+counters as sign in, and are refused while either is locked. Every outcome is audited with counts
+and reasons only: no password, code or secret is ever recorded.
 """
 
 from datetime import datetime, timedelta
@@ -181,24 +181,45 @@ async def change_password(
 
 async def enable_totp(
     db: AsyncSession,
+    policy: AuthPolicy,
     user: User,
     crypto: CryptoService,
     *,
     secret: str,
+    password: str,
     code: str,
     ip_address: str | None = None,
     now: datetime | None = None,
 ) -> None:
-    """Turn the second factor on with the secret of a setup, once a valid code proves it.
+    """Turn the second factor on with the secret of a setup, after the password and a valid code.
 
-    The code's time step counts as used. A wrong code is only refused, not counted toward the
-    lockout: nothing is being guessed, since the secret is the one just shown to the user.
+    The current password is checked first (a session that was taken over cannot enrol another
+    authenticator without it): a wrong one counts toward the lockout and the attempt is refused
+    while the name or address is locked. The code then proves the secret was scanned; its time
+    step counts as used. A wrong code is only refused, not counted: nothing is being guessed,
+    since the secret is the one just shown to the user.
     """
     moment = now or utc_now()
     if user.totp_enabled:
         raise AccountError("Two-factor authentication is already on.")
+    await _refuse_when_locked(db, user, TOTP_ENABLE, ip_address, moment)
+    if not password:
+        raise AccountError("Enter your current password.", "current_password")
     if not code.strip():
         raise AccountError("Enter the 6-digit code.", "code")
+    matched, _ = verify_password(password, user.password_hash)
+    if not matched:
+        raise await _refuse_credential(
+            db,
+            policy,
+            user,
+            TOTP_ENABLE,
+            reason="invalid_password",
+            message="The current password is incorrect.",
+            field="current_password",
+            ip_address=ip_address,
+            now=moment,
+        )
     step = totp.step_for_secret(secret, code, now=moment)
     if step is None:
         raise AccountError("The code is incorrect or expired.", "code")

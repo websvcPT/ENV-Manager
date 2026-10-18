@@ -7,6 +7,7 @@ from fastapi.responses import RedirectResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.core.client_address import client_address
 from app.core.crypto import CryptoService
 from app.core.sessions import PENDING_LOGIN_COOKIE_NAME, SESSION_COOKIE_NAME
 from app.core.templating import render
@@ -29,11 +30,6 @@ router = APIRouter()
 
 LOGIN_PAGE = "pages/login.html"
 LOGIN_CARD = "fragments/login_card.html"
-
-
-def _client_ip(request: Request) -> str | None:
-    """The client address as resolved by the proxy header middleware."""
-    return request.client.host if request.client else None
 
 
 def _format_remaining(seconds: int) -> str:
@@ -135,7 +131,7 @@ async def login(
         policy,
         identifier=identifier,
         password=password,
-        ip_address=_client_ip(request),
+        ip_address=client_address(request),
         user_agent=request.headers.get("user-agent"),
     )
     if result.status is LoginStatus.SUCCESS and result.token:
@@ -188,7 +184,7 @@ async def login_totp(
         policy,
         pending_token=request.cookies.get(PENDING_LOGIN_COOKIE_NAME, ""),
         code=code,
-        ip_address=_client_ip(request),
+        ip_address=client_address(request),
         user_agent=request.headers.get("user-agent"),
     )
     if result.status is LoginStatus.SUCCESS and result.token:
@@ -217,7 +213,7 @@ async def logout(
         result=AuditResult.SUCCESS,
         actor_type=AuditActorType.USER,
         actor_user=context.user,
-        ip_address=_client_ip(request),
+        ip_address=client_address(request),
     )
     await revoke_session(db, context.session)
     response = RedirectResponse("/login", status_code=303)

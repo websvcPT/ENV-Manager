@@ -7,6 +7,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.client_address import client_address
 from app.core.log import get_logger
 from app.core.templating import render
 from app.services.permissions import AccessScope, Capability
@@ -25,11 +26,6 @@ router = APIRouter()
 
 TABLE_FRAGMENT = "fragments/projects_table.html"
 FORM_FRAGMENT = "fragments/project_new_form.html"
-
-
-def _client_ip(request: Request) -> str | None:
-    """The client address as resolved by the proxy header middleware."""
-    return request.client.host if request.client else None
 
 
 async def _table_context(db: AsyncSession, scope: AccessScope, query: str) -> dict[str, Any]:
@@ -103,7 +99,7 @@ async def create_project_route(
     swaps the form again with the reason.
     """
     try:
-        await create_project(db, name=name, actor=context.user, ip_address=_client_ip(request))
+        await create_project(db, name=name, actor=context.user, ip_address=client_address(request))
     except ProjectError as error:
         return render(
             request,

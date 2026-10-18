@@ -1,9 +1,11 @@
-{#- The confirm dialog content for disabling or enabling a user and for changing a group, loaded
-    into the shared user dialog. The server decides what it can offer: a refusal (the last
-    active superadmin, a group the user already has) replaces the buttons with its reason.
-    Context: action (disable, enable or group), user_id, user_name, origin (list or detail),
-    is_self, unchanged_message, current_group and target_group (group labels, group only), target_value (the
-    group value to post), refusal (none, last_active_superadmin or unchanged). -#}
+{#- The confirm dialog content for disabling or enabling a user, for changing a group and for
+    resetting two-factor sign-in, loaded into the shared user dialog. The server decides what it
+    can offer: a refusal (the last active superadmin, a group the user already has, a user with
+    no two-factor sign-in, one's own account for a reset) replaces the buttons with its reason.
+    Context: action (disable, enable, group or reset-2fa), user_id, user_name, origin (list or
+    detail), is_self, unchanged_message, current_group and target_group (group labels, group
+    only), target_value (the group value to post), refusal (none, last_active_superadmin,
+    unchanged or self). -#}
 {% from "macros/buttons.html" import button %}
 {% from "macros/dialogs.html" import dialog_body, dialog_footer, dialog_head %}
 {% from "macros/feedback.html" import inline_error, note %}
@@ -14,11 +16,14 @@
   "superadmin": "Superadmins reach every project and manage users, grants and settings. Grants no longer limit them."
 } %}
 {% set confirm_url = "/users/" ~ user_id ~ "/confirm/" ~ action ~ "?from=" ~ origin ~ ("&group=" ~ target_value if action == "group" else "") %}
-{% if action == "disable" %}{% set title = "Disable " ~ user_name %}{% elif action == "enable" %}{% set title = "Enable " ~ user_name %}{% else %}{% set title = "Change group of " ~ user_name %}{% endif %}
+{% if action == "disable" %}{% set title = "Disable " ~ user_name %}{% elif action == "enable" %}{% set title = "Enable " ~ user_name %}{% elif action == "reset-2fa" %}{% set title = "Reset two-factor for " ~ user_name %}{% else %}{% set title = "Change group of " ~ user_name %}{% endif %}
 <div data-fragment="user-action">
 {{ dialog_head("user-action", title) }}
 {%- if refusal == "last_active_superadmin" %}
 {% call dialog_body() %}{{ inline_error("Cannot " ~ ("disable" if action == "disable" else "demote") ~ " the last active superadmin", "Create or enable another superadmin first. The last active superadmin cannot be disabled or demoted.", in_dialog=true, hx_get=confirm_url, hx_target="#user-action", hx_swap="innerHTML") }}{% endcall %}
+{% call dialog_footer() %}{{ button("Close", extra_class="h-11", data_js="dialog-close") }}{% endcall %}
+{%- elif refusal == "self" %}
+{% call dialog_body() %}{{ note("This is your own account. Remove two-factor from your Account page, which asks for your password and a code.") }}{% endcall %}
 {% call dialog_footer() %}{{ button("Close", extra_class="h-11", data_js="dialog-close") }}{% endcall %}
 {%- elif refusal == "unchanged" %}
 {% call dialog_body() %}{{ note(unchanged_message) }}{% endcall %}
@@ -26,16 +31,18 @@
 {%- else %}
 <form hx-post="/users/{{ user_id }}/{{ action }}" hx-target="#user-action" hx-swap="innerHTML">
 <input type="hidden" name="from" value="{{ origin }}">{% if action == "group" %}<input type="hidden" name="group" value="{{ target_value }}">{% endif %}
-{% call dialog_body() %}<div class="flex items-start gap-3.5"><span class="flex size-10 shrink-0 items-center justify-center rounded-full {{ "bg-danger-soft text-danger" if action == "disable" else "bg-info-bg text-info-fg" }}">{{ icon("warning" if action == "disable" else "info", "size-5", "2.2") }}</span><p class="text-[15px] text-ink">
+{% call dialog_body() %}<div class="flex items-start gap-3.5"><span class="flex size-10 shrink-0 items-center justify-center rounded-full {{ "bg-danger-soft text-danger" if action in ("disable", "reset-2fa") else "bg-info-bg text-info-fg" }}">{{ icon("warning" if action in ("disable", "reset-2fa") else "info", "size-5", "2.2") }}</span><p class="text-[15px] text-ink">
 {%- if action == "disable" -%}
 The user can no longer sign in and active sessions end now. All of their API tokens are revoked for good. Their audit entries stay. You can enable the account again, and they can then create new tokens.{% if is_self %} This is your own account: you will be signed out now.{% endif %}
 {%- elif action == "enable" -%}
 The user can sign in again with their current password. Their old API tokens stay revoked, so they need to create new ones.
+{%- elif action == "reset-2fa" -%}
+Two-factor sign-in is turned off for {{ user_name }}, so they sign in with their password alone until they turn it on again. Use this when they lost their authenticator. Their active sessions end now and any sign-in waiting for a code is cancelled.
 {%- else -%}
 Move {{ user_name }} from {{ current_group }} to {{ target_group }}. The change applies now. {{ GROUP_EFFECTS[target_value] }}{% if is_self %} This is your own account, so you may lose access to this page.{% endif %}
 {%- endif -%}
 </p></div>{% endcall %}
-{% call dialog_footer() %}{{ button("Cancel", extra_class="h-11", data_js="dialog-close") }}{% if action == "disable" %}{{ button("Disable user", kind="danger", type="submit", extra_class="h-11 text-[15px]") }}{% elif action == "enable" %}{{ button("Enable user", kind="primary", type="submit") }}{% else %}{{ button("Change group", kind="primary", type="submit") }}{% endif %}{% endcall %}
+{% call dialog_footer() %}{{ button("Cancel", extra_class="h-11", data_js="dialog-close") }}{% if action == "disable" %}{{ button("Disable user", kind="danger", type="submit", extra_class="h-11 text-[15px]") }}{% elif action == "enable" %}{{ button("Enable user", kind="primary", type="submit") }}{% elif action == "reset-2fa" %}{{ button("Reset two-factor", kind="danger", type="submit", extra_class="h-11 text-[15px]") }}{% else %}{{ button("Change group", kind="primary", type="submit") }}{% endif %}{% endcall %}
 </form>
 {%- endif %}
 </div>

@@ -32,6 +32,11 @@ SECRET = re.compile(r'id="totp-secret"[^>]*>([^<]+)<')
 QR_SOURCE = re.compile(r'<img id="totp-qr" src="([^"]+)"')
 
 
+def enable_fields(code: str, password: str = DEV_PASSWORD) -> dict[str, str]:
+    """The fields of the form that turns two-factor authentication on."""
+    return {"current_password": password, "code": code}
+
+
 @asynccontextmanager
 async def another_browser(web_app: FastAPI, name: str) -> AsyncIterator[httpx.AsyncClient]:
     """A second signed-in browser of the same user: a second session."""
@@ -138,6 +143,18 @@ async def test_every_group_opens_the_account_page(
     assert 'id="totp-remove"' in response.text and 'id="session-revoke"' in response.text
     assert 'aria-current="page"' not in main_of(response.text)
     assert "Revoke" not in body and "Sign out other sessions" not in body
+
+
+async def test_the_theme_panel_starts_on_match_system(web_client: httpx.AsyncClient) -> None:
+    """With nothing stored in the browser the preference is Match system, as the handoff draws."""
+    await sign_in(web_client, "admin")
+    page = (await web_client.get("/account")).text
+    options = re.findall(r'<input type="radio" name="theme" value="(\w+)"( checked)?', page)
+    assert [(value, bool(checked)) for value, checked in options] == [
+        ("light", False),
+        ("dark", False),
+        ("system", True),
+    ]
 
 
 async def test_the_account_link_of_the_menu_now_opens_the_page(
@@ -271,7 +288,7 @@ async def test_starting_a_setup_shows_a_qr_code_and_the_key_and_stores_nothing(
     assert_never_cached(response)
     assert len(secret) == 32 and secret.isalnum()
     assert "Scan the QR code with an authenticator app." in response.text
-    assert "Enter the 6-digit code to confirm." in response.text
+    assert "Enter your current password and the 6-digit code to confirm." in response.text
     assert 'autocomplete="one-time-code"' in response.text
     assert 'inputmode="numeric"' in response.text
     assert 'hx-ignore class="select-all font-mono"' in response.text
@@ -323,7 +340,8 @@ async def test_the_qr_code_needs_this_sessions_own_setup(
             f"{TOTP_SETUP_COOKIE_NAME}={web_client.cookies[TOTP_SETUP_COOKIE_NAME]}"
         )
         assert (await other.get(source.group(1), headers={"Cookie": borrowed})).status_code == 404
-        assert (await post(other, "/account/totp/enable", {"code": "123456"})).status_code == 409
+        refused = await post(other, "/account/totp/enable", enable_fields("123456"))
+        assert refused.status_code == 409
 
 
 async def test_a_wrong_code_keeps_the_setup_and_a_right_one_turns_it_on(
@@ -332,17 +350,17 @@ async def test_a_wrong_code_keeps_the_setup_and_a_right_one_turns_it_on(
     await sign_in(web_client, "admin")
     _, secret = await start_setup(web_client)
 
-    wrong = await post(web_client, "/account/totp/enable", {"code": "000000"})
+    wrong = await post(web_client, "/account/totp/enable", enable_fields("000000"))
     assert wrong.status_code == 422
     assert "The code is incorrect or expired." in wrong.text
     assert 'aria-describedby="tc-e"' in wrong.text
     assert SECRET.search(wrong.text) is not None
     assert SECRET.search(wrong.text).group(1).replace(" ", "") == secret  # type: ignore[union-attr]
-    empty = await post(web_client, "/account/totp/enable", {"code": ""})
+    empty = await post(web_client, "/account/totp/enable", enable_fields(""))
     assert empty.status_code == 422 and "Enter the 6-digit code." in empty.text
     assert (await stored_user(web_app, "admin")).totp_secret is None
 
-    done = await post(web_client, "/account/totp/enable", {"code": pyotp.TOTP(secret).now()})
+    done = await post(web_client, "/account/totp/enable", enable_fields(pyotp.TOTP(secret).now()))
     assert done.status_code == 200
     assert_never_cached(done)
     assert "Enabled" in done.text and "Authenticator app configured on" in done.text
@@ -365,13 +383,84 @@ async def test_a_wrong_code_keeps_the_setup_and_a_right_one_turns_it_on(
     assert again.status_code == 409 and "Enabled" in again.text
 
 
+async def test_turning_it_on_needs_the_current_password(
+    web_client: httpx.AsyncClient, web_app: FastAPI
+) -> None:
+    """A valid code is not enough: a wrong or missing password keeps the same setup running."""
+    await sign_in(web_client, "admin")
+    _, secret = await start_setup(web_client)
+    code = pyotp.TOTP(secret).now()
+
+    wrong = await post(web_client, "/account/totp/enable", enable_fields(code, "wrong password"))
+    assert wrong.status_code == 422
+    assert "The current password is incorrect." in wrong.text
+    assert 'aria-describedby="tp-e"' in wrong.text
+    assert "wrong password" not in wrong.text and code not in wrong.text
+    assert SECRET.search(wrong.text) is not None
+    assert SECRET.search(wrong.text).group(1).replace(" ", "") == secret  # type: ignore[union-attr]
+    empty = await post(web_client, "/account/totp/enable", enable_fields(code, ""))
+    assert empty.status_code == 422 and "Enter your current password." in empty.text
+    assert 'aria-describedby="tp-e"' in empty.text
+    stored = await stored_user(web_app, "admin")
+    assert stored.totp_secret is None and not stored.totp_enabled and stored.totp_last_step is None
+
+    done = await post(web_client, "/account/totp/enable", enable_fields(code))
+    assert done.status_code == 200 and "Enabled" in done.text
+    entries = await audit(web_app)
+    assert [(entry.action, entry.result.value) for entry in entries] == [
+        ("account.totp_enable", "failure"),
+        ("account.totp_enable", "success"),
+    ]
+    assert entries[0].details == {"reason": "invalid_password"}
+    stored_text = repr([entry.details for entry in entries])
+    assert "wrong password" not in stored_text and code not in stored_text
+
+
+async def test_the_setup_form_asks_for_the_password_and_the_code(
+    web_client: httpx.AsyncClient,
+) -> None:
+    """The form has a password field before the code field and never carries values."""
+    await sign_in(web_client, "admin")
+    response, _ = await start_setup(web_client)
+    page = response.text
+    assert page.index('id="tp"') < page.index('id="tc"')
+    assert 'name="current_password" type="password" value=""' in page
+    assert 'autocomplete="current-password"' in page
+    assert "Enter your current password and the 6-digit code to confirm." in page
+
+
+async def test_wrong_passwords_at_the_setup_lock_it_and_keep_the_pending_secret(
+    web_client: httpx.AsyncClient, web_app: FastAPI
+) -> None:
+    """Failures count like sign in; once locked even the right password is refused with 429."""
+    await sign_in(web_client, "admin")
+    _, secret = await start_setup(web_client)
+    code = pyotp.TOTP(secret).now()
+    answers = [
+        await post(web_client, "/account/totp/enable", enable_fields(code, "wrong password"))
+        for _ in range(5)
+    ]
+    assert [answer.status_code for answer in answers] == [422, 422, 422, 422, 429]
+    locked = await post(web_client, "/account/totp/enable", enable_fields(code))
+    assert locked.status_code == 429
+    assert 0 < int(locked.headers["retry-after"]) <= 900
+    assert 'role="alert"' in locked.text and "Too many failed attempts. Try again in" in locked.text
+    assert SECRET.search(locked.text) is not None
+    assert SECRET.search(locked.text).group(1).replace(" ", "") == secret  # type: ignore[union-attr]
+    assert "wrong password" not in locked.text
+    stored = await stored_user(web_app, "admin")
+    assert stored.totp_secret is None and not stored.totp_enabled
+    blocked = (await audit(web_app))[-1]
+    assert blocked.result.value == "blocked" and blocked.details == {"reason": "locked"}
+
+
 async def test_the_secret_never_reaches_the_log(
     web_client: httpx.AsyncClient, caplog: pytest.LogCaptureFixture
 ) -> None:
     await sign_in(web_client, "admin")
     with caplog.at_level(logging.DEBUG):
         _, secret = await start_setup(web_client)
-        await post(web_client, "/account/totp/enable", {"code": pyotp.TOTP(secret).now()})
+        await post(web_client, "/account/totp/enable", enable_fields(pyotp.TOTP(secret).now()))
         await web_client.get("/account")
     logged = " ".join(record.getMessage() for record in caplog.records)
     assert secret not in logged and secret.lower() not in logged.lower()
@@ -383,7 +472,7 @@ async def test_a_setup_that_ran_out_is_dropped_with_a_note(
     await sign_in(web_client, "admin")
     await start_setup(web_client)
     web_client.cookies.delete(TOTP_SETUP_COOKIE_NAME, path="/account/totp")
-    response = await post(web_client, "/account/totp/enable", {"code": "123456"})
+    response = await post(web_client, "/account/totp/enable", enable_fields("123456"))
     assert response.status_code == 409
     assert "The setup took too long and was dropped. Start again." in response.text
     assert "Set up two-factor" in response.text
@@ -397,14 +486,14 @@ async def test_cancelling_drops_the_pending_secret(web_client: httpx.AsyncClient
     assert cancelled.status_code == 200 and "Set up two-factor" in cancelled.text
     assert secret not in cancelled.text
     assert TOTP_SETUP_COOKIE_NAME not in web_client.cookies
-    replay = await post(web_client, "/account/totp/enable", {"code": pyotp.TOTP(secret).now()})
+    replay = await post(web_client, "/account/totp/enable", enable_fields(pyotp.TOTP(secret).now()))
     assert replay.status_code == 409
 
 
 async def enable_for(http: httpx.AsyncClient) -> str:
     """Turn the second factor on for the signed-in user and return the secret."""
     _, secret = await start_setup(http)
-    done = await post(http, "/account/totp/enable", {"code": pyotp.TOTP(secret).now()})
+    done = await post(http, "/account/totp/enable", enable_fields(pyotp.TOTP(secret).now()))
     assert done.status_code == 200
     return secret
 

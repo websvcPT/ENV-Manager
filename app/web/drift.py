@@ -13,6 +13,7 @@ from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.datastructures import FormData
 
+from app.core.client_address import client_address
 from app.core.templating import render
 from app.models import PostDeployStatus
 from app.services.audit import AuditActor
@@ -43,11 +44,6 @@ OVERWRITE_FORM = "fragments/drift_overwrite.html"
 MAX_NUMBER_DIGITS = 9
 MAX_HASH_LENGTH = 128
 CONFIRM_MESSAGE = "Confirm the overwrite to continue."
-
-
-def _client_ip(request: Request) -> str | None:
-    """The client address as resolved by the proxy header middleware."""
-    return request.client.host if request.client else None
 
 
 def _plain_number(value: object) -> int | None:
@@ -152,7 +148,7 @@ async def reveal_values(
             get_crypto(request),
             access.env,
             actor=access.auth.user,
-            ip_address=_client_ip(request),
+            ip_address=client_address(request),
             columns=columns,
             managed_number=managed,
             deployed_number=deployed,
@@ -183,7 +179,7 @@ async def import_file(
             get_crypto(request),
             access.env,
             actor=access.auth.user,
-            ip_address=_client_ip(request),
+            ip_address=client_address(request),
             base_number=_plain_number(form.get("base_version")) or 0,
             target_hash=_text(form, "target_hash"),
         )
@@ -230,7 +226,7 @@ async def overwrite(
             db,
             engine,
             access.scope,
-            AuditActor.for_user(access.auth.user, _client_ip(request)),
+            AuditActor.for_user(access.auth.user, client_address(request)),
             access.env,
             base_number=base_version,
         )

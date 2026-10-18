@@ -7,9 +7,10 @@ import httpx
 import pytest
 from fastapi import FastAPI, Request
 from pydantic import SecretStr
-from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from app.config import Settings
+from app.core.allowed_sources import AllowedSourcesMiddleware
+from app.core.client_address import ProxyHeadersMiddleware
 from app.core.cors import ApiCorsMiddleware
 from app.core.csrf import (
     CSRF_COOKIE_NAME,
@@ -85,22 +86,25 @@ async def client() -> AsyncIterator[httpx.AsyncClient]:
         yield http_client
 
 
-def test_middleware_order_is_headers_cors_csrf() -> None:
-    """The stack is proxy headers, security headers, CORS, then CSRF from the outside in."""
-    application = build_app(cors_origins=[ORIGIN], trusted_proxies=["10.0.0.5"])
+def test_middleware_order_is_proxy_headers_security_headers_sources_cors_csrf() -> None:
+    """From the outside in: proxy headers, security headers, allowed sources, CORS, CSRF."""
+    application = build_app(
+        cors_origins=[ORIGIN], trusted_proxies=["10.0.0.5"], allowed_sources=["10.0.0.0/8"]
+    )
     order: list[object] = [entry.cls for entry in application.user_middleware]
     assert order == [
         ProxyHeadersMiddleware,
         SecurityHeadersMiddleware,
+        AllowedSourcesMiddleware,
         ApiCorsMiddleware,
         CSRFMiddleware,
     ]
 
 
-def test_cors_and_proxy_middleware_absent_when_unconfigured() -> None:
-    """With no origins and no proxies only security headers and CSRF are installed."""
+def test_optional_middleware_absent_when_unconfigured() -> None:
+    """With no origins and no sources only the address, security header and CSRF layers run."""
     order: list[object] = [entry.cls for entry in build_app().user_middleware]
-    assert order == [SecurityHeadersMiddleware, CSRFMiddleware]
+    assert order == [ProxyHeadersMiddleware, SecurityHeadersMiddleware, CSRFMiddleware]
 
 
 async def test_security_headers_on_success(client: httpx.AsyncClient) -> None:

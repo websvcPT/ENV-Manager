@@ -10,14 +10,10 @@ from typing import Annotated
 from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.client_address import client_address
 from app.services.api_auth import ApiCaller, authenticate_token
 from app.services.auth_policy import AuthPolicy
 from app.web.dependencies import get_auth_policy, get_db
-
-
-def client_address(request: Request) -> str | None:
-    """The client address as resolved by the proxy header middleware (trusted proxies only)."""
-    return request.client.host if request.client else None
 
 
 async def require_api_token(

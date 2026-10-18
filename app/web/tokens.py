@@ -14,6 +14,7 @@ from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.core.client_address import client_address
 from app.core.templating import render
 from app.models import ApiToken, User, UserGroup
 from app.services.audit import AuditActor
@@ -42,11 +43,6 @@ DEFAULT_OPERATIONS = frozenset({OPERATIONS[0].key})
 ManageTokens = Annotated[AuthContext, Depends(require_capability(Capability.MANAGE_OWN_TOKENS))]
 Scope = Annotated[AccessScope, Depends(get_scope)]
 Database = Annotated[AsyncSession, Depends(get_db)]
-
-
-def _client_ip(request: Request) -> str | None:
-    """The client address as resolved by the proxy header middleware."""
-    return request.client.host if request.client else None
 
 
 def _events(*names: str) -> str:
@@ -136,7 +132,7 @@ async def create_token_route(
             operations=chosen,
             restriction=restriction,
             expires=expires,
-            actor=AuditActor.for_user(context.user, _client_ip(request)),
+            actor=AuditActor.for_user(context.user, client_address(request)),
         )
     except TokenError as error:
         page = await _form_context(
@@ -204,7 +200,7 @@ async def revoke_token_route(
     tables refresh to show it.
     """
     token = await _manageable(db, context.user, token_id)
-    actor = AuditActor.for_user(context.user, _client_ip(request))
+    actor = AuditActor.for_user(context.user, client_address(request))
     if not await revoke_token(db, token, actor):
         response = render(
             request,

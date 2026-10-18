@@ -204,20 +204,40 @@ async def test_refused_passwords_name_the_field_and_are_not_counted(
     assert await counters(account.db) == {}
 
 
+async def enable(
+    account: Account,
+    crypto: CryptoService,
+    secret: str,
+    *,
+    password: str = PASSWORD,
+    code: str | None = None,
+) -> None:
+    """Turn the second factor on with the given fields; valid ones unless overridden."""
+    await enable_totp(
+        account.db,
+        POLICY,
+        account.user,
+        crypto,
+        secret=secret,
+        password=password,
+        code=current_code(secret) if code is None else code,
+        ip_address=ADDRESS,
+        now=MOMENT,
+    )
+
+
 async def test_enabling_stores_the_secret_as_ciphertext_only_after_a_valid_code(
     account: Account, crypto: CryptoService
 ) -> None:
     secret = totp.generate_secret()
     with pytest.raises(AccountError) as wrong:
-        await enable_totp(account.db, account.user, crypto, secret=secret, code="000000")
+        await enable(account, crypto, secret, code="000000")
     assert wrong.value.field == "code"
     assert account.user.totp_secret is None and not account.user.totp_enabled
     assert await counters(account.db) == {}
 
     code = current_code(secret)
-    await enable_totp(
-        account.db, account.user, crypto, secret=secret, code=code, ip_address=ADDRESS, now=MOMENT
-    )
+    await enable(account, crypto, secret, code=code)
     assert account.user.totp_enabled and account.user.totp_enabled_at is not None
     assert account.user.totp_secret is not None and secret not in account.user.totp_secret
     assert totp.read_secret(account.user, crypto) == secret
@@ -227,27 +247,71 @@ async def test_enabling_stores_the_secret_as_ciphertext_only_after_a_valid_code(
     assert secret not in repr(entry.details) and code not in repr(entry.details)
 
 
-async def test_enabling_refuses_an_empty_code_and_an_account_that_has_it_on(
+async def test_enabling_refuses_empty_fields_and_an_account_that_has_it_on(
     account: Account, crypto: CryptoService
 ) -> None:
     secret = totp.generate_secret()
-    with pytest.raises(AccountError, match="Enter the 6-digit code"):
-        await enable_totp(account.db, account.user, crypto, secret=secret, code="  ")
-    await enable_totp(
-        account.db, account.user, crypto, secret=secret, code=current_code(secret), now=MOMENT
-    )
+    with pytest.raises(AccountError, match="Enter the 6-digit code") as no_code:
+        await enable(account, crypto, secret, code="  ")
+    assert no_code.value.field == "code"
+    with pytest.raises(AccountError, match="Enter your current password") as no_password:
+        await enable(account, crypto, secret, password="")
+    assert no_password.value.field == "current_password"
+    assert await counters(account.db) == {}
+    await enable(account, crypto, secret)
     with pytest.raises(AccountError, match="already on"):
-        await enable_totp(
-            account.db, account.user, crypto, secret=secret, code=current_code(secret), now=MOMENT
-        )
+        await enable(account, crypto, secret)
+
+
+async def test_enabling_with_a_wrong_password_counts_and_leaves_the_code_unused(
+    account: Account, crypto: CryptoService
+) -> None:
+    """A valid code does not help without the password, and the password is checked first."""
+    secret = totp.generate_secret()
+    with pytest.raises(AccountError) as refused:
+        await enable(account, crypto, secret, password="not the password")
+    assert refused.value.field == "current_password"
+    assert not account.user.totp_enabled and account.user.totp_secret is None
+    assert account.user.totp_last_step is None
+    assert await counters(account.db) == {LoginCounterKind.USER: 1, LoginCounterKind.IP: 1}
+    (entry,) = await audit_entries(account.db, "account.totp_enable")
+    assert entry.result is AuditResult.FAILURE and entry.details == {"reason": "invalid_password"}
+    stored = repr([entry.details, entry.target_name, entry.actor_name])
+    assert "not the password" not in stored and secret not in stored
+
+
+async def test_a_wrong_code_after_the_right_password_is_not_counted(
+    account: Account, crypto: CryptoService
+) -> None:
+    """Nothing is guessed about a secret that was just shown, so a wrong code costs no failure."""
+    secret = totp.generate_secret()
+    with pytest.raises(AccountError) as refused:
+        await enable(account, crypto, secret, code="000000")
+    assert refused.value.field == "code"
+    assert await counters(account.db) == {}
+    assert await audit_entries(account.db, "account.totp_enable") == []
+
+
+async def test_enabling_is_refused_while_the_name_or_address_is_locked(
+    account: Account, crypto: CryptoService
+) -> None:
+    """Repeated wrong passwords lock turning it on, and the lock is audited as blocked."""
+    secret = totp.generate_secret()
+    for _ in range(POLICY.user_max_failures):
+        with pytest.raises((AccountError, AccountLockedError)):
+            await enable(account, crypto, secret, password="nope")
+    with pytest.raises(AccountLockedError) as locked:
+        await enable(account, crypto, secret)
+    assert locked.value.retry_after > timedelta(0)
+    assert not account.user.totp_enabled and account.user.totp_secret is None
+    blocked = (await audit_entries(account.db, "account.totp_enable"))[-1]
+    assert blocked.result is AuditResult.BLOCKED and blocked.details == {"reason": "locked"}
 
 
 async def turn_on(account: Account, crypto: CryptoService) -> str:
     """Turn the second factor on and return its secret."""
     secret = totp.generate_secret()
-    await enable_totp(
-        account.db, account.user, crypto, secret=secret, code=current_code(secret), now=MOMENT
-    )
+    await enable(account, crypto, secret)
     return secret
 
 

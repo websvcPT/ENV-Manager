@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.client_address import client_address
 from app.core.templating import render
 from app.models import Deployment, Project
 from app.services.deployments import (
@@ -35,11 +36,6 @@ FORM_FRAGMENT = "fragments/deployment_form.html"
 CHECKS_FRAGMENT = "fragments/path_checks.html"
 PICKER_FRAGMENT = "fragments/path_picker.html"
 PICKER_ERROR = "That folder cannot be opened."
-
-
-def _client_ip(request: Request) -> str | None:
-    """The client address as resolved by the proxy header middleware."""
-    return request.client.host if request.client else None
 
 
 def _redirect(url: str) -> Response:
@@ -173,7 +169,7 @@ async def create_deployment_route(
             status_code=422,
         )
     deployment = await create_deployment(
-        db, project, clean, actor=access.auth.user, ip_address=_client_ip(request)
+        db, project, clean, actor=access.auth.user, ip_address=client_address(request)
     )
     return _redirect(f"/deployments/{deployment.id}")
 
@@ -256,7 +252,7 @@ async def edit_deployment_route(
             status_code=422,
         )
     await update_deployment(
-        db, deployment, clean, actor=access.auth.user, ip_address=_client_ip(request)
+        db, deployment, clean, actor=access.auth.user, ip_address=client_address(request)
     )
     return _redirect(f"/deployments/{deployment.id}?saved=true")
 

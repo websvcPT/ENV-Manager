@@ -24,13 +24,13 @@
   }
 
   /* The theme preference is light, dark or system (follow the operating system), kept in the
-     browser; nothing is stored on the server. Light is the preference until one is chosen. */
+     browser; nothing is stored on the server. Match system is the preference until one is chosen. */
   var THEME_CHOICES = ['light', 'dark', 'system'];
   var colorScheme = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
 
   function themePreference() {
     var stored = readStored(THEME_KEY);
-    return THEME_CHOICES.indexOf(stored) >= 0 ? stored : 'light';
+    return THEME_CHOICES.indexOf(stored) >= 0 ? stored : 'system';
   }
 
   /* Theme is applied while the head script runs so the page never paints in the wrong theme.

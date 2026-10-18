@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.client_address import client_address
 from app.core.templating import render
 from app.models.types import utc_now
 from app.services.audit_export import export_chunks, record_export
@@ -30,11 +31,6 @@ router = APIRouter()
 AUDIT_PATH = "/audit"
 EXPORT_PATH = "/audit/export.csv"
 ROWS_PATH = "/audit/rows"
-
-
-def _client_ip(request: Request) -> str | None:
-    """The client address as resolved by the proxy header middleware."""
-    return request.client.host if request.client else None
 
 
 def _table_context(
@@ -142,7 +138,7 @@ async def audit_export(
     """
     visibility = await compute_visibility(db, scope)
     filters = AuditFilters.parse(request.query_params)
-    plan = await record_export(db, visibility, context.user, filters, _client_ip(request))
+    plan = await record_export(db, visibility, context.user, filters, client_address(request))
     await db.commit()
     stamp = utc_now().strftime("%Y%m%d-%H%M%S")
     return StreamingResponse(

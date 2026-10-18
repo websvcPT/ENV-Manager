@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.datastructures import FormData, UploadFile
 
+from app.core.client_address import client_address
 from app.core.templating import render
 from app.models import Deployment, Service
 from app.services.content import MAX_CONTENT_BYTES
@@ -37,11 +38,6 @@ HINT_FRAGMENT = "fragments/target_hint.html"
 # bytes; anything larger is refused before the body is parsed.
 MAX_REQUEST_BYTES = 1024 * 1024
 FORM_TOO_LARGE = f"The form is larger than {MAX_REQUEST_BYTES // 1024} KiB."
-
-
-def _client_ip(request: Request) -> str | None:
-    """The client address as resolved by the proxy header middleware."""
-    return request.client.host if request.client else None
 
 
 def _redirect(url: str) -> Response:
@@ -172,7 +168,7 @@ async def create_environment_route(
             deployment,
             clean,
             actor=access.auth.user,
-            ip_address=_client_ip(request),
+            ip_address=client_address(request),
         )
     except EnvironmentFormError as error:
         return render(

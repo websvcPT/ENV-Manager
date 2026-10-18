@@ -6,6 +6,49 @@ them to host paths with version history, audit log, dist comparison and drift pr
 Developer conventions are in `AGENTS.md`; live work state is in `PROGRESS.md`. Run everything
 through `make` (see `make help`); nothing runs on the host directly.
 
+## Network configuration
+
+Startup configuration comes from environment variables only. Every value is checked when the
+application starts, and an invalid one stops it with a message that names the variable and the
+entry. Entries are IPv4 and IPv6 addresses or networks in CIDR form, separated by commas; an
+IPv4-mapped IPv6 address (`::ffff:10.0.0.5`, what a dual stack socket reports for an IPv4
+client) counts as the IPv4 address it carries, and a network with host bits set
+(`10.0.0.5/24`) is refused instead of widened.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `ENVMANAGER_TRUSTED_PROXIES` | empty | Peers whose `X-Forwarded-For` and `X-Forwarded-Proto` headers are believed, for example `172.18.0.2` or `172.18.0.0/16,fd00::/8`. `*` and networks that hold every address (`0.0.0.0/0`, `::/0`) are refused: trusting every peer would let anyone choose the address that lockouts and the allowed sources rely on. |
+| `ENVMANAGER_ALLOWED_SOURCES` | empty (everyone) | Client addresses that may use the application at all, for example `203.0.113.0/24,2001:db8::/32`. Everything else gets a bare `403` (JSON in the shape of the API under `/api`). |
+
+The client address is resolved once, before anything else runs, and is the address that the audit
+log, the sign-in and API lockout counters, sessions, the last used address of API tokens and the
+server's access log all use:
+
+- A peer that is not a trusted proxy keeps its own address, whatever headers it sends.
+- From a trusted proxy the client is the right-most address in `X-Forwarded-For` that is not
+  itself a trusted proxy (several header lines count as one list), so a client cannot prepend an
+  address of its own. `X-Forwarded-Proto` supplies the scheme (`http` or `https` only, the
+  right-most value). Entries may carry a port.
+- The list is read from the right and the walk stops at the first address that is not a trusted
+  proxy, so whatever a client wrote to the left of it (an `unknown` or any other junk it
+  prepended) is never read and changes nothing. If the walk meets an entry that is not an address
+  before that (a trusted hop wrote something unreadable, or a trailing comma) the request has no
+  client address. It never falls back to the proxy's own address, which may be on the allowed
+  list; with allowed sources set such a request is refused.
+
+The allowed sources check runs right after the security headers, before CORS, CSRF, sessions and
+any database access: a refused request opens no database session, writes no audit entry and sets
+no cookie, so bots outside the list cost nothing. Refusals are logged as `request refused, client
+address <address> is not an allowed source`, at most ten lines a minute with a count of the rest
+(never the path, query or headers). `/healthz` stays reachable from everywhere so container health
+checks keep working. Behind a reverse proxy, list the proxy in `ENVMANAGER_TRUSTED_PROXIES` as well,
+or the proxy's address is the one that is checked and counted for every client.
+
+`ENVMANAGER_LOGIN_IP_MAX_FAILURES` (a number from 1 to 100000) replaces the limit of 20 failed
+sign ins per client address in 15 minutes. It exists for the development stack, whose browser
+specs all share one address, and is refused unless `ENVMANAGER_ENVIRONMENT` is `development` or
+`testing`.
+
 ## Demo deployment
 
 `demo/` holds a small deployment that behaves like a real one managed by the app, for trying
@@ -91,14 +134,22 @@ length (confirmed by typing it twice) that differs from the current one; the use
 sessions and any unfinished second factor sign in end with the change, the session that made it
 stays, and the audit entry holds counts only. Two-factor authentication is optional: setup shows a
 QR code drawn by the server (an SVG that is never cached or logged) and the key as text, and
-turns on only when a valid code from the authenticator is entered. The secret reaches the
+turns on only when the current password and a valid code from the authenticator are entered (so a
+session that was taken over cannot enrol another authenticator). The secret reaches the
 database, encrypted, only then; until then it lives in a short-lived HttpOnly cookie. Removing it
 needs the current password and a fresh code (the code that turned it on cannot be reused). Wrong
-passwords and wrong codes on these screens count on the same lockout counters as sign in.
+passwords and wrong codes on these screens count on the same lockout counters as sign in; a wrong
+code while turning it on is refused but not counted, because the secret is the one just shown.
 Active sessions lists the user's live sessions (device from the browser's user agent, address,
 when signed in and last seen, this one marked) with a confirmed revoke on each other session and
-Sign out other sessions. The theme preference (light, dark or match the system) is kept in the
-browser and shared with the theme buttons.
+Sign out other sessions. The theme preference (light, dark or match the system, which is the
+default) is kept in the browser and shared with the theme buttons.
+
+A user who lost their authenticator is recovered by a superadmin: Reset two-factor on the user
+detail page (after a confirm dialog) or `docker compose exec app envmanager user reset-2fa <name>`
+turns the second factor off, ends that user's sessions and sign ins waiting for a code, and is
+audited as `user.totp_reset` (counts only). The web action refuses a superadmin's own account,
+which has the Remove button on its Account page.
 
 ## API tokens
 

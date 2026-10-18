@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.client_address import client_address
 from app.core.templating import render
 from app.services.dist import DistError
 from app.services.dist_check import (
@@ -33,11 +34,6 @@ OVERVIEW = "pages/deployment_dist.html"
 MAX_NUMBER_DIGITS = 9
 
 
-def _client_ip(request: Request) -> str | None:
-    """The client address as resolved by the proxy header middleware."""
-    return request.client.host if request.client else None
-
-
 def _plain_number(value: str) -> str:
     """The value when it is a plain number, else empty."""
     return value if value.isdecimal() and len(value) <= MAX_NUMBER_DIGITS else ""
@@ -51,7 +47,7 @@ async def _check(db: AsyncSession, request: Request, access: EnvironmentContext)
             get_crypto(request),
             access.env.id,
             actor=access.auth.user,
-            ip_address=_client_ip(request),
+            ip_address=client_address(request),
         )
     except DistError as error:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "environment not found") from error
@@ -127,7 +123,7 @@ async def add_missing(
             get_crypto(request),
             access.env,
             actor=access.auth.user,
-            ip_address=_client_ip(request),
+            ip_address=client_address(request),
             base_number=int(_plain_number(base) or 0),
         )
     except EditorError as error:
@@ -166,7 +162,7 @@ async def deployment_dist_page(
             access.scope,
             access.deployment.id,
             actor=access.auth.user,
-            ip_address=_client_ip(request),
+            ip_address=client_address(request),
         )
     return render(
         request,

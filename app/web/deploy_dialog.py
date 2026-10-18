@@ -15,6 +15,7 @@ from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.datastructures import FormData
 
+from app.core.client_address import client_address
 from app.core.templating import render
 from app.services.audit import AuditActor
 from app.services.deploy import DeployEngine
@@ -105,11 +106,6 @@ async def deploy_access(
     return access
 
 
-def _client_ip(request: Request) -> str | None:
-    """The client address as resolved by the proxy header middleware."""
-    return request.client.host if request.client else None
-
-
 def _selection_context(form: DialogForm) -> dict[str, object]:
     """The fields a fragment carries forward to the next request."""
     return {
@@ -130,7 +126,7 @@ async def preflight(
 ) -> Response:
     """Step one: a dry run of every environment the caller may deploy, with the policy outcome."""
     form = parse_dialog_form(await request.form())
-    actor = AuditActor.for_user(access.auth.user, _client_ip(request))
+    actor = AuditActor.for_user(access.auth.user, client_address(request))
     try:
         result = await run_preflight(
             db,
@@ -175,7 +171,7 @@ async def deploy(
         outcome = await engine.run(
             db,
             access.scope,
-            AuditActor.for_user(access.auth.user, _client_ip(request)),
+            AuditActor.for_user(access.auth.user, client_address(request)),
             DeployRequest(
                 service_id=access.service.id,
                 environment_ids=tuple(sorted(form.selected)),

@@ -9,6 +9,7 @@ from fastapi.responses import Response
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.client_address import client_address
 from app.core.crypto import CryptoService
 from app.core.log import get_logger
 from app.core.templating import render
@@ -106,11 +107,6 @@ def service_access(
         return ServiceContext(auth=auth, scope=scope, service=service)
 
     return load
-
-
-def _client_ip(request: Request) -> str | None:
-    """The client address as resolved by the proxy header middleware."""
-    return request.client.host if request.client else None
 
 
 def _flags(access: ServiceContext) -> dict[str, Any]:
@@ -261,7 +257,7 @@ async def save_post_deploy(
 ) -> Response:
     """Save the post-deploy settings (superadmin). A refusal swaps the form with its reasons."""
     typed = HookForm(working_directory, commands, timeout, run_only_if_changed is not None)
-    actor = AuditActor.for_user(access.auth.user, _client_ip(request))
+    actor = AuditActor.for_user(access.auth.user, client_address(request))
     try:
         hook = await save_post_deploy_hook(db, cli, access.scope, actor, access.service.id, typed)
     except HookForbiddenError as error:
@@ -293,7 +289,7 @@ async def test_post_deploy(
     working_directory: Annotated[str, Form()] = "",
 ) -> Response:
     """Run the Compose check in the typed working directory (superadmin); the answer is a line."""
-    actor = AuditActor.for_user(access.auth.user, _client_ip(request))
+    actor = AuditActor.for_user(access.auth.user, client_address(request))
     try:
         check = await check_compose_setup(
             db, crypto, cli, access.scope, actor, access.service.id, working_directory

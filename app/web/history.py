@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.client_address import client_address
 from app.core.templating import render
 from app.services.permissions import CAPABILITY_GROUPS, Capability
 from app.services.version_history import (
@@ -36,11 +37,6 @@ DIFF_PANEL = "fragments/diff_panel.html"
 DIFF_VALUES = "fragments/diff_values.html"
 RESTORE_FORM = "fragments/restore_form.html"
 MAX_NUMBER_DIGITS = 9
-
-
-def _client_ip(request: Request) -> str | None:
-    """The client address as resolved by the proxy header middleware."""
-    return request.client.host if request.client else None
 
 
 def _plain_number(value: str) -> str:
@@ -142,7 +138,7 @@ async def reveal_differences(
             requested[0],
             requested[1],
             actor=access.auth.user,
-            ip_address=_client_ip(request),
+            ip_address=client_address(request),
         )
     except VersionNotFoundError as error:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "versions not found") from error
@@ -171,7 +167,7 @@ async def restore_environment(
             number,
             base_number=base_number,
             actor=access.auth.user,
-            ip_address=_client_ip(request),
+            ip_address=client_address(request),
         )
     except VersionNotFoundError as error:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "version not found") from error

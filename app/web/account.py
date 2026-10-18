@@ -16,6 +16,7 @@ from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.core.client_address import client_address
 from app.core.crypto import CryptoService
 from app.core.sessions import TOTP_SETUP_COOKIE_NAME, TOTP_SETUP_COOKIE_PATH
 from app.core.templating import render
@@ -54,11 +55,6 @@ Signed = Annotated[AuthContext, Depends(require_auth)]
 Database = Annotated[AsyncSession, Depends(get_db)]
 Policy = Annotated[AuthPolicy, Depends(get_auth_policy)]
 Crypto = Annotated[CryptoService, Depends(get_crypto)]
-
-
-def _client_ip(request: Request) -> str | None:
-    """The client address as resolved by the proxy header middleware."""
-    return request.client.host if request.client else None
 
 
 def _events(*names: str) -> str:
@@ -111,16 +107,21 @@ def _totp_context(
     user: User,
     *,
     setup: PendingSetup | None = None,
-    code_error: str | None = None,
+    errors: dict[str, str] | None = None,
     notice: str | None = None,
+    wait: str = "",
 ) -> dict[str, Any]:
-    """What the two-factor panel needs: the setup when one is running, else the user's state."""
+    """What the two-factor panel needs: the setup when one is running, else the user's state.
+
+    ``errors`` holds the messages by field (current_password, code) of a refused setup form.
+    """
     idle_state = "on" if user.totp_enabled else "off"
     return {
         "state": "setup" if setup is not None else idle_state,
         "totp_notice": notice,
         "setup": _setup_view(setup) if setup is not None else None,
-        "code_error": code_error,
+        "totp_errors": {name: (errors or {}).get(name) for name in ("current_password", "code")},
+        "totp_wait": wait,
     }
 
 
@@ -207,7 +208,7 @@ async def password_route(
             current_password=current_password,
             new_password=new_password,
             confirm_password=confirm_password,
-            ip_address=_client_ip(request),
+            ip_address=client_address(request),
         )
     except AccountLockedError as error:
         page = _password_context(policy, notice="locked", wait=_wait_text(error.retry_after))
@@ -264,13 +265,17 @@ async def totp_enable(
     request: Request,
     db: Database,
     context: Signed,
+    policy: Policy,
     crypto: Crypto,
+    current_password: Annotated[str, Form()] = "",
     code: Annotated[str, Form()] = "",
 ) -> Response:
-    """Turn two-factor authentication on once a valid code proves the scanned secret.
+    """Turn two-factor authentication on after the current password and a valid code.
 
-    A wrong code answers the setup again with the same secret; a setup that ran out answers the
-    idle panel with a note. Success drops the cookie and shows the enabled state.
+    A refusal answers the setup again with the same secret and the reason next to the field (a
+    wrong password counts toward the lockout; a lockout answers 429 with the time left); a setup
+    that ran out answers the idle panel with a note. Success drops the cookie and shows the
+    enabled state. Neither field is ever echoed back.
     """
     setup = _pending_setup(request, context, crypto)
     if context.user.totp_enabled or setup is None:
@@ -279,14 +284,22 @@ async def totp_enable(
     try:
         await enable_totp(
             db,
+            policy,
             context.user,
             crypto,
             secret=setup.secret,
+            password=current_password,
             code=code,
-            ip_address=_client_ip(request),
+            ip_address=client_address(request),
         )
+    except AccountLockedError as error:
+        page = _totp_context(
+            context.user, setup=setup, notice="locked", wait=_wait_text(error.retry_after)
+        )
+        return _locked_response(request, TOTP_FRAGMENT, page, error)
     except AccountError as error:
-        page = _totp_context(context.user, setup=setup, code_error=str(error))
+        errors = {error.field or "code": str(error)}
+        page = _totp_context(context.user, setup=setup, errors=errors)
         return render(request, TOTP_FRAGMENT, page, status_code=422)
     return _clear_setup_cookie(render(request, TOTP_FRAGMENT, _totp_context(context.user)))
 
@@ -321,7 +334,7 @@ async def totp_remove(
             crypto,
             password=current_password,
             code=code,
-            ip_address=_client_ip(request),
+            ip_address=client_address(request),
         )
     except AccountLockedError as error:
         page = _remove_context("locked", wait=_wait_text(error.retry_after))
@@ -359,7 +372,7 @@ async def revoke_others_dialog(
 async def revoke_others(request: Request, db: Database, context: Signed) -> Response:
     """End every session of the user but this one."""
     await revoke_all_other_sessions(
-        db, context.user, context.session.id, ip_address=_client_ip(request)
+        db, context.user, context.session.id, ip_address=client_address(request)
     )
     return Response(
         status_code=status.HTTP_204_NO_CONTENT,
@@ -391,7 +404,7 @@ async def revoke_session_route(
             context.user,
             context.session.id,
             session_id,
-            ip_address=_client_ip(request),
+            ip_address=client_address(request),
         )
     except (SessionNotFoundError, CurrentSessionError) as error:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "session not found") from error

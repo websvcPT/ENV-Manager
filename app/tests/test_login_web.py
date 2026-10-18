@@ -4,10 +4,13 @@ import re
 
 import httpx
 import pyotp
+import pytest
 from fastapi import FastAPI
+from sqlalchemy import select
 
 from app.core.csrf import CSRF_COOKIE_NAME
 from app.core.sessions import PENDING_LOGIN_COOKIE_NAME, SESSION_COOKIE_NAME
+from app.models import AuditEntry, LoginCounter, LoginCounterKind
 from app.seeds import DEV_PASSWORD, DEV_TOTP_SECRET
 from app.tests.conftest import sign_in
 
@@ -255,3 +258,37 @@ async def test_session_expired_page_is_public(web_client: httpx.AsyncClient) -> 
     assert 'data-fragment="session-expired"' in response.text
     assert 'href="/login"' in response.text
     assert 'data-js="theme-toggle"' not in response.text
+
+
+@pytest.fixture
+def trusted_loopback(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Trust the address the test client connects from; runs before the application starts."""
+    monkeypatch.setenv("ENVMANAGER_TRUSTED_PROXIES", "127.0.0.1")
+
+
+async def test_failed_sign_ins_count_under_the_forwarded_address_whatever_a_client_prepends(
+    trusted_loopback: None, web_client: httpx.AsyncClient, web_app: FastAPI
+) -> None:
+    """Behind a trusted proxy the counter and the audit entry use the address the proxy added,
+    also when the client put junk in front of it.
+    """
+    await web_client.get("/healthz")
+    response = await web_client.post(
+        "/login",
+        data={
+            "identifier": "viewer",
+            "password": "wrong password",
+            "csrf_token": web_client.cookies[CSRF_COOKIE_NAME],
+        },
+        headers={"X-Forwarded-For": "unknown, _hidden, 203.0.113.9"},
+    )
+    assert response.status_code == 401
+    async with web_app.state.session_factory() as db:
+        counters = (await db.execute(select(LoginCounter))).scalars().all()
+        entry = (
+            await db.execute(select(AuditEntry).where(AuditEntry.action == "login.failure"))
+        ).scalar_one()
+    by_kind = {(row.kind, row.subject): row.failures for row in counters}
+    assert by_kind[(LoginCounterKind.IP, "203.0.113.9")] == 1
+    assert (LoginCounterKind.IP, "127.0.0.1") not in by_kind
+    assert entry.ip_address == "203.0.113.9"

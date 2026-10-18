@@ -1,5 +1,5 @@
-"""User account lifecycle: creation with initial grants, listing, group changes, password resets
-and enable or disable.
+"""User account lifecycle: creation with initial grants, listing, group changes, password and
+two-factor resets and enable or disable.
 
 Every web and command line action on an account goes through here, so the same rules and audit
 entries apply to both: unique names and emails, the last active superadmin guard, sessions ended
@@ -21,6 +21,7 @@ from app.models import (
     User,
     UserGroup,
 )
+from app.services import totp
 from app.services.audit import AuditActor, record_audit
 from app.services.grants import (
     GrantTarget,
@@ -28,6 +29,7 @@ from app.services.grants import (
     record_grant_change,
     require_existing,
 )
+from app.services.pending_logins import discard_user_pending_logins
 from app.services.sessions import revoke_user_sessions
 from app.services.tokens import REASON_MOVED_TO_VIEWER, REASON_USER_DISABLED, revoke_user_tokens
 
@@ -60,6 +62,10 @@ class UserNotFoundError(UserError):
 
 class LastSuperadminError(UserError):
     """The operation would leave the system without an active superadmin."""
+
+
+class TwoFactorNotOnError(UserError):
+    """The user has no two-factor sign-in to reset."""
 
 
 def _actor_name(actor_type: AuditActorType) -> str | None:
@@ -203,6 +209,42 @@ async def reset_password(
     )
     await db.commit()
     return password
+
+
+async def reset_two_factor(
+    db: AsyncSession,
+    user: User,
+    *,
+    actor_type: AuditActorType,
+    actor_user: User | None = None,
+    ip_address: str | None = None,
+) -> int:
+    """Turn off a user's two-factor sign-in without their code, for a lost authenticator.
+
+    The secret is discarded, the user's sessions end and so do their sign-ins that were waiting
+    for a code, all in one commit with one audit entry (counts only). They sign in with the
+    password alone until they turn it on again. Returns the number of sessions that were ended.
+    """
+    if not user.totp_enabled:
+        raise TwoFactorNotOnError(f"{user.name} has no two-factor sign-in to reset.")
+    totp.disable(user)
+    ended = await revoke_user_sessions(db, user.id)
+    waiting = await discard_user_pending_logins(db, user.id)
+    await record_audit(
+        db,
+        action="user.totp_reset",
+        result=AuditResult.SUCCESS,
+        actor_type=actor_type,
+        actor_user=actor_user,
+        actor_name=_actor_name(actor_type),
+        ip_address=ip_address,
+        target_type="user",
+        target_id=user.id,
+        target_name=user.name,
+        details={"sessions_ended": ended, "pending_logins_ended": waiting},
+    )
+    await db.commit()
+    return ended
 
 
 async def _other_active_superadmins(db: AsyncSession, user: User) -> int:

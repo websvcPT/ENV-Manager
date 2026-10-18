@@ -64,6 +64,7 @@ class UserDetail:
     group: UserGroup
     is_active: bool
     last_login_at: datetime | None
+    totp_enabled: bool
     grants: frozenset[GrantTarget]
     tokens: tuple[TokenRow, ...]
     activity: tuple[ActivityRow, ...]
@@ -117,6 +118,7 @@ async def load_user_detail(db: AsyncSession, user_id: int) -> UserDetail | None:
         group=user.group,
         is_active=user.is_active,
         last_login_at=user.last_login_at,
+        totp_enabled=user.totp_enabled,
         grants=await list_grants(db, user.id),
         tokens=tuple(token_row(token, user) for token in tokens),
         activity=tuple(

@@ -14,6 +14,7 @@ from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.datastructures import FormData
 
+from app.core.client_address import client_address
 from app.core.templating import render
 from app.services.access_grid import NodeKind
 from app.services.editor import (
@@ -81,11 +82,6 @@ def environment_access(
         return EnvironmentContext(auth=auth, scope=scope, env=env)
 
     return load
-
-
-def _client_ip(request: Request) -> str | None:
-    """The client address as resolved by the proxy header middleware."""
-    return request.client.host if request.client else None
 
 
 async def _access_subject(
@@ -238,7 +234,7 @@ async def reveal_variable(
             access.env,
             key,
             actor=access.auth.user,
-            ip_address=_client_ip(request),
+            ip_address=client_address(request),
             version=version,
         )
     except VariableNotFoundError as error:
@@ -260,7 +256,7 @@ async def reveal_raw(
             get_crypto(request),
             access.env,
             actor=access.auth.user,
-            ip_address=_client_ip(request),
+            ip_address=client_address(request),
             version=version,
         )
     except VariableNotFoundError as error:
@@ -336,7 +332,7 @@ async def save_environment(
             get_crypto(request),
             access.env,
             actor=access.auth.user,
-            ip_address=_client_ip(request),
+            ip_address=client_address(request),
             base_number=_version_field(form),
             comment=comment if isinstance(comment, str) else "",
             raw_content=(content if isinstance(content, str) else None) if raw else None,

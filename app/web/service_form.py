@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.client_address import client_address
 from app.core.templating import render
 from app.models import Deployment
 from app.services.permissions import Capability
@@ -17,11 +18,6 @@ router = APIRouter()
 
 PAGE = "pages/service_form.html"
 FORM_FRAGMENT = "fragments/service_form.html"
-
-
-def _client_ip(request: Request) -> str | None:
-    """The client address as resolved by the proxy header middleware."""
-    return request.client.host if request.client else None
 
 
 def _redirect(url: str) -> Response:
@@ -54,7 +50,7 @@ async def create_service_route(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "deployment not found")
     try:
         service = await create_service(
-            db, deployment, name, actor=access.auth.user, ip_address=_client_ip(request)
+            db, deployment, name, actor=access.auth.user, ip_address=client_address(request)
         )
     except ServiceNameError as error:
         return render(

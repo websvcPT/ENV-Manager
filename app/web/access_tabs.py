@@ -22,6 +22,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.client_address import client_address
 from app.core.templating import render
 from app.models import User
 from app.services.access_grid import NodeKind
@@ -75,11 +76,6 @@ class AccessSubject:
     def base(self) -> str:
         """The path of the item's Access tab."""
         return f"/{PLURALS[self.kind]}/{self.item_id}/access"
-
-
-def _client_ip(request: Request) -> str | None:
-    """The client address as resolved by the proxy header middleware."""
-    return request.client.host if request.client else None
 
 
 def _user_id(raw: str) -> int | None:
@@ -198,7 +194,7 @@ def mount_access_routes(
         if user_id is None:
             view = _add_view(subject, await _load(db, subject), error=CHOOSE_USER)
             return render(request, ADD_FRAGMENT, view, status_code=422)
-        actor = AuditActor.for_user(subject.auth.user, _client_ip(request))
+        actor = AuditActor.for_user(subject.auth.user, client_address(request))
         change = await change_access(
             db, subject.project_id, subject.node_id, user_id, grant=True, actor=actor
         )
@@ -236,7 +232,7 @@ def mount_access_routes(
         request: Request, db: Database, subject: Subject, user_id: int
     ) -> Response:
         """Remove the user's direct grant on the item; a refusal swaps the dialog."""
-        actor = AuditActor.for_user(subject.auth.user, _client_ip(request))
+        actor = AuditActor.for_user(subject.auth.user, client_address(request))
         change = await change_access(
             db, subject.project_id, subject.node_id, user_id, grant=False, actor=actor
         )

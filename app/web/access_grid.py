@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.client_address import client_address
 from app.core.templating import render
 from app.models import User
 from app.services.access_grid import GridFilters, load_access_grid, toggle_cell
@@ -26,11 +27,6 @@ router = APIRouter()
 GRID_PATH = "/access/grid"
 ManageGrants = Annotated[AuthContext, Depends(require_capability(Capability.MANAGE_GRANTS))]
 Database = Annotated[AsyncSession, Depends(get_db)]
-
-
-def _client_ip(request: Request) -> str | None:
-    """The client address as resolved by the proxy header middleware."""
-    return request.client.host if request.client else None
 
 
 @router.get(GRID_PATH, include_in_schema=False)
@@ -76,7 +72,7 @@ async def toggle_route(
         row,
         grant_target,
         was=was == "1",
-        actor=AuditActor.for_user(context.user, _client_ip(request)),
+        actor=AuditActor.for_user(context.user, client_address(request)),
     )
     response = render(
         request,
