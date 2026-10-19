@@ -265,7 +265,7 @@ async def test_the_service_tab_has_no_grant_controls_and_links_to_the_grant_leve
     assert section_labels(response.text) == ["Environments", "Deploy history", "Access"]
     assert f'href="/services/{items.mysql}" ' in body
     assert "Deployment prod in Fancy Proj. Name" in plain(body)
-    assert ">Service</span>" in body and "Deploy service" not in body
+    assert item_header_of(body).title == "Service: mysql" and "Deploy service" not in body
     assert "Add access" not in body and "grant-dialog" not in body and "Remove" not in body
     assert "Services are not a grant level" in body
     assert f'href="/projects/{items.fancy}/access"' in body

@@ -3,6 +3,7 @@ import type { APIRequestContext, Browser, Page } from '@playwright/test';
 import { createDeployment } from '../deployments-api';
 import { createEnvironment, saveRaw, seededEnvironmentId } from '../environments-api';
 import { stateFile } from '../global-setup';
+import { expectItemHeader } from '../item-header';
 import { csrfHeaders } from '../http';
 import { createService } from '../services-api';
 import { horizontalOverflow } from '../viewport';
@@ -74,7 +75,7 @@ test.describe('superadmin editor', () => {
   }) => {
     const id = await prepare(request, scratch.id, '.env.masked', CONTENT);
     await page.goto(`/environments/${id}`);
-    await expect(header(page).locator('h1')).toHaveText('.env.masked');
+    await expectItemHeader(page, 'environment', '.env.masked');
     await expect(header(page).locator('[data-status]')).toHaveAttribute('data-status', 'never');
     await expect(header(page)).toContainText('Service cache');
     await expect(header(page)).toContainText('Version 1 saved, never deployed');
@@ -322,7 +323,7 @@ test.describe('viewer', () => {
   test('sees masked values only and has no reveal, edit or save', async ({ page, browser }) => {
     const id = await seededEditor(browser);
     await page.goto(`/environments/${id}`);
-    await expect(header(page).locator('h1')).toHaveText('.env.db.app');
+    await expectItemHeader(page, 'environment', '.env.db.app');
     await expect(page.locator('nav[aria-label="Sections"] a')).toHaveText(['View', 'History']);
     await expect(page.locator('main [role="note"]')).toContainText('Read-only view');
     await expect(page.locator('[data-fragment="kv-row"]')).toHaveCount(6);

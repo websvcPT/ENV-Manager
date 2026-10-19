@@ -189,7 +189,7 @@ def test_the_item_header_names_the_type_before_the_item_and_its_parents_after() 
     assert '<span class="font-normal">Environment:</span> ' in page
     assert '<span data-item-name class="font-mono">.env.&lt;db&gt;</span>' in page
     assert "<span data-item-name>Fancy</span>" in page
-    text = re.sub(r"<[^>]+>", "", page.split("</h1>", 1)[1].split("</section>", 1)[0])
+    text = re.sub(r"<[^>]+>", " ", page.split("</h1>", 1)[1].split("</section>", 1)[0])
     assert " ".join(text.split()) == (
         "Service mysql in deployment prod in Fancy &amp; Co · /srv/x/.env Version 2 saved"
     )

@@ -5,6 +5,7 @@ import type { APIRequestContext, Locator, Page } from '@playwright/test';
 import { createDeployment } from '../deployments-api';
 import { createEnvironment, saveRaw, seededEnvironmentId } from '../environments-api';
 import { stateFile } from '../global-setup';
+import { expectItemHeader } from '../item-header';
 import { createHostFolder, type HostFolder } from '../host-files';
 import { csrfHeaders } from '../http';
 import { createService } from '../services-api';
@@ -150,7 +151,7 @@ test.describe('states', () => {
   }) => {
     await page.goto(url(id));
 
-    await expect(header(page).locator('h1')).toHaveText('.env.app');
+    await expectItemHeader(page, 'environment', '.env.app');
     await expect(badge(page)).toHaveAttribute('data-status', 'drift');
     await expect(badge(page)).toHaveText('Drift');
     await expect(header(page)).toContainText(
@@ -641,7 +642,7 @@ test.describe('viewer', () => {
     const id = await seededEnvironmentId(browser, 'Fancy Proj. Name', 'prod', 'mysql', '.env.db.app');
     const response = await page.goto(url(id));
     expect(response?.status()).toBe(200);
-    await expect(header(page).locator('h1')).toHaveText('.env.db.app');
+    await expectItemHeader(page, 'environment', '.env.db.app');
     await expect(badge(page)).toHaveText('Target missing');
     await expect(panel(page)).toContainText('Values are masked for the Viewer group.');
     await expect(page.getByRole('button', { name: /Reveal|Hide|Import|Overwrite/ })).toHaveCount(0);

@@ -23,7 +23,7 @@
 {% macro row_header(node, rows_href=none) -%}
 <th scope="row" class="sticky left-0 z-10 border-t border-line bg-surface px-4 py-3 text-left"><div class="flex items-center gap-2"><span class="{{ INDENTS[node.depth] }} flex items-center gap-2">
 {%- if node.expandable and rows_href -%}
-<button type="button" id="tree-toggle-{{ node.id }}" aria-expanded="false" aria-label="Expand or collapse {{ node.name }}" hx-get="{{ rows_href }}" hx-target="closest tbody" hx-swap="outerHTML" hx-sync="this:drop" class="{{ TOGGLE_CLASSES }}">{{ icon("chevron-down", "size-3.5", "2.4") }}</button>
+<button type="button" id="tree-toggle-{{ node.id }}" aria-expanded="false" aria-label="Expand or collapse {{ node.name }}" hx-get="{{ rows_href }}" hx-target="closest tbody" hx-swap="outerHTML" hx-status:4xx="swap:none" hx-status:5xx="swap:none" hx-sync="this:drop" class="{{ TOGGLE_CLASSES }}">{{ icon("chevron-down", "size-3.5", "2.4") }}</button>
 {%- elif node.expandable -%}
 <button type="button" id="tree-toggle-{{ node.id }}" data-js="tree-toggle" aria-expanded="true" aria-label="Expand or collapse {{ node.name }}" class="{{ TOGGLE_CLASSES }}">{{ icon("chevron-down", "size-3.5", "2.4") }}</button>
 {%- else -%}

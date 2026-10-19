@@ -112,7 +112,7 @@ async def test_environment_grant_gets_a_name_only_view_with_a_note(
     assert "Post-deploy exit code n/a, output truncated." in body
     for hidden in (".env.db.secrets", ".env.web", "web</a>", "/opt/rentals", "Policies"):
         assert hidden not in body
-    assert "Project Fancy Proj. Name" in body
+    assert item_header_of(body).subtitle == "Project Fancy Proj. Name"
 
 
 async def test_outside_allowed_path_disables_the_check_and_says_why(

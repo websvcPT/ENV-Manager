@@ -3,6 +3,7 @@ import type { APIRequestContext, Page } from '@playwright/test';
 import { createDeployment } from '../deployments-api';
 import { createEnvironment, saveRaw, seededEnvironmentId } from '../environments-api';
 import { stateFile } from '../global-setup';
+import { expectItemHeader } from '../item-header';
 import { csrfHeaders } from '../http';
 import { createService } from '../services-api';
 import { horizontalOverflow } from '../viewport';
@@ -105,7 +106,7 @@ test.describe('superadmin history', () => {
   }) => {
     const id = await prepare(request, scratch.id, '.env.history', [FIRST, SECOND]);
     await page.goto(`/environments/${id}/history`);
-    await expect(header(page).locator('h1')).toHaveText('.env.history');
+    await expectItemHeader(page, 'environment', '.env.history');
     await expect(header(page)).toContainText('Version 2 saved, never deployed');
     await expect(page.locator('nav[aria-label="Sections"] a')).toHaveText([
       'Edit',
@@ -366,7 +367,7 @@ test.describe('viewer', () => {
   }) => {
     const id = await seededEditor(browser);
     await page.goto(`/environments/${id}/history`);
-    await expect(header(page).locator('h1')).toHaveText('.env.db.app');
+    await expectItemHeader(page, 'environment', '.env.db.app');
     await expect(page.locator('nav[aria-label="Sections"] a')).toHaveText(['View', 'History']);
     await expect(table(page).locator('[data-fragment="version-row"]')).toHaveCount(3);
     await expect(panel(page).locator('h2#dt')).toHaveText('Comparing v2 to v3');
