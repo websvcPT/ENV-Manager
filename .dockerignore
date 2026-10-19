@@ -12,7 +12,9 @@ __pycache__
 data
 dev
 design_handoff_env_manager
-docs
+docs/images
+docs/htmx4.md
+docs/ENV Manager Requirements Specification.md
 playwright/node_modules
 playwright/test-results
 scripts/bin

@@ -1,9 +1,9 @@
-# ENV Manager production example. Replace the image with the one you build or pull, create
+# ENV Manager production example. Pin the image to a release tag or to the one you build, create
 # master.key (a base64 encoded 32 byte key) outside the data folder, and set the base URL to the
 # address people open.
 services:
   envmanager:
-    image: registry.example.com/envmanager:1
+    image: websvcpt/env-manager:latest
     restart: unless-stopped
     environment:
       ENVMANAGER_KEY_FILE: /run/keys/master.key

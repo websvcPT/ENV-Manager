@@ -1,4 +1,4 @@
-"""The production compose example keeps the keys the README deployment guide names."""
+"""The production compose example keeps the keys the deployment guide names."""
 
 from pathlib import Path
 
@@ -6,7 +6,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 COMPOSE = ROOT / "deploy" / "compose.yaml"
-README = ROOT / "README.md"
+GUIDE = ROOT / "docs" / "deployment.md"
 
 ACTIVE_LINES = [
     "  envmanager:",
@@ -45,8 +45,8 @@ def compose_lines() -> list[str]:
 
 
 def guide() -> str:
-    """The Deployment section of the README."""
-    text = README.read_text(encoding="utf-8")
+    """The Deployment section of the deployment guide."""
+    text = GUIDE.read_text(encoding="utf-8")
     return text.split("\n## Deployment\n", 1)[1].split("\n## ", 1)[0]
 
 

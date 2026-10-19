@@ -73,7 +73,7 @@ COPY pyproject.toml ./
 COPY scripts ./scripts
 COPY demo ./demo
 COPY deploy ./deploy
-COPY README.md ./
+COPY docs ./docs
 # The suite runs as an ordinary user: permission checks mean nothing to root.
 RUN groupadd --gid "$APP_GID" app \
     && useradd --uid "$APP_UID" --gid "$APP_GID" --no-create-home --shell /usr/sbin/nologin app \
