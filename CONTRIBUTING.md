@@ -52,6 +52,9 @@ the CI does. Changes to deploys, post-deploy commands, drift or host files also 
   function, ruff with a line length of 100, imports at the top of the file. Log through
   `app.core.log`, never `print()`. Descriptive names: `snake_case` for files, functions and
   variables, `PascalCase` for classes, `SCREAMING_SNAKE_CASE` for constants.
+- **Environment variables.** Every environment variable is documented in the README
+  "Environment variables" table (name, default, purpose) in the same change that adds or changes
+  it. A setting a production user may set also goes into `deploy/.env.example`.
 - **Comments.** Comment complex logic only, describe behavior rather than tickets or plans, and
   do not use the em-dash character or emoji anywhere (a test checks it).
 - **Templates and UI.** Jinja2 with autoescape and htmx 4 (not 1.x or 2.x syntax). Tailwind CSS

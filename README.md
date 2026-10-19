@@ -19,6 +19,13 @@ review, access control and traceability without adopting a full secrets platform
 It ships as a single Docker image (`websvcpt/env-manager`) with an embedded SQLite database. There
 is no external database, queue or cache to run.
 
+**Buy me a coffee**
+
+If you'd like to thank me, you can buy me a coffee. Coffee is never too much :)
+
+https://www.buymeacoffee.com/websvc
+
+
 ## Features
 
 - **Versioned, encrypted config files.** Every save is a new version with author, comment and
@@ -61,23 +68,40 @@ is no external database, queue or cache to run.
 
 You need Docker with the Compose plugin and a host folder that holds your deployments.
 
-1. Create a folder and save this as `compose.yaml` in it (it is
-   [`deploy/compose.yaml`](deploy/compose.yaml) with the published image):
+1. Create a folder for the installation and, inside it, the data folder:
+
+   ```sh
+   mkdir -p data/runtime
+   ```
+
+2. Create the master key as `data/master.key`:
+
+   ```sh
+   openssl rand -base64 32 > data/master.key
+   chmod 600 data/master.key
+   ```
+
+   `data/master.key` sits beside `data/runtime`, the folder that holds the database and the
+   backups, so a copy of the whole `data` folder carries the key too. Without the key nothing can
+   be read, so back the key up on its own, in a password manager or secret store, and never keep
+   it only next to a backup of `data/runtime`.
+
+3. Save this as `docker-compose.yaml` in the folder (it is
+   [`deploy/docker-compose.yaml`](deploy/docker-compose.yaml) with the published image):
 
    ```yaml
    services:
      envmanager:
        image: websvcpt/env-manager:latest
        restart: unless-stopped
+       container_name: envmanager
+       env_file: .env
        environment:
          ENVMANAGER_KEY_FILE: /run/keys/master.key
-         ENVMANAGER_BASE_URL: http://localhost:8080
-         # Peers whose X-Forwarded-For and X-Forwarded-Proto headers are believed (the reverse
-         # proxy in front of the application):
-         # ENVMANAGER_TRUSTED_PROXIES: 172.18.0.0/16
        volumes:
-         - ./data:/data
-         - ./master.key:/run/keys/master.key:ro
+         - ./data/runtime:/data
+         - ./data/master.key:/run/keys/master.key:ro
+         # optional: mount the host's vhosts and opt folders to be able to read/write files on the host
          - /var/www/vhosts:/var/www/vhosts
          - /opt:/opt
          # optional: enables post-deploy commands (root-equivalent on the host)
@@ -86,41 +110,73 @@ You need Docker with the Compose plugin and a host folder that holds your deploy
          - 127.0.0.1:8080:8080
    ```
 
-   Change `ENVMANAGER_BASE_URL` to the address people will open. Behind a reverse proxy that ends
-   https, use the `https://` address and set `ENVMANAGER_TRUSTED_PROXIES`. Mount the host folders
-   that hold your deployments at the same path as on the host (the sample uses `/var/www/vhosts`
-   and `/opt`).
+   Mount the host folders that hold your deployments at the same path as on the host (the sample
+   uses `/var/www/vhosts` and `/opt`).
 
-2. Create the master key. Keep a copy in a password manager and never store it next to the data or
-   the backups: without it nothing can be read.
+4. Copy [`deploy/.env.example`](deploy/.env.example) from the repository to `.env` next to it and
+   adjust it.
 
-   ```sh
-   openssl rand -base64 32 > master.key
-   chmod 600 master.key
-   ```
+   Set `ENVMANAGER_BASE_URL` to the address people will open (behind a reverse proxy that ends
+   https, use the `https://` address and set `ENVMANAGER_TRUSTED_PROXIES`) and give
+   `ENVMANAGER_CSRF_SECRET` a secret of at least 32 characters, for example the output of
+   `openssl rand -hex 32`. Every setting is described in
+   [Environment variables](#environment-variables).
 
-3. Start the container:
+5. Start the container:
 
    ```sh
    docker compose up -d
    ```
 
-4. Create the first superadmin. The command prints a generated password once:
+6. Create the first superadmin. The command prints a generated password once:
 
    ```sh
    docker compose exec envmanager envmanager user create \
      --email you@example.com --name "Your Name" --group superadmin
    ```
 
-5. Open the address you set as the base URL (<http://localhost:8080> above) and sign in with that
-   email and password. A banner says no path is allowed yet.
+7. Open the address you set as the base URL and sign in with that email and password. A banner
+   says no path is allowed yet.
 
-6. Open Settings, then Allowed paths, and add the folder that holds your deployments (for example
+8. Open Settings, then Allowed paths, and add the folder that holds your deployments (for example
    `/opt`). Only folders on that list can be deployed to. Then create a project, a deployment, a
    service and an environment file, and deploy it.
 
 The detailed guide, including file ownership, reverse proxies, backups and upgrades, is in
 [docs/deployment.md](docs/deployment.md).
+
+## Environment variables
+
+The application reads its startup configuration from `ENVMANAGER_` environment variables only,
+checks every value when it starts and stops with a message that names the variable when one is
+invalid. The production setup keeps them in `.env` (see
+[`deploy/.env.example`](deploy/.env.example)). Settings marked "development and testing only" are
+refused when `ENVMANAGER_ENVIRONMENT` is anything else. Lists are comma separated.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `ENVMANAGER_BASE_URL` | `http://localhost:8080` | The address people open, used in links the application sends. When it starts with `https://` the session and CSRF cookies are sent with the `Secure` flag. Outside development and testing a value that does not start with `https://` logs a warning at startup. |
+| `ENVMANAGER_CSRF_SECRET` | unset | Secret that signs the CSRF tokens. Required, at least 32 characters: startup is refused without it. Only the `testing` environment may leave it out. |
+| `ENVMANAGER_KEY_FILE` | unset | Path, inside the container, of a file that holds the master key (the sample mounts `data/master.key` at `/run/keys/master.key`). The file is read as ASCII text and an unreadable file stops startup. Set exactly one of `ENVMANAGER_KEY_FILE` and `ENVMANAGER_KEY`. |
+| `ENVMANAGER_KEY` | unset | The master key itself: base64 text that decodes to exactly 32 bytes. An empty value counts as unset. Setting it together with `ENVMANAGER_KEY_FILE` is refused so a stale value cannot shadow the mounted key, and having neither stops startup. Prefer the key file. |
+| `ENVMANAGER_TRUSTED_PROXIES` | empty (no proxy is trusted) | IPv4 and IPv6 addresses or CIDR networks of the reverse proxies whose `X-Forwarded-For` and `X-Forwarded-Proto` headers are believed, for example `172.18.0.2,fd00::/8`. `*` and networks that hold every address (`0.0.0.0/0`, `::/0`) are refused, and so is a network with host bits set. See [Network configuration](docs/deployment.md#network-configuration). |
+| `ENVMANAGER_ALLOWED_SOURCES` | empty (everyone) | IPv4 and IPv6 addresses or CIDR networks that may use the application at all, for example `203.0.113.0/24,2001:db8::/32`. Every other client gets a `403`. `0.0.0.0/0` and `::/0` are accepted. See [Network configuration](docs/deployment.md#network-configuration). |
+| `ENVMANAGER_CORS_ORIGINS` | empty (same origin only) | Origins that may call the `/api/` prefix from a browser, for example `https://ci.example.com`. Each must start with `http://` or `https://`; `*` is refused. Credentials are never allowed. |
+| `ENVMANAGER_SENTRY_DSN` | unset (error reporting off) | Turns error reporting to Sentry on, without personal data. See [Configuration and observability](docs/configuration.md#observability-and-error-reporting). |
+| `ENVMANAGER_LOG_LEVEL` | `INFO` | One of `CRITICAL`, `ERROR`, `WARNING`, `INFO` or `DEBUG`, in any case. Anything else is refused. |
+| `ENVMANAGER_PORT` | `8080` | Port the server listens on inside the container. The image health check reads it too. If you change it, change the published port in `docker-compose.yaml`. |
+| `ENVMANAGER_DATA_PATH` | `/data` (the image sets it) | Folder that holds the database, the backups, the lock files and the git sync clone. Mount the data volume there. |
+| `ENVMANAGER_DOCKER_SOCKET` | `/var/run/docker.sock` | Path, inside the container, of the Docker socket that post-deploy commands use. Change it only if the socket is mounted somewhere else. |
+| `ENVMANAGER_ENVIRONMENT` | `production` | Name of the deployment environment, also reported to Sentry and OpenTelemetry. The values `development` and `testing` switch on the development and testing only settings and skip the `https` warning; `testing` also skips the CSRF secret requirement. Keep `production` on a real server. |
+| `ENVMANAGER_TITLE` | `ENV Manager` | Title of the API documentation. Only visible where `ENVMANAGER_SERVE_DOCS` is on. |
+| `ENVMANAGER_DESCRIPTION` | `A self-hosted web application for keeping the .env files, certificates and other text configuration of your Docker Compose deployments in one place, versioned and encrypted, and for putting them on the server safely.` | Description of the API documentation. Only visible where `ENVMANAGER_SERVE_DOCS` is on. |
+| `ENVMANAGER_SERVE_DOCS` | `false` | Development and testing only. Serves the API documentation at `/docs`, `/redoc` and `/openapi.json` without sign-in. Refused in any other environment. |
+| `ENVMANAGER_LOGIN_IP_MAX_FAILURES` | unset (20 failed sign ins in 15 minutes unless Settings changes it) | Development and testing only. A number from 1 to 100000 that replaces the limit of failed sign ins per client address and wins over the stored value. Refused in any other environment. |
+| `ENVMANAGER_DEMO_ROOT` | unset | Development and testing only. Absolute path below which `envmanager dev seed` also creates the demo project. Empty counts as unset, a relative path is refused. |
+
+The start script of the image also reads `ENVMANAGER_HOST` (the address the server binds to,
+`0.0.0.0` unless set). OpenTelemetry has its own standard variables, described in
+[Configuration and observability](docs/configuration.md).
 
 ## Documentation
 

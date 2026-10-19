@@ -2,32 +2,42 @@
 
 ## Deployment
 
-The application is one image. [`deploy/compose.yaml`](../deploy/compose.yaml) is the example to
-copy: one service (`envmanager`) with the image, the key file, the base URL, the data volume, the
-host folders the deployments live in and the port on the loopback address.
+The application is one image. [`deploy/docker-compose.yaml`](../deploy/docker-compose.yaml) is the
+example to copy: one service (`envmanager`) with the image, the key file, the data volume, the
+host folders the deployments live in and the port on the loopback address. It reads its settings
+from `.env` next to it, which you make from [`deploy/.env.example`](../deploy/.env.example). Every
+setting is described in the
+[Environment variables table of the README](../README.md#environment-variables).
 
 1. Pull or build the image. The published image is `websvcpt/env-manager:latest` on Docker Hub
    (every release is also tagged with its version). From a checkout, `docker build --target
    runtime -t envmanager:1 .` builds the production image (the `runtime` stage of the
    `Dockerfile`; the last stage, `test`, is only for the test run); put the name you used into
    `image:`.
-2. Make the master key and keep it apart from the data volume and from every backup:
+2. Make the folders and the master key, and keep a copy of the key apart from the data and from
+   every backup:
 
    ```
-   openssl rand -base64 32 > master.key
-   chmod 600 master.key
+   mkdir -p data/runtime
+   openssl rand -base64 32 > data/master.key
+   chmod 600 data/master.key
    ```
 
-   The sample mounts it read-only at `/run/keys/master.key` and points `ENVMANAGER_KEY_FILE` at
-   it. The key is not inside `./data`, so a copy of the data folder or of a backup never carries
-   it. Store another copy in a password manager or secret store. Without it the data cannot be
-   read (see [Backup and restore](operations.md#backup-and-restore) and
+   The sample mounts `data/runtime` at `/data` and the key read-only at `/run/keys/master.key`,
+   and its `environment:` points `ENVMANAGER_KEY_FILE` at it. The key is not inside
+   `data/runtime`, so a copy of that folder or of a backup never carries it, but it sits beside
+   it in `data`: a copy of the whole `data` folder carries both, so back the key up on its own.
+   Store another copy in a password manager or secret store. Without it the data cannot be read
+   (see [Backup and restore](operations.md#backup-and-restore) and
    [Key rotation](operations.md#key-rotation)).
-3. Set `ENVMANAGER_BASE_URL` to the address people open, and mount the host folders that hold the
-   deployments (`/var/www/vhosts` and `/opt` in the sample) at the same path as on the host.
-   Mounts are read-write; the allowed path list in Settings decides which of them the application
-   may use. The sample publishes the port on the loopback address only (`127.0.0.1:8080:8080`):
-   put the reverse proxy that ends https on the same host, or change the binding on purpose.
+3. Copy `deploy/.env.example` to `.env` next to the compose file. Set `ENVMANAGER_BASE_URL` to the
+   address people open and `ENVMANAGER_CSRF_SECRET` to a secret of at least 32 characters (for
+   example `openssl rand -hex 32`), and uncomment the optional settings you need, such as
+   `ENVMANAGER_TRUSTED_PROXIES`. Mount the host folders that hold the deployments
+   (`/var/www/vhosts` and `/opt` in the sample) at the same path as on the host. Mounts are
+   read-write; the allowed path list in Settings decides which of them the application may use.
+   The sample publishes the port on the loopback address only (`127.0.0.1:8080:8080`): put the
+   reverse proxy that ends https on the same host, or change the binding on purpose.
 4. Start it with `docker compose up -d`, create the first superadmin with `docker compose exec
    envmanager envmanager user create --email you@example.com --name "Your Name" --group
    superadmin` (see [Users](usage.md#users)), and sign in at the base URL. Until the superadmin
@@ -80,10 +90,13 @@ IPv4-mapped IPv6 address (`::ffff:10.0.0.5`, what a dual stack socket reports fo
 client) counts as the IPv4 address it carries, and a network with host bits set
 (`10.0.0.5/24`) is refused instead of widened.
 
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `ENVMANAGER_TRUSTED_PROXIES` | empty | Peers whose `X-Forwarded-For` and `X-Forwarded-Proto` headers are believed, for example `172.18.0.2` or `172.18.0.0/16,fd00::/8`. `*` and networks that hold every address (`0.0.0.0/0`, `::/0`) are refused: trusting every peer would let anyone choose the address that lockouts and the allowed sources rely on. |
-| `ENVMANAGER_ALLOWED_SOURCES` | empty (everyone) | Client addresses that may use the application at all, for example `203.0.113.0/24,2001:db8::/32`. Everything else gets a bare `403` (JSON in the shape of the API under `/api`). |
+Two settings shape it, `ENVMANAGER_TRUSTED_PROXIES` (the peers whose `X-Forwarded-For` and
+`X-Forwarded-Proto` headers are believed) and `ENVMANAGER_ALLOWED_SOURCES` (the client addresses
+that may use the application at all); their defaults and formats are in the
+[Environment variables table of the README](../README.md#environment-variables). `*` and networks
+that hold every address (`0.0.0.0/0`, `::/0`) are refused as trusted proxies: trusting every peer
+would let anyone choose the address that lockouts and the allowed sources rely on. A client
+outside the allowed sources gets a bare `403` (JSON in the shape of the API under `/api`).
 
 The client address is resolved once, before anything else runs, and is the address that the audit
 log, the sign-in and API lockout counters, sessions, the last used address of API tokens and the

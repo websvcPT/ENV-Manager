@@ -1,19 +1,17 @@
 # ENV Manager production example. Pin the image to a release tag or to the one you build, create
-# master.key (a base64 encoded 32 byte key) outside the data folder, and set the base URL to the
-# address people open.
+# data/master.key (a base64 encoded 32 byte key) and copy .env.example to .env next to this file.
+# The settings live in .env; this file sets only what the file layout below fixes.
 services:
   envmanager:
     image: websvcpt/env-manager:latest
     restart: unless-stopped
+    container_name: envmanager
+    env_file: .env
     environment:
       ENVMANAGER_KEY_FILE: /run/keys/master.key
-      ENVMANAGER_BASE_URL: https://env.example.com
-      # Peers whose X-Forwarded-For and X-Forwarded-Proto headers are believed (the reverse
-      # proxy in front of the application):
-      # ENVMANAGER_TRUSTED_PROXIES: 172.18.0.0/16
     volumes:
-      - ./data:/data
-      - ./master.key:/run/keys/master.key:ro
+      - ./data/runtime:/data
+      - ./data/master.key:/run/keys/master.key:ro
       # optional: mount the host's vhosts and opt folders to be able to read/write files on the host
       - /var/www/vhosts:/var/www/vhosts
       - /opt:/opt
