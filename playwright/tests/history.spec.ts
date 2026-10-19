@@ -1,11 +1,18 @@
-import type { APIRequestContext, Browser, Page } from '@playwright/test';
+import type { APIRequestContext, Page } from '@playwright/test';
 
 import { createDeployment } from '../deployments-api';
 import { createEnvironment, saveRaw, seededEnvironmentId } from '../environments-api';
 import { stateFile } from '../global-setup';
-import { csrfHeaders } from '../projects-api';
+import { csrfHeaders } from '../http';
 import { createService } from '../services-api';
+import { horizontalOverflow } from '../viewport';
 import { expect, test } from './scratch-project';
+import {
+  asRolesWithoutAccess,
+  expectNoValueInPage,
+  SEEDED_SECRETS,
+  seededEditor,
+} from './seeded-editor';
 
 const SAMPLE_A = '/srv/deployments/sample-a';
 const OLD_PASSWORD = 'e2e-old-Pw41';
@@ -14,7 +21,6 @@ const GONE_VALUE = 'e2e-gone-Lg43';
 const ADDED_VALUE = 'e2e-added-Ad44';
 const UNCHANGED_VALUE = 'db.unchanged.example.test';
 const COMMENT_TEXT = 'e2e comment line';
-const SEEDED_SECRETS = ['Zq7vK2mPw9', 'Tn4xB8cL1d', 'Ke3rH6vNa5', 'MIIDdzCCAl7sentinelCertBody'];
 
 const FIRST =
   `# ${COMMENT_TEXT}\n` +
@@ -29,12 +35,6 @@ const SECOND =
 
 const PEM_OLD = '-----BEGIN CERTIFICATE-----\nE2EOLDBODY\n-----END CERTIFICATE-----\n';
 const PEM_NEW = '-----BEGIN CERTIFICATE-----\nE2ENEWBODY\n-----END CERTIFICATE-----\n';
-
-async function horizontalOverflow(page: Page): Promise<number> {
-  return page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  );
-}
 
 /** An environment with these versions, oldest first, inside the scratch project. */
 async function prepare(
@@ -89,13 +89,6 @@ function restoreButton(page: Page) {
 
 function toast(page: Page) {
   return page.locator('[data-fragment="toast"]');
-}
-
-async function expectNoValueInPage(page: Page, ...values: string[]): Promise<void> {
-  const html = await page.content();
-  for (const value of values) {
-    expect(html).not.toContain(value);
-  }
 }
 
 async function checkedVersions(page: Page): Promise<string[]> {
@@ -364,10 +357,6 @@ test.describe('superadmin history', () => {
   });
 });
 
-async function seededEditor(browser: Browser): Promise<number> {
-  return seededEnvironmentId(browser, 'Fancy Proj. Name', 'prod', 'mysql', '.env.db.app');
-}
-
 test.describe('viewer', () => {
   test.use({ storageState: stateFile('viewer') });
 
@@ -453,23 +442,17 @@ test.describe('other roles', () => {
     browser,
   }) => {
     const other = await seededEditor(browser);
-    for (const user of ['ungrantedAdmin', 'envScopedViewer'] as const) {
-      const context = await browser.newContext({ storageState: stateFile(user) });
-      const page = await context.newPage();
-      try {
-        expect((await page.goto(`/environments/${other}/history`))?.status()).toBe(404);
-        const headers = await csrfHeaders(page.request);
-        const reveal = await page.request.post(`/environments/${other}/history/reveal?v=2&v=3`, {
-          headers,
-        });
-        expect(reveal.status()).toBe(404);
-        const restore = await page.request.post(`/environments/${other}/restore/1?base=3`, {
-          headers,
-        });
-        expect(restore.status()).toBe(404);
-      } finally {
-        await context.close();
-      }
-    }
+    await asRolesWithoutAccess(browser, async (page) => {
+      expect((await page.goto(`/environments/${other}/history`))?.status()).toBe(404);
+      const headers = await csrfHeaders(page.request);
+      const reveal = await page.request.post(`/environments/${other}/history/reveal?v=2&v=3`, {
+        headers,
+      });
+      expect(reveal.status()).toBe(404);
+      const restore = await page.request.post(`/environments/${other}/restore/1?base=3`, {
+        headers,
+      });
+      expect(restore.status()).toBe(404);
+    });
   });
 });

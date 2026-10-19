@@ -1,13 +1,8 @@
 import type { APIRequestContext, Browser } from '@playwright/test';
 
 import { SUPERADMIN_STATE } from './global-setup';
-import { csrfHeaders } from './projects-api';
+import { csrfHeaders, idLinks } from './http';
 import { serviceId } from './services-api';
-
-function environmentLink(name: string): RegExp {
-  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`<a href="/environments/(\\d+)"[^>]*>${escaped}</a>`);
-}
 
 /** Id of an environment of a service, read from the service's environments panel. */
 export async function environmentIdIn(
@@ -18,11 +13,13 @@ export async function environmentIdIn(
   const response = await request.get(`/services/${service}/environments`, {
     headers: { 'HX-Request': 'true' },
   });
-  const found = environmentLink(name).exec(await response.text());
+  const found = idLinks(await response.text(), '/environments').find(
+    ([, listed]) => listed === name,
+  );
   if (!found) {
     throw new Error(`environment ${name} is not listed for service ${service}`);
   }
-  return Number(found[1]);
+  return found[0];
 }
 
 /**

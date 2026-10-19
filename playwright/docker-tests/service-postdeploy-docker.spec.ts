@@ -4,6 +4,7 @@ import { createDeployment } from '../deployments-api';
 import { saveChangedCommands } from '../post-deploy-form';
 import { createService } from '../services-api';
 import { expect, test } from '../tests/scratch-project';
+import { horizontalOverflow } from '../viewport';
 
 /*
  * The post-deploy command settings against a usable Docker: the live status line, the enabled
@@ -22,12 +23,6 @@ function panel(page: Page) {
 
 function settings(page: Page) {
   return page.locator('#postdeploy-settings');
-}
-
-async function horizontalOverflow(page: Page): Promise<number> {
-  return page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  );
 }
 
 /** A service in a deployment rooted at the demo Compose stack, inside the throwaway project. */

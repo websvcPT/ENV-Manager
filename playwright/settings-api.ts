@@ -1,6 +1,6 @@
 import type { APIRequestContext } from '@playwright/test';
 
-import { csrfHeaders } from './projects-api';
+import { csrfHeaders } from './http';
 
 const PATH_ROW = /<tr data-fragment="path-row" id="path-(\d+)">.*?<span class="font-mono text-\[13px\]">([^<]+)<\/span>/gs;
 

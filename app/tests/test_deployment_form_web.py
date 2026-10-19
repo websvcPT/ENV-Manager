@@ -9,11 +9,9 @@ import pytest
 from fastapi import FastAPI
 from sqlalchemy import select
 
-from app.core.csrf import CSRF_COOKIE_NAME
 from app.models import AllowedPath, AuditEntry, Deployment, Project
 from app.tests.conftest import sign_in
-
-HTMX = {"HX-Request": "true"}
+from app.tests.web_helpers import HTMX, post
 
 
 @dataclass(frozen=True)
@@ -59,14 +57,6 @@ def form_data(layout: Layout, **overrides: str) -> dict[str, str]:
         "file_group": "",
     }
     return {**values, **overrides}
-
-
-async def post(http: httpx.AsyncClient, url: str, data: dict[str, str]) -> httpx.Response:
-    """Submit a form the way htmx does, with the CSRF header."""
-    await http.get("/healthz")
-    return await http.post(
-        url, data=data, headers={**HTMX, "X-CSRFToken": http.cookies[CSRF_COOKIE_NAME]}
-    )
 
 
 def check_items(fragment: str) -> list[str]:

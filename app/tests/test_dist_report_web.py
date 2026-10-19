@@ -10,15 +10,14 @@ from sqlalchemy import delete, select
 
 from app.models import (
     AllowedPath,
-    AuditEntry,
     Deployment,
     DistMissingPolicy,
     Environment,
-    EnvironmentVersion,
     Project,
 )
 from app.seeds import EDITOR_SECRET_VALUES
 from app.services.notify_events import FileChange, FileChanged
+from app.tests.audit_helpers import web_audit_entries
 from app.tests.conftest import sign_in
 from app.tests.dist_helpers import link_dist, relocate_deployments, write_dist
 from app.tests.notify_helpers import RecordingEvents, file_event_ids
@@ -27,6 +26,8 @@ from app.tests.web_helpers import (
     assert_never_cached,
     main_of,
     post,
+    section_links,
+    version_numbers,
     without_csrf_token,
 )
 
@@ -80,40 +81,6 @@ async def forget_allowed_paths(web_app: FastAPI) -> None:
     async with web_app.state.session_factory() as db:
         await db.execute(delete(AllowedPath))
         await db.commit()
-
-
-async def entries(web_app: FastAPI, action: str) -> list[AuditEntry]:
-    """The audit entries of an action, oldest first."""
-    async with web_app.state.session_factory() as db:
-        return list(
-            (
-                await db.execute(
-                    select(AuditEntry).where(AuditEntry.action == action).order_by(AuditEntry.id)
-                )
-            ).scalars()
-        )
-
-
-async def version_numbers(web_app: FastAPI, environment_id: int) -> list[int]:
-    """The saved version numbers of an environment."""
-    async with web_app.state.session_factory() as db:
-        return list(
-            (
-                await db.execute(
-                    select(EnvironmentVersion.number)
-                    .where(EnvironmentVersion.environment_id == environment_id)
-                    .order_by(EnvironmentVersion.number)
-                )
-            ).scalars()
-        )
-
-
-def section_links(page: str) -> list[str]:
-    """Visible text of the section links under the header."""
-    nav = re.search(r'<nav aria-label="Sections".*?</nav>', page, re.DOTALL)
-    assert nav is not None
-    anchors = re.findall(r"<a [^>]*>(.*?)</a>", nav.group(0), re.DOTALL)
-    return [re.sub(r"<[^>]+>", "", anchor).strip() for anchor in anchors]
 
 
 def summary_counts(page: str) -> list[int]:
@@ -240,7 +207,7 @@ async def test_a_scoped_admin_never_sees_the_deployment_root_even_when_it_is_out
     assert ROOT_OUTSIDE_TEXT in main_of(page)
     for hidden in (str(roots["prod"]), "/host/prod", "/opt/rentals"):
         assert hidden not in page
-    (entry,) = await entries(web_app, "environment.dist_check")
+    (entry,) = await web_audit_entries(web_app, "environment.dist_check")
     assert entry.details["problem"] == "root_outside" and entry.result.value == "failure"
 
 
@@ -260,10 +227,10 @@ async def test_the_report_is_a_check_and_every_run_is_audited_without_values(
 ) -> None:
     write_dist(roots["prod"], DB_DIST, f"DB_HOST=\nDB_NAME={DIST_DEFAULT_VALUE}\n")
     await sign_in(web_client, "admin")
-    assert await entries(web_app, "environment.dist_check") == []
+    assert await web_audit_entries(web_app, "environment.dist_check") == []
     await web_client.get(f"/environments/{ids.db}/dist")
     assert (await post(web_client, f"/environments/{ids.db}/dist-check")).status_code == 200
-    first, second = await entries(web_app, "environment.dist_check")
+    first, second = await web_audit_entries(web_app, "environment.dist_check")
     for entry in (first, second):
         assert entry.environment_id == ids.db and entry.actor_name == "admin"
         assert entry.details["outcome"] == "blocked" and entry.result.value == "blocked"
@@ -297,7 +264,7 @@ async def test_adding_the_missing_keys_saves_a_version_and_reloads_the_report(
     redirect = response.headers["hx-redirect"]
     assert redirect == f"/environments/{ids.db}/dist?added=2&version=3"
     assert await version_numbers(web_app, ids.db) == [1, 2, 3]
-    (save,) = await entries(web_app, "environment.save")
+    (save,) = await web_audit_entries(web_app, "environment.save")
     assert save.details["keys"] == ["DB_NAME", "DB_USER"] and save.actor_name == "admin"
     assert DIST_DEFAULT_VALUE not in str(save.details)
 
@@ -326,7 +293,7 @@ async def test_adding_refuses_a_stale_report_with_a_fresh_one(
     assert 'id="dist-report"' in response.text and "<template hx" in response.text
     assert "DB_NAME" in response.text
     assert await version_numbers(web_app, ids.db) == [1, 2]
-    assert await entries(web_app, "environment.save") == []
+    assert await web_audit_entries(web_app, "environment.save") == []
 
 
 async def test_adding_refuses_when_nothing_is_missing_or_the_check_cannot_run(
@@ -357,7 +324,7 @@ async def test_viewers_get_no_report_tab_no_check_and_no_add(
     assert (await web_client.get(f"/environments/{ids.db}/dist")).status_code == 403
     assert (await post(web_client, f"/environments/{ids.db}/dist-check")).status_code == 403
     assert (await post(web_client, f"/environments/{ids.db}/add-missing?base=2")).status_code == 403
-    assert await entries(web_app, "environment.dist_check") == []
+    assert await web_audit_entries(web_app, "environment.dist_check") == []
     assert await version_numbers(web_app, ids.db) == [1, 2]
 
 
@@ -373,7 +340,7 @@ async def test_environments_outside_the_scope_answer_404_without_a_check(
         add = await post(web_client, f"/environments/{environment}/add-missing?base=2")
         assert add.status_code == 404
     assert (await web_client.get("/environments/999999/dist")).status_code == 404
-    assert await entries(web_app, "environment.dist_check") == []
+    assert await web_audit_entries(web_app, "environment.dist_check") == []
 
 
 async def test_a_scoped_admin_checks_and_adds_to_the_granted_file(
@@ -411,7 +378,7 @@ async def test_no_response_of_the_dist_screens_holds_a_value(
     for response in responses:
         assert not [text for text in SECRET_TEXTS if text in response.text], response.url
         assert "BEGIN CERTIFICATE" not in response.text, response.url
-    for entry in await entries(web_app, "environment.dist_check"):
+    for entry in await web_audit_entries(web_app, "environment.dist_check"):
         assert not [text for text in SECRET_TEXTS if text in str(entry.details)]
 
 
@@ -442,7 +409,7 @@ async def test_deployment_overview_checks_every_file_in_scope_and_audits_each(
     assert f'href="/environments/{ids.db}/dist"' in rows[0] and "Open report" in rows[0]
     assert "Dist check" in body and "Run check again" in body
     assert DIST_DEFAULT_VALUE not in response.text and str(roots["prod"]) not in response.text
-    assert len(await entries(web_app, "environment.dist_check")) == 4
+    assert len(await web_audit_entries(web_app, "environment.dist_check")) == 4
 
 
 async def test_deployment_overview_names_only_the_files_in_a_scoped_callers_scope(
@@ -460,7 +427,7 @@ async def test_deployment_overview_names_only_the_files_in_a_scoped_callers_scop
     assert [name for _id, name in OVERVIEW_ROW.findall(body)] == [".env.db"]
     for hidden in (".env.db.secrets", ".env.db.app", ".env.web", str(roots["prod"])):
         assert hidden not in response.text
-    assert len(await entries(web_app, "environment.dist_check")) == 1
+    assert len(await web_audit_entries(web_app, "environment.dist_check")) == 1
 
 
 async def test_deployment_overview_refuses_viewers_and_hides_other_deployments(
@@ -474,7 +441,7 @@ async def test_deployment_overview_refuses_viewers_and_hides_other_deployments(
     await sign_in(web_client, "ungranted_admin")
     assert (await web_client.get(f"/deployments/{deployment_ids['prod']}/dist")).status_code == 404
     assert (await web_client.get("/deployments/999999/dist")).status_code == 404
-    assert await entries(web_app, "environment.dist_check") == []
+    assert await web_audit_entries(web_app, "environment.dist_check") == []
 
 
 async def test_deployment_overview_runs_nothing_outside_the_allowed_paths(
@@ -490,7 +457,7 @@ async def test_deployment_overview_runs_nothing_outside_the_allowed_paths(
     body = main_of(response.text)
     assert "This deployment is outside the allowed paths." in body
     assert 'data-fragment="dist-row"' not in body and "Run check again" not in body
-    assert await entries(web_app, "environment.dist_check") == []
+    assert await web_audit_entries(web_app, "environment.dist_check") == []
 
 
 async def test_project_rows_link_the_check_for_checkers_with_files_inside_the_allowed_paths(
@@ -532,7 +499,7 @@ async def test_deployment_overview_says_so_when_there_is_no_file_to_check(
     body = main_of(response.text)
     assert "No files to check" in body and 'data-fragment="dist-row"' not in body
     assert "outside the allowed paths" not in body
-    assert await entries(web_app, "environment.dist_check") == []
+    assert await web_audit_entries(web_app, "environment.dist_check") == []
 
 
 async def test_adding_the_missing_keys_announces_the_file_change_to_the_notifier(

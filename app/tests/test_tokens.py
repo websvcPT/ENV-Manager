@@ -3,7 +3,6 @@
 import hashlib
 import json
 import string
-from collections.abc import AsyncIterator
 from datetime import UTC, datetime, time, timedelta
 
 import pytest
@@ -52,13 +51,6 @@ from app.services.tokens import (
 )
 
 SEED_SECRET = "seed-token-billing-ci"
-
-
-@pytest.fixture
-async def db(seeded_database: AsyncEngine) -> AsyncIterator[AsyncSession]:
-    """A session on the seeded temporary database."""
-    async with create_session_factory(seeded_database)() as session:
-        yield session
 
 
 async def make_token(

@@ -20,7 +20,8 @@ from app.models import AppSetting, AuditActorType, AuditEntry, Backup, BackupSta
 from app.services.app_settings import BackupSettings, save_section
 from app.services.audit import AuditActor
 from app.services.backup_lock import hold_backup_lock
-from app.tests.backup_helpers import audit_entries, backup_records, read_rows
+from app.tests.audit_helpers import audit_entries_from
+from app.tests.backup_helpers import backup_records, read_rows
 
 runner = CliRunner()
 MARKER = "marker.value"
@@ -97,7 +98,7 @@ def test_backup_create_writes_a_private_backup_and_records_it(data_path: Path) -
     assert "KB" in result.output or "MB" in result.output
 
     async def read(factory: Factory) -> tuple[list[Backup], list[AuditEntry]]:
-        return await backup_records(factory), await audit_entries(factory, "backup.create")
+        return await backup_records(factory), await audit_entries_from(factory, "backup.create")
 
     records, entries = run_database(data_path, read)
     assert [(r.trigger, r.status, r.filename) for r in records] == [
@@ -153,7 +154,7 @@ def test_backup_restore_by_file_name_replaces_the_data(data_path: Path) -> None:
     ]
 
     async def read(factory: Factory) -> list[AuditEntry]:
-        return await audit_entries(factory, "backup.restore")
+        return await audit_entries_from(factory, "backup.restore")
 
     (entry,) = run_database(data_path, read)
     assert (entry.actor_name, entry.target_name) == ("cli", path.name)

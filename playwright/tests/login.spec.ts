@@ -1,6 +1,8 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 
+import { horizontalOverflow } from '../viewport';
 import { expectImageLoaded, renderedSize } from './images';
+import { submitSignIn } from './sign-in';
 import { totpCode } from './totp';
 
 // Development dataset values (development and testing only).
@@ -10,18 +12,6 @@ const SESSION_COOKIE = 'envmanager_session';
 const PENDING_COOKIE = 'envmanager_pending_login';
 
 test.use({ storageState: { cookies: [], origins: [] } });
-
-async function signIn(page: Page, name: string, password: string): Promise<void> {
-  await page.locator('#user').fill(name);
-  await page.locator('#pw').fill(password);
-  await page.locator('#login-card button[type="submit"]').click();
-}
-
-async function horizontalOverflow(page: Page): Promise<number> {
-  return page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  );
-}
 
 test.describe('sign in page', () => {
   test('shows the card with both fields and no message', async ({ page }) => {
@@ -63,7 +53,7 @@ test.describe('sign in page', () => {
 
   test('signing in lands on the projects page', async ({ page }) => {
     await page.goto('/login');
-    await signIn(page, 'root', PASSWORD);
+    await submitSignIn(page, 'root', PASSWORD);
     await expect(page).toHaveURL(/\/projects$/);
     await expect(page.locator('[data-fragment="page-header"] h1')).toBeVisible();
     await page.goto('/login');
@@ -72,7 +62,7 @@ test.describe('sign in page', () => {
 
   test('wrong credentials swap in a generic message and keep the name', async ({ page }) => {
     await page.goto('/login');
-    await signIn(page, 'root', 'not-the-password');
+    await submitSignIn(page, 'root', 'not-the-password');
     const message = page.locator('[data-fragment="login-message"]');
     await expect(message).toHaveAttribute('role', 'alert');
     await expect(page).toHaveURL(/\/login$/);
@@ -80,7 +70,7 @@ test.describe('sign in page', () => {
     await expect(page.locator('#pw')).toHaveValue('');
     const wrongPassword = await message.innerText();
 
-    await signIn(page, 'nobody-by-that-name', 'not-the-password');
+    await submitSignIn(page, 'nobody-by-that-name', 'not-the-password');
     await expect(page.locator('#user')).toHaveValue('nobody-by-that-name');
     expect(await page.locator('[data-fragment="login-message"]').innerText()).toBe(wrongPassword);
     await expect(page.locator('[data-fragment="login-card"]')).toHaveCount(1);
@@ -93,7 +83,7 @@ test.describe('sign in page', () => {
       const answered = page.waitForResponse(
         (response) => response.request().method() === 'POST' && response.url().endsWith('/login'),
       );
-      await signIn(page, name, 'not-the-password');
+      await submitSignIn(page, name, 'not-the-password');
       await answered;
     }
     const message = page.locator('[data-fragment="login-message"]');
@@ -123,7 +113,7 @@ test.describe('second factor step', () => {
     page,
   }, testInfo) => {
     await page.goto('/login');
-    await signIn(page, totpUser(testInfo.project.name), PASSWORD);
+    await submitSignIn(page, totpUser(testInfo.project.name), PASSWORD);
 
     const code = page.locator('#code');
     await expect(code).toBeVisible();
@@ -142,7 +132,7 @@ test.describe('second factor step', () => {
 
   test('an empty code asks for it again', async ({ page }, testInfo) => {
     await page.goto('/login');
-    await signIn(page, totpUser(testInfo.project.name), PASSWORD);
+    await submitSignIn(page, totpUser(testInfo.project.name), PASSWORD);
     await expect(page.locator('#code')).toBeVisible();
     await page.locator('#login-card button[type="submit"]').click();
     await expect(page.locator('#code-e')).toContainText('6-digit');
@@ -154,7 +144,7 @@ test.describe('second factor step', () => {
     context,
   }, testInfo) => {
     await page.goto('/login');
-    await signIn(page, totpUser(testInfo.project.name), PASSWORD);
+    await submitSignIn(page, totpUser(testInfo.project.name), PASSWORD);
     await expect(page.locator('#code')).toBeVisible();
 
     await expect(page.locator('#login-card input[type="hidden"][name="identifier"]')).toHaveCount(0);
@@ -172,7 +162,7 @@ test.describe('second factor step', () => {
     context,
   }, testInfo) => {
     await page.goto('/login');
-    await signIn(page, totpUser(testInfo.project.name), PASSWORD);
+    await submitSignIn(page, totpUser(testInfo.project.name), PASSWORD);
     await expect(page.locator('#code')).toBeVisible();
 
     await context.clearCookies({ name: PENDING_COOKIE });
@@ -188,7 +178,7 @@ test.describe('second factor step', () => {
 
   test('back to sign in returns to the credentials form', async ({ page }, testInfo) => {
     await page.goto('/login');
-    await signIn(page, totpUser(testInfo.project.name), PASSWORD);
+    await submitSignIn(page, totpUser(testInfo.project.name), PASSWORD);
     await page.locator('#login-card a[href="/login"]').click();
     await expect(page.locator('#user')).toBeVisible();
   });
@@ -216,7 +206,7 @@ test.describe('session expiry', () => {
     context,
   }) => {
     await page.goto('/login');
-    await signIn(page, 'root', PASSWORD);
+    await submitSignIn(page, 'root', PASSWORD);
     await expect(page).toHaveURL(/\/projects$/);
 
     await context.clearCookies();
@@ -232,7 +222,7 @@ test.describe('session expiry', () => {
     context,
   }) => {
     await page.goto('/login');
-    await signIn(page, 'root', PASSWORD);
+    await submitSignIn(page, 'root', PASSWORD);
     await expect(page).toHaveURL(/\/projects$/);
 
     const baseURL = String(test.info().project.use.baseURL);
@@ -252,7 +242,7 @@ test.describe('session expiry', () => {
     context,
   }) => {
     await page.goto('/login');
-    await signIn(page, 'root', PASSWORD);
+    await submitSignIn(page, 'root', PASSWORD);
     await expect(page).toHaveURL(/\/projects$/);
     const baseURL = String(test.info().project.use.baseURL);
     await context.addCookies([{ name: SESSION_COOKIE, value: 'dead-session', url: baseURL }]);

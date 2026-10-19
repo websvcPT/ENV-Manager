@@ -3,6 +3,7 @@ import type { Page } from '@playwright/test';
 import { createDeployment } from '../deployments-api';
 import { createService } from '../services-api';
 import { expect, test } from '../tests/scratch-project';
+import { horizontalOverflow, TOUCH_TARGET, usesMenus } from '../viewport';
 
 /*
  * The Post-deploy tab of the Settings against a usable Docker: the live status, the enabled
@@ -12,7 +13,6 @@ import { expect, test } from '../tests/scratch-project';
 
 const DEMO_ROOT = process.env.E2E_DEMO_ROOT ?? '';
 const STACK = `${DEMO_ROOT}/stack`;
-const TOUCH_TARGET = 44;
 
 function form(page: Page) {
   return page.locator('#post-deploy-switch');
@@ -20,12 +20,6 @@ function form(page: Page) {
 
 function toast(page: Page) {
   return form(page).locator('[data-fragment="toast"]');
-}
-
-async function horizontalOverflow(page: Page): Promise<number> {
-  return page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  );
 }
 
 async function switchOn(page: Page): Promise<void> {
@@ -48,7 +42,7 @@ test.describe('post-deploy tab with a usable Docker', () => {
     await expect(form(page)).toContainText('Services with a command run it once after a deploy.');
     const save = form(page).locator('button[type="submit"]');
     await expect(save).toBeEnabled();
-    if ((page.viewportSize()?.width ?? 0) < 768) {
+    if (usesMenus(page)) {
       const box = await save.boundingBox();
       expect(box?.height ?? 0).toBeGreaterThanOrEqual(TOUCH_TARGET);
     }

@@ -1,7 +1,5 @@
 """The access grid read model and cell toggles on the seeded database."""
 
-from collections.abc import AsyncIterator
-
 import pytest
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
@@ -9,8 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 from app.core.db import create_session_factory
 from app.models import (
     AccessGrant,
-    AuditEntry,
-    GrantLevel,
     User,
     UserGroup,
 )
@@ -27,25 +23,16 @@ from app.services.access_grid import (
     load_access_grid,
     toggle_cell,
 )
-from app.services.audit import AuditActor
 from app.services.grants import SUPERADMIN_REFUSAL, GrantTarget, list_grants, set_user_grants
-from app.tests.grant_helpers import count_statements, grow
-
-PROJECT = GrantLevel.PROJECT
-DEPLOYMENT = GrantLevel.DEPLOYMENT
-ENVIRONMENT = GrantLevel.ENVIRONMENT
-
-
-@pytest.fixture
-async def db(seeded_database: AsyncEngine) -> AsyncIterator[AsyncSession]:
-    """A session on the seeded temporary database."""
-    async with create_session_factory(seeded_database)() as session:
-        yield session
-
-
-def actor_of(seed_data: SeedData) -> AuditActor:
-    """The superadmin as the web routes name them in audit entries."""
-    return AuditActor.for_user(seed_data.users.superadmin, "10.0.0.5")
+from app.tests.audit_helpers import audit_entries
+from app.tests.grant_helpers import (
+    DEPLOYMENT,
+    ENVIRONMENT,
+    PROJECT,
+    actor_of,
+    count_statements,
+    grow,
+)
 
 
 def node_of(grid: AccessGrid, node_id: str) -> GridNode:
@@ -62,14 +49,6 @@ def cell_of(grid: AccessGrid, user: User, node_id: str) -> GridCell:
 async def grants_of(db: AsyncSession, user: User) -> set[GrantTarget]:
     """The stored direct grants of a user."""
     return set(await list_grants(db, user.id))
-
-
-async def entries(db: AsyncSession, action: str) -> list[AuditEntry]:
-    """The audit entries of one action, oldest first."""
-    rows = await db.execute(
-        select(AuditEntry).where(AuditEntry.action == action).order_by(AuditEntry.id)
-    )
-    return list(rows.scalars())
 
 
 async def test_columns_are_the_active_admins_and_viewers_by_name(
@@ -259,14 +238,14 @@ async def test_a_toggle_adds_and_removes_one_grant_with_one_audit_entry_each(
     added = await toggle_cell(db, user, target, was=False, actor=actor_of(seed_data))
     assert added.changed and added.notice is None
     assert await grants_of(db, user) == {target}
-    [entry] = await entries(db, "grant.add")
+    [entry] = await audit_entries(db, "grant.add")
     assert entry.target_name == "ungranted_admin"
     assert entry.details == {"level": "project", "item": "billing"}
     removed = await toggle_cell(db, user, target, was=True, actor=actor_of(seed_data))
     assert removed.changed and removed.notice is None
     assert await grants_of(db, user) == set()
-    assert len(await entries(db, "grant.add")) == 1
-    [gone] = await entries(db, "grant.remove")
+    assert len(await audit_entries(db, "grant.add")) == 1
+    [gone] = await audit_entries(db, "grant.remove")
     assert gone.details == {"level": "project", "item": "billing"}
 
 
@@ -307,12 +286,12 @@ async def test_a_cell_that_shows_an_old_state_is_refused_and_nothing_changes(
 ) -> None:
     user = seed_data.users.viewer
     project = GrantTarget(PROJECT, seed_data.projects.fancy.id)
-    before = await entries(db, "grant.remove")
+    before = await audit_entries(db, "grant.remove")
     update = await toggle_cell(db, user, project, was=False, actor=actor_of(seed_data))
     assert update.notice == STALE_NOTICE
     assert not update.changed
     assert await grants_of(db, user) == {project}
-    assert await entries(db, "grant.remove") == before
+    assert await audit_entries(db, "grant.remove") == before
     shown = {node.id: cell for node, cell in update.cells}
     assert shown[f"project-{project.item_id}"].kind is CellKind.DIRECT
     assert len(shown) == len(
@@ -332,7 +311,7 @@ async def test_access_an_item_above_already_includes_cannot_be_granted_again(
     update = await toggle_cell(db, user, target, was=False, actor=actor_of(seed_data))
     assert update.notice == "Access to this item is already included through Fancy Proj. Name."
     assert await grants_of(db, user) == {GrantTarget(PROJECT, seed_data.projects.fancy.id)}
-    assert await entries(db, "grant.add") == []
+    assert await audit_entries(db, "grant.add") == []
 
 
 async def test_a_redundant_grant_can_be_removed(db: AsyncSession, seed_data: SeedData) -> None:
@@ -343,7 +322,7 @@ async def test_a_redundant_grant_can_be_removed(db: AsyncSession, seed_data: See
     update = await toggle_cell(db, user, target, was=True, actor=actor_of(seed_data))
     assert update.changed and update.notice is None
     assert await grants_of(db, user) == {project}
-    [entry] = await entries(db, "grant.remove")
+    [entry] = await audit_entries(db, "grant.remove")
     assert entry.details is not None and entry.details["level"] == "environment"
 
 
@@ -371,4 +350,4 @@ async def test_a_superadmin_cannot_be_given_a_grant(db: AsyncSession, seed_data:
     assert update.notice == SUPERADMIN_REFUSAL
     assert not update.changed
     assert await grants_of(db, seed_data.users.superadmin) == set()
-    assert await entries(db, "grant.add") == []
+    assert await audit_entries(db, "grant.add") == []

@@ -2,10 +2,9 @@ import { type Locator, type Page } from '@playwright/test';
 
 import { htmlText, plainText, waitForMailTo } from '../mail-api';
 import { test } from '../settings-test';
+import { horizontalOverflow, isWide, TOUCH_TARGET } from '../viewport';
 
 const { expect } = test;
-const WIDE_BREAKPOINT = 768;
-const TOUCH_TARGET = 44;
 const PASSWORD = 'e2e-smtp-password-sentinel';
 const BANNER = 'SMTP is not configured: no notification emails are sent.';
 
@@ -22,16 +21,6 @@ interface SmtpForm {
   tls: string;
   username: string;
   from: string;
-}
-
-function isWide(page: Page): boolean {
-  return (page.viewportSize()?.width ?? 0) >= WIDE_BREAKPOINT;
-}
-
-async function horizontalOverflow(page: Page): Promise<number> {
-  return page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  );
 }
 
 async function height(locator: Locator): Promise<number> {

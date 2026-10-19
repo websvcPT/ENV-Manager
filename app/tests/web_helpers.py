@@ -1,18 +1,34 @@
-"""Helpers shared by the web tests of environment pages: htmx requests, ids and header checks."""
+"""Helpers shared by the web tests.
+
+Htmx requests and form posts, ids of the seeded environments, page readers, version helpers and the
+seeded deployments staged on real folders with a fake docker.
+"""
 
 import html
 import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 
 import httpx
 from fastapi import FastAPI
 from sqlalchemy import select
 
 from app.core.csrf import CSRF_COOKIE_NAME
-from app.models import Deployment, Environment, Service
+from app.models import (
+    Deployment,
+    Environment,
+    EnvironmentVersion,
+    HookType,
+    Project,
+    Service,
+    ServiceHook,
+)
 from app.seeds import EDITOR_ENVIRONMENT_NAME
+from app.services.versions import create_version
+from app.tests.dist_helpers import relocate_deployments
+from app.tests.fake_docker import FakeDocker
 
 HTMX = {"HX-Request": "true"}
 
@@ -51,12 +67,18 @@ async def environment_ids(web_app: FastAPI) -> EnvironmentIds:
 
 
 async def post(
-    http: httpx.AsyncClient, url: str, data: Mapping[str, object] | None = None
+    http: httpx.AsyncClient,
+    url: str,
+    data: Mapping[str, object] | None = None,
+    files: Mapping[str, tuple[str, bytes]] | None = None,
 ) -> httpx.Response:
-    """Submit a form the way htmx does, with the CSRF header."""
+    """Submit a form the way htmx does, with the CSRF header (and files for a multipart one)."""
     await http.get("/healthz")
     return await http.post(
-        url, data=data or {}, headers={**HTMX, "X-CSRFToken": http.cookies[CSRF_COOKIE_NAME]}
+        url,
+        data=data or {},
+        files=files,
+        headers={**HTMX, "X-CSRFToken": http.cookies[CSRF_COOKIE_NAME]},
     )
 
 
@@ -88,3 +110,91 @@ def without_csrf_token(page: str) -> str:
     """
     page = re.sub(r"hx-headers:inherited='[^']*'", "", page)
     return re.sub(r'<input type="hidden" name="csrf_token" value="[^"]*">', "", page)
+
+
+def section_links(page: str) -> list[str]:
+    """Visible text of the section links under the header."""
+    nav = re.search(r'<nav aria-label="Sections".*?</nav>', page, re.DOTALL)
+    assert nav is not None
+    anchors = re.findall(r"<a [^>]*>(.*?)</a>", nav.group(0), re.DOTALL)
+    return [re.sub(r"<[^>]+>", "", anchor).strip() for anchor in anchors]
+
+
+async def add_version(web_app: FastAPI, environment: int, text: str) -> None:
+    """Save a text as the next version of an environment."""
+    async with web_app.state.session_factory() as db:
+        await create_version(db, web_app.state.crypto, environment, text, author=None)
+        await db.commit()
+
+
+async def version_numbers(web_app: FastAPI, environment: int) -> list[int]:
+    """The saved version numbers of an environment, oldest first."""
+    async with web_app.state.session_factory() as db:
+        return list(
+            (
+                await db.execute(
+                    select(EnvironmentVersion.number)
+                    .where(EnvironmentVersion.environment_id == environment)
+                    .order_by(EnvironmentVersion.number)
+                )
+            ).scalars()
+        )
+
+
+@dataclass(frozen=True)
+class StagedDeployments:
+    """The seeded structure moved onto real folders, with a fake docker and the ids by name."""
+
+    roots: dict[str, Path]
+    docker: FakeDocker
+    projects: dict[str, int]
+    deployments: dict[str, int]
+    services: dict[str, int]
+    environments: dict[str, int]
+
+
+async def stage_deployments(
+    web_app: FastAPI, tmp_path: Path, hook_command: str
+) -> StagedDeployments:
+    """Put the seeded deployments on a real folder so a deploy writes real files.
+
+    Dist links and file owners are removed, the production MySQL service stores ``hook_command``
+    as its post-deploy command and the application's docker CLI is a fake script, so the command
+    that runs is a real (fake) process whose calls the tests read back.
+    """
+    async with web_app.state.session_factory() as db:
+        roots = await relocate_deployments(db, tmp_path / "host")
+        for environment in (await db.execute(select(Environment))).scalars():
+            environment.dist_path = None
+        for deployment in (await db.execute(select(Deployment))).scalars():
+            deployment.file_owner = None
+            deployment.file_group = None
+        mysql = await db.scalar(select(Service).where(Service.name == "mysql"))
+        assert mysql is not None
+        db.add(ServiceHook(service_id=mysql.id, type=HookType.POST_DEPLOY, commands=hook_command))
+        await db.commit()
+        projects = dict((await db.execute(select(Project.name, Project.id))).all())
+        deployments = dict((await db.execute(select(Deployment.name, Deployment.id))).all())
+        services = {
+            f"{deployment}/{service}": identifier
+            for deployment, service, identifier in (
+                await db.execute(
+                    select(Deployment.name, Service.name, Service.id).join(
+                        Service, Service.deployment_id == Deployment.id
+                    )
+                )
+            ).all()
+        }
+        environments = {
+            f"{service}/{name}": identifier
+            for service, name, identifier in (
+                await db.execute(
+                    select(Service.name, Environment.name, Environment.id).join(
+                        Service, Service.id == Environment.service_id
+                    )
+                )
+            ).all()
+        }
+    docker = FakeDocker(tmp_path / "fake-docker")
+    web_app.state.docker_cli = docker.cli()
+    return StagedDeployments(roots, docker, projects, deployments, services, environments)

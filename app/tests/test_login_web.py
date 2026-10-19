@@ -13,8 +13,7 @@ from app.core.sessions import PENDING_LOGIN_COOKIE_NAME, SESSION_COOKIE_NAME
 from app.models import AuditEntry, LoginCounter, LoginCounterKind
 from app.seeds import DEV_PASSWORD, DEV_TOTP_SECRET
 from app.tests.conftest import sign_in
-
-HTMX = {"HX-Request": "true"}
+from app.tests.web_helpers import HTMX
 
 
 async def post_form(

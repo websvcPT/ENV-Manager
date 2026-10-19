@@ -1,4 +1,7 @@
-"""Helpers shared by the tests of the access grid and the Access tabs: query counting and growth."""
+"""Helpers shared by the tests of grants, the access grid and the Access tabs.
+
+The superadmin actor and the grant level names, query counting and growth of the structure.
+"""
 
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -8,7 +11,18 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.engine.interfaces import DBAPICursor, ExecutionContext
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
-from app.models import Deployment, Environment, Project, Service, User, UserGroup
+from app.models import Deployment, Environment, GrantLevel, Project, Service, User, UserGroup
+from app.seeds import SeedData
+from app.services.audit import AuditActor
+
+PROJECT = GrantLevel.PROJECT
+DEPLOYMENT = GrantLevel.DEPLOYMENT
+ENVIRONMENT = GrantLevel.ENVIRONMENT
+
+
+def actor_of(seed_data: SeedData) -> AuditActor:
+    """The superadmin as the web routes name them in audit entries."""
+    return AuditActor.for_user(seed_data.users.superadmin, "10.0.0.5")
 
 
 @contextmanager

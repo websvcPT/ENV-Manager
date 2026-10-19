@@ -16,11 +16,11 @@ from app.models import (
     ServiceHook,
 )
 from app.tests.conftest import sign_in
+from app.tests.web_helpers import HTMX
 
 COMMAND_MARKER = "COMMAND-MARKER-4471"
 OUTPUT_MARKER = "OUTPUT-MARKER-9921"
 REASON_MARKER = "REASON-MARKER-6180"
-HTMX = {"HX-Request": "true"}
 
 
 @dataclass(frozen=True)

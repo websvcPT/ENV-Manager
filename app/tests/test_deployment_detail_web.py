@@ -10,8 +10,7 @@ from sqlalchemy import select
 
 from app.models import Deployment
 from app.tests.conftest import sign_in
-
-HTMX = {"HX-Request": "true"}
+from app.tests.web_helpers import HTMX, main_of, section_links
 
 
 @dataclass(frozen=True)
@@ -34,22 +33,9 @@ async def ids(web_app: FastAPI) -> DeploymentIds:
     )
 
 
-def section_links(page: str) -> list[str]:
-    """Visible text of the section links under the header."""
-    nav = re.search(r'<nav aria-label="Sections".*?</nav>', page, re.DOTALL)
-    assert nav is not None
-    anchors = re.findall(r"<a [^>]*>(.*?)</a>", nav.group(0), re.DOTALL)
-    return [re.sub(r"<[^>]+>", "", anchor).strip() for anchor in anchors]
-
-
 def service_names(page: str) -> list[str]:
     """Service names in row order."""
     return re.findall(r'data-fragment="service-row"><th[^>]*><a [^>]*>([^<]+)</a>', page)
-
-
-def main_of(page: str) -> str:
-    """The page body without the sidebar, top bar and menu, where names must not leak."""
-    return page.split("<main", 1)[1].split("</main>", 1)[0]
 
 
 async def test_superadmin_sees_everything_and_the_edit_actions(

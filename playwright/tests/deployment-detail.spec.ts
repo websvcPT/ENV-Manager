@@ -2,20 +2,9 @@ import type { Browser, Page } from '@playwright/test';
 
 import { deploymentId } from '../deployments-api';
 import { stateFile } from '../global-setup';
+import { horizontalOverflow, isWide } from '../viewport';
 import { actionControls, rowAction } from './row-actions';
 import { expect, test } from './scratch-project';
-
-const WIDE_BREAKPOINT = 768;
-
-function isWide(page: Page): boolean {
-  return (page.viewportSize()?.width ?? 0) >= WIDE_BREAKPOINT;
-}
-
-async function horizontalOverflow(page: Page): Promise<number> {
-  return page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  );
-}
 
 function prod(browser: Browser): Promise<number> {
   return deploymentId(browser, 'Fancy Proj. Name', 'prod');

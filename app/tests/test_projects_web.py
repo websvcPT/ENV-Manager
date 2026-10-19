@@ -12,9 +12,9 @@ from app.core.csrf import CSRF_COOKIE_NAME
 from app.models import ApiTokenRestriction, AuditEntry, Project, User
 from app.services.projects import delete_project
 from app.tests.conftest import sign_in
+from app.tests.web_helpers import HTMX
 from app.web import projects as projects_web
 
-HTMX = {"HX-Request": "true"}
 TABLE = re.compile(r'<section data-fragment="projects-table".*?</section>', re.DOTALL)
 
 

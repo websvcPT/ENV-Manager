@@ -1,24 +1,13 @@
 """Project detail service: header figures, deployment rows and activity by scope."""
 
-from collections.abc import AsyncIterator
-
-import pytest
 from sqlalchemy import delete
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.db import create_session_factory
 from app.models import AllowedPath, DeployStatus, User
 from app.seeds import SeedData
 from app.services.paths import load_allowed_paths
 from app.services.permissions import load_user_scope
 from app.services.project_detail import ProjectDetail, list_activity, load_project_detail
-
-
-@pytest.fixture
-async def db(seeded_database: AsyncEngine) -> AsyncIterator[AsyncSession]:
-    """A session on the seeded temporary database."""
-    async with create_session_factory(seeded_database)() as session:
-        yield session
 
 
 async def _detail(db: AsyncSession, user: User, project_id: int) -> ProjectDetail | None:

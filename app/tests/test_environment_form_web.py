@@ -22,8 +22,7 @@ from app.models import (
 from app.services.notify_events import FileChange, FileChanged
 from app.tests.conftest import sign_in
 from app.tests.notify_helpers import RecordingEvents
-
-HTMX = {"HX-Request": "true"}
+from app.tests.web_helpers import HTMX, post
 
 
 @dataclass(frozen=True)
@@ -81,22 +80,6 @@ def env_data(layout: Layout, **overrides: str) -> dict[str, str]:
         "content": "CACHE_HOST=cache\r\nCACHE_PORT=6379",
     }
     return {**values, **overrides}
-
-
-async def post(
-    http: httpx.AsyncClient,
-    url: str,
-    data: dict[str, str],
-    files: dict[str, tuple[str, bytes]] | None = None,
-) -> httpx.Response:
-    """Submit a form the way htmx does, with the CSRF header."""
-    await http.get("/healthz")
-    return await http.post(
-        url,
-        data=data,
-        files=files,
-        headers={**HTMX, "X-CSRFToken": http.cookies[CSRF_COOKIE_NAME]},
-    )
 
 
 async def environment_names(web_app: FastAPI) -> set[str]:

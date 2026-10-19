@@ -1,13 +1,10 @@
 """The version history service on the seed: the table, key level diffs, reveals and restore."""
 
-from collections.abc import AsyncIterator
-
 import pytest
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.crypto import CryptoService
-from app.core.db import create_session_factory
 from app.models import AuditEntry, EnvironmentVersion, User
 from app.seeds import EDITOR_SECRET_VALUES, SeedData
 from app.services.editor import STALE_MESSAGE, EditorHeader, load_editor_header
@@ -27,13 +24,6 @@ from app.services.version_history import (
 from app.services.versions import create_version
 
 CERTIFICATE_BODY = "MIIDdzCCAl7sentinelCertBody"
-
-
-@pytest.fixture
-async def db(seeded_database: AsyncEngine) -> AsyncIterator[AsyncSession]:
-    """A session on the seeded temporary database."""
-    async with create_session_factory(seeded_database)() as session:
-        yield session
 
 
 async def header_for(db: AsyncSession, user: User, environment_id: int) -> EditorHeader:

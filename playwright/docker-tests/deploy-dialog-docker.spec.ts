@@ -9,6 +9,7 @@ import { stateFile } from '../global-setup';
 import { saveChangedCommands } from '../post-deploy-form';
 import { createService, serviceId } from '../services-api';
 import { expect, test } from '../tests/scratch-project';
+import { horizontalOverflow } from '../viewport';
 
 /*
  * The deploy dialog against a usable Docker, on the demo stack: the real flow from pre-flight to
@@ -66,12 +67,6 @@ function banner(page: Page): Locator {
 
 function submit(page: Page): Locator {
   return dialog(page).locator('[data-deploy-submit]');
-}
-
-async function horizontalOverflow(page: Page): Promise<number> {
-  return page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  );
 }
 
 async function openDemoDialog(browser: Browser, page: Page, name: string): Promise<number> {

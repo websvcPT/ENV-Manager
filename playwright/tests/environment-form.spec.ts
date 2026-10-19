@@ -3,16 +3,11 @@ import type { APIRequestContext, Browser, Page } from '@playwright/test';
 import { createDeployment, deploymentId } from '../deployments-api';
 import { stateFile } from '../global-setup';
 import { createService, serviceId } from '../services-api';
+import { horizontalOverflow, usesMenus } from '../viewport';
 import { expect, test } from './scratch-project';
 
 const SAMPLE_A = '/srv/deployments/sample-a';
 const OUTSIDE = 'Resolves outside the deployment root and the allowed paths.';
-
-async function horizontalOverflow(page: Page): Promise<number> {
-  return page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  );
-}
 
 interface Prepared {
   deployment: number;
@@ -276,7 +271,7 @@ test.describe('superadmin add environment', () => {
     await expect(page.locator('#tp')).toHaveValue('../../etc/cache.env');
     await expect(page.locator('#content')).toHaveValue('KEEP_ME=1\nSECOND=2');
     await expect(toast(page)).toHaveCount(0);
-    if ((page.viewportSize()?.width ?? 0) < 768) {
+    if (usesMenus(page)) {
       expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
     }
   });

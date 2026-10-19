@@ -17,7 +17,6 @@ from sqlalchemy import delete, func, select
 
 from app.models import (
     AllowedPath,
-    AuditEntry,
     Deployment,
     DeployRun,
     Environment,
@@ -25,13 +24,14 @@ from app.models import (
 )
 from app.seeds import EDITOR_SECRET_VALUES
 from app.services.notify_events import FileChange, FileChanged
-from app.services.versions import create_version
+from app.tests.audit_helpers import web_audit_entries
 from app.tests.conftest import sign_in
 from app.tests.dist_helpers import relocate_deployments
 from app.tests.notify_helpers import RecordingEvents, file_event_ids
 from app.tests.web_helpers import (
     HTMX,
     EnvironmentIds,
+    add_version,
     assert_never_cached,
     hx_vals,
     main_of,
@@ -101,13 +101,6 @@ async def world(web_app: FastAPI, tmp_path: Path, ids: EnvironmentIds) -> World:
     return World(roots["prod"], service, ids.editor, ids.db)
 
 
-async def add_version(web_app: FastAPI, environment: int, text: str) -> None:
-    """Save a text as the next version of an environment."""
-    async with web_app.state.session_factory() as db:
-        await create_version(db, web_app.state.crypto, environment, text, author=None)
-        await db.commit()
-
-
 async def deployed_then_drifted(web_app: FastAPI, web: httpx.AsyncClient, world: World) -> None:
     """Deploy a version of the drift file, save a newer one and edit the target on disk."""
     await add_version(web_app, world.environment, DEPLOYED_TEXT)
@@ -139,18 +132,6 @@ async def count(web_app: FastAPI, model: type, *where: object) -> int:
     async with web_app.state.session_factory() as db:
         return (
             await db.scalar(select(func.count()).select_from(model).where(*where)) or 0  # type: ignore[arg-type]
-        )
-
-
-async def audit_entries(web_app: FastAPI, action: str) -> list[AuditEntry]:
-    """The audit entries of an action, oldest first."""
-    async with web_app.state.session_factory() as db:
-        return list(
-            (
-                await db.execute(
-                    select(AuditEntry).where(AuditEntry.action == action).order_by(AuditEntry.id)
-                )
-            ).scalars()
         )
 
 
@@ -186,7 +167,7 @@ async def test_the_masked_page_never_contains_a_value_for_any_role(
         assert "BEGIN" not in response.text and "<textarea" not in response.text
         assert str(world.root) not in response.text
     assert await count(web_app, DeployRun) == runs
-    assert await audit_entries(web_app, "environment.reveal") == []
+    assert await web_audit_entries(web_app, "environment.reveal") == []
 
 
 async def test_the_page_lists_what_differs_per_column_with_masked_cells(
@@ -291,7 +272,7 @@ async def test_a_reveal_answers_only_the_values_audited_and_uncached(
     )
     assert 'hx-target="#drift-target-0"' in answer.text
     assert 'hx-target="#drift-managed-3"' in answer.text or "drift-managed-" in answer.text
-    entries = await audit_entries(web_app, "environment.reveal")
+    entries = await web_audit_entries(web_app, "environment.reveal")
     assert {entry.details["column"] for entry in entries} == {"target", "deployed", "managed"}
     flat = " ".join(f"{entry.details} {entry.target_name}" for entry in entries)
     assert not any(value in flat for value in ALL_VALUES)
@@ -313,7 +294,7 @@ async def test_a_reveal_of_a_stale_page_answers_a_notice_without_any_value(
     assert "The files changed since this page was opened." in answer.text
     assert not any(value in answer.text for value in ALL_VALUES)
     assert "changed-after-the-page" not in answer.text
-    assert await audit_entries(web_app, "environment.reveal") == []
+    assert await web_audit_entries(web_app, "environment.reveal") == []
     assert (await post(web_client, f"{base}/drift/reveal", {})).status_code == 404
 
 
@@ -331,7 +312,7 @@ async def test_importing_saves_the_target_as_a_new_version_and_the_view_reads_no
     assert done.headers["HX-Redirect"] == f"{base}/drift?imported={before + 1}"
     assert done.headers["Cache-Control"] == "no-store"
     assert await newest_number(web_app, world.environment) == before + 1
-    (entry,) = await audit_entries(web_app, "environment.import")
+    (entry,) = await web_audit_entries(web_app, "environment.import")
     assert entry.details == {"number": before + 1, "source": "target"}
     assert not any(value in str(entry.details) for value in ALL_VALUES)
     again = await web_client.get(done.headers["HX-Redirect"])
@@ -360,7 +341,7 @@ async def test_an_import_of_a_changed_file_or_an_old_page_is_refused_in_the_noti
     assert stale.status_code == 422
     assert "This file changed since you opened it." in stale.text
     assert await newest_number(web_app, world.environment) == before + 1
-    assert await audit_entries(web_app, "environment.import") == []
+    assert await web_audit_entries(web_app, "environment.import") == []
     assert not any(value in stale.text + changed.text for value in ALL_VALUES)
 
 
@@ -390,7 +371,7 @@ async def test_overwriting_waits_for_its_confirmation_then_replaces_the_target_w
     (backup,) = [entry for entry in world.target.parent.iterdir() if ".bak-" in entry.name]
     assert backup.read_text(encoding="utf-8") == TARGET_TEXT
     assert stat.S_IMODE(backup.stat().st_mode) == 0o600
-    forced = (await audit_entries(web_app, "service.deploy"))[-1]
+    forced = (await web_audit_entries(web_app, "service.deploy"))[-1]
     assert forced.details["force"] is True
     page = await web_client.get(done.headers["HX-Redirect"])
     assert f"Overwrote the target with version {managed}." in page.text

@@ -3,8 +3,9 @@ import type { APIRequestContext, Browser, Page } from '@playwright/test';
 import { createDeployment, deploymentId } from '../deployments-api';
 import { createEnvironment, saveRaw, seededEnvironmentId } from '../environments-api';
 import { stateFile } from '../global-setup';
-import { csrfHeaders } from '../projects-api';
+import { csrfHeaders } from '../http';
 import { createService } from '../services-api';
+import { horizontalOverflow, isWide } from '../viewport';
 import { rowAction } from './row-actions';
 import { expect, test } from './scratch-project';
 
@@ -24,12 +25,6 @@ interface Prepared {
   environment: number;
   service: number;
   deployment: number;
-}
-
-async function horizontalOverflow(page: Page): Promise<number> {
-  return page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  );
 }
 
 /** A deployment on the sample folder with one service, as the superadmin. */
@@ -76,12 +71,6 @@ function tables(page: Page) {
 
 function addButton(page: Page) {
   return report(page).locator('button[hx-post*="/add-missing"]');
-}
-
-const MD_BREAKPOINT = 768;
-
-function isWide(page: Page): boolean {
-  return (page.viewportSize()?.width ?? 0) >= MD_BREAKPOINT;
 }
 
 /** The file rows of the deployment overview: table rows from md, list items below. */

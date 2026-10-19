@@ -4,6 +4,7 @@ import { expect, test, type Browser, type Locator, type Page } from '@playwright
 
 import { auditEntryIds } from '../audit-api';
 import { stateFile, SUPERADMIN_STATE } from '../global-setup';
+import { horizontalOverflow, isWide } from '../viewport';
 
 /*
  * The audit log. The seeded history (the development seed command adds it) holds one entry of
@@ -17,19 +18,8 @@ import { stateFile, SUPERADMIN_STATE } from '../global-setup';
  */
 
 const SEEDED_BACKUPS_BEFORE = '2026-10-01';
-const WIDE_BREAKPOINT = 768;
 const TOKEN = 'api:token billing-ci';
 const TOKEN_QUERY = `actor=${encodeURIComponent(TOKEN)}`;
-
-function isWide(page: Page): boolean {
-  return (page.viewportSize()?.width ?? 0) >= WIDE_BREAKPOINT;
-}
-
-async function horizontalOverflow(page: Page): Promise<number> {
-  return page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  );
-}
 
 function auditRows(page: Page): Locator {
   return page.locator('[data-fragment="audit-row"]');

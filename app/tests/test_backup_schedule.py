@@ -28,9 +28,9 @@ from app.services.backup_schedule import (
     BackupScheduler,
     backup_trigger,
 )
+from app.tests.audit_helpers import audit_entries_from
 from app.tests.backup_helpers import (
     RecordingBackupNotifier,
-    audit_entries,
     backup_records,
     locations_in,
     save_backup_settings,
@@ -170,7 +170,7 @@ async def test_the_job_takes_a_scheduled_backup_as_the_scheduler(
     await scheduler.run_scheduled_backup()
     (record,) = await backup_records(factory)
     assert (record.trigger, record.status) == (BackupTrigger.SCHEDULED, BackupStatus.SUCCESS)
-    (entry,) = await audit_entries(factory, "backup.create")
+    (entry,) = await audit_entries_from(factory, "backup.create")
     assert (entry.actor_type, entry.actor_name) == (AuditActorType.SYSTEM, "scheduler")
     events = notifier.events
     assert [event.trigger for event in events] == [BackupTrigger.SCHEDULED]
@@ -185,7 +185,7 @@ async def test_the_job_skips_its_turn_while_another_backup_runs(
     with hold_backup_lock(tmp_path / "locks"):
         await scheduler.run_scheduled_backup()
     assert await backup_records(factory) == []
-    assert await audit_entries(factory, "backup.create") == []
+    assert await audit_entries_from(factory, "backup.create") == []
 
 
 async def test_the_job_never_raises_when_the_backup_cannot_be_taken(

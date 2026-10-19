@@ -16,12 +16,12 @@ from app.models import AppSetting, AuditResult, Backup, BackupStatus, BackupTrig
 from app.services.audit import AuditActor
 from app.services.backup_lock import hold_backup_lock
 from app.services.backup_run import run_backup
+from app.tests.audit_helpers import audit_entries_from
 from app.tests.backup_helpers import (
     RecordingBackupNotifier,
     allow_path,
     app_locations,
     app_session_factory,
-    audit_entries,
     backup_records,
     save_backup_settings,
 )
@@ -242,7 +242,7 @@ async def test_run_now_takes_a_backup_and_lists_it(
     assert 'data-status="success"' in row and "Manual" in row
     assert re.search(r"[0-9.]+ (?:KB|MB)", row)
     assert 'id="banner-area"' in response.text and 'hx-swap-oob="true"' in response.text
-    (entry,) = await audit_entries(app_session_factory(web_app), "backup.create")
+    (entry,) = await audit_entries_from(app_session_factory(web_app), "backup.create")
     assert entry.actor_name == "root" and entry.result is AuditResult.SUCCESS
     again = await run_now(root)
     assert len(rows_of(again.text)) == 2
@@ -339,7 +339,7 @@ async def test_download_streams_the_file_not_cached_and_audits_it(
     assert response.headers["content-disposition"] == f'attachment; filename="{record.filename}"'
     assert response.headers["cache-control"] == "no-store"
     assert response.headers["content-length"] == str(path.stat().st_size)
-    (entry,) = await audit_entries(app_session_factory(web_app), "backup.download")
+    (entry,) = await audit_entries_from(app_session_factory(web_app), "backup.download")
     assert (entry.actor_name, entry.target_name, entry.result) == (
         "root",
         record.filename,
@@ -373,7 +373,7 @@ async def test_download_refuses_what_is_not_a_file_of_ours(
     path.symlink_to(secret)
     response = await root.get(f"/settings/backups/{record.id}/download")
     assert response.status_code == 404 and b"not a backup" not in response.content
-    assert await audit_entries(app_session_factory(web_app), "backup.download") == []
+    assert await audit_entries_from(app_session_factory(web_app), "backup.download") == []
 
 
 async def test_every_route_of_the_tab_is_for_the_superadmin_only(web_app: FastAPI) -> None:
@@ -394,7 +394,7 @@ async def test_every_route_of_the_tab_is_for_the_superadmin_only(web_app: FastAP
                 assert (await post(http, path, DEFAULT_FORM)).status_code == 403, (user, path)
     assert len(await backup_records(app_session_factory(web_app))) == before
     for action in ("backup.download", "backup.restore"):
-        assert await audit_entries(app_session_factory(web_app), action) == []
+        assert await audit_entries_from(app_session_factory(web_app), action) == []
     assert await stored_rows(web_app) == {}
 
 
@@ -467,7 +467,7 @@ async def test_a_confirmed_restore_replaces_the_data_ends_sessions_and_sends_to_
     async with factory() as db:
         assert (await db.get(AppSetting, "marker.value")).value == "before"  # type: ignore[union-attr]
         assert (await db.execute(select(func.count()).select_from(UserSession))).scalar_one() == 0
-    (entry,) = await audit_entries(factory, "backup.restore")
+    (entry,) = await audit_entries_from(factory, "backup.restore")
     assert (entry.actor_name, entry.result, entry.target_name) == (
         "root",
         AuditResult.SUCCESS,
@@ -494,7 +494,7 @@ async def test_a_backup_made_with_another_key_is_refused_in_the_dialog(
     assert response.status_code == 422
     assert "different master key" in response.text and "hx-post" not in response.text
     assert (await root.get("/projects")).status_code == 200
-    (entry,) = await audit_entries(app_session_factory(web_app), "backup.restore")
+    (entry,) = await audit_entries_from(app_session_factory(web_app), "backup.restore")
     assert entry.result is AuditResult.BLOCKED and entry.details["reason"] == "wrong_key"
 
 

@@ -1,13 +1,10 @@
 """The editor service: header by scope, audited reveals and saving versions on the seed."""
 
-from collections.abc import AsyncIterator
-
 import pytest
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.crypto import CryptoService
-from app.core.db import create_session_factory
 from app.models import AuditEntry, EnvironmentVersion, User
 from app.seeds import EDITOR_SECRET_VALUES, SeedData
 from app.services.editor import (
@@ -25,13 +22,6 @@ from app.services.editor import (
 )
 from app.services.permissions import load_user_scope
 from app.services.versions import create_version
-
-
-@pytest.fixture
-async def db(seeded_database: AsyncEngine) -> AsyncIterator[AsyncSession]:
-    """A session on the seeded temporary database."""
-    async with create_session_factory(seeded_database)() as session:
-        yield session
 
 
 async def header_for(db: AsyncSession, user: User, environment_id: int) -> EditorHeader | None:

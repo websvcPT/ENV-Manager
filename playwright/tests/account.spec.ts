@@ -1,14 +1,9 @@
-import {
-  expect,
-  test as base,
-  type Browser,
-  type BrowserContextOptions,
-  type Page,
-  type TestInfo,
-} from '@playwright/test';
+import { expect, test as base, type Page } from '@playwright/test';
 
 import { stateFile } from '../global-setup';
 import { createUser, disableUser, uniqueUserName, type CreatedUser } from '../users-api';
+import { horizontalOverflow, isWide, TOUCH_TARGET } from '../viewport';
+import { signedInAs } from './sign-in';
 import { totpCode } from './totp';
 
 /*
@@ -20,56 +15,8 @@ import { totpCode } from './totp';
  * project; refusals that need no credential check (empty fields) cover the other error states.
  */
 
-const WIDE_BREAKPOINT = 768;
-const TOUCH_TARGET = 44;
 const NEW_PASSWORD = 'a brand new passphrase';
 const SECRET_FORMAT = /^[A-Z2-7]{4}( [A-Z2-7]{4}){7}$/;
-
-type Layout = Pick<
-  BrowserContextOptions,
-  'viewport' | 'isMobile' | 'hasTouch' | 'deviceScaleFactor' | 'userAgent'
->;
-
-function isWide(page: Page): boolean {
-  return (page.viewportSize()?.width ?? 0) >= WIDE_BREAKPOINT;
-}
-
-async function horizontalOverflow(page: Page): Promise<number> {
-  return page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  );
-}
-
-/** Sign in through the login form in a browser of its own, in the layout of the project. */
-async function signIn(
-  browser: Browser,
-  user: CreatedUser,
-  testInfo: TestInfo,
-  password: string = user.password,
-  code?: string,
-): Promise<Page> {
-  const layout: Layout = testInfo.project.use;
-  const context = await browser.newContext({
-    baseURL: testInfo.project.use.baseURL,
-    viewport: layout.viewport,
-    isMobile: layout.isMobile,
-    hasTouch: layout.hasTouch,
-    deviceScaleFactor: layout.deviceScaleFactor,
-    userAgent: layout.userAgent,
-    storageState: { cookies: [], origins: [] },
-  });
-  const page = await context.newPage();
-  await page.goto('/login');
-  await page.locator('#user').fill(user.name);
-  await page.locator('#pw').fill(password);
-  await page.locator('#login-card button[type="submit"]').click();
-  if (code !== undefined) {
-    await page.locator('#code').fill(code);
-    await page.locator('#login-card button[type="submit"]').click();
-  }
-  await expect(page).toHaveURL(/\/projects$/);
-  return page;
-}
 
 /** The base test plus `makeUser`: scratch users created through the form post, disabled after. */
 const test = base.extend<{ makeUser: (group?: 'admin' | 'viewer' | 'superadmin') => Promise<CreatedUser> }>({
@@ -159,9 +106,9 @@ test.describe('change password', () => {
   test('refuses each bad input with a message next to its field and changes nothing', async ({
     browser,
     makeUser,
-  }, testInfo) => {
+  }) => {
     const user = await makeUser('admin');
-    const page = await signIn(browser, user, testInfo);
+    const page = await signedInAs(browser, user);
     await openAccount(page);
     const form = page.locator('#account-password-form');
     const submit = form.locator('button[type="submit"]');
@@ -196,7 +143,7 @@ test.describe('change password', () => {
     await expect(page.locator('#np')).toHaveValue('');
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
 
-    const again = await signIn(browser, user, testInfo);
+    const again = await signedInAs(browser, user);
     await again.context().close();
     await page.context().close();
   });
@@ -204,10 +151,10 @@ test.describe('change password', () => {
   test('changes the password, signs the other session out and keeps this one', async ({
     browser,
     makeUser,
-  }, testInfo) => {
+  }) => {
     const user = await makeUser('viewer');
-    const page = await signIn(browser, user, testInfo);
-    const other = await signIn(browser, user, testInfo);
+    const page = await signedInAs(browser, user);
+    const other = await signedInAs(browser, user);
     await openAccount(page);
     await expect(sessionRows(page)).toHaveCount(2);
 
@@ -228,7 +175,7 @@ test.describe('change password', () => {
     await page.goto('/projects');
     await expect(page).toHaveURL(/\/projects$/);
 
-    const fresh = await signIn(browser, user, testInfo, NEW_PASSWORD);
+    const fresh = await signedInAs(browser, user, { password: NEW_PASSWORD });
     await fresh.context().close();
     await other.context().close();
     await page.context().close();
@@ -239,9 +186,9 @@ test.describe('two-factor authentication', () => {
   test('sets up with a QR code and the key, refuses a wrong code and turns on with a right one', async ({
     browser,
     makeUser,
-  }, testInfo) => {
+  }) => {
     const user = await makeUser('admin');
-    const page = await signIn(browser, user, testInfo);
+    const page = await signedInAs(browser, user);
     await openAccount(page);
     await expect(page.locator('#totp [data-status="never"]')).toHaveText('Not enabled');
 
@@ -305,9 +252,9 @@ test.describe('two-factor authentication', () => {
   test('a setup that ran out is dropped with a note and can be started again', async ({
     browser,
     makeUser,
-  }, testInfo) => {
+  }) => {
     const user = await makeUser('viewer');
-    const page = await signIn(browser, user, testInfo);
+    const page = await signedInAs(browser, user);
     await openAccount(page);
     await startSetup(page);
     await page.context().clearCookies({ name: 'envmanager_totp_setup' });
@@ -322,23 +269,23 @@ test.describe('two-factor authentication', () => {
     await page.context().close();
   });
 
-  test('is asked for at the next sign in', async ({ browser, makeUser }, testInfo) => {
+  test('is asked for at the next sign in', async ({ browser, makeUser }) => {
     const user = await makeUser('viewer');
-    const page = await signIn(browser, user, testInfo);
+    const page = await signedInAs(browser, user);
     const secret = await enableTotp(page, user);
     await page.context().close();
 
     const nextStep = totpCode(secret, Date.now() + 30000);
-    const again = await signIn(browser, user, testInfo, user.password, nextStep);
+    const again = await signedInAs(browser, user, { code: nextStep });
     await again.context().close();
   });
 
   test('is removed with the password and a fresh code after a confirm dialog', async ({
     browser,
     makeUser,
-  }, testInfo) => {
+  }) => {
     const user = await makeUser('admin');
-    const page = await signIn(browser, user, testInfo);
+    const page = await signedInAs(browser, user);
     const secret = await enableTotp(page, user);
 
     await page.locator('#totp button[data-target="totp-remove"]').click();
@@ -377,11 +324,11 @@ test.describe('active sessions', () => {
   test('lists this session first, revokes another after a confirm dialog and signs out the rest', async ({
     browser,
     makeUser,
-  }, testInfo) => {
+  }) => {
     const user = await makeUser('viewer');
-    const page = await signIn(browser, user, testInfo);
-    const second = await signIn(browser, user, testInfo);
-    const third = await signIn(browser, user, testInfo);
+    const page = await signedInAs(browser, user);
+    const second = await signedInAs(browser, user);
+    const third = await signedInAs(browser, user);
     await openAccount(page);
 
     const rows = sessionRows(page);

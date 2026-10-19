@@ -3,22 +3,12 @@ import type { Browser, Page } from '@playwright/test';
 import { deploymentId } from '../deployments-api';
 import { stateFile, SUPERADMIN_STATE } from '../global-setup';
 import { listProjects } from '../projects-api';
+import { horizontalOverflow, isWide } from '../viewport';
 import { expect, test } from './scratch-project';
 
 const ALLOWED_ROOT = '/srv/deployments';
 const SAMPLE_A = `${ALLOWED_ROOT}/sample-a`;
 const SAMPLE_B = `${ALLOWED_ROOT}/sample-b`;
-const WIDE_BREAKPOINT = 768;
-
-function isWide(page: Page): boolean {
-  return (page.viewportSize()?.width ?? 0) >= WIDE_BREAKPOINT;
-}
-
-async function horizontalOverflow(page: Page): Promise<number> {
-  return page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  );
-}
 
 async function seededProjectId(browser: Browser, name: string): Promise<number> {
   const context = await browser.newContext({ storageState: SUPERADMIN_STATE });

@@ -8,7 +8,6 @@ import pytest
 from fastapi import FastAPI
 from sqlalchemy import select
 
-from app.core.csrf import CSRF_COOKIE_NAME
 from app.models import (
     ApiToken,
     ApiTokenRestriction,
@@ -17,8 +16,7 @@ from app.models import (
     RestrictionLevel,
 )
 from app.tests.conftest import sign_in
-
-HTMX = {"HX-Request": "true"}
+from app.tests.web_helpers import HTMX, post
 
 
 @dataclass(frozen=True)
@@ -35,13 +33,6 @@ async def ids(web_app: FastAPI) -> ProjectIds:
     async with web_app.state.session_factory() as db:
         rows = dict((await db.execute(select(Project.name, Project.id))).all())
     return ProjectIds(fancy=rows["Fancy Proj. Name"], billing=rows["billing"])
-
-
-async def post(http: httpx.AsyncClient, url: str, **data: str) -> httpx.Response:
-    """Submit a form the way an htmx request does, with the CSRF header."""
-    await http.get("/healthz")
-    headers = {**HTMX, "X-CSRFToken": http.cookies[CSRF_COOKIE_NAME]}
-    return await http.post(url, data=data, headers=headers)
 
 
 def tab_labels(page: str) -> list[str]:
@@ -142,8 +133,10 @@ async def test_superadmin_only_tabs_are_forbidden_for_other_groups(
     assert (await web_client.get(f"/projects/{fancy}/access")).status_code == 403
     assert (await web_client.get(f"/projects/{fancy}/members")).status_code == 403
     assert (await web_client.get(f"/projects/{fancy}/settings")).status_code == 403
-    assert (await post(web_client, f"/projects/{fancy}/rename", name="x")).status_code == 403
-    deleted = await post(web_client, f"/projects/{fancy}/delete", confirm_name="Fancy Proj. Name")
+    assert (await post(web_client, f"/projects/{fancy}/rename", {"name": "x"})).status_code == 403
+    deleted = await post(
+        web_client, f"/projects/{fancy}/delete", {"confirm_name": "Fancy Proj. Name"}
+    )
     assert deleted.status_code == 403
 
 
@@ -165,7 +158,7 @@ async def test_empty_project_offers_the_first_deployment(
 ) -> None:
     """A project without deployments says so and the superadmin can add one."""
     await sign_in(web_client, "root")
-    created = await post(web_client, "/projects", name="fresh")
+    created = await post(web_client, "/projects", {"name": "fresh"})
     assert created.status_code == 200
     project_id = re.search(r'href="/projects/(\d+)"[^>]*>fresh<', created.text)
     assert project_id is not None
@@ -212,7 +205,7 @@ async def test_activity_is_forbidden_for_viewers(
 async def test_activity_empty_state(web_client: httpx.AsyncClient, web_app: FastAPI) -> None:
     """A project with no entries in scope says so."""
     await sign_in(web_client, "root")
-    created = await post(web_client, "/projects", name="quiet")
+    created = await post(web_client, "/projects", {"name": "quiet"})
     project_id = re.search(r'href="/projects/(\d+)"[^>]*>quiet<', created.text)
     assert project_id is not None
     async with web_app.state.session_factory() as db:
@@ -257,11 +250,11 @@ async def test_rename_refuses_bad_and_duplicate_names_and_keeps_the_input(
     """A refused rename swaps the panel with the reason and the typed value."""
     await sign_in(web_client, "root")
     fancy = ids.fancy
-    bad = await post(web_client, f"/projects/{fancy}/rename", name="Bad Name!")
+    bad = await post(web_client, f"/projects/{fancy}/rename", {"name": "Bad Name!"})
     assert bad.status_code == 422
     assert bad.text.lstrip().startswith("<section")
     assert 'role="alert"' in bad.text and 'value="Bad Name!"' in bad.text
-    duplicate = await post(web_client, f"/projects/{fancy}/rename", name="billing")
+    duplicate = await post(web_client, f"/projects/{fancy}/rename", {"name": "billing"})
     assert duplicate.status_code == 422
     assert "already exists" in duplicate.text
 
@@ -272,7 +265,7 @@ async def test_rename_succeeds_and_reloads_the_settings_tab(
     """A good name is stored, audited, and the browser is sent back to the settings tab."""
     await sign_in(web_client, "root")
     fancy = ids.fancy
-    response = await post(web_client, f"/projects/{fancy}/rename", name="fancy-two")
+    response = await post(web_client, f"/projects/{fancy}/rename", {"name": "fancy-two"})
     assert response.status_code == 200
     assert response.headers["hx-redirect"] == f"/projects/{fancy}/settings?renamed=true"
     page = (await web_client.get(response.headers["hx-redirect"])).text
@@ -293,7 +286,7 @@ async def test_delete_needs_the_exact_name(
     await sign_in(web_client, "root")
     fancy = ids.fancy
     for typed in ("", "Fancy Proj", "FANCY PROJ. NAME", "fancy proj. name"):
-        response = await post(web_client, f"/projects/{fancy}/delete", confirm_name=typed)
+        response = await post(web_client, f"/projects/{fancy}/delete", {"confirm_name": typed})
         assert response.status_code == 422
         assert "Type the project name exactly to confirm." in response.text
         assert 'id="delete-project-form"' in response.text
@@ -306,9 +299,9 @@ async def test_delete_removes_the_project_and_leaves_for_the_list(
 ) -> None:
     """A confirmed delete is audited and the browser is sent to the projects list."""
     await sign_in(web_client, "root")
-    created = await post(web_client, "/projects", name="doomed")
+    created = await post(web_client, "/projects", {"name": "doomed"})
     project_id = int(re.search(r'href="/projects/(\d+)"[^>]*>doomed<', created.text).group(1))  # type: ignore[union-attr]
-    response = await post(web_client, f"/projects/{project_id}/delete", confirm_name="doomed")
+    response = await post(web_client, f"/projects/{project_id}/delete", {"confirm_name": "doomed"})
     assert response.status_code == 200
     assert response.headers["hx-redirect"] == "/projects"
     assert (await web_client.get(f"/projects/{project_id}")).status_code == 404
@@ -328,7 +321,7 @@ async def test_delete_is_blocked_while_a_token_is_restricted_inside(
     """Restricted tokens are named in the dialog and nothing is deleted."""
     await sign_in(web_client, "root")
     billing = ids.billing
-    response = await post(web_client, f"/projects/{billing}/delete", confirm_name="billing")
+    response = await post(web_client, f"/projects/{billing}/delete", {"confirm_name": "billing"})
     assert response.status_code == 422
     assert "billing-ci" in response.text
     assert "Revoke them first." in response.text

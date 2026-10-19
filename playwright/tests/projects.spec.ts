@@ -2,8 +2,7 @@ import { expect, test, type Page, type Route } from '@playwright/test';
 
 import { stateFile } from '../global-setup';
 import { deleteProject, listProjects } from '../projects-api';
-
-const WIDE_BREAKPOINT = 768;
+import { horizontalOverflow, isWide } from '../viewport';
 
 // The panel the server answers when the list cannot be loaded, with the same swap wiring as the
 // real section; the 503 itself is produced here because the stack has no way to fail on demand.
@@ -12,16 +11,6 @@ const FAILED_LOAD_PANEL =
   '<div role="alert" data-fragment="inline-error"><p>Could not load projects</p>' +
   '<p>The server did not respond. Your data is unchanged.</p>' +
   '<button type="button" hx-get="/projects/table" hx-include="#ps" hx-target="#projects-table" hx-swap="outerHTML" hx-status:503="swap:outerHTML target:#projects-table">Retry</button></div></section>';
-
-function isWide(page: Page): boolean {
-  return (page.viewportSize()?.width ?? 0) >= WIDE_BREAKPOINT;
-}
-
-async function horizontalOverflow(page: Page): Promise<number> {
-  return page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  );
-}
 
 function rowNames(page: Page) {
   return page.locator('[data-fragment="project-row"] th[scope="row"] a');

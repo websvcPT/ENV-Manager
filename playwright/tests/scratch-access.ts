@@ -1,4 +1,4 @@
-import { expect, test as base, type Browser, type Page } from '@playwright/test';
+import { expect, test as base } from '@playwright/test';
 
 import { createDeployment } from '../deployments-api';
 import { createEnvironment } from '../environments-api';
@@ -6,8 +6,6 @@ import { createProject, deleteProjectIfPresent } from '../projects-api';
 import { createService } from '../services-api';
 import { createUser, disableUser, uniqueUserName, type CreatedUser } from '../users-api';
 
-export const WIDE_BREAKPOINT = 768;
-export const TOUCH_TARGET = 44;
 const SAMPLE_A = '/srv/deployments/sample-a';
 
 export interface Scratch {
@@ -63,25 +61,3 @@ export const test = base.extend<{
 });
 
 export { expect };
-
-export function isWide(page: Page): boolean {
-  return (page.viewportSize()?.width ?? 0) >= WIDE_BREAKPOINT;
-}
-
-export async function horizontalOverflow(page: Page): Promise<number> {
-  return page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  );
-}
-
-/** Sign in through the login form in a browser of its own and return the page. */
-export async function signedInAs(browser: Browser, user: CreatedUser): Promise<Page> {
-  const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
-  const page = await context.newPage();
-  await page.goto('/login');
-  await page.locator('#user').fill(user.name);
-  await page.locator('#pw').fill(user.password);
-  await page.locator('#login-card button[type="submit"]').click();
-  await expect(page).toHaveURL(/\/projects$/);
-  return page;
-}

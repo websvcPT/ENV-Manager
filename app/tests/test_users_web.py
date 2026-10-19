@@ -29,6 +29,7 @@ from app.services.auth_policy import AuthPolicy
 from app.services.pending_logins import create_pending_login
 from app.services.permissions import load_token_scope
 from app.services.sessions import create_session
+from app.tests.audit_helpers import web_audit_entries
 from app.tests.conftest import sign_in
 from app.tests.web_helpers import HTMX, assert_never_cached, main_of, post
 
@@ -66,18 +67,6 @@ async def user_named(web_app: FastAPI, name: str) -> User:
     async with web_app.state.session_factory() as db:
         user: User = (await db.execute(select(User).where(User.name == name))).scalar_one()
     return user
-
-
-async def audit(web_app: FastAPI, action: str) -> list[AuditEntry]:
-    """The audit entries of an action, oldest first."""
-    async with web_app.state.session_factory() as db:
-        return list(
-            (
-                await db.execute(
-                    select(AuditEntry).where(AuditEntry.action == action).order_by(AuditEntry.id)
-                )
-            ).scalars()
-        )
 
 
 async def seeded_token_id(web_app: FastAPI) -> int:
@@ -166,7 +155,7 @@ async def test_nobody_but_the_superadmin_reaches_the_users_screens_or_their_acti
             response = await web_client.get(url, headers=headers)
             assert response.status_code == 403, (name, url)
             assert "new.hire" not in response.text
-    before = await audit(web_app, "user.create")
+    before = await web_audit_entries(web_app, "user.create")
     root = await user_named(web_app, "root")
     victim = await user_named(web_app, "viewer")
     for url, data in (
@@ -179,7 +168,7 @@ async def test_nobody_but_the_superadmin_reaches_the_users_screens_or_their_acti
         (f"/users/{root.id}/disable", {}),
     ):
         assert (await post(web_client, url, data)).status_code == 403, (name, url)
-    assert await audit(web_app, "user.create") == before
+    assert await web_audit_entries(web_app, "user.create") == before
     assert (await stored_user(web_app, victim.id)).group is UserGroup.VIEWER
     assert (await stored_user(web_app, root.id)).is_active
     async with web_app.state.session_factory() as db:
@@ -338,7 +327,7 @@ async def test_a_refused_create_names_the_field_keeps_the_choices_and_creates_no
         assert f'value="deployment:{ids["deployment"]}" checked' in body
     if "name" not in overrides:
         assert 'value="new.hire"' in body
-    assert await audit(web_app, "user.create") == []
+    assert await web_audit_entries(web_app, "user.create") == []
     async with web_app.state.session_factory() as db:
         assert await db.scalar(select(func.count()).select_from(User)) == SEEDED_USERS
 
@@ -462,7 +451,7 @@ async def test_resetting_turns_the_factor_off_ends_sessions_and_pending_sign_ins
                 select(func.count()).select_from(model).where(model.user_id == target.id)
             )
             assert count == 0, model
-    (entry,) = await audit(web_app, "user.totp_reset")
+    (entry,) = await web_audit_entries(web_app, "user.totp_reset")
     assert (entry.actor_name, entry.target_name, entry.result) == (
         "root",
         "totp_user",
@@ -497,7 +486,7 @@ async def test_a_reset_that_cannot_be_done_is_refused_with_the_dialog_and_change
     assert own.status_code == 409 and "This is your own account." in own.text
     assert (await stored_user(web_app, root.id)).totp_enabled
     assert (await web_client.get("/projects")).status_code == 200
-    assert await audit(web_app, "user.totp_reset") == []
+    assert await web_audit_entries(web_app, "user.totp_reset") == []
     assert (await post(web_client, "/users/987654/reset-2fa", {})).status_code == 404
 
 
@@ -535,13 +524,13 @@ async def test_disabling_ends_the_sessions_stops_the_tokens_and_is_audited(
         token = (await db.execute(select(ApiToken))).scalars().first()
         assert token is not None and await load_token_scope(db, token) is None
         assert token.revoked_at is not None
-    (entry,) = await audit(web_app, "user.disable")
+    (entry,) = await web_audit_entries(web_app, "user.disable")
     assert (entry.actor_name, entry.target_name, entry.result) == (
         "root",
         "admin",
         AuditResult.SUCCESS,
     )
-    (revoked,) = await audit(web_app, "token.revoke")
+    (revoked,) = await web_audit_entries(web_app, "token.revoke")
     assert (revoked.actor_name, revoked.target_name) == ("root", "billing-ci")
     assert revoked.details == {"owner": "admin", "reason": "user_disabled"}
     assert entry.details == {"sessions_ended": 1, "tokens_revoked": 1}
@@ -562,8 +551,8 @@ async def test_a_change_that_is_already_in_effect_does_nothing_and_is_not_audite
     assert (await post(web_client, f"/users/{viewer.id}/enable", {})).status_code == 204
     same_group = await post(web_client, f"/users/{viewer.id}/group", {"group": "viewer"})
     assert same_group.status_code == 204
-    assert await audit(web_app, "user.enable") == []
-    assert await audit(web_app, "user.group_change") == []
+    assert await web_audit_entries(web_app, "user.enable") == []
+    assert await web_audit_entries(web_app, "user.group_change") == []
 
 
 async def test_the_detail_origin_goes_back_to_the_detail_page_with_a_notice(
@@ -601,8 +590,8 @@ async def test_the_last_active_superadmin_cannot_be_disabled_or_demoted(
         stored = await db.get(User, root.id)
         assert stored is not None and stored.is_active and stored.group is UserGroup.SUPERADMIN
     blocked = [
-        *(await audit(web_app, "user.disable")),
-        *(await audit(web_app, "user.group_change")),
+        *(await web_audit_entries(web_app, "user.disable")),
+        *(await web_audit_entries(web_app, "user.group_change")),
     ]
     assert [entry.result for entry in blocked] == [AuditResult.BLOCKED] * 2
     assert (await web_client.get("/projects")).status_code == 200
@@ -648,10 +637,10 @@ async def test_changing_the_group_applies_at_once_and_stops_tokens_of_a_new_view
         token = (await db.execute(select(ApiToken))).scalars().first()
         assert token is not None and await load_token_scope(db, token) is None
         assert token.revoked_at is not None
-    (entry,) = await audit(web_app, "user.group_change")
+    (entry,) = await web_audit_entries(web_app, "user.group_change")
     assert entry.details == {"from": "admin", "to": "viewer", "tokens_revoked": 1}
     assert entry.actor_name == "root"
-    (revoked,) = await audit(web_app, "token.revoke")
+    (revoked,) = await web_audit_entries(web_app, "token.revoke")
     assert revoked.details == {"owner": "admin", "reason": "moved_to_viewer"}
 
 
@@ -747,7 +736,10 @@ async def test_saving_grants_adds_and_removes_audits_and_applies_at_once(
         )
         assert "Grants saved." in response.text and " checked" not in response.text
         assert "billing" not in (await person.get("/projects")).text
-    entries = [*(await audit(web_app, "grant.add")), *(await audit(web_app, "grant.remove"))]
+    entries = [
+        *(await web_audit_entries(web_app, "grant.add")),
+        *(await web_audit_entries(web_app, "grant.remove")),
+    ]
     assert [(entry.action, entry.details["item"]) for entry in entries] == [
         ("grant.add", "billing"),
         ("grant.remove", "billing"),
@@ -796,7 +788,10 @@ async def test_saving_unchanged_or_stale_or_vanished_grants_changes_nothing(
         web_client, f"/users/{viewer.id}/grants", {"grant": ["junk"], "base": ",".join(stored)}
     )
     assert junk.status_code == 409 and "is not valid" in junk.text
-    assert await audit(web_app, "grant.add") == [] and await audit(web_app, "grant.remove") == []
+    assert (
+        await web_audit_entries(web_app, "grant.add") == []
+        and await web_audit_entries(web_app, "grant.remove") == []
+    )
 
     root = await user_named(web_app, "root")
     refused = await post(web_client, f"/users/{root.id}/grants", {"grant": ["project:1"]})

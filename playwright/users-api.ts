@@ -1,16 +1,8 @@
 import type { APIRequestContext } from '@playwright/test';
 
-import { csrfHeaders } from './projects-api';
+import { csrfHeaders, idLinks, unescapeHtml } from './http';
 
-const USER_LINK = /<a href="\/users\/(\d+)"[^>]*>([^<]+)<\/a>/g;
 const PASSWORD = /id="secret" readonly value="([^"]+)"/;
-const ENTITIES: Record<string, string> = {
-  '&amp;': '&',
-  '&lt;': '<',
-  '&gt;': '>',
-  '&#34;': '"',
-  '&#39;': "'",
-};
 
 export interface CreatedUser {
   id: number;
@@ -19,15 +11,10 @@ export interface CreatedUser {
   password: string;
 }
 
-function unescapeHtml(text: string): string {
-  return text.replace(/&(amp|lt|gt|#34|#39);/g, (entity) => ENTITIES[entity]);
-}
-
 /** Users in the list as [id, name] pairs, read from the table fragment as the caller. */
 export async function listUsers(request: APIRequestContext): Promise<Array<[number, string]>> {
   const response = await request.get('/users/table', { headers: { 'HX-Request': 'true' } });
-  const html = await response.text();
-  return [...html.matchAll(USER_LINK)].map((match) => [Number(match[1]), match[2]]);
+  return idLinks(await response.text(), '/users');
 }
 
 /**

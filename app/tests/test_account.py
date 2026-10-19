@@ -14,7 +14,6 @@ from app.core.crypto import CryptoService
 from app.core.db import create_session_factory
 from app.core.passwords import verify_password
 from app.models import (
-    AuditEntry,
     AuditResult,
     LoginCounter,
     LoginCounterKind,
@@ -33,6 +32,7 @@ from app.services.account import (
 from app.services.auth_policy import AuthPolicy
 from app.services.pending_logins import create_pending_login
 from app.services.sessions import create_session
+from app.tests.audit_helpers import audit_entries
 from app.tests.auth_helpers import PASSWORD, make_user
 
 POLICY = AuthPolicy()
@@ -70,17 +70,6 @@ async def account(engine: AsyncEngine) -> AsyncIterator[Account]:
 def current_code(secret: str) -> str:
     """The authenticator code of the time step of MOMENT."""
     return pyotp.TOTP(secret).at(MOMENT)
-
-
-async def audit_entries(db: AsyncSession, action: str) -> list[AuditEntry]:
-    """The audit entries of one action, oldest first."""
-    return list(
-        (
-            await db.execute(
-                select(AuditEntry).where(AuditEntry.action == action).order_by(AuditEntry.id)
-            )
-        ).scalars()
-    )
 
 
 async def counters(db: AsyncSession) -> dict[LoginCounterKind, int]:

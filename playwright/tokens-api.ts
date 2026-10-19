@@ -1,6 +1,6 @@
 import type { APIRequestContext } from '@playwright/test';
 
-import { csrfHeaders } from './projects-api';
+import { csrfHeaders } from './http';
 
 const TOKEN_ROW = /<tr data-fragment="token-row" id="token-(\d+)">(.*?)<\/tr>/gs;
 const NAME = /<span class="font-mono text-\[13px\]">([^<]+)<\/span>/;

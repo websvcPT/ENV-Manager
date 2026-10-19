@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models import AllowedPath, AuditEntry, Backup
+from app.models import AllowedPath, Backup
 from app.services.app_settings import BackupSettings, save_section
 from app.services.audit import AuditActor
 from app.services.backup_events import BackupFinished
@@ -63,17 +63,6 @@ async def backup_records(session_factory: async_sessionmaker[AsyncSession]) -> l
     """Every backup record, oldest first."""
     async with session_factory() as db:
         rows = await db.execute(select(Backup).order_by(Backup.created_at, Backup.id))
-        return list(rows.scalars())
-
-
-async def audit_entries(
-    session_factory: async_sessionmaker[AsyncSession], action: str
-) -> list[AuditEntry]:
-    """The audit entries of one action, oldest first."""
-    async with session_factory() as db:
-        rows = await db.execute(
-            select(AuditEntry).where(AuditEntry.action == action).order_by(AuditEntry.id)
-        )
         return list(rows.scalars())
 
 

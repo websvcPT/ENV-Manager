@@ -4,9 +4,9 @@ import { deploymentId } from '../deployments-api';
 import { seededEnvironmentId } from '../environments-api';
 import { listProjects } from '../projects-api';
 import { serviceId } from '../services-api';
+import { horizontalOverflow, isWide } from '../viewport';
 import { expectImageLoaded, renderedSize } from './images';
-
-const WIDE_BREAKPOINT = 768;
+import { submitSignIn } from './sign-in';
 
 declare global {
   interface Window {
@@ -16,16 +16,6 @@ declare global {
     };
     cspViolations?: string[];
   }
-}
-
-function isWide(page: Page): boolean {
-  return (page.viewportSize()?.width ?? 0) >= WIDE_BREAKPOINT;
-}
-
-async function horizontalOverflow(page: Page): Promise<number> {
-  return page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  );
 }
 
 test.describe('layout', () => {
@@ -283,9 +273,7 @@ test.describe('log out', () => {
 
   test('ends the session and returns to sign in', async ({ page }) => {
     await page.goto('/login');
-    await page.locator('#user').fill('viewer');
-    await page.locator('#pw').fill('dev-only-password');
-    await page.locator('#login-card button[type="submit"]').click();
+    await submitSignIn(page, 'viewer', 'dev-only-password');
     await expect(page).toHaveURL(/\/projects$/);
 
     await page.locator('header [data-target="account-menu"]').click();

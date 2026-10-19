@@ -1,15 +1,9 @@
-import {
-  expect as baseExpect,
-  test as base,
-  type Browser,
-  type Locator,
-  type Page,
-} from '@playwright/test';
+import { expect as baseExpect, test as base, type Locator, type Page } from '@playwright/test';
 
 import { createDeployment } from '../deployments-api';
 import { createEnvironment } from '../environments-api';
 import { stateFile } from '../global-setup';
-import { csrfHeaders } from '../projects-api';
+import { csrfHeaders } from '../http';
 import { createService } from '../services-api';
 import {
   createUser,
@@ -19,7 +13,9 @@ import {
   type CreatedUser,
 } from '../users-api';
 import { createProject, deleteProjectIfPresent } from '../projects-api';
+import { horizontalOverflow, isWide } from '../viewport';
 import { actionControls, rowAction, rowMenu } from './row-actions';
+import { signedInAs } from './sign-in';
 import { totpCode } from './totp';
 
 // The users list is not paged and accounts cannot be deleted, so on the development stack it holds
@@ -29,7 +25,6 @@ import { totpCode } from './totp';
 // test timeout.
 const expect = baseExpect.configure({ timeout: 15_000 });
 
-const WIDE_BREAKPOINT = 768;
 const SAMPLE_A = '/srv/deployments/sample-a';
 
 interface Scratch {
@@ -92,16 +87,6 @@ async function saveGrants(page: Page, grants: Locator): Promise<void> {
   await expect(grants.getByText('Grants saved. They apply now.')).toBeVisible();
 }
 
-function isWide(page: Page): boolean {
-  return (page.viewportSize()?.width ?? 0) >= WIDE_BREAKPOINT;
-}
-
-async function horizontalOverflow(page: Page): Promise<number> {
-  return page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  );
-}
-
 /**
  * The row of a user by name. The list holds every account ever made on the development stack,
  * so the row is found from its name link and climbed to, which is one pass over the links, not
@@ -134,18 +119,6 @@ async function turnOnTwoFactor(page: Page, user: CreatedUser): Promise<void> {
   await page.locator('#tc').fill(totpCode(secret));
   await page.locator('#account-totp-form button[type="submit"]').click();
   await expect(page.locator('#totp [data-status="deployed"]')).toHaveText('Enabled');
-}
-
-/** Sign in through the login form in a browser of its own and return the page. */
-async function signedInAs(browser: Browser, user: CreatedUser): Promise<Page> {
-  const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
-  const page = await context.newPage();
-  await page.goto('/login');
-  await page.locator('#user').fill(user.name);
-  await page.locator('#pw').fill(user.password);
-  await page.locator('#login-card button[type="submit"]').click();
-  await expect(page).toHaveURL(/\/projects$/);
-  return page;
 }
 
 test.describe('superadmin: the users list', () => {

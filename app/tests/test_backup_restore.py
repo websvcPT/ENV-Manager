@@ -30,11 +30,11 @@ from app.services.backup_inspect import RestoreProblem, RestoreRefusedError
 from app.services.backup_lock import hold_backup_lock
 from app.services.backup_restore import restore_backup
 from app.services.backup_run import BackupLocations, run_backup
+from app.tests.audit_helpers import audit_entries_from
 from app.tests.backup_helpers import (
     RecordingBackupNotifier,
     app_locations,
     app_session_factory,
-    audit_entries,
     backup_records,
     read_rows,
 )
@@ -118,7 +118,7 @@ async def test_a_restore_brings_the_data_back_and_ends_every_session(
     async with app_session_factory(web_app)() as db:
         assert (await db.execute(select(func.count()).select_from(UserSession))).scalar_one() == 0
     assert (await web_client.get("/projects")).headers["location"].startswith("/login")
-    (entry,) = await audit_entries(app_session_factory(web_app), "backup.restore")
+    (entry,) = await audit_entries_from(app_session_factory(web_app), "backup.restore")
     assert (entry.actor_type, entry.actor_name, entry.result) == (
         AuditActorType.CLI,
         "cli",
@@ -217,7 +217,7 @@ async def assert_refused(
     locations = app_locations(web_app)
     assert leftovers(locations) == []
     assert not list(locations.backup_dir.glob("*-pre-restore.db"))
-    (entry,) = await audit_entries(app_session_factory(web_app), "backup.restore")
+    (entry,) = await audit_entries_from(app_session_factory(web_app), "backup.restore")
     assert entry.result is AuditResult.BLOCKED and entry.details["reason"] == problem.value
     assert str(source.parent) not in str(entry.details)
     if sessions_alive:
@@ -320,7 +320,7 @@ async def test_an_older_backup_is_brought_to_the_current_schema(
     assert await marker(web_app) == "older"
     columns = [row[1] for row in read_rows(live, "PRAGMA table_info(users)")]
     assert "totp_enabled_at" in columns
-    (entry,) = await audit_entries(app_session_factory(web_app), "backup.restore")
+    (entry,) = await audit_entries_from(app_session_factory(web_app), "backup.restore")
     assert entry.details["upgraded_from"] == "0010"
 
 
@@ -348,7 +348,7 @@ async def test_a_failed_safety_backup_stops_the_restore(
     assert refused.value.problem is RestoreProblem.SAFETY_FAILED
     assert await marker(web_app) == "current"
     assert leftovers(locations) == []
-    (entry,) = await audit_entries(app_session_factory(web_app), "backup.restore")
+    (entry,) = await audit_entries_from(app_session_factory(web_app), "backup.restore")
     assert entry.result is AuditResult.FAILURE
 
 
@@ -384,7 +384,7 @@ async def test_a_restore_is_refused_while_a_backup_runs(web_app: FastAPI) -> Non
     ):
         await restore(web_app, backup)
     assert busy.value.problem is RestoreProblem.BUSY
-    assert await audit_entries(app_session_factory(web_app), "backup.restore") == []
+    assert await audit_entries_from(app_session_factory(web_app), "backup.restore") == []
 
 
 async def test_the_audit_entry_names_the_backup_and_never_a_user_id(
@@ -398,6 +398,6 @@ async def test_the_audit_entry_names_the_backup_and_never_a_user_id(
         assert user is not None
     actor = AuditActor.system("a-person-who-is-not-in-the-backup")
     await restore(web_app, backup, actor)
-    (entry,) = await audit_entries(app_session_factory(web_app), "backup.restore")
+    (entry,) = await audit_entries_from(app_session_factory(web_app), "backup.restore")
     assert entry.actor_user_id is None
     assert entry.actor_name == "a-person-who-is-not-in-the-backup"

@@ -41,14 +41,18 @@ class Mailbox:
     transport: RecordingTransport
 
     async def subjects(self) -> list[str]:
-        """Wait for every event so far and list the subjects of the mails, oldest first."""
+        """Wait for every event so far and list the subjects of the mails, sorted.
+
+        Background delivery does not promise the order in which events are sent.
+        """
         await self.notifier.idle()
-        return [sent.mail.subject for sent in self.transport.sent]
+        return sorted(sent.mail.subject for sent in self.transport.sent)
 
     async def texts(self) -> list[str]:
-        """The decoded text of every mail sent so far."""
+        """The decoded text of every mail sent so far, in the order of ``subjects``."""
         await self.notifier.idle()
-        return [decoded_text(await mime_of(sent.mail)) for sent in self.transport.sent]
+        mails = sorted(self.transport.sent, key=lambda sent: sent.mail.subject)
+        return [decoded_text(await mime_of(sent.mail)) for sent in mails]
 
 
 @pytest.fixture

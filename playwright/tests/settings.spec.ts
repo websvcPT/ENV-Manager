@@ -8,9 +8,8 @@ import { listProjects } from '../projects-api';
 import { serviceId } from '../services-api';
 import { addAllowedPath, listAllowedPaths, removeAllowedPath } from '../settings-api';
 import { test } from '../settings-test';
+import { horizontalOverflow, isWide, TOUCH_TARGET } from '../viewport';
 
-const WIDE_BREAKPOINT = 768;
-const TOUCH_TARGET = 44;
 const TABS = [
   ['paths', 'Allowed paths'],
   ['smtp', 'SMTP'],
@@ -31,16 +30,6 @@ const DEFAULT_TIMEOUTS = { idle: '30', absolute: '12' };
  * owner and group of a new deployment) and puts the defaults back.
  */
 const { expect } = test;
-
-function isWide(page: Page): boolean {
-  return (page.viewportSize()?.width ?? 0) >= WIDE_BREAKPOINT;
-}
-
-async function horizontalOverflow(page: Page): Promise<number> {
-  return page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  );
-}
 
 async function height(locator: Locator): Promise<number> {
   const box = await locator.boundingBox();

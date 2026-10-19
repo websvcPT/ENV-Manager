@@ -2,13 +2,6 @@ import type { Locator, Page } from '@playwright/test';
 
 import { expect } from '@playwright/test';
 
-const MD_BREAKPOINT = 768;
-
-/** Whether the page collapses row actions into a 3-dot menu (below the md breakpoint). */
-export function usesMenus(page: Page): boolean {
-  return (page.viewportSize()?.width ?? 0) < MD_BREAKPOINT;
-}
-
 /** The shared row menu of the shell, filled when a row's 3-dot button opens it. */
 export function rowMenu(page: Page): Locator {
   return page.locator('#row-menu');

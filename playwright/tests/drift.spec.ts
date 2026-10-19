@@ -6,8 +6,9 @@ import { createDeployment } from '../deployments-api';
 import { createEnvironment, saveRaw, seededEnvironmentId } from '../environments-api';
 import { stateFile } from '../global-setup';
 import { createHostFolder, type HostFolder } from '../host-files';
-import { csrfHeaders } from '../projects-api';
+import { csrfHeaders } from '../http';
 import { createService } from '../services-api';
+import { horizontalOverflow } from '../viewport';
 import { expect, test as scratchTest } from './scratch-project';
 
 /*
@@ -32,7 +33,7 @@ const TARGET = `DRIFT_KEY=${TARGET_VALUE}\nONLY_DISK=${ONLY_DISK_VALUE}\nSAME_KE
 const PEM = '-----BEGIN CERTIFICATE-----\nE2EDRIFTMANAGED\n-----END CERTIFICATE-----\n';
 const PEM_DISK = '-----BEGIN CERTIFICATE-----\nE2EDRIFTONDISK\n-----END CERTIFICATE-----\n';
 
-const test = scratchTest.extend<{ host: HostFolder }>({
+const test = scratchTest.extend<{ host: HostFolder; service: number; drifted: number }>({
   host: async ({}, use) => {
     const host = createHostFolder();
     try {
@@ -41,27 +42,16 @@ const test = scratchTest.extend<{ host: HostFolder }>({
       host.remove();
     }
   },
+  /** A service in a deployment rooted in the host folder. */
+  service: async ({ request, scratch, host }, use) => {
+    const deployment = await createDeployment(request, scratch.id, 'drift', host.root, 'block');
+    await use(await createService(request, deployment, 'web'));
+  },
+  /** The environment of a file in the drift state, with every kind of row. */
+  drifted: async ({ request, host, service }, use) => {
+    await use(await driftedFile(request, host, service));
+  },
 });
-
-interface World {
-  service: number;
-}
-
-async function horizontalOverflow(page: Page): Promise<number> {
-  return page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  );
-}
-
-/** A deployment rooted in the host folder with one service. */
-async function world(
-  request: APIRequestContext,
-  projectId: number,
-  host: HostFolder,
-): Promise<World> {
-  const deployment = await createDeployment(request, projectId, 'drift', host.root, 'block');
-  return { service: await createService(request, deployment, 'web') };
-}
 
 /** Deploy one file of the service as the signed-in superadmin and expect it to succeed. */
 async function deploy(request: APIRequestContext, service: number, environment: number) {
@@ -77,7 +67,7 @@ async function deploy(request: APIRequestContext, service: number, environment: 
  * A file deployed at DEPLOYED, then saved as MANAGED (version 2) and edited on disk to TARGET: the
  * drift state with every kind of row.
  */
-async function drifted(
+async function driftedFile(
   request: APIRequestContext,
   host: HostFolder,
   service: number,
@@ -155,12 +145,9 @@ function backups(host: HostFolder, name: string): string[] {
 test.describe('states', () => {
   test('a file edited on disk after its deploy lists what differs per column, masked', async ({
     page,
-    request,
-    scratch,
-    host,
+    service,
+    drifted: id,
   }) => {
-    const { service } = await world(request, scratch.id, host);
-    const id = await drifted(request, host, service);
     await page.goto(url(id));
 
     await expect(header(page).locator('h1')).toHaveText('.env.app');
@@ -205,10 +192,9 @@ test.describe('states', () => {
   test('a file never deployed whose target already has content reads Never deployed', async ({
     page,
     request,
-    scratch,
+    service,
     host,
   }) => {
-    const { service } = await world(request, scratch.id, host);
     const id = await createEnvironment(request, service, '.env.fresh', MANAGED);
     host.write('environments/.env.fresh', TARGET);
     await page.goto(url(id));
@@ -227,10 +213,8 @@ test.describe('states', () => {
   test('a target that matches the deployed version reads No drift and offers no action', async ({
     page,
     request,
-    scratch,
-    host,
+    service,
   }) => {
-    const { service } = await world(request, scratch.id, host);
     const id = await createEnvironment(request, service, '.env.clean', DEPLOYED);
     await deploy(request, service, id);
     await saveRaw(request, id, 1, MANAGED);
@@ -252,10 +236,8 @@ test.describe('states', () => {
   test('a target that matches everything says there is nothing to compare', async ({
     page,
     request,
-    scratch,
-    host,
+    service,
   }) => {
-    const { service } = await world(request, scratch.id, host);
     const id = await createEnvironment(request, service, '.env.same', MANAGED);
     await deploy(request, service, id);
     await page.goto(url(id));
@@ -270,10 +252,9 @@ test.describe('states', () => {
   test('a target that differs only in comments is Drift with no variable listed', async ({
     page,
     request,
-    scratch,
+    service,
     host,
   }) => {
-    const { service } = await world(request, scratch.id, host);
     const id = await createEnvironment(request, service, '.env.notes', 'A=1\nB=2\n');
     await deploy(request, service, id);
     host.write('environments/.env.notes', '# edited by hand\nB=2\nA=1\n');
@@ -289,10 +270,9 @@ test.describe('states', () => {
   test('a missing target or folder reads Target missing and offers no action', async ({
     page,
     request,
-    scratch,
+    service,
     host,
   }) => {
-    const { service } = await world(request, scratch.id, host);
     const id = await createEnvironment(request, service, '.env.gone', MANAGED);
     await page.goto(url(id));
     await expect(badge(page)).toHaveText('Target missing');
@@ -316,10 +296,9 @@ test.describe('states', () => {
   test('a target that cannot be read reads Cannot read target with a fixed sentence', async ({
     page,
     request,
-    scratch,
+    service,
     host,
   }) => {
-    const { service } = await world(request, scratch.id, host);
     const link = await createEnvironment(request, service, '.env.link', MANAGED);
     symlinkSync('/etc/hostname', host.file('environments/.env.link'));
     await page.goto(url(link));
@@ -343,10 +322,9 @@ test.describe('states', () => {
   test('a target folder that leaves the deployment reads Outside allowed paths without a path', async ({
     page,
     request,
-    scratch,
+    service,
     host,
   }) => {
-    const { service } = await world(request, scratch.id, host);
     const id = await createEnvironment(request, service, '.env.out', MANAGED);
     rmSync(host.file('environments'), { recursive: true, force: true });
     symlinkSync('/srv/deployments/sample-b', host.file('environments'));
@@ -365,10 +343,9 @@ test.describe('states', () => {
   test('a certificate compares as one File content row', async ({
     page,
     request,
-    scratch,
+    service,
     host,
   }) => {
-    const { service } = await world(request, scratch.id, host);
     const id = await createEnvironment(request, service, 'drift-ca.pem', PEM);
     await deploy(request, service, id);
     host.write('environments/drift-ca.pem', PEM_DISK);
@@ -392,12 +369,8 @@ test.describe('states', () => {
 test.describe('reveal', () => {
   test('answers only the values of the differing keys into their slots and hides on request', async ({
     page,
-    request,
-    scratch,
-    host,
+    drifted: id,
   }) => {
-    const { service } = await world(request, scratch.id, host);
-    const id = await drifted(request, host, service);
     await page.goto(url(id));
     await revealButton(page).click();
 
@@ -418,9 +391,7 @@ test.describe('reveal', () => {
     await expectFits(page);
   });
 
-  test('values go by themselves after 30 seconds', async ({ page, request, scratch, host }) => {
-    const { service } = await world(request, scratch.id, host);
-    const id = await drifted(request, host, service);
+  test('values go by themselves after 30 seconds', async ({ page, drifted: id }) => {
     await page.clock.install();
     await page.goto(url(id));
     await revealButton(page).click();
@@ -435,12 +406,9 @@ test.describe('reveal', () => {
 
   test('a page that is out of date gets a notice and no value', async ({
     page,
-    request,
-    scratch,
+    drifted: id,
     host,
   }) => {
-    const { service } = await world(request, scratch.id, host);
-    const id = await drifted(request, host, service);
     await page.goto(url(id));
     host.write('environments/.env.app', 'DRIFT_KEY=changed-after-the-page\n');
     await revealButton(page).click();
@@ -458,11 +426,10 @@ test.describe('import', () => {
   test('saves the target as a new version, then the file deploys with no drift', async ({
     page,
     request,
-    scratch,
+    service,
+    drifted: id,
     host,
   }) => {
-    const { service } = await world(request, scratch.id, host);
-    const id = await drifted(request, host, service);
     await page.goto(url(id));
     await importButton(page).click();
 
@@ -491,12 +458,9 @@ test.describe('import', () => {
 
   test('is refused when the file changed after the page was shown', async ({
     page,
-    request,
-    scratch,
+    drifted: id,
     host,
   }) => {
-    const { service } = await world(request, scratch.id, host);
-    const id = await drifted(request, host, service);
     await page.goto(url(id));
     host.write('environments/.env.app', `${TARGET}LATE=1\n`);
     await importButton(page).click();
@@ -511,11 +475,8 @@ test.describe('import', () => {
   test('is refused when a newer version was saved after the page was shown', async ({
     page,
     request,
-    scratch,
-    host,
+    drifted: id,
   }) => {
-    const { service } = await world(request, scratch.id, host);
-    const id = await drifted(request, host, service);
     await page.goto(url(id));
     await saveRaw(request, id, 2, `${MANAGED}NEWER=1\n`);
     await importButton(page).click();
@@ -528,12 +489,9 @@ test.describe('import', () => {
 test.describe('overwrite', () => {
   test('asks first, then replaces the target after keeping a 0600 backup', async ({
     page,
-    request,
-    scratch,
+    drifted: id,
     host,
   }) => {
-    const { service } = await world(request, scratch.id, host);
-    const id = await drifted(request, host, service);
     await page.goto(url(id));
     const dialog = page.locator('#overwrite-dialog');
     await expect(dialog).toBeHidden();
@@ -569,12 +527,8 @@ test.describe('overwrite', () => {
 
   test('the request is given a timeout far above the default of one minute', async ({
     page,
-    request,
-    scratch,
-    host,
+    drifted: id,
   }) => {
-    const { service } = await world(request, scratch.id, host);
-    const id = await drifted(request, host, service);
     await page.goto(url(id));
     // The page reloads after a successful overwrite, so the observation is kept in the session.
     await page.evaluate(() => {
@@ -608,11 +562,9 @@ test.describe('overwrite', () => {
   test('is refused in the dialog when a newer version was saved after the page was shown', async ({
     page,
     request,
-    scratch,
+    drifted: id,
     host,
   }) => {
-    const { service } = await world(request, scratch.id, host);
-    const id = await drifted(request, host, service);
     await page.goto(url(id));
     await saveRaw(request, id, 2, `${MANAGED}NEWER=1\n`);
     await overwriteButton(page).click();
@@ -629,11 +581,9 @@ test.describe('overwrite', () => {
 
   test('deploys nothing without the confirmation the dialog posts', async ({
     request,
-    scratch,
+    drifted: id,
     host,
   }) => {
-    const { service } = await world(request, scratch.id, host);
-    const id = await drifted(request, host, service);
     const response = await request.post(`/environments/${id}/overwrite`, {
       form: { base_version: '2' },
       headers: await csrfHeaders(request),
@@ -648,12 +598,8 @@ test.describe('overwrite', () => {
 test.describe('security policy', () => {
   test('the page, its reveal and its dialog raise no CSP violation and the page is not cached', async ({
     page,
-    request,
-    scratch,
-    host,
+    drifted: id,
   }) => {
-    const { service } = await world(request, scratch.id, host);
-    const id = await drifted(request, host, service);
     const messages: string[] = [];
     page.on('console', (message) => {
       if (/content security policy/i.test(message.text())) {

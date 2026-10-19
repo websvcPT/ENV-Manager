@@ -15,14 +15,12 @@ Every test runs against the seed dataset in a real temporary SQLite database. It
         worker: worker
 """
 
-from collections.abc import AsyncIterator
 from datetime import timedelta
 
 import pytest
 from sqlalchemy import delete, select
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.db import create_session_factory
 from app.models import (
     AccessGrant,
     ApiToken,
@@ -116,13 +114,6 @@ class Tree:
             if key.startswith(f"{prefix}:") and value == item_id:
                 return key
         raise KeyError((level, item_id))
-
-
-@pytest.fixture
-async def db(seeded_database: AsyncEngine) -> AsyncIterator[AsyncSession]:
-    """A session on the migrated temporary database."""
-    async with create_session_factory(seeded_database)() as session:
-        yield session
 
 
 async def _add_environment(db: AsyncSession, tree: Tree, service: str, name: str) -> int:

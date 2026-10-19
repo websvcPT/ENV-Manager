@@ -15,6 +15,7 @@ import { createEnvironment } from '../environments-api';
 import { saveChangedCommands } from '../post-deploy-form';
 import { createService } from '../services-api';
 import { expect, test } from '../tests/scratch-project';
+import { horizontalOverflow } from '../viewport';
 
 /*
  * The drift view on the demo stack with a usable Docker: a file edited on disk halts its deploy,
@@ -74,12 +75,6 @@ function badge(page: Page): Locator {
 
 function toast(page: Page): Locator {
   return page.locator('[data-fragment="toast"]');
-}
-
-async function horizontalOverflow(page: Page): Promise<number> {
-  return page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  );
 }
 
 interface Stack {

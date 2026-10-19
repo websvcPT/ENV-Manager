@@ -3,9 +3,16 @@ import type { APIRequestContext, Browser, Page } from '@playwright/test';
 import { createDeployment } from '../deployments-api';
 import { createEnvironment, saveRaw, seededEnvironmentId } from '../environments-api';
 import { stateFile } from '../global-setup';
-import { csrfHeaders } from '../projects-api';
+import { csrfHeaders } from '../http';
 import { createService } from '../services-api';
+import { horizontalOverflow } from '../viewport';
 import { expect, test } from './scratch-project';
+import {
+  asRolesWithoutAccess,
+  expectNoValueInPage,
+  SEEDED_SECRETS,
+  seededEditor,
+} from './seeded-editor';
 
 const SAMPLE_A = '/srv/deployments/sample-a';
 const SECRET = 'e2e-secret-Qx81';
@@ -16,13 +23,6 @@ const CONTENT =
   `PASSWORD=${SECRET}\n` +
   `CERT="-----BEGIN CERTIFICATE-----\n${CERTIFICATE_BODY}\n-----END CERTIFICATE-----"\n`;
 const PEM = `-----BEGIN CERTIFICATE-----\n${CERTIFICATE_BODY}\n-----END CERTIFICATE-----\n`;
-const SEEDED_SECRETS = ['Zq7vK2mPw9', 'Tn4xB8cL1d', 'Ke3rH6vNa5', 'MIIDdzCCAl7sentinelCertBody'];
-
-async function horizontalOverflow(page: Page): Promise<number> {
-  return page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  );
-}
 
 /** A deployment on the sample folder with one service and one file, inside the scratch project. */
 async function prepare(
@@ -54,13 +54,6 @@ function toast(page: Page) {
 
 function header(page: Page) {
   return page.locator('[data-fragment="page-header"]');
-}
-
-async function expectNoValueInPage(page: Page, ...values: string[]): Promise<void> {
-  const html = await page.content();
-  for (const value of values) {
-    expect(html).not.toContain(value);
-  }
 }
 
 async function reveal(page: Page, key: string): Promise<void> {
@@ -323,10 +316,6 @@ test.describe('superadmin editor', () => {
   });
 });
 
-async function seededEditor(browser: Browser): Promise<number> {
-  return seededEnvironmentId(browser, 'Fancy Proj. Name', 'prod', 'mysql', '.env.db.app');
-}
-
 test.describe('viewer', () => {
   test.use({ storageState: stateFile('viewer') });
 
@@ -416,19 +405,13 @@ test.describe('other roles', () => {
     browser,
   }) => {
     const other = await seededEditor(browser);
-    for (const user of ['ungrantedAdmin', 'envScopedViewer'] as const) {
-      const context = await browser.newContext({ storageState: stateFile(user) });
-      const page = await context.newPage();
-      try {
-        expect((await page.goto(`/environments/${other}`))?.status()).toBe(404);
-        const reveal = await page.request.post(`/environments/${other}/reveal/MYSQL_PASSWORD`, {
-          headers: await csrfHeaders(page.request),
-        });
-        expect(reveal.status()).toBe(404);
-      } finally {
-        await context.close();
-      }
-    }
+    await asRolesWithoutAccess(browser, async (page) => {
+      expect((await page.goto(`/environments/${other}`))?.status()).toBe(404);
+      const reveal = await page.request.post(`/environments/${other}/reveal/MYSQL_PASSWORD`, {
+        headers: await csrfHeaders(page.request),
+      });
+      expect(reveal.status()).toBe(404);
+    });
   });
 });
 

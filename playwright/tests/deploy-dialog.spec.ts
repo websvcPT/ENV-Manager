@@ -4,8 +4,9 @@ import { createDeployment } from '../deployments-api';
 import { createEnvironment, saveRaw } from '../environments-api';
 import { stateFile } from '../global-setup';
 import { createHostFolder, type HostFolder } from '../host-files';
-import { csrfHeaders } from '../projects-api';
+import { csrfHeaders } from '../http';
 import { createService, serviceId } from '../services-api';
+import { horizontalOverflow } from '../viewport';
 import { rowAction } from './row-actions';
 import { expect, test as scratchTest } from './scratch-project';
 
@@ -33,12 +34,6 @@ const test = scratchTest.extend<{ host: HostFolder }>({
 interface World {
   service: number;
   deployment: number;
-}
-
-async function horizontalOverflow(page: Page): Promise<number> {
-  return page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  );
 }
 
 /** A deployment rooted in the host folder with one service. */

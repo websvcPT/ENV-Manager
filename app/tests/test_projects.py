@@ -1,17 +1,14 @@
 """Project service: the scoped list and superadmin create, rename and delete."""
 
-from collections.abc import AsyncIterator
 from datetime import timedelta
 
 import pytest
 from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.db import create_session_factory
 from app.models import (
     ApiToken,
     ApiTokenRestriction,
-    AuditEntry,
     AuditResult,
     Deployment,
     DeployStatus,
@@ -34,25 +31,13 @@ from app.services.projects import (
     validate_project_name,
 )
 from app.services.tokens import create_token, revoke_token
-
-
-@pytest.fixture
-async def db(seeded_database: AsyncEngine) -> AsyncIterator[AsyncSession]:
-    """A session on the seeded temporary database."""
-    async with create_session_factory(seeded_database)() as session:
-        yield session
+from app.tests.audit_helpers import audit_entries
 
 
 async def _rows(db: AsyncSession, user: User, query: str = "") -> dict[str, ProjectRow]:
     """The list a user sees, by project name."""
     scope = await load_user_scope(db, user)
     return {row.name: row for row in await list_project_rows(db, scope, query=query)}
-
-
-async def _audit(db: AsyncSession, action: str) -> list[AuditEntry]:
-    """Audit entries of an action, oldest first."""
-    stmt = select(AuditEntry).where(AuditEntry.action == action).order_by(AuditEntry.id)
-    return list((await db.execute(stmt)).scalars())
 
 
 async def test_superadmin_sees_every_project_with_counts(
@@ -198,7 +183,7 @@ async def test_create_project_is_audited(db: AsyncSession, seed_data: SeedData) 
     project = await create_project(
         db, name="fleetops", actor=seed_data.users.superadmin, ip_address="10.0.0.5"
     )
-    (entry,) = await _audit(db, "project.create")
+    (entry,) = await audit_entries(db, "project.create")
     assert (entry.result, entry.target_name, entry.project_id) == (
         AuditResult.SUCCESS,
         "fleetops",
@@ -212,7 +197,7 @@ async def test_a_display_name_is_stored_as_typed(db: AsyncSession, seed_data: Se
         db, name="  Fleet Ops. v2_beta-1 ", actor=seed_data.users.superadmin
     )
     assert project.name == "Fleet Ops. v2_beta-1"
-    (entry,) = await _audit(db, "project.create")
+    (entry,) = await audit_entries(db, "project.create")
     assert entry.target_name == "Fleet Ops. v2_beta-1"
 
 
@@ -225,7 +210,7 @@ async def test_duplicate_name_is_refused_whatever_the_case(
     """A second project cannot take an existing name in any case, and nothing is audited."""
     with pytest.raises(ProjectExistsError):
         await create_project(db, name=name, actor=seed_data.users.superadmin)
-    assert await _audit(db, "project.create") == []
+    assert await audit_entries(db, "project.create") == []
 
 
 async def test_a_name_taken_in_another_case_while_the_page_was_open_is_still_refused(
@@ -248,8 +233,8 @@ async def test_a_name_taken_in_another_case_while_the_page_was_open_is_still_ref
         await rename_project(db, billing, name="fancy PROJ. name", actor=seed_data.users.superadmin)
     names = (await db.execute(select(Project.name).order_by(func.lower(Project.name)))).scalars()
     assert list(names) == ["billing", "Fancy Proj. Name"]
-    assert await _audit(db, "project.create") == []
-    assert await _audit(db, "project.rename") == []
+    assert await audit_entries(db, "project.create") == []
+    assert await audit_entries(db, "project.rename") == []
 
 
 async def test_a_project_can_change_only_the_case_of_its_own_name(
@@ -261,7 +246,7 @@ async def test_a_project_can_change_only_the_case_of_its_own_name(
     assert (renamed.id, renamed.name) == (billing.id, "BILLING")
     stored_name = await db.scalar(select(Project.name).where(Project.id == billing.id))
     assert stored_name == "BILLING"
-    (entry,) = await _audit(db, "project.rename")
+    (entry,) = await audit_entries(db, "project.rename")
     assert entry.details == {"previous_name": "billing"}
     with pytest.raises(ProjectExistsError):
         await rename_project(db, renamed, name="FANCY proj. name", actor=seed_data.users.superadmin)
@@ -288,12 +273,12 @@ async def test_rename_project_audits_the_previous_name(
     project = seed_data.projects.billing
     renamed = await rename_project(db, project, name="invoicing", actor=seed_data.users.superadmin)
     assert (renamed.id, renamed.name) == (project.id, "invoicing")
-    (entry,) = await _audit(db, "project.rename")
+    (entry,) = await audit_entries(db, "project.rename")
     assert entry.details == {"previous_name": "billing"}
     with pytest.raises(ProjectExistsError):
         await rename_project(db, renamed, name="Fancy Proj. Name", actor=seed_data.users.superadmin)
     await rename_project(db, renamed, name="invoicing", actor=seed_data.users.superadmin)
-    assert len(await _audit(db, "project.rename")) == 1
+    assert len(await audit_entries(db, "project.rename")) == 1
 
 
 async def test_delete_project_removes_the_tree_and_keeps_history(
@@ -306,7 +291,7 @@ async def test_delete_project_removes_the_tree_and_keeps_history(
     assert remaining == ["billing"]
     deployments = (await db.execute(select(func.count()).select_from(Deployment))).scalar_one()
     assert deployments == 2
-    (entry,) = await _audit(db, "project.delete")
+    (entry,) = await audit_entries(db, "project.delete")
     assert (entry.result, entry.project_id, entry.details) == (
         AuditResult.SUCCESS,
         project.id,
@@ -324,7 +309,7 @@ async def test_delete_is_refused_while_a_token_is_restricted_inside(
         (await db.execute(select(Project.name).order_by(func.lower(Project.name)))).scalars().all()
     )
     assert names == ["billing", "Fancy Proj. Name"]
-    (entry,) = await _audit(db, "project.delete")
+    (entry,) = await audit_entries(db, "project.delete")
     assert entry.result is AuditResult.BLOCKED
     assert entry.details == {"reason": "restricted_tokens", "tokens": ["billing-ci"]}
 
@@ -351,7 +336,7 @@ async def test_a_revoked_token_no_longer_holds_its_project(
     assert (await db.execute(select(ApiTokenRestriction))).first() is None
     kept = await db.get(ApiToken, token.id)
     assert kept is not None and kept.revoked_at is not None
-    (entry,) = await _audit(db, "project.delete")
+    (entry,) = await audit_entries(db, "project.delete")
     assert entry.result is AuditResult.SUCCESS
 
 

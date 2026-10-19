@@ -1,12 +1,8 @@
 """Deployment detail service: header figures, services, history and policies by scope."""
 
-from collections.abc import AsyncIterator
-
-import pytest
 from sqlalchemy import delete, select
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.db import create_session_factory
 from app.models import (
     AllowedPath,
     ApiToken,
@@ -25,13 +21,6 @@ from app.seeds import SeedData
 from app.services.deployment_detail import DeploymentDetail, load_deployment_detail
 from app.services.paths import load_allowed_paths
 from app.services.permissions import load_user_scope
-
-
-@pytest.fixture
-async def db(seeded_database: AsyncEngine) -> AsyncIterator[AsyncSession]:
-    """A session on the seeded temporary database."""
-    async with create_session_factory(seeded_database)() as session:
-        yield session
 
 
 async def _detail(db: AsyncSession, user: User, deployment_id: int) -> DeploymentDetail | None:

@@ -17,21 +17,17 @@ from sqlalchemy import func, select
 
 from app.core.csrf import CSRF_COOKIE_NAME
 from app.models import (
-    AuditEntry,
     Deployment,
     DeployRun,
     Environment,
-    HookType,
-    Service,
-    ServiceHook,
 )
 from app.seeds import EDITOR_SECRET_VALUES
 from app.services.deploy_lock import hold_deploy_lock
 from app.services.versions import create_version
+from app.tests.audit_helpers import web_audit_entries
 from app.tests.conftest import sign_in
-from app.tests.dist_helpers import relocate_deployments
 from app.tests.fake_docker import FakeDocker
-from app.tests.web_helpers import HTMX, assert_never_cached, main_of, post
+from app.tests.web_helpers import HTMX, assert_never_cached, main_of, post, stage_deployments
 
 DEPLOY_ROLES = ("root", "admin", "project_admin", "deployment_admin")
 SCOPED_BLOCKED = ("viewer", "env_scoped_viewer")
@@ -60,41 +56,10 @@ class Staged:
 @pytest.fixture
 async def staged(web_app: FastAPI, tmp_path: Path) -> Staged:
     """Deployments on a real folder, dist links removed, and a usable fake docker."""
+    stage = await stage_deployments(web_app, tmp_path, MYSQL_COMMAND)
     async with web_app.state.session_factory() as db:
-        roots = await relocate_deployments(db, tmp_path / "host")
-        for environment in (await db.execute(select(Environment))).scalars():
-            environment.dist_path = None
-        for deployment in (await db.execute(select(Deployment))).scalars():
-            deployment.file_owner = None
-            deployment.file_group = None
-        mysql = await db.scalar(select(Service).where(Service.name == "mysql"))
-        assert mysql is not None
-        db.add(ServiceHook(service_id=mysql.id, type=HookType.POST_DEPLOY, commands=MYSQL_COMMAND))
-        await db.commit()
-        services = {
-            f"{deployment}/{service}": identifier
-            for deployment, service, identifier in (
-                await db.execute(
-                    select(Deployment.name, Service.name, Service.id).join(
-                        Service, Service.deployment_id == Deployment.id
-                    )
-                )
-            ).all()
-        }
-        environments = {
-            f"{service}/{name}": identifier
-            for service, name, identifier in (
-                await db.execute(
-                    select(Service.name, Environment.name, Environment.id).join(
-                        Service, Service.id == Environment.service_id
-                    )
-                )
-            ).all()
-        }
         seeded_runs = await db.scalar(select(func.max(DeployRun.id))) or 0
-    docker = FakeDocker(tmp_path / "fake-docker")
-    web_app.state.docker_cli = docker.cli()
-    return Staged(roots, docker, services, environments, seeded_runs)
+    return Staged(stage.roots, stage.docker, stage.services, stage.environments, seeded_runs)
 
 
 async def preflight(
@@ -124,15 +89,6 @@ async def new_runs(web_app: FastAPI, staged: Staged) -> list[DeployRun]:
     async with web_app.state.session_factory() as db:
         rows = await db.execute(
             select(DeployRun).where(DeployRun.id > staged.seeded_runs).order_by(DeployRun.id)
-        )
-        return list(rows.scalars())
-
-
-async def audit(web_app: FastAPI, action: str) -> list[AuditEntry]:
-    """The audit entries of an action, oldest first."""
-    async with web_app.state.session_factory() as db:
-        rows = await db.execute(
-            select(AuditEntry).where(AuditEntry.action == action).order_by(AuditEntry.id)
         )
         return list(rows.scalars())
 
@@ -187,8 +143,8 @@ async def test_the_preflight_dry_runs_every_file_in_scope_and_writes_nothing(
     assert list((staged.roots["staging"] / "environments").iterdir()) == []
     (run,) = await new_runs(web_app, staged)
     assert run.dry_run is True
-    assert len(await audit(web_app, "service.deploy_dry_run")) == 1
-    assert await audit(web_app, "service.deploy") == []
+    assert len(await web_audit_entries(web_app, "service.deploy_dry_run")) == 1
+    assert await web_audit_entries(web_app, "service.deploy") == []
     assert staged.docker.calls() == []
 
 
@@ -259,7 +215,7 @@ async def test_a_deploy_writes_the_chosen_files_runs_the_command_once_and_refres
     assert not staged.target("staging", ".env.web").exists()
     assert len(staged.docker.calls()) == 1
     (run,) = [item for item in await new_runs(web_app, staged) if not item.dry_run]
-    entry = (await audit(web_app, "service.deploy"))[0]
+    entry = (await web_audit_entries(web_app, "service.deploy"))[0]
     assert f'href="/audit?entry={entry.id}"' in page and run.audit_entry_id == entry.id
 
 
@@ -312,7 +268,7 @@ async def test_a_forced_deploy_waits_for_its_confirmation_and_then_overwrites_wi
     assert target.read_text(encoding="utf-8") == "WORKERS=4\n"
     backups = [path for path in target.parent.iterdir() if ".bak-" in path.name]
     assert [path.read_text(encoding="utf-8") for path in backups] == ["WORKERS=99\n"]
-    entry = (await audit(web_app, "service.deploy"))[0]
+    entry = (await web_audit_entries(web_app, "service.deploy"))[0]
     assert entry.details["force"] is True
 
 
@@ -328,7 +284,7 @@ async def test_a_confirmation_alone_never_forces_a_deploy(
     )
     assert "Halted: drift" in response.text
     assert target.read_text(encoding="utf-8") == "WORKERS=99\n"
-    entry = (await audit(web_app, "service.deploy"))[0]
+    entry = (await web_audit_entries(web_app, "service.deploy"))[0]
     assert entry.details["force"] is False
 
 
@@ -514,7 +470,7 @@ async def test_a_scoped_admin_opens_the_audit_entry_of_their_own_deploy(
     page = (await deploy(web_client, service, chosen(db_file))).text
     link = re.search(r'href="(/audit\?entry=(\d+))"', page)
     assert link is not None
-    entry = (await audit(web_app, "service.deploy"))[0]
+    entry = (await web_audit_entries(web_app, "service.deploy"))[0]
     assert int(link.group(2)) == entry.id
     assert entry.environment_id is None and entry.service_id == service
 

@@ -1,13 +1,12 @@
 """The Access tab read model and its grant changes on the seeded database."""
 
-from collections.abc import AsyncIterator, Iterable
+from collections.abc import Iterable
 
 import pytest
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.core.db import create_session_factory
-from app.models import AccessGrant, AuditEntry, GrantLevel
+from app.models import AccessGrant
 from app.seeds import SeedData
 from app.services.access_grid import GridUser
 from app.services.access_list import (
@@ -22,26 +21,17 @@ from app.services.access_list import (
     change_access,
     load_access_list,
 )
-from app.services.audit import AuditActor
 from app.services.grants import SUPERADMIN_REFUSAL, GrantTarget, list_grants, load_grant_tree
 from app.services.projects import member_counts
-from app.tests.grant_helpers import count_statements, grow
-
-PROJECT = GrantLevel.PROJECT
-DEPLOYMENT = GrantLevel.DEPLOYMENT
-ENVIRONMENT = GrantLevel.ENVIRONMENT
-
-
-@pytest.fixture
-async def db(seeded_database: AsyncEngine) -> AsyncIterator[AsyncSession]:
-    """A session on the seeded temporary database."""
-    async with create_session_factory(seeded_database)() as session:
-        yield session
-
-
-def actor_of(seed_data: SeedData) -> AuditActor:
-    """The superadmin as the web routes name them in audit entries."""
-    return AuditActor.for_user(seed_data.users.superadmin, "10.0.0.5")
+from app.tests.audit_helpers import audit_entries
+from app.tests.grant_helpers import (
+    DEPLOYMENT,
+    ENVIRONMENT,
+    PROJECT,
+    actor_of,
+    count_statements,
+    grow,
+)
 
 
 async def tab(db: AsyncSession, project_id: int, node_id: str) -> AccessList:
@@ -64,14 +54,6 @@ def sources_of(entry: AccessEntry) -> list[tuple[str, str]]:
 def names(users: Iterable[GridUser]) -> set[str]:
     """The names of the users of a column list."""
     return {user.name for user in users}
-
-
-async def entries_of(db: AsyncSession, action: str) -> list[AuditEntry]:
-    """The audit entries of one action, oldest first."""
-    rows = await db.execute(
-        select(AuditEntry).where(AuditEntry.action == action).order_by(AuditEntry.id)
-    )
-    return list(rows.scalars())
 
 
 async def test_the_project_tab_lists_direct_grants_and_the_items_inside_that_carry_one(
@@ -307,7 +289,7 @@ async def test_adding_a_grant_writes_it_and_one_audit_entry_and_lists_the_user(
     )
     assert change.changed and change.notice is None and change.user_name == user.name
     assert await list_grants(db, user.id) == {GrantTarget(PROJECT, billing)}
-    [entry] = await entries_of(db, "grant.add")
+    [entry] = await audit_entries(db, "grant.add")
     assert entry.target_name == user.name
     assert entry.details == {"level": "project", "item": "billing"}
     assert entry.actor_name == "root" and entry.ip_address == "10.0.0.5"
@@ -326,7 +308,7 @@ async def test_removing_a_grant_deletes_it_and_audits_it_once(
     )
     assert change.changed and change.notice is None
     assert await list_grants(db, user.id) == set()
-    [entry] = await entries_of(db, "grant.remove")
+    [entry] = await audit_entries(db, "grant.remove")
     assert entry.details == {"level": "project", "item": "Fancy Proj. Name"}
     assert "viewer" not in by_name(await tab(db, fancy, f"project-{fancy}"))
 
@@ -345,7 +327,7 @@ async def test_a_deployment_and_an_environment_grant_are_added_at_their_level(
         GrantTarget(DEPLOYMENT, staging),
         GrantTarget(ENVIRONMENT, web),
     }
-    items = [entry.details["item"] for entry in await entries_of(db, "grant.add")]
+    items = [entry.details["item"] for entry in await audit_entries(db, "grant.add")]
     assert items == ["Fancy Proj. Name/staging", "Fancy Proj. Name/prod/web/.env.web"]
 
 
@@ -362,7 +344,7 @@ async def test_adding_what_the_user_already_holds_is_refused_as_an_old_page(
         actor=actor_of(seed_data),
     )
     assert (change.changed, change.notice) == (False, STALE_NOTICE)
-    assert await entries_of(db, "grant.add") == []
+    assert await audit_entries(db, "grant.add") == []
 
 
 async def test_removing_what_the_user_no_longer_holds_is_refused_as_an_old_page(
@@ -378,7 +360,7 @@ async def test_removing_what_the_user_no_longer_holds_is_refused_as_an_old_page(
         actor=actor_of(seed_data),
     )
     assert (change.changed, change.notice) == (False, STALE_NOTICE)
-    assert await entries_of(db, "grant.remove") == []
+    assert await audit_entries(db, "grant.remove") == []
 
 
 async def test_access_an_item_above_already_includes_cannot_be_granted_again(
@@ -396,7 +378,7 @@ async def test_access_an_item_above_already_includes_cannot_be_granted_again(
         assert not change.changed
         assert change.notice == f"Access to this item is already included through {covering}."
     assert await list_grants(db, user.id) == {GrantTarget(PROJECT, fancy)}
-    assert await entries_of(db, "grant.add") == []
+    assert await audit_entries(db, "grant.add") == []
 
 
 async def test_a_redundant_direct_grant_can_be_removed_and_the_user_stays_listed(
@@ -435,7 +417,7 @@ async def test_a_superadmin_a_disabled_user_and_a_missing_user_are_refused(
         assert (off.changed, off.notice) == (False, DISABLED_NOTICE)
     missing = await change_access(db, fancy, node_id, 987654, grant=True, actor=actor)
     assert (missing.changed, missing.notice, missing.user_name) == (False, USER_GONE_NOTICE, None)
-    assert await entries_of(db, "grant.add") == []
+    assert await audit_entries(db, "grant.add") == []
 
 
 async def test_a_service_a_missing_item_and_an_item_of_another_project_are_refused(

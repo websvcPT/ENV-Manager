@@ -1,15 +1,11 @@
 """Grants: the tree to choose from, parsing chosen items and audited changes to a user's set."""
 
-from collections.abc import AsyncIterator
-
 import pytest
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.db import create_session_factory
 from app.models import AccessGrant, AuditEntry, AuditResult, GrantLevel, Project
 from app.seeds import SeedData
-from app.services.audit import AuditActor
 from app.services.grants import (
     GrantError,
     GrantTarget,
@@ -22,23 +18,12 @@ from app.services.grants import (
     set_user_grants,
 )
 from app.services.permissions import ItemLevel, load_item, load_user_scope
-
-
-@pytest.fixture
-async def db(seeded_database: AsyncEngine) -> AsyncIterator[AsyncSession]:
-    """A session on the seeded temporary database."""
-    async with create_session_factory(seeded_database)() as session:
-        yield session
+from app.tests.grant_helpers import actor_of
 
 
 async def count_entries(db: AsyncSession) -> int:
     """How many audit entries exist."""
     return len((await db.execute(select(AuditEntry))).scalars().all())
-
-
-def actor_of(seed_data: SeedData) -> AuditActor:
-    """The superadmin as the web routes name them in audit entries."""
-    return AuditActor.for_user(seed_data.users.superadmin, "10.0.0.5")
 
 
 @pytest.mark.parametrize(

@@ -2,9 +2,10 @@ import type { Browser, Page } from '@playwright/test';
 
 import { createDeployment } from '../deployments-api';
 import { stateFile } from '../global-setup';
-import { csrfHeaders } from '../projects-api';
+import { csrfHeaders } from '../http';
 import { createService, serviceId } from '../services-api';
-import { expect, test } from './scratch-project';
+import { horizontalOverflow } from '../viewport';
+import { expect, test as scratchTest } from './scratch-project';
 
 /*
  * The post-deploy command settings on the development stack, which has no Docker socket, so the
@@ -17,11 +18,13 @@ const SAMPLE_A = '/srv/deployments/sample-a';
 const UNAVAILABLE = 'The Docker socket is not mounted.';
 const STORED_COMMAND = 'docker compose up -d --no-deps web';
 
-async function horizontalOverflow(page: Page): Promise<number> {
-  return page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  );
-}
+/** A service with no stored command in the scratch project, which cascades on delete. */
+const test = scratchTest.extend<{ service: number }>({
+  service: async ({ request, scratch }, use) => {
+    const deployment = await createDeployment(request, scratch.id, 'scratch-dep', SAMPLE_A);
+    await use(await createService(request, deployment, 'cache'));
+  },
+});
 
 function panel(page: Page) {
   return page.locator('#postdeploy');
@@ -46,6 +49,24 @@ function stagingWeb(browser: Browser): Promise<number> {
 
 function prodMysql(browser: Browser): Promise<number> {
   return serviceId(browser, 'Fancy Proj. Name', 'prod', 'mysql');
+}
+
+/** The status of a settings save sent to a service as the signed in user. */
+async function savedStatus(page: Page, id: number): Promise<number> {
+  const response = await page.request.post(`/services/${id}/postdeploy`, {
+    form: { commands: 'docker ps', timeout: '30' },
+    headers: await csrfHeaders(page.request),
+  });
+  return response.status();
+}
+
+/** The status of a compose check sent to a service as the signed in user. */
+async function checkedStatus(page: Page, id: number): Promise<number> {
+  const response = await page.request.post(`/services/${id}/postdeploy/test`, {
+    form: { working_directory: '' },
+    headers: await csrfHeaders(page.request),
+  });
+  return response.status();
 }
 
 test.describe('superadmin without a Docker socket', () => {
@@ -89,11 +110,8 @@ test.describe('superadmin without a Docker socket', () => {
 
   test('a save sent anyway is refused and the form shows the reason and stays disabled', async ({
     page,
-    request,
-    scratch,
+    service,
   }) => {
-    const deployment = await createDeployment(request, scratch.id, 'scratch-dep', SAMPLE_A);
-    const service = await createService(request, deployment, 'cache');
     await page.goto(`/services/${service}`);
     await enableControls(page);
     await settings(page).locator('#cmds').fill('docker compose up -d');
@@ -122,11 +140,8 @@ test.describe('superadmin without a Docker socket', () => {
 
   test('a compose check sent anyway answers that Docker is unusable and runs nothing', async ({
     page,
-    request,
-    scratch,
+    service,
   }) => {
-    const deployment = await createDeployment(request, scratch.id, 'scratch-dep', SAMPLE_A);
-    const service = await createService(request, deployment, 'cache');
     await page.goto(`/services/${service}`);
     await enableControls(page);
     await settings(page).locator('#wd').fill(SAMPLE_A);
@@ -170,16 +185,7 @@ test.describe('admin', () => {
     await expect(panel(page)).not.toContainText('Docker socket');
     await expect(panel(page)).not.toContainText(STORED_COMMAND);
 
-    const headers = await csrfHeaders(page.request);
-    const save = await page.request.post(`/services/${id}/postdeploy`, {
-      form: { commands: 'docker ps', timeout: '30' },
-      headers,
-    });
-    const check = await page.request.post(`/services/${id}/postdeploy/test`, {
-      form: { working_directory: '' },
-      headers,
-    });
-    expect([save.status(), check.status()]).toEqual([403, 403]);
+    expect([await savedStatus(page, id), await checkedStatus(page, id)]).toEqual([403, 403]);
   });
 });
 
@@ -194,16 +200,7 @@ test.describe('viewer', () => {
     await expect(panel(page)).not.toContainText('Docker socket');
     await expect(panel(page).getByRole('button')).toHaveCount(0);
 
-    const headers = await csrfHeaders(page.request);
-    const save = await page.request.post(`/services/${id}/postdeploy`, {
-      form: { commands: 'docker ps', timeout: '30' },
-      headers,
-    });
-    const check = await page.request.post(`/services/${id}/postdeploy/test`, {
-      form: { working_directory: '' },
-      headers,
-    });
-    expect([save.status(), check.status()]).toEqual([403, 403]);
+    expect([await savedStatus(page, id), await checkedStatus(page, id)]).toEqual([403, 403]);
   });
 });
 
@@ -217,12 +214,7 @@ test.describe('environment grant', () => {
     await expect(panel(page).locator('[data-fragment="postdeploy-settings"]')).toHaveCount(0);
     await expect(panel(page)).not.toContainText('Docker socket');
 
-    const headers = await csrfHeaders(page.request);
-    const save = await page.request.post(`/services/${id}/postdeploy`, {
-      form: { commands: 'docker ps', timeout: '30' },
-      headers,
-    });
-    expect(save.status()).toBe(403);
+    expect(await savedStatus(page, id)).toBe(403);
   });
 });
 
@@ -244,15 +236,6 @@ test.describe('no access', () => {
 
   test('save and test answer 404 for a service outside the scope', async ({ page, browser }) => {
     const id = await prodMysql(browser);
-    const headers = await csrfHeaders(page.request);
-    const save = await page.request.post(`/services/${id}/postdeploy`, {
-      form: { commands: 'docker ps', timeout: '30' },
-      headers,
-    });
-    const check = await page.request.post(`/services/${id}/postdeploy/test`, {
-      form: { working_directory: '' },
-      headers,
-    });
-    expect([save.status(), check.status()]).toEqual([404, 404]);
+    expect([await savedStatus(page, id), await checkedStatus(page, id)]).toEqual([404, 404]);
   });
 });

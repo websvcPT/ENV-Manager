@@ -2,20 +2,9 @@ import type { Browser, Page } from '@playwright/test';
 
 import { stateFile, SUPERADMIN_STATE } from '../global-setup';
 import { listProjects } from '../projects-api';
+import { horizontalOverflow, isWide } from '../viewport';
 import { actionControls } from './row-actions';
 import { expect, test } from './scratch-project';
-
-const WIDE_BREAKPOINT = 768;
-
-function isWide(page: Page): boolean {
-  return (page.viewportSize()?.width ?? 0) >= WIDE_BREAKPOINT;
-}
-
-async function horizontalOverflow(page: Page): Promise<number> {
-  return page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  );
-}
 
 /** Id of a seeded project by name, looked up as the superadmin so any role's spec can use it. */
 async function projectId(browser: Browser, name: string): Promise<number> {

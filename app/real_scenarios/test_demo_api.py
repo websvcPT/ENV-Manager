@@ -181,6 +181,12 @@ def environments_of(answer: dict[str, object]) -> dict[str, dict[str, object]]:
     return {item["name"]: item for item in items}
 
 
+async def last_run_id(live: Live) -> int:
+    """The id of the run the last deployment endpoint reports now, 0 while there is none."""
+    read = await live.http.get(live.last_url(), headers=live.headers)
+    return int(read.json()["run_id"]) if read.status_code == 200 else 0
+
+
 async def test_a_token_restricted_to_the_demo_project_deploys_api_over_http(
     demo: DemoStack, live: Live, workloads: Workloads
 ) -> None:
@@ -292,6 +298,7 @@ async def test_a_client_that_gives_up_does_not_stop_the_deploy(
 ) -> None:
     """The request stays open until the post-deploy command ends; leaving early stops nothing."""
     http, headers = live.http, live.headers
+    earlier_run = await last_run_id(live)
     before = time.time()
     with pytest.raises(httpx.ReadTimeout):
         await http.post(
@@ -305,10 +312,12 @@ async def test_a_client_that_gives_up_does_not_stop_the_deploy(
     while time.monotonic() < deadline:
         read = await http.get(live.last_url(), headers=headers)
         if read.status_code == 200:
-            answer = read.json()
-            post_deploy = answer["post_deploy"]
-            assert isinstance(post_deploy, dict)
-            if post_deploy["status"] != "running" and environments_of(answer).get(CA):
+            candidate = read.json()
+            run_id, post_deploy = candidate["run_id"], candidate["post_deploy"]
+            assert isinstance(run_id, int) and isinstance(post_deploy, dict)
+            finished = post_deploy["status"] != "running" and environments_of(candidate).get(CA)
+            if run_id > earlier_run and finished:
+                answer = candidate
                 break
         await asyncio.sleep(0.5)
     assert answer, "the deploy never finished"

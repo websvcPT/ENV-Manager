@@ -13,7 +13,7 @@ from pathlib import Path
 import httpx
 import pytest
 from fastapi import FastAPI
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.config import get_settings
 from app.core.crypto import CryptoService, generate_master_key, parse_master_key
@@ -134,6 +134,13 @@ async def seeded_database(
     database_engine = create_engine(database_path)
     yield database_engine
     await database_engine.dispose()
+
+
+@pytest.fixture
+async def db(seeded_database: AsyncEngine) -> AsyncIterator[AsyncSession]:
+    """A session on the seeded temporary database."""
+    async with create_session_factory(seeded_database)() as session:
+        yield session
 
 
 @pytest.fixture

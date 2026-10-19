@@ -1,26 +1,16 @@
 """The read models of the Users screens: list rows, token statuses and the detail."""
 
-from collections.abc import AsyncIterator
 from datetime import timedelta
 
-import pytest
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.db import create_session_factory
 from app.models import ApiToken, AuditActorType, AuditResult, User, UserGroup
 from app.models.types import utc_now
 from app.seeds import SeedData
 from app.services.audit import record_audit
 from app.services.tokens import TokenStatus
 from app.services.user_detail import ACTIVITY_LIMIT, list_user_rows, load_user_detail, token_row
-
-
-@pytest.fixture
-async def db(seeded_database: AsyncEngine) -> AsyncIterator[AsyncSession]:
-    """A session on the seeded temporary database."""
-    async with create_session_factory(seeded_database)() as session:
-        yield session
 
 
 async def test_rows_are_ordered_by_name_and_count_the_projects_the_grants_reach(

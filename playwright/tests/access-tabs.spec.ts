@@ -1,18 +1,13 @@
 import type { APIRequestContext, Browser, Locator, Page } from '@playwright/test';
 
 import { SESSION_USERS, stateFile, SUPERADMIN_STATE } from '../global-setup';
-import { csrfHeaders, listProjects } from '../projects-api';
+import { csrfHeaders } from '../http';
+import { listProjects } from '../projects-api';
 import { disableUser, listUsers, type CreatedUser } from '../users-api';
+import { horizontalOverflow, isWide, TOUCH_TARGET } from '../viewport';
 import { rowAction } from './row-actions';
-import {
-  expect,
-  horizontalOverflow,
-  isWide,
-  signedInAs,
-  test,
-  TOUCH_TARGET,
-  type Scratch,
-} from './scratch-access';
+import { expect, test, type Scratch } from './scratch-access';
+import { signedInAs } from './sign-in';
 
 type Kind = 'project' | 'deployment' | 'service' | 'environment';
 

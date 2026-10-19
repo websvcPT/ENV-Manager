@@ -5,19 +5,13 @@ import { expect, test } from '@playwright/test';
 import { deploymentId } from '../deployments-api';
 import { stateFile } from '../global-setup';
 import { serviceId } from '../services-api';
-import { actionControls, rowAction, usesMenus } from './row-actions';
+import { horizontalOverflow, isWide } from '../viewport';
+import { actionControls, rowAction } from './row-actions';
 
-const MD_BREAKPOINT = 768;
 const LG_BREAKPOINT = 1024;
 
 function width(page: Page): number {
   return page.viewportSize()?.width ?? 0;
-}
-
-async function horizontalOverflow(page: Page): Promise<number> {
-  return page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  );
 }
 
 function stagingWeb(browser: Browser): Promise<number> {
@@ -38,18 +32,18 @@ function environmentsPanel(page: Page) {
 
 /** Environment rows of whichever layout is visible: the table from md up, the list below. */
 function visibleRows(page: Page) {
-  const selector = width(page) >= MD_BREAKPOINT ? 'tr[data-env]' : 'li[data-fragment="env-row"]';
+  const selector = isWide(page) ? 'tr[data-env]' : 'li[data-fragment="env-row"]';
   return environmentsPanel(page).locator(selector);
 }
 
 function statuses(page: Page) {
   return environmentsPanel(page).locator(
-    width(page) >= MD_BREAKPOINT ? 'tr[data-env] [data-status]' : 'li [data-status]',
+    isWide(page) ? 'tr[data-env] [data-status]' : 'li [data-status]',
   );
 }
 
 async function expectLayout(page: Page): Promise<void> {
-  const wide = width(page) >= MD_BREAKPOINT;
+  const wide = isWide(page);
   const table = environmentsPanel(page).locator('table');
   if (wide) {
     await expect(table).toBeVisible();
@@ -116,28 +110,28 @@ test.describe('superadmin', () => {
     await expect(page.locator('#hist [data-fragment="history-row"]')).toHaveCount(2);
   });
 
-  test('fits the environments table at 1280px without a sideways scroll', async ({
-    page,
-    browser,
-  }) => {
-    test.skip(usesMenus(page), 'phones show the list, not the table');
-    const services = [
-      await stagingWeb(browser),
-      await prodMysql(browser),
-      await serviceId(browser, 'demo', 'stack', 'api'),
-      await serviceId(browser, 'demo', 'stack', 'db'),
-    ];
-    for (const id of services) {
-      await page.goto(`/services/${id}`);
-      const wrapper = environmentsPanel(page).locator('.overflow-x-auto');
-      const [scrolls, shows] = await wrapper.evaluate((element) => [
-        element.scrollWidth,
-        element.clientWidth,
-      ]);
-      expect(scrolls, `service ${id}`).toBeLessThanOrEqual(shows);
-      expect(await horizontalOverflow(page), `service ${id}`).toBeLessThanOrEqual(0);
-    }
-  });
+  test(
+    'fits the environments table at 1280px without a sideways scroll',
+    { tag: '@wide' },
+    async ({ page, browser }) => {
+      const services = [
+        await stagingWeb(browser),
+        await prodMysql(browser),
+        await serviceId(browser, 'demo', 'stack', 'api'),
+        await serviceId(browser, 'demo', 'stack', 'db'),
+      ];
+      for (const id of services) {
+        await page.goto(`/services/${id}`);
+        const wrapper = environmentsPanel(page).locator('.overflow-x-auto');
+        const [scrolls, shows] = await wrapper.evaluate((element) => [
+          element.scrollWidth,
+          element.clientWidth,
+        ]);
+        expect(scrolls, `service ${id}`).toBeLessThanOrEqual(shows);
+        expect(await horizontalOverflow(page), `service ${id}`).toBeLessThanOrEqual(0);
+      }
+    },
+  );
 
   test('puts the explanation of a service at the very bottom, below the deploy history', async ({
     page,

@@ -21,6 +21,7 @@ from app.models import ApiToken, AuditEntry, Project, Service, User
 from app.models.types import utc_now
 from app.services.permissions import load_token_scope
 from app.services.tokens import hash_secret
+from app.tests.audit_helpers import web_audit_entries
 from app.tests.conftest import sign_in
 from app.tests.web_helpers import HTMX, assert_never_cached, main_of, post
 
@@ -71,15 +72,6 @@ async def count_tokens(web_app: FastAPI) -> int:
     """How many tokens exist."""
     async with web_app.state.session_factory() as db:
         return len((await db.execute(select(ApiToken.id))).scalars().all())
-
-
-async def audit(web_app: FastAPI, action: str | None = None) -> list[AuditEntry]:
-    """Audit entries, oldest first, optionally of one action."""
-    async with web_app.state.session_factory() as db:
-        stmt = select(AuditEntry).order_by(AuditEntry.id)
-        if action is not None:
-            stmt = stmt.where(AuditEntry.action == action)
-        return list((await db.execute(stmt)).scalars())
 
 
 async def user_id(web_app: FastAPI, name: str) -> int:
@@ -178,7 +170,10 @@ async def test_viewers_get_403_everywhere_and_can_create_or_revoke_nothing(
     assert (await post(web_client, f"/tokens/{seeded}/revoke")).status_code == 403
     assert (await stored(web_app, "billing-ci")).revoked_at is None
     assert await count_tokens(web_app) == 1
-    assert await audit(web_app, "token.create") == [] and await audit(web_app, "token.revoke") == []
+    assert (
+        await web_audit_entries(web_app, "token.create") == []
+        and await web_audit_entries(web_app, "token.revoke") == []
+    )
     assert "/tokens" not in (await web_client.get("/projects")).text
 
 
@@ -267,7 +262,7 @@ async def test_creating_a_token_shows_the_secret_once_and_keeps_it_out_of_everyt
         )
     assert secret not in every and token.token_hash not in every
     assert secret not in caplog.text and token.token_hash not in caplog.text
-    (entry,) = await audit(web_app, "token.create")
+    (entry,) = await web_audit_entries(web_app, "token.create")
     assert (entry.actor_name, entry.target_name) == ("admin", "ci-deploy")
 
 
@@ -318,7 +313,7 @@ async def test_a_refused_form_is_redrawn_with_the_reason_and_the_choices_and_cre
     if "name" not in overrides:
         assert 'value="keep-me"' in page
     assert await count_tokens(web_app) == 1
-    assert await audit(web_app, "token.create") == []
+    assert await web_audit_entries(web_app, "token.create") == []
 
 
 async def test_a_duplicate_name_is_refused_on_the_name_field(
@@ -379,7 +374,7 @@ async def test_revoking_stops_the_token_audits_it_and_updates_the_row(
         token = await db.get(ApiToken, token_id)
         assert token is not None and token.revoked_at is not None
         assert await load_token_scope(db, token) is None
-    (entry,) = await audit(web_app, "token.revoke")
+    (entry,) = await web_audit_entries(web_app, "token.revoke")
     assert (entry.actor_name, entry.target_name) == ("admin", "billing-ci")
     assert entry.details == {"owner": "admin", "reason": "requested"}
 
@@ -390,7 +385,7 @@ async def test_revoking_stops_the_token_audits_it_and_updates_the_row(
     assert again.status_code == 409
     assert "billing-ci is already revoked." in again.text and "hx-post" not in again.text
     assert json.loads(again.headers["hx-trigger"]) == {"token-changed": True}
-    assert len(await audit(web_app, "token.revoke")) == 1
+    assert len(await web_audit_entries(web_app, "token.revoke")) == 1
     dialog = await web_client.get(f"/tokens/{token_id}/revoke", headers=HTMX)
     assert "is already revoked." in dialog.text and "hx-post" not in dialog.text
 
@@ -405,7 +400,7 @@ async def test_another_admins_token_is_not_found_for_them_and_stays_untouched(
         assert (await web_client.get(url, headers=HTMX)).status_code == 404, url
         assert (await post(web_client, url)).status_code == 404, url
     assert (await stored(web_app, "billing-ci")).revoked_at is None
-    assert await audit(web_app, "token.revoke") == []
+    assert await web_audit_entries(web_app, "token.revoke") == []
 
 
 async def test_a_superadmin_revokes_someone_elses_token_and_the_owner_is_named(
@@ -416,7 +411,7 @@ async def test_a_superadmin_revokes_someone_elses_token_and_the_owner_is_named(
     dialog = await web_client.get(f"/tokens/{token_id}/revoke", headers=HTMX)
     assert "Revoke token billing-ci" in dialog.text and "Owner admin" in dialog.text
     assert (await post(web_client, f"/tokens/{token_id}/revoke")).status_code == 204
-    (entry,) = await audit(web_app, "token.revoke")
+    (entry,) = await web_audit_entries(web_app, "token.revoke")
     assert (entry.actor_name, entry.details) == (
         "root",
         {"owner": "admin", "reason": "requested"},

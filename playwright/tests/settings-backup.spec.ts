@@ -5,13 +5,12 @@ import { type Locator, type Page } from '@playwright/test';
 import { auditEntryIds } from '../audit-api';
 import { stateFile } from '../global-setup';
 import { createHostFolder } from '../host-files';
-import { csrfHeaders } from '../projects-api';
+import { csrfHeaders } from '../http';
 import { test } from '../settings-test';
+import { horizontalOverflow, isWide, TOUCH_TARGET } from '../viewport';
 import { actionControls, rowAction, rowMenu } from './row-actions';
 
 const { expect } = test;
-const WIDE_BREAKPOINT = 768;
-const TOUCH_TARGET = 44;
 const SQLITE_HEADER = 'SQLite format 3\u0000';
 const BACKUP_FILE = /^envmanager-\d{8}T\d{12}Z-manual\.db$/;
 
@@ -22,16 +21,6 @@ const BACKUP_FILE = /^envmanager-\d{8}T\d{12}Z-manual\.db$/;
  * never confirmed here, because it would replace the database every other spec reads; the dialog
  * is opened and cancelled, and the restore itself is covered by the server tests.
  */
-
-function isWide(page: Page): boolean {
-  return (page.viewportSize()?.width ?? 0) >= WIDE_BREAKPOINT;
-}
-
-async function horizontalOverflow(page: Page): Promise<number> {
-  return page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  );
-}
 
 async function height(locator: Locator): Promise<number> {
   const box = await locator.boundingBox();

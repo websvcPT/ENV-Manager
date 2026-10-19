@@ -2,18 +2,15 @@
 and adding the missing keys through the editor save."""
 
 import json
-from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
 from sqlalchemy import delete, select
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.crypto import CryptoService
-from app.core.db import create_session_factory
 from app.models import (
     AllowedPath,
-    AuditEntry,
     AuditResult,
     DistMissingPolicy,
     DistOutcome,
@@ -33,6 +30,7 @@ from app.services.dist_check import (
 from app.services.editor import EditorError, EditorHeader, load_editor_header, save_version
 from app.services.env_parser import parse_env
 from app.services.permissions import load_user_scope
+from app.tests.audit_helpers import audit_entries
 from app.tests.dist_helpers import (
     link_dist,
     relocate_deployments,
@@ -42,13 +40,6 @@ from app.tests.dist_helpers import (
 
 DIST_DEFAULT_VALUE = "dist-default-Qw83"
 DB_DIST = "environments/.env.db-dist"
-
-
-@pytest.fixture
-async def db(seeded_database: AsyncEngine) -> AsyncIterator[AsyncSession]:
-    """A session on the seeded temporary database."""
-    async with create_session_factory(seeded_database)() as session:
-        yield session
 
 
 @pytest.fixture
@@ -73,17 +64,6 @@ async def texts(db: AsyncSession, crypto: CryptoService, environment_id: int) ->
         )
     ).scalars()
     return {row.number: crypto.decrypt_text(row.content_encrypted) for row in rows}
-
-
-async def audit_entries(db: AsyncSession, action: str) -> list[AuditEntry]:
-    """The audit entries of an action, oldest first."""
-    return list(
-        (
-            await db.execute(
-                select(AuditEntry).where(AuditEntry.action == action).order_by(AuditEntry.id)
-            )
-        ).scalars()
-    )
 
 
 async def test_missing_keys_under_the_default_policy_block(

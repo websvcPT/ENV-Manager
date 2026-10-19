@@ -1,20 +1,16 @@
-import {
-  expect,
-  test as base,
-  type Browser,
-  type BrowserContextOptions,
-  type Locator,
-  type Page,
-} from '@playwright/test';
+import { expect, test as base, type Locator, type Page } from '@playwright/test';
 
 import { createDeployment } from '../deployments-api';
 import { createEnvironment } from '../environments-api';
 import { stateFile } from '../global-setup';
-import { createProject, csrfHeaders, deleteProjectIfPresent } from '../projects-api';
+import { csrfHeaders } from '../http';
+import { createProject, deleteProjectIfPresent } from '../projects-api';
 import { createService } from '../services-api';
 import { createToken } from '../tokens-api';
 import { createUser, disableUser, uniqueUserName, type CreatedUser } from '../users-api';
+import { horizontalOverflow, isWide, TOUCH_TARGET } from '../viewport';
 import { rowAction } from './row-actions';
+import { signedInAs } from './sign-in';
 
 /*
  * API tokens. Tokens cannot be deleted and a superadmin cannot create one for someone else, so
@@ -23,8 +19,6 @@ import { rowAction } from './row-actions';
  * be deleted again). The seeded billing-ci token is only read, never revoked: other specs use it.
  */
 
-const WIDE_BREAKPOINT = 768;
-const TOUCH_TARGET = 44;
 const SAMPLE_A = '/srv/deployments/sample-a';
 const SECRET_PATTERN = /^envm_[0-9a-f]{48}$/;
 
@@ -35,41 +29,13 @@ interface TokenOwner {
   page: Page;
 }
 
-/** Sign in through the login form in a browser of its own, in the layout of the project. */
-async function signedInAs(
-  browser: Browser,
-  user: CreatedUser,
-  layout: Pick<
-    BrowserContextOptions,
-    'viewport' | 'isMobile' | 'hasTouch' | 'deviceScaleFactor' | 'userAgent'
-  >,
-  baseURL: string | undefined,
-): Promise<Page> {
-  const context = await browser.newContext({
-    baseURL,
-    viewport: layout.viewport,
-    isMobile: layout.isMobile,
-    hasTouch: layout.hasTouch,
-    deviceScaleFactor: layout.deviceScaleFactor,
-    userAgent: layout.userAgent,
-    storageState: { cookies: [], origins: [] },
-  });
-  const page = await context.newPage();
-  await page.goto('/login');
-  await page.locator('#user').fill(user.name);
-  await page.locator('#pw').fill(user.password);
-  await page.locator('#login-card button[type="submit"]').click();
-  await expect(page).toHaveURL(/\/projects$/);
-  return page;
-}
-
 /**
  * The base test plus `owner`: a scratch project with one deployment, service and file, a scratch
  * admin granted that project and a page signed in as that admin. Teardown disables the admin
  * first (which revokes their tokens) and then deletes the project.
  */
 const test = base.extend<{ owner: TokenOwner }>({
-  owner: async ({ request, browser, baseURL }, use, testInfo) => {
+  owner: async ({ request, browser }, use, testInfo) => {
     const suffix = Math.random().toString(36).slice(2, 7);
     const projectName = `e2e-detail-${Date.now()}-${suffix}-${testInfo.project.name}`;
     const projectId = await createProject(request, projectName);
@@ -79,12 +45,7 @@ const test = base.extend<{ owner: TokenOwner }>({
     const user = await createUser(request, uniqueUserName(testInfo.project.name), 'admin', [
       `project:${projectId}`,
     ]);
-    const page = await signedInAs(
-      browser,
-      user,
-      testInfo.project.use,
-      baseURL,
-    );
+    const page = await signedInAs(browser, user);
     try {
       await use({ user, projectName, page });
     } finally {
@@ -94,16 +55,6 @@ const test = base.extend<{ owner: TokenOwner }>({
     }
   },
 });
-
-function isWide(page: Page): boolean {
-  return (page.viewportSize()?.width ?? 0) >= WIDE_BREAKPOINT;
-}
-
-async function horizontalOverflow(page: Page): Promise<number> {
-  return page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  );
-}
 
 function tokenName(): string {
   return `e2e-tok-${Math.random().toString(36).slice(2, 8)}`;

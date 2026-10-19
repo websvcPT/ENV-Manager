@@ -19,12 +19,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
     AuditEntry,
-    Deployment,
-    Environment,
-    HookType,
-    Project,
-    Service,
-    ServiceHook,
     User,
 )
 from app.services.audit import AuditActor
@@ -34,8 +28,8 @@ from app.services.tokens import (
     OPERATION_READ_LAST_DEPLOYMENT,
     create_token,
 )
-from app.tests.dist_helpers import relocate_deployments
 from app.tests.fake_docker import FakeDocker
+from app.tests.web_helpers import stage_deployments
 
 HOOK_COMMAND = "docker compose up -d --no-deps mysql"
 BOTH_OPERATIONS = (OPERATION_DEPLOY, OPERATION_READ_LAST_DEPLOYMENT)
@@ -73,44 +67,19 @@ def bearer(secret: str) -> dict[str, str]:
 @asynccontextmanager
 async def build_world(web_app: FastAPI, tmp_path: Path) -> AsyncIterator[ApiWorld]:
     """The seeded application with real folders, a fake docker and an API client."""
-    async with web_app.state.session_factory() as db:
-        roots = await relocate_deployments(db, tmp_path / "host")
-        for environment in (await db.execute(select(Environment))).scalars():
-            environment.dist_path = None
-        for deployment in (await db.execute(select(Deployment))).scalars():
-            deployment.file_owner = None
-            deployment.file_group = None
-        mysql = await db.scalar(select(Service).where(Service.name == "mysql"))
-        assert mysql is not None
-        db.add(ServiceHook(service_id=mysql.id, type=HookType.POST_DEPLOY, commands=HOOK_COMMAND))
-        await db.commit()
-        projects = dict((await db.execute(select(Project.name, Project.id))).all())
-        deployments = dict((await db.execute(select(Deployment.name, Deployment.id))).all())
-        services = {
-            f"{deployment}/{service}": identifier
-            for deployment, service, identifier in (
-                await db.execute(
-                    select(Deployment.name, Service.name, Service.id).join(
-                        Service, Service.deployment_id == Deployment.id
-                    )
-                )
-            ).all()
-        }
-        environments = {
-            f"{service}/{name}": identifier
-            for service, name, identifier in (
-                await db.execute(
-                    select(Service.name, Environment.name, Environment.id).join(
-                        Service, Service.id == Environment.service_id
-                    )
-                )
-            ).all()
-        }
-    docker = FakeDocker(tmp_path / "fake-docker")
-    web_app.state.docker_cli = docker.cli()
+    staged = await stage_deployments(web_app, tmp_path, HOOK_COMMAND)
     transport = httpx.ASGITransport(app=web_app, raise_app_exceptions=False, client=CLIENT_ADDRESS)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as http:
-        yield ApiWorld(web_app, http, roots, docker, projects, deployments, services, environments)
+        yield ApiWorld(
+            web_app,
+            http,
+            staged.roots,
+            staged.docker,
+            staged.projects,
+            staged.deployments,
+            staged.services,
+            staged.environments,
+        )
 
 
 async def make_token(

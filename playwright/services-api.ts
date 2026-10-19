@@ -2,9 +2,7 @@ import type { APIRequestContext, Browser } from '@playwright/test';
 
 import { deploymentId } from './deployments-api';
 import { SUPERADMIN_STATE } from './global-setup';
-import { csrfHeaders } from './projects-api';
-
-const SERVICE_LINK = /<a href="\/services\/(\d+)"[^>]*>([^<]+)<\/a>/g;
+import { csrfHeaders, idLinks } from './http';
 
 /**
  * Id of a seeded service by project, deployment and service name, read from the deployment page
@@ -22,12 +20,11 @@ export async function serviceId(
     const response = await context.request.get(`/deployments/${deployment}/services`, {
       headers: { 'HX-Request': 'true' },
     });
-    const html = await response.text();
-    const found = [...html.matchAll(SERVICE_LINK)].find((match) => match[2] === name);
+    const found = idLinks(await response.text(), '/services').find(([, listed]) => listed === name);
     if (!found) {
       throw new Error(`seeded service ${projectName}/${deploymentName}/${name} is missing`);
     }
-    return Number(found[1]);
+    return found[0];
   } finally {
     await context.close();
   }

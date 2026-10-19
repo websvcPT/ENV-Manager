@@ -24,11 +24,11 @@ from app.services.backup import backup_file_name
 from app.services.backup_lock import BackupBusyError, hold_backup_lock
 from app.services.backup_records import adopt_untracked_backups
 from app.services.backup_run import BackupLocations, adopt_backups, run_backup
+from app.tests.audit_helpers import audit_entries_from
 from app.tests.backup_helpers import (
     FailingBackupNotifier,
     RecordingBackupNotifier,
     allow_path,
-    audit_entries,
     backup_records,
     locations_in,
     read_rows,
@@ -88,7 +88,7 @@ async def test_a_manual_backup_is_recorded_audited_and_announced(
     assert record.error is None and record.created_by_id == root.id
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert stat.S_IMODE(path.parent.stat().st_mode) == 0o700
-    (entry,) = await audit_entries(factory, "backup.create")
+    (entry,) = await audit_entries_from(factory, "backup.create")
     assert (entry.actor_name, entry.actor_type, entry.result) == (
         root.name,
         AuditActorType.USER,
@@ -121,7 +121,7 @@ async def test_the_scheduler_acts_as_the_system_and_the_cli_as_cli(
         factory, locations, notifier, BackupTrigger.SCHEDULED, AuditActor.system("scheduler")
     )
     await take(factory, locations, notifier, BackupTrigger.CLI, AuditActor.cli())
-    first, second = await audit_entries(factory, "backup.create")
+    first, second = await audit_entries_from(factory, "backup.create")
     assert (first.actor_type, first.actor_name, first.actor_user_id) == (
         AuditActorType.SYSTEM,
         "scheduler",
@@ -142,7 +142,7 @@ async def test_a_failed_snapshot_is_a_recorded_failure_without_paths(
     record = await take(factory, locations_in(tmp_path, database_path), notifier)
     assert (record.status, record.size_bytes) == (BackupStatus.FAILURE, None)
     assert record.error == "The backup folder cannot be used."
-    (entry,) = await audit_entries(factory, "backup.create")
+    (entry,) = await audit_entries_from(factory, "backup.create")
     assert entry.result is AuditResult.FAILURE
     assert entry.details["error"] == record.error and entry.details["status"] == "failure"
     (event,) = notifier.events
@@ -185,7 +185,7 @@ async def test_the_extra_destination_gets_a_private_copy(
     assert record.extra_destination_path == str(destination)
     assert copy.read_bytes() == (locations.backup_dir / record.filename).read_bytes()
     assert stat.S_IMODE(copy.stat().st_mode) == 0o600
-    (entry,) = await audit_entries(factory, "backup.create")
+    (entry,) = await audit_entries_from(factory, "backup.create")
     assert entry.details["extra_destination"] == "copied"
 
 
@@ -202,7 +202,7 @@ async def test_an_extra_destination_outside_the_allowed_paths_is_not_written(
     assert record.error == "The extra destination is outside the allowed paths."
     assert record.size_bytes and (locations.backup_dir / record.filename).exists()
     assert list(destination.iterdir()) == []
-    (entry,) = await audit_entries(factory, "backup.create")
+    (entry,) = await audit_entries_from(factory, "backup.create")
     assert (entry.result, entry.details["extra_destination"]) == (AuditResult.FAILURE, "failed")
     (event,) = notifier.events
     assert event.status is BackupStatus.PARTIAL and event.size_bytes == record.size_bytes
@@ -243,7 +243,7 @@ async def test_retention_prunes_our_files_and_never_the_extra_destination(
     )
     kept = await backup_records(factory)
     assert [record.filename for record in kept] == [record.filename for record in records[2:]]
-    last = (await audit_entries(factory, "backup.create"))[-1]
+    last = (await audit_entries_from(factory, "backup.create"))[-1]
     assert last.details["pruned"] == 1
 
 
@@ -266,7 +266,7 @@ async def test_a_second_backup_is_refused_while_one_runs(
     with hold_backup_lock(locations.lock_dir), pytest.raises(BackupBusyError):
         await take(factory, locations, RecordingBackupNotifier())
     assert await backup_records(factory) == []
-    assert await audit_entries(factory, "backup.create") == []
+    assert await audit_entries_from(factory, "backup.create") == []
 
 
 async def test_two_backups_started_together_run_one_after_the_other(

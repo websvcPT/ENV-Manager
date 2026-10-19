@@ -1,12 +1,6 @@
 import type { APIRequestContext } from '@playwright/test';
 
-const PROJECT_LINK = /<a href="\/projects\/(\d+)"[^>]*>([^<]+)<\/a>/g;
-
-export async function csrfHeaders(request: APIRequestContext): Promise<Record<string, string>> {
-  const state = await request.storageState();
-  const token = state.cookies.find((cookie) => cookie.name === 'csrftoken')?.value ?? '';
-  return { 'HX-Request': 'true', 'X-CSRFToken': token };
-}
+import { csrfHeaders, idLinks } from './http';
 
 /** Projects in the caller's list as [id, name] pairs, optionally filtered by a name search. */
 export async function listProjects(
@@ -16,8 +10,7 @@ export async function listProjects(
   const response = await request.get(`/projects/table?q=${encodeURIComponent(query)}`, {
     headers: { 'HX-Request': 'true' },
   });
-  const html = await response.text();
-  return [...html.matchAll(PROJECT_LINK)].map((match) => [Number(match[1]), match[2]]);
+  return idLinks(await response.text(), '/projects');
 }
 
 /** Create a project through the same form post the dialog sends and return its id. */

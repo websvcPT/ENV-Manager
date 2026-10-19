@@ -1,12 +1,11 @@
 import { type Locator, type Page } from '@playwright/test';
 
 import { stateFile } from '../global-setup';
-import { csrfHeaders } from '../projects-api';
+import { csrfHeaders } from '../http';
 import { test } from '../settings-test';
+import { horizontalOverflow, isWide, TOUCH_TARGET } from '../viewport';
 
 const { expect } = test;
-const WIDE_BREAKPOINT = 768;
-const TOUCH_TARGET = 44;
 const TOKEN = 'e2e-git-token-sentinel';
 const PASSWORD_IN_ADDRESS = 'e2e-hunter2-sentinel';
 const KEY_BODY = 'ZTJlLWdpdC1kZXBsb3kta2V5LXNlbnRpbmVs';
@@ -34,16 +33,6 @@ interface GitForm {
   author: string;
   format: string;
   push: boolean;
-}
-
-function isWide(page: Page): boolean {
-  return (page.viewportSize()?.width ?? 0) >= WIDE_BREAKPOINT;
-}
-
-async function horizontalOverflow(page: Page): Promise<number> {
-  return page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  );
 }
 
 async function height(locator: Locator): Promise<number> {
@@ -78,8 +67,19 @@ async function fillForm(page: Page, values: GitForm): Promise<void> {
   await page.locator('#gp').setChecked(values.push);
 }
 
+/**
+ * Submit the form and wait for the server's answer. A toast left by an earlier save is still on
+ * the page until the new answer swaps in, so waiting for a toast alone can pass before this save
+ * was stored, and the next click would read the settings as they were.
+ */
 async function save(page: Page): Promise<void> {
+  const answered = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      new URL(response.url()).pathname === '/settings/git',
+  );
   await form(page).locator('button[type="submit"]').click();
+  await answered;
 }
 
 /** Remove whatever credentials are stored. */

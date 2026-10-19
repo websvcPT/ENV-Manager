@@ -11,9 +11,9 @@ from sqlalchemy.exc import OperationalError
 
 from app.models import Deployment, Service
 from app.tests.conftest import sign_in
+from app.tests.web_helpers import HTMX, main_of, section_links
 from app.web import service_detail as service_detail_web
 
-HTMX = {"HX-Request": "true"}
 FRAGMENTS = ("environments", "postdeploy", "history")
 
 
@@ -47,19 +47,6 @@ async def ids(web_app: FastAPI) -> ServiceIds:
         api=found[("main", "api")],
         cron=found[("legacy", "cron")],
     )
-
-
-def main_of(page: str) -> str:
-    """The page body without the sidebar, top bar and menu, where names must not leak."""
-    return page.split("<main", 1)[1].split("</main>", 1)[0]
-
-
-def section_links(page: str) -> list[str]:
-    """Visible text of the section links under the header."""
-    nav = re.search(r'<nav aria-label="Sections".*?</nav>', page, re.DOTALL)
-    assert nav is not None
-    anchors = re.findall(r"<a [^>]*>(.*?)</a>", nav.group(0), re.DOTALL)
-    return [re.sub(r"<[^>]+>", "", anchor).strip() for anchor in anchors]
 
 
 def environment_rows(page: str) -> dict[str, str]:

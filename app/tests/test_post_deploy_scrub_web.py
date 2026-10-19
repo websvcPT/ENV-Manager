@@ -22,9 +22,8 @@ from app.services.permissions import load_user_scope
 from app.tests.conftest import sign_in
 from app.tests.dist_helpers import link_dist, relocate_deployments
 from app.tests.fake_docker import FakeDocker
-from app.tests.web_helpers import without_csrf_token
+from app.tests.web_helpers import HTMX, without_csrf_token
 
-HTMX = {"HX-Request": "true"}
 VALUES = ("seed-secret", "3306", EDITOR_SECRET_VALUES[3], EDITOR_SECRET_VALUES[2])
 OUTPUT_ROLES = ("root", "admin", "project_admin", "deployment_admin", "env_scoped_admin")
 STATUS_ONLY_ROLES = ("viewer", "env_scoped_viewer")

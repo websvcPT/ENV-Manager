@@ -5,15 +5,21 @@ import re
 import httpx
 import pytest
 from fastapi import FastAPI
-from sqlalchemy import select
 
-from app.models import AuditEntry, EnvironmentVersion
 from app.seeds import EDITOR_SECRET_VALUES
 from app.services.notify_events import FileChange, FileChanged
-from app.services.versions import create_version
+from app.tests.audit_helpers import web_audit_entries
 from app.tests.conftest import sign_in
 from app.tests.notify_helpers import RecordingEvents, file_event_ids
-from app.tests.web_helpers import HTMX, EnvironmentIds, assert_never_cached, main_of, post
+from app.tests.web_helpers import (
+    HTMX,
+    EnvironmentIds,
+    add_version,
+    assert_never_cached,
+    main_of,
+    post,
+    version_numbers,
+)
 
 EDITOR_VALUES = (*EDITOR_SECRET_VALUES, "db.internal.example.com", "TLSv1.2", "AQIEAgAAuTAN")
 HIDDEN_TEXT = ("rotated by hand", "BEGIN CERTIFICATE", "sentinelCertBody")
@@ -38,41 +44,6 @@ def history_urls(environment: int) -> list[tuple[str, dict[str, str]]]:
 def version_rows(page: str) -> list[str]:
     """The markup of each version row of the history table."""
     return re.findall(r'<tr data-fragment="version-row".*?</tr>', page, re.DOTALL)
-
-
-async def add_version(web_app: FastAPI, environment: int, text: str) -> None:
-    """Save a text as the next version of an environment."""
-    async with web_app.state.session_factory() as db:
-        await create_version(db, web_app.state.crypto, environment, text, author=None)
-        await db.commit()
-
-
-async def audit_entries(web_app: FastAPI, action: str) -> list[AuditEntry]:
-    """The audit entries of an action, oldest first."""
-    async with web_app.state.session_factory() as db:
-        return list(
-            (
-                await db.execute(
-                    select(AuditEntry).where(AuditEntry.action == action).order_by(AuditEntry.id)
-                )
-            ).scalars()
-        )
-
-
-async def version_numbers(web_app: FastAPI, environment: int) -> list[int]:
-    """The version numbers an environment has."""
-    async with web_app.state.session_factory() as db:
-        return sorted(
-            (
-                await db.execute(
-                    select(EnvironmentVersion.number).where(
-                        EnvironmentVersion.environment_id == environment
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
 
 
 @pytest.mark.parametrize("role", HISTORY_ROLES)
@@ -150,8 +121,8 @@ async def test_viewer_cannot_reveal_or_restore(
         assert response.status_code == 403, url
         assert not any(value in response.text for value in EDITOR_VALUES)
     assert await version_numbers(web_app, ids.editor) == [1, 2, 3]
-    assert await audit_entries(web_app, "environment.reveal") == []
-    assert await audit_entries(web_app, "environment.restore") == []
+    assert await web_audit_entries(web_app, "environment.reveal") == []
+    assert await web_audit_entries(web_app, "environment.restore") == []
 
 
 async def test_admin_page_has_the_reveal_and_restore_controls(
@@ -269,7 +240,7 @@ async def test_admin_reveal_answers_only_values_and_audits_each_side(
         "<section",
     ):
         assert absent not in response.text, absent
-    entries = await audit_entries(web_app, "environment.reveal")
+    entries = await web_audit_entries(web_app, "environment.reveal")
     assert [entry.details for entry in entries] == [
         {"version": 2, "scope": "diff", "compared_with": 3, "keys": ["MAX_CONNECTIONS"]},
         {
@@ -308,7 +279,7 @@ async def test_whole_file_reveal_returns_both_texts(
     response = await post(web_client, f"/environments/{ids.ca}/history/reveal?v=1&v=2")
     assert "c2VlZA==" in response.text and "bmV3Ym9keQ==" in response.text
     assert response.text.count("<template") == 2
-    entries = await audit_entries(web_app, "environment.reveal")
+    entries = await web_audit_entries(web_app, "environment.reveal")
     assert [entry.details["scope"] for entry in entries] == ["file", "file"]
 
 
@@ -321,7 +292,7 @@ async def test_reveal_refuses_a_bad_selection_without_auditing(
         response = await post(web_client, f"{base}{query}")
         assert response.status_code == 404, query
         assert not any(value in response.text for value in EDITOR_VALUES)
-    assert await audit_entries(web_app, "environment.reveal") == []
+    assert await web_audit_entries(web_app, "environment.reveal") == []
 
 
 async def test_environment_scoped_admin_reveals_and_restores_its_own_file(
@@ -369,7 +340,7 @@ async def test_admin_restore_saves_a_new_version_and_redirects_with_a_toast(
     assert "Restored version 1 as version 4. Pending deploy." in page
     assert "Restored from version 1" in page and "version 4 saved" in page
     assert page.count('data-fragment="version-row"') == 4
-    entries = await audit_entries(web_app, "environment.restore")
+    entries = await web_audit_entries(web_app, "environment.restore")
     assert [entry.details for entry in entries] == [{"number": 4, "restored": 1}]
     assert entries[0].actor_name == "admin" and len(entries[0].version_ids) == 2
     assert not any(value in repr(entries[0].details) for value in EDITOR_VALUES)

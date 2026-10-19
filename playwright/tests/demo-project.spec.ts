@@ -5,18 +5,7 @@ import { expect, test } from '@playwright/test';
 import { deploymentId } from '../deployments-api';
 import { stateFile } from '../global-setup';
 import { serviceId } from '../services-api';
-
-const MD_BREAKPOINT = 768;
-
-function isWide(page: Page): boolean {
-  return (page.viewportSize()?.width ?? 0) >= MD_BREAKPOINT;
-}
-
-async function horizontalOverflow(page: Page): Promise<number> {
-  return page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  );
-}
+import { horizontalOverflow, isWide } from '../viewport';
 
 function demoService(browser: Browser, name: string): Promise<number> {
   return serviceId(browser, 'demo', 'stack', name);

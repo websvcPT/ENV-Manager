@@ -6,20 +6,13 @@ import { deploymentId } from '../deployments-api';
 import { listProjects } from '../projects-api';
 import { serviceId } from '../services-api';
 import { createUser, disableUser, uniqueUserName } from '../users-api';
-import { rowAction, rowMenu, usesMenus } from './row-actions';
-
-const TOUCH_TARGET = 44;
+import { horizontalOverflow, TOUCH_TARGET, usesMenus } from '../viewport';
+import { rowAction, rowMenu } from './row-actions';
 
 declare global {
   interface Window {
     cspViolations?: string[];
   }
-}
-
-async function horizontalOverflow(page: Page): Promise<number> {
-  return page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  );
 }
 
 function stagingWeb(browser: Browser): Promise<number> {
@@ -63,11 +56,7 @@ async function recordCspViolations(page: Page): Promise<void> {
   });
 }
 
-test.describe('icon buttons from md up', () => {
-  test.beforeEach(({ page }) => {
-    test.skip(usesMenus(page), 'phones use the 3-dot menu');
-  });
-
+test.describe('icon buttons from md up', { tag: '@wide' }, () => {
   test('a tooltip with the accessible name shows on hover and goes away', async ({
     page,
     browser,
@@ -181,11 +170,7 @@ test.describe('icon buttons from md up', () => {
   });
 });
 
-test.describe('3-dot menu below md', () => {
-  test.beforeEach(({ page }) => {
-    test.skip(!usesMenus(page), 'wide screens use icon buttons');
-  });
-
+test.describe('3-dot menu below md', { tag: '@narrow' }, () => {
   test('lists icon and text, is a touch target and opens, closes and returns focus', async ({
     page,
     browser,

@@ -1,17 +1,11 @@
 import type { Locator, Page } from '@playwright/test';
 
 import { stateFile } from '../global-setup';
-import { csrfHeaders } from '../projects-api';
+import { csrfHeaders } from '../http';
 import type { CreatedUser } from '../users-api';
-import {
-  expect,
-  horizontalOverflow,
-  isWide,
-  signedInAs,
-  test,
-  TOUCH_TARGET,
-  type Scratch,
-} from './scratch-access';
+import { horizontalOverflow, isWide, TOUCH_TARGET } from '../viewport';
+import { expect, test, type Scratch } from './scratch-access';
+import { signedInAs } from './sign-in';
 
 /** The grid narrowed to the scratch project, whose rows no other spec touches. */
 async function openGrid(page: Page, scratch: Scratch): Promise<void> {

@@ -1,6 +1,7 @@
 """The proxy header middleware: which forwarded headers are believed, and who sees the result."""
 
 import asyncio
+import errno
 import logging
 import socket
 from collections.abc import AsyncIterator, Sequence
@@ -247,6 +248,23 @@ def test_the_helper_returns_only_a_normalised_address() -> None:
 SECRET = "test-secret-0123456789abcdef0123456789"
 
 
+def dual_stack_available() -> bool:
+    """Whether this host can bind an IPv6 socket that also takes IPv4 clients (``::`` mapped).
+
+    The one test that serves the application on such a socket needs a kernel with IPv6; a host
+    without it skips that test with this reason, which is the one allowed skip of the suite.
+    """
+    if not socket.has_ipv6:
+        return False
+    try:
+        with socket.socket(socket.AF_INET6, socket.SOCK_STREAM) as probe:
+            probe.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+            probe.bind(("::", 0))
+    except OSError:
+        return False
+    return True
+
+
 @asynccontextmanager
 async def live_server(
     *, dual_stack: bool = False, peers: list[Any] | None = None, **settings: Any
@@ -348,6 +366,9 @@ async def test_a_refused_request_is_logged_under_the_forwarded_client(
     assert any(line.startswith("10.4.4.4:0 - ") and " 200" in line for line in lines)
 
 
+@pytest.mark.skipif(
+    not dual_stack_available(), reason="the host has no IPv6, so no dual stack socket can be bound"
+)
 async def test_a_mapped_peer_of_a_dual_stack_listener_is_logged_and_recorded_as_ipv4(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -361,3 +382,18 @@ async def test_a_mapped_peer_of_a_dual_stack_listener_is_logged_and_recorded_as_
     lines = access_lines(caplog)
     assert any(line.startswith("127.0.0.1:") for line in lines)
     assert not any("::ffff" in line for line in lines)
+
+
+def test_the_dual_stack_probe_says_no_without_ipv6_and_when_the_bind_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Either condition of a host without IPv6 turns the dual stack test into a skip."""
+    monkeypatch.setattr(socket, "has_ipv6", False)
+    assert dual_stack_available() is False
+
+    def refuse(*_arguments: object, **_options: object) -> socket.socket:
+        raise OSError(errno.EADDRNOTAVAIL, "Cannot assign requested address")
+
+    monkeypatch.setattr(socket, "has_ipv6", True)
+    monkeypatch.setattr(socket, "socket", refuse)
+    assert dual_stack_available() is False
