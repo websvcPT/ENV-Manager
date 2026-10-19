@@ -43,7 +43,7 @@ async def test_audit_entry_survives_actor_and_scope_deletion(engine: AsyncEngine
             password_hash=PLACEHOLDER_HASH,
             group=UserGroup.ADMIN,
         )
-        project = Project(name="way2rentals")
+        project = Project(name="acme-shop")
         session.add_all([user, project])
         await session.flush()
         token = ApiToken(owner_id=user.id, name="ci", token_hash=PLACEHOLDER_HASH, prefix="emt_")
@@ -88,7 +88,7 @@ async def test_deploy_history_survives_structure_deletion(engine: AsyncEngine) -
     """Deleting the service keeps the run and its results, with names and nulled references."""
     factory = create_session_factory(engine)
     async with factory() as session:
-        project = Project(name="way2rentals")
+        project = Project(name="acme-shop")
         session.add(project)
         await session.flush()
         deployment = Deployment(project_id=project.id, name="deployment-a", root_path="/opt/a")

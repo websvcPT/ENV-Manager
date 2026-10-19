@@ -182,7 +182,7 @@ async def test_the_superadmin_sees_the_status_line_and_the_enabled_form(
     assert f'hx-post="/services/{ids.staging_web}/postdeploy/test"' in form
     assert 'hx-include="closest form"' in form and 'hx-target="#test-result"' in form
     assert 'hx-status:422="swap:outerHTML target:#postdeploy-settings"' in form
-    assert 'name="working_directory"' in form and 'placeholder="/opt/rentals/staging"' in form
+    assert 'name="working_directory"' in form and 'placeholder="/opt/fancy/staging"' in form
     assert 'value=""' in form
     assert ">docker compose up -d --no-deps web</textarea>" in form
     assert 'name="timeout" type="number" inputmode="numeric" value="120"' in form
@@ -198,7 +198,7 @@ async def test_a_service_without_a_command_shows_the_defaults(
 ) -> None:
     await sign_in(web_client, "root")
     form = form_of((await web_client.get(f"/services/{ids.web}")).text)
-    assert 'placeholder="/opt/rentals/prod"' in form
+    assert 'placeholder="/opt/fancy/prod"' in form
     assert ' rows="2"' in form and "></textarea>" in form
     assert 'value="120"' in form and 'name="run_only_if_changed" checked' in form
 

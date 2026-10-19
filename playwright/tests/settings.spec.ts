@@ -165,7 +165,7 @@ test.describe('allowed paths', () => {
     const mounted = pathRow(page, '/srv/deployments').first();
     await expect(mounted.locator('[data-status="deployed"]')).toHaveText(['Mounted', 'Writable']);
     await expect(mounted.locator('td').nth(2)).toHaveText(/^\d+$/);
-    const missing = pathRow(page, '/opt/rentals');
+    const missing = pathRow(page, '/opt/fancy');
     await expect(missing).toContainText('The folder no longer exists.');
     await expect(missing.locator('[data-status="failed"]')).toHaveText('Missing');
     await expect(missing.locator('[data-status="never"]')).toHaveText('Not checked');
@@ -175,14 +175,14 @@ test.describe('allowed paths', () => {
 
   test('the remove dialog counts the deployments that would be left outside', async ({ page }) => {
     await page.goto('/settings/paths');
-    await pathRow(page, '/opt/rentals').locator('[data-row-action="remove"]').click();
+    await pathRow(page, '/opt/fancy').locator('[data-row-action="remove"]').click();
     const dialog = page.locator('#path-remove');
-    await expect(dialog.locator('h2')).toHaveText('Remove /opt/rentals');
+    await expect(dialog.locator('h2')).toHaveText('Remove /opt/fancy');
     await expect(dialog).toContainText(
       'The 2 deployments under this path are flagged as outside allowed paths and cannot be deployed or checked until the path is allowed again or the deployments are moved.',
     );
     await dialog.getByRole('button', { name: 'Cancel' }).click();
-    await expect(pathRow(page, '/opt/rentals')).toBeVisible();
+    await expect(pathRow(page, '/opt/fancy')).toBeVisible();
   });
 
   test('the add dialog checks the path as you type and adds it', async ({ page }) => {

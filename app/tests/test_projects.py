@@ -172,7 +172,7 @@ def test_a_refused_name_says_what_is_allowed() -> None:
 
 
 VALID_NAMES = [
-    ("  way2rentals ", "way2rentals"),
+    ("  acme-shop ", "acme-shop"),
     ("a-1", "a-1"),
     ("Fancy Proj. Name", "Fancy Proj. Name"),
     ("UPPER lower 123", "UPPER lower 123"),

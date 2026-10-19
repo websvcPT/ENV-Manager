@@ -63,7 +63,7 @@ async def test_superadmin_sees_all_tabs_and_actions(
     assert "1 needs attention" in page
     assert f'href="/projects/{fancy}/deployments/new"' in page
     assert row_names(page) == ["prod", "staging"]
-    assert "/opt/rentals/prod" in page
+    assert "/opt/fancy/prod" in page
     assert 'hx-trigger="deploy-finished from:body"' in page
     assert "Failed" in page
 
@@ -99,7 +99,7 @@ async def test_deployment_grant_is_told_what_is_hidden_without_names(
     assert "Your access is limited to one deployment of this project." in page
     assert "You have access to prod only. Other deployments of this project are not listed." in page
     assert row_names(page) == ["prod"]
-    for hidden in ("staging", "billing", ".env.api", "/opt/rentals/staging"):
+    for hidden in ("staging", "billing", ".env.api", "/opt/fancy/staging"):
         assert hidden not in page
 
 
@@ -112,7 +112,7 @@ async def test_environment_grant_hides_the_parent_path(
     assert "Your access is limited to selected files of this project." in page
     assert row_names(page) == ["prod"]
     assert "Limited access" in page
-    for hidden in ("/opt/rentals", ".env.web", ".env.db.secrets", "staging", "mysql"):
+    for hidden in ("/opt/fancy", ".env.web", ".env.db.secrets", "staging", "mysql"):
         assert hidden not in page.split("<main")[1].replace("selected files", "")
 
 

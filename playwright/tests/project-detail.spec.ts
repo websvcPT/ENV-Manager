@@ -64,7 +64,7 @@ test.describe('superadmin', () => {
     ]);
     await expect(deploymentNames(page)).toHaveText(['prod', 'staging']);
     const prod = page.locator('[data-fragment="deployment-row"]', { hasText: 'prod' });
-    await expect(prod).toContainText('/opt/rentals/prod');
+    await expect(prod).toContainText('/opt/fancy/prod');
     await expect(actionControls(prod, 'open').first()).toHaveAttribute(
       'href',
       /^\/deployments\/\d+$/,
@@ -394,7 +394,7 @@ test.describe('scoped users', () => {
       await expect(deploymentNames(page)).toHaveText(['prod']);
       const row = page.locator('[data-fragment="deployment-row"]');
       await expect(row).toContainText('Limited access');
-      await expect(row).not.toContainText('/opt/rentals');
+      await expect(row).not.toContainText('/opt/fancy');
       await expect(page.locator('main')).not.toContainText('.env.web');
       await expect(page.locator('main')).not.toContainText('mysql');
     });

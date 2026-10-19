@@ -237,7 +237,7 @@ async def test_seeded_allowed_paths_cover_the_seeded_deployment_roots(
 ) -> None:
     async with create_session_factory(seeded_database)() as db:
         allowed = await load_allowed_paths(db)
-    assert allowed.roots == (Path("/opt/billing"), Path("/opt/rentals"))
+    assert allowed.roots == (Path("/opt/billing"), Path("/opt/fancy"))
     for deployment in (
         seed_data.deployments.fancy_prod,
         seed_data.deployments.fancy_staging,
@@ -245,6 +245,6 @@ async def test_seeded_allowed_paths_cover_the_seeded_deployment_roots(
     ):
         assert allowed.contains(deployment.root_path)
         assert allowed.contains(f"{deployment.root_path}/environments/.env")
-    assert not allowed.contains("/opt/rentals10/prod")
-    assert not allowed.contains("/opt/rentals/../other")
+    assert not allowed.contains("/opt/fancy10/prod")
+    assert not allowed.contains("/opt/fancy/../other")
     assert not allowed.contains("/opt")

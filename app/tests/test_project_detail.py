@@ -24,7 +24,7 @@ async def test_superadmin_sees_every_deployment_with_state(
     assert detail is not None and not detail.partial
     assert [row.name for row in detail.deployments] == ["prod", "staging"]
     prod, staging = detail.deployments
-    assert prod.root_path == "/opt/rentals/prod"
+    assert prod.root_path == "/opt/fancy/prod"
     assert prod.files == 4
     assert prod.last_deploy is not None
     assert prod.last_deploy.status is DeployStatus.FAILED
@@ -55,7 +55,7 @@ async def test_deployment_grant_lists_the_granted_deployment_only(
     detail = await _detail(db, seed_data.users.deployment_admin, seed_data.projects.fancy.id)
     assert detail is not None and detail.partial
     assert [row.name for row in detail.deployments] == ["prod"]
-    assert detail.deployments[0].root_path == "/opt/rentals/prod"
+    assert detail.deployments[0].root_path == "/opt/fancy/prod"
     assert detail.limited_to == ("prod",)
     assert detail.all_granted_are_deployments
 

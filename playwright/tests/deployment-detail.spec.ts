@@ -37,7 +37,7 @@ test.describe('superadmin', () => {
 
     await expectItemHeader(page, 'deployment', 'prod');
     await expect(header(page).locator('[data-status]')).toHaveText(['Failed']);
-    await expect(header(page).locator('p')).toContainText('Project Fancy Proj. Name · /opt/rentals/prod');
+    await expect(header(page).locator('p')).toContainText('Project Fancy Proj. Name · /opt/fancy/prod');
     await expect(header(page).getByRole('link', { name: 'Check dist' })).toHaveAttribute(
       'href',
       `/deployments/${id}/dist`,
@@ -151,7 +151,7 @@ test.describe('superadmin', () => {
     const id = await prod(browser);
     await page.goto('/projects');
     await page.locator('[data-fragment="project-row"] th a', { hasText: /^Fancy Proj\. Name$/ }).click();
-    const row = page.locator('[data-fragment="deployment-row"]', { hasText: '/opt/rentals/prod' });
+    const row = page.locator('[data-fragment="deployment-row"]', { hasText: '/opt/fancy/prod' });
     await (await rowAction(row, 'open')).click();
     await expect(page).toHaveURL(new RegExp(`/deployments/${id}$`));
     const breadcrumb = page.locator('nav[aria-label="Breadcrumb"]');
@@ -257,7 +257,7 @@ test.describe('scoped users', () => {
     test('sees the whole deployment it was granted', async ({ page, browser }) => {
       await page.goto(`/deployments/${await prod(browser)}`);
       await expect(serviceRows(page).locator('th a')).toHaveText(['mysql', 'web']);
-      await expect(header(page).locator('p')).toContainText('/opt/rentals/prod');
+      await expect(header(page).locator('p')).toContainText('/opt/fancy/prod');
       await expect(page.locator('[data-fragment="policies-panel"]')).toBeVisible();
       await expect(page.locator('[role="note"]')).toHaveCount(0);
     });
@@ -284,7 +284,7 @@ test.describe('scoped users', () => {
       await expect(historyRows(page).first()).toContainText('.env.db v2');
       await expect(page.locator('#hist')).toContainText('Post-deploy exit code n/a');
       const main = page.locator('main');
-      for (const hidden of ['.env.db.secrets', '.env.web', '/opt/rentals', 'Policies']) {
+      for (const hidden of ['.env.db.secrets', '.env.web', '/opt/fancy', 'Policies']) {
         await expect(main).not.toContainText(hidden);
       }
       await expect(page.locator('[data-fragment="policies-panel"]')).toHaveCount(0);

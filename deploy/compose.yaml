@@ -14,6 +14,7 @@ services:
     volumes:
       - ./data:/data
       - ./master.key:/run/keys/master.key:ro
+      # optional: mount the host's vhosts and opt folders to be able to read/write files on the host
       - /var/www/vhosts:/var/www/vhosts
       - /opt:/opt
       # optional: enables post-deploy commands (root-equivalent on the host)

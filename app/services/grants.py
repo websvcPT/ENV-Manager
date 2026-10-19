@@ -200,7 +200,7 @@ async def list_grants(db: AsyncSession, user_id: int) -> frozenset[GrantTarget]:
 async def describe_targets(
     db: AsyncSession, targets: Collection[GrantTarget]
 ) -> dict[GrantTarget, str]:
-    """A readable path for every target that still exists, such as ``rentals/prod/mysql/.env.db``.
+    """A readable path for every target that still exists, such as ``fancy/prod/mysql/.env.db``.
 
     Targets that do not exist are left out, which is how callers detect a deleted item.
     """

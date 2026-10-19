@@ -205,7 +205,7 @@ async def test_a_scoped_admin_never_sees_the_deployment_root_even_when_it_is_out
     await sign_in(web_client, "env_scoped_admin")
     page = (await web_client.get(f"/environments/{ids.db}/dist")).text
     assert ROOT_OUTSIDE_TEXT in main_of(page)
-    for hidden in (str(roots["prod"]), "/host/prod", "/opt/rentals"):
+    for hidden in (str(roots["prod"]), "/host/prod", "/opt/fancy"):
         assert hidden not in page
     (entry,) = await web_audit_entries(web_app, "environment.dist_check")
     assert entry.details["problem"] == "root_outside" and entry.result.value == "failure"

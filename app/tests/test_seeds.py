@@ -513,9 +513,7 @@ async def test_the_seeded_project_is_a_display_name_and_stored_commands_name_the
 
 async def _make_it_an_older_database(db: AsyncSession) -> None:
     """Put back the plain project name, the audit copies of it and a placeholder command."""
-    await db.execute(
-        update(Project).where(Project.name == FANCY_PROJECT_NAME).values(name="rentals")
-    )
+    await db.execute(update(Project).where(Project.name == FANCY_PROJECT_NAME).values(name="fancy"))
     await db.execute(
         update(ServiceHook).values(commands="docker compose up -d --no-deps {service_name}")
     )
@@ -525,7 +523,7 @@ async def _make_it_an_older_database(db: AsyncSession) -> None:
             result=AuditResult.SUCCESS,
             actor_type=AuditActorType.SYSTEM,
             target_type="project",
-            target_name="rentals",
+            target_name="fancy",
         )
     )
     await db.commit()
@@ -579,12 +577,12 @@ async def test_the_display_name_is_not_applied_over_a_project_that_already_has_i
     seeded_database: AsyncEngine, seed_data: SeedData
 ) -> None:
     async with create_session_factory(seeded_database)() as db:
-        db.add(Project(name="rentals"))
+        db.add(Project(name="fancy"))
         await db.commit()
         await ensure_project_display_name(db)
         await db.commit()
         names = (await db.execute(select(Project.name).order_by(Project.id))).scalars().all()
-    assert names == [FANCY_PROJECT_NAME, "billing", "rentals"]
+    assert names == [FANCY_PROJECT_NAME, "billing", "fancy"]
 
 
 def test_dev_seed_renames_the_project_and_fixes_the_commands_of_an_older_database(

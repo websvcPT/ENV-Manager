@@ -87,7 +87,7 @@ async def test_superadmin_sees_everything_and_the_command_settings(
     assert response.headers["vary"] == "HX-Request"
     header = item_header_of(page)
     assert (header.type, header.title) == ("service", "Service: web")
-    assert header.subtitle == "Deployment staging in Fancy Proj. Name · /opt/rentals/staging"
+    assert header.subtitle == "Deployment staging in Fancy Proj. Name · /opt/fancy/staging"
     assert ">Service</span>" not in page and ">1 pending</span>" in page
     assert section_links(page) == ["Environments 4", "Deploy history", "AccessSuperadmin"]
     assert f'href="/services/{ids.staging_web}/access"' in page
@@ -106,7 +106,7 @@ async def test_superadmin_sees_everything_and_the_command_settings(
     assert "Read-only view" not in page and "Deploy service" in page
     assert "Command settings" in page and "Superadmin" in page
     assert "docker compose up -d --no-deps web" in page
-    assert 'placeholder="/opt/rentals/staging"' in page
+    assert 'placeholder="/opt/fancy/staging"' in page
     assert "web recreated" in page and "exit code 0" in page and "by admin" in page
     assert page.count('data-fragment="history-row"') == 2
     assert ">Success<" in page and ">Blocked<" in page
@@ -231,7 +231,7 @@ async def test_environment_grant_sees_a_name_only_view_with_notes(
     assert "Deployment <strong" in body and "Fancy Proj. Name" in body
     assert "deploy did not finish" in body
     assert "Command text and settings are visible to the superadmin only." in body
-    for hidden in (".env.db.secrets", "/opt/rentals", "Add environment", "Read-only view"):
+    for hidden in (".env.db.secrets", "/opt/fancy", "Add environment", "Read-only view"):
         assert hidden not in body
     assert ">1 pending</span>" not in body
 
@@ -253,7 +253,7 @@ async def test_deployment_grant_sees_the_root_and_every_file(
     """A deployment grant covers its services, including the root path."""
     await sign_in(web_client, "deployment_admin")
     page = (await web_client.get(f"/services/{ids.mysql}")).text
-    assert "/opt/rentals/prod" in page
+    assert "/opt/fancy/prod" in page
     assert set(environment_rows(page)) == {".env.db", ".env.db.app", ".env.db.secrets"}
     assert "You see" not in page
 

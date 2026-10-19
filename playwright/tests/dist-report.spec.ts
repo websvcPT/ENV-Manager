@@ -464,7 +464,7 @@ test.describe('other roles', () => {
       ]);
       await expect(report(page)).toContainText('The check could not run');
       await expect(addButton(page)).toHaveCount(0);
-      await expectNoValueInPage(page, '/opt/rentals');
+      await expectNoValueInPage(page, '/opt/fancy');
     } finally {
       await context.close();
     }
@@ -481,14 +481,14 @@ test.describe('other roles', () => {
     try {
       expect((await page.goto(`/environments/${owned}/dist`))?.status()).toBe(200);
       await expect(report(page)).toContainText('The check could not run');
-      await expectNoValueInPage(page, '/opt/rentals', '/srv/deployments');
+      await expectNoValueInPage(page, '/opt/fancy', '/srv/deployments');
       expect((await page.goto(`/environments/${other}/dist`))?.status()).toBe(404);
       expect((await page.goto(`/deployments/${prod}/dist`))?.status()).toBe(200);
       await expect(fileRows(page)).toHaveCount(1);
       await expect(fileRows(page)).toContainText('.env.db');
       await expect(page.locator('main')).not.toContainText('.env.db.app');
       await expect(page.locator('main')).not.toContainText('.env.db.secrets');
-      await expectNoValueInPage(page, '/opt/rentals');
+      await expectNoValueInPage(page, '/opt/fancy');
     } finally {
       await context.close();
     }

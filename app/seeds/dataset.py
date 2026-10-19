@@ -7,10 +7,10 @@ fixtures by hand in a test.
 Structure (project, deployment, service, environments):
 
     Fancy Proj. Name
-      prod (/opt/rentals/prod)
+      prod (/opt/fancy/prod)
         mysql: .env.db, .env.db.secrets
         web: .env.web
-      staging (/opt/rentals/staging)
+      staging (/opt/fancy/staging)
         web: .env.web
     billing
       main (/opt/billing/main)
@@ -22,7 +22,7 @@ Structure (project, deployment, service, environments):
 The first project is a display name (spaces, a dot and capitals), while its host folders keep
 plain paths.
 
-Allowed paths: /opt/rentals and /opt/billing (the deployment roots lie under them, except legacy).
+Allowed paths: /opt/fancy and /opt/billing (the deployment roots lie under them, except legacy).
 
 Deploy runs: Fancy Proj. Name/prod web succeeded (by admin, post-deploy ran), then mysql failed
 (by root, post-deploy skipped, the newest run of the project); billing/main has only a dry run, so
@@ -121,7 +121,7 @@ def seed_email(name: str) -> str:
 # The seeded project with a display name (capitals, a dot and spaces), and the plain name a
 # database seeded before project names became display names still holds it under.
 FANCY_PROJECT_NAME = "Fancy Proj. Name"
-_FORMER_FANCY_PROJECT_NAME = "rentals"
+_FORMER_FANCY_PROJECT_NAME = "fancy"
 
 # The stored command of the staging web service, and the texts older seeds stored for it and
 # for the demo services, which named their service with a placeholder.
@@ -840,10 +840,10 @@ async def seed(db: AsyncSession, crypto: CryptoService, demo_root: Path | None =
 
     deployments = SeedDeployments(
         fancy_prod=Deployment(
-            project_id=projects.fancy.id, name="prod", root_path="/opt/rentals/prod"
+            project_id=projects.fancy.id, name="prod", root_path="/opt/fancy/prod"
         ),
         fancy_staging=Deployment(
-            project_id=projects.fancy.id, name="staging", root_path="/opt/rentals/staging"
+            project_id=projects.fancy.id, name="staging", root_path="/opt/fancy/staging"
         ),
         billing_main=Deployment(
             project_id=projects.billing.id, name="main", root_path="/opt/billing/main"
@@ -901,7 +901,7 @@ async def seed(db: AsyncSession, crypto: CryptoService, demo_root: Path | None =
     )
 
     allowed_paths = (
-        AllowedPath(path="/opt/rentals", created_by_id=users.superadmin.id),
+        AllowedPath(path="/opt/fancy", created_by_id=users.superadmin.id),
         AllowedPath(path="/opt/billing", created_by_id=users.superadmin.id),
     )
     db.add_all(allowed_paths)

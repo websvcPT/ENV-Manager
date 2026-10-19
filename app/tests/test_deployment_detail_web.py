@@ -49,7 +49,7 @@ async def test_superadmin_sees_everything_and_the_edit_actions(
     assert response.headers["vary"] == "HX-Request"
     header = item_header_of(page)
     assert (header.type, header.title) == ("deployment", "Deployment: prod")
-    assert header.subtitle == "Project Fancy Proj. Name · /opt/rentals/prod"
+    assert header.subtitle == "Project Fancy Proj. Name · /opt/fancy/prod"
     assert header.details is None
     assert ">Failed<" in page
     assert section_links(page) == ["Services", "Deploy history", "AccessSuperadmin"]
@@ -110,7 +110,7 @@ async def test_environment_grant_gets_a_name_only_view_with_a_note(
     assert service_names(page) == ["mysql"]
     assert ".env.db v2" in body
     assert "Post-deploy exit code n/a, output truncated." in body
-    for hidden in (".env.db.secrets", ".env.web", "web</a>", "/opt/rentals", "Policies"):
+    for hidden in (".env.db.secrets", ".env.web", "web</a>", "/opt/fancy", "Policies"):
         assert hidden not in body
     assert item_header_of(body).subtitle == "Project Fancy Proj. Name"
 
@@ -161,7 +161,7 @@ async def test_empty_deployment_shows_empty_states(
         project_id = (
             await db.execute(select(Deployment.project_id).where(Deployment.id == ids.prod))
         ).scalar_one()
-        empty = Deployment(project_id=project_id, name="empty", root_path="/opt/rentals/empty")
+        empty = Deployment(project_id=project_id, name="empty", root_path="/opt/fancy/empty")
         db.add(empty)
         await db.commit()
         empty_id = empty.id

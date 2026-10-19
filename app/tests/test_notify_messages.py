@@ -80,7 +80,7 @@ EVENTS: dict[str, NotificationEvent] = {
     "partial": BackupFinished(
         BackupStatus.PARTIAL, BackupTrigger.MANUAL, "x.db", 10, "The copy failed.", NOW, "root"
     ),
-    "path": SettingsChanged("allowed_paths", "added", "/opt/rentals", "root"),
+    "path": SettingsChanged("allowed_paths", "added", "/opt/fancy", "root"),
     "sign_in": SignInFromNewAddress("alice", "203.0.113.9"),
     "lockout_user": LockoutStarted(LockoutScope.USER, "alice", None, 15),
     "lockout_address": LockoutStarted(LockoutScope.ADDRESS, None, "203.0.113.9", 15),

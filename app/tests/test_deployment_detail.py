@@ -37,7 +37,7 @@ async def test_superadmin_sees_services_history_and_policies(
     assert detail is not None
     assert (detail.name, detail.project_name) == ("prod", "Fancy Proj. Name")
     assert detail.full and not detail.outside_allowed
-    assert detail.root_path == "/opt/rentals/prod"
+    assert detail.root_path == "/opt/fancy/prod"
     assert [row.name for row in detail.services] == ["mysql", "web"]
     assert [row.environments for row in detail.services] == [3, 1]
     mysql, web = detail.services
@@ -78,7 +78,7 @@ async def test_deployment_grant_sees_the_whole_deployment(
     detail = await _detail(db, seed_data.users.deployment_admin, prod)
     assert detail is not None and detail.full
     assert [row.name for row in detail.services] == ["mysql", "web"]
-    assert detail.policies is not None and detail.root_path == "/opt/rentals/prod"
+    assert detail.policies is not None and detail.root_path == "/opt/fancy/prod"
 
 
 async def test_environment_grant_sees_only_its_path_to_the_file(
@@ -94,7 +94,7 @@ async def test_environment_grant_sees_only_its_path_to_the_file(
     assert detail.history[0].environments == ((".env.db", 2),)
     assert detail.can_check_dist
     shown = repr(detail)
-    for hidden in (".env.db.secrets", ".env.web", "web", "/opt/rentals/prod"):
+    for hidden in (".env.db.secrets", ".env.web", "web", "/opt/fancy/prod"):
         assert hidden not in shown
 
 
@@ -162,7 +162,7 @@ async def test_a_deployment_outside_the_allowed_paths_is_flagged(
     prod = seed_data.deployments.fancy_prod.id
     before = await _detail(db, seed_data.users.superadmin, prod)
     assert before is not None and not before.outside_allowed
-    await db.execute(delete(AllowedPath).where(AllowedPath.path == "/opt/rentals"))
+    await db.execute(delete(AllowedPath).where(AllowedPath.path == "/opt/fancy"))
     await db.commit()
     after = await _detail(db, seed_data.users.superadmin, prod)
     assert after is not None and after.outside_allowed

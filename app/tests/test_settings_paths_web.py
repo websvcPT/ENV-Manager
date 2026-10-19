@@ -82,8 +82,8 @@ async def test_the_table_lists_the_seeded_entries_with_status(root: httpx.AsyncC
     assert response.status_code == 200
     assert_never_cached(response)
     rows = rows_of(response.text)
-    assert {"/opt/rentals", "/opt/billing"} <= set(rows)
-    _id, badges, markup = rows["/opt/rentals"]
+    assert {"/opt/fancy", "/opt/billing"} <= set(rows)
+    _id, badges, markup = rows["/opt/fancy"]
     assert [label for _tone, label in badges] == ["Missing", "Not checked"]
     assert "The folder no longer exists." in markup
     assert re.search(r"<td[^>]*>2</td>", markup)
@@ -223,9 +223,9 @@ async def test_the_remove_dialog_states_what_happens_to_the_deployments(
     root: httpx.AsyncClient, web_app: FastAPI
 ) -> None:
     """The text counts the deployments the removal leaves outside the list."""
-    fancy = await entry_id(web_app, "/opt/rentals")
+    fancy = await entry_id(web_app, "/opt/fancy")
     page = await _fragment(root, f"/settings/paths/{fancy}/remove")
-    assert 'data-fragment="path-remove"' in page and ">Remove /opt/rentals</h2>" in page
+    assert 'data-fragment="path-remove"' in page and ">Remove /opt/fancy</h2>" in page
     assert "Nothing is deleted. The 2 deployments under this path are flagged as outside" in page
     assert "or the deployments are moved." in page
     billing = await entry_id(web_app, "/opt/billing")
@@ -250,7 +250,7 @@ async def test_removing_a_path_audits_announces_and_flags_its_deployments(
 ) -> None:
     """The entry goes, the audit entry counts the flagged deployments and the deployment page
     shows the outside state."""
-    fancy = await entry_id(web_app, "/opt/rentals")
+    fancy = await entry_id(web_app, "/opt/fancy")
     response = await post(root, f"/settings/paths/{fancy}/remove")
     assert response.status_code == 204
     assert json.loads(response.headers["hx-trigger"]) == CHANGED_AND_CLOSED
@@ -259,8 +259,8 @@ async def test_removing_a_path_audits_announces_and_flags_its_deployments(
         removal = (
             await db.execute(select(AuditEntry).where(AuditEntry.action == "allowed_path.remove"))
         ).scalar_one()
-    assert removal.details == {"path": "/opt/rentals", "deployments_outside": 2}
-    assert notifier.events == [SettingsChanged("allowed_paths", "removed", "/opt/rentals", "root")]
+    assert removal.details == {"path": "/opt/fancy", "deployments_outside": 2}
+    assert notifier.events == [SettingsChanged("allowed_paths", "removed", "/opt/fancy", "root")]
     async with web_app.state.session_factory() as db:
         found = await db.execute(select(Deployment.id).where(Deployment.name == "prod"))
         prod_id = found.scalar_one()
@@ -272,7 +272,7 @@ async def test_removing_an_entry_twice_answers_that_it_is_gone(
     root: httpx.AsyncClient, web_app: FastAPI
 ) -> None:
     """The second removal is a 409 with the dialog saying so and the table refreshing."""
-    fancy = await entry_id(web_app, "/opt/rentals")
+    fancy = await entry_id(web_app, "/opt/fancy")
     assert (await post(root, f"/settings/paths/{fancy}/remove")).status_code == 204
     again = await post(root, f"/settings/paths/{fancy}/remove")
     assert again.status_code == 409

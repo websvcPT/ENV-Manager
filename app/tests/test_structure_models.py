@@ -49,7 +49,7 @@ async def _build_tree(session: AsyncSession) -> Tree:
         password_hash=PLACEHOLDER_HASH,
         group=UserGroup.ADMIN,
     )
-    project = Project(name="way2rentals")
+    project = Project(name="acme-shop")
     session.add_all([user, project])
     await session.flush()
     deployment = Deployment(project_id=project.id, name="deployment-a", root_path="/opt/a")
@@ -102,7 +102,7 @@ async def test_names_are_unique_within_their_parent(engine: AsyncEngine) -> None
     factory = create_session_factory(engine)
     async with factory() as session:
         tree = await _build_tree(session)
-        session.add(Project(name="way2rentals"))
+        session.add(Project(name="acme-shop"))
         with pytest.raises(IntegrityError):
             await session.commit()
     async with factory() as session:

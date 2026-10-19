@@ -74,7 +74,7 @@ test.describe('superadmin', () => {
     await expectItemHeader(page, 'service', 'web');
     await expect(header(page).locator('[data-status]')).toHaveText(['1 pending']);
     await expect(header(page).locator('p')).toContainText('Deployment staging in Fancy Proj. Name');
-    await expect(header(page).locator('p')).toContainText('/opt/rentals/staging');
+    await expect(header(page).locator('p')).toContainText('/opt/fancy/staging');
     await expect(page.locator('nav[aria-label="Sections"] a')).toHaveText([
       'Environments 4',
       'Deploy history',
@@ -260,7 +260,7 @@ test.describe('environment grant', () => {
     await expect(page.locator('#postdeploy')).toContainText(
       'This service also loads environments outside your access.',
     );
-    await expect(header(page).locator('p')).not.toContainText('/opt/rentals');
+    await expect(header(page).locator('p')).not.toContainText('/opt/fancy');
     await expect(page.locator('main')).not.toContainText('.env.db.secrets');
   });
 });
@@ -271,7 +271,7 @@ test.describe('deployment grant', () => {
   test('sees the root path and every file of the service', async ({ page, browser }) => {
     const id = await prodMysql(browser);
     await page.goto(`/services/${id}`);
-    await expect(header(page).locator('p')).toContainText('/opt/rentals/prod');
+    await expect(header(page).locator('p')).toContainText('/opt/fancy/prod');
     await expect(visibleRows(page)).toHaveCount(3);
     await expect(page.locator('[role="note"]')).toHaveCount(0);
   });

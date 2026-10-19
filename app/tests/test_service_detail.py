@@ -141,7 +141,7 @@ async def test_deployment_grant_sees_the_path_and_every_file(
     """A deployment grant covers the services below it, root path included."""
     header = await _header(db, seed_data.users.deployment_admin, seed_data.services.mysql.id)
     assert header is not None
-    assert header.root_path == "/opt/rentals/prod" and header.hidden_environments == 0
+    assert header.root_path == "/opt/fancy/prod" and header.hidden_environments == 0
     assert len(header.visible_environment_ids) == 3
 
 

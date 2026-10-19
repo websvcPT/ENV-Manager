@@ -92,7 +92,7 @@ test.describe('superadmin without a Docker socket', () => {
     );
     await expect(form.locator('#wd')).toBeDisabled();
     await expect(form.locator('#wd')).toHaveValue('');
-    await expect(form.locator('#wd')).toHaveAttribute('placeholder', '/opt/rentals/staging');
+    await expect(form.locator('#wd')).toHaveAttribute('placeholder', '/opt/fancy/staging');
     await expect(form.locator('#cmds')).toBeDisabled();
     await expect(form.locator('#cmds')).toHaveValue(STORED_COMMAND);
     await expect(form.locator('#timeout')).toBeDisabled();

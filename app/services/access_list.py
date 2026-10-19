@@ -141,7 +141,7 @@ class AccessList:
 
     @property
     def subtitle(self) -> str:
-        """The item as a phrase, such as ``project rentals``."""
+        """The item as a phrase, such as ``project billing``."""
         return f"{self.node.kind.value} {self.item_name}"
 
     @property
