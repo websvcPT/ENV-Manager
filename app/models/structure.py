@@ -192,6 +192,7 @@ class EnvironmentVersion(Base):
     __tablename__ = "environment_versions"
     __table_args__ = (
         UniqueConstraint("environment_id", "number", name="uq_environment_versions_env_number"),
+        {"sqlite_autoincrement": True},
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

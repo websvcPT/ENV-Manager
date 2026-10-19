@@ -22,6 +22,8 @@ from app.services.app_settings import (
 from app.services.audit import AuditActor
 from app.services.backup_lock import hold_backup_lock
 from app.services.backup_schedule import (
+    AUDIT_PURGE_JOB,
+    BACKUP_AGE_JOB,
     BACKUP_JOB,
     GIT_JOB,
     PENDING_LOGINS_JOB,
@@ -37,6 +39,9 @@ from app.tests.backup_helpers import (
 )
 
 NOW = datetime(2026, 10, 18, 12, 0, tzinfo=UTC)
+
+
+HOUSEKEEPING_JOBS = (PENDING_LOGINS_JOB, BACKUP_AGE_JOB, AUDIT_PURGE_JOB)
 
 
 def fire_times(schedule: str, zone: str, count: int) -> list[datetime]:
@@ -118,13 +123,13 @@ async def test_the_stored_schedule_is_applied_and_replaced(
     await scheduler.reload()
     daily = scheduler.next_backup()
     assert daily is not None and (daily.hour, daily.minute) == (2, 0)
-    assert scheduler.job_ids() == sorted([BACKUP_JOB, PENDING_LOGINS_JOB])
+    assert scheduler.job_ids() == sorted([BACKUP_JOB, *HOUSEKEEPING_JOBS])
 
     await save_backup_settings(factory, schedule="weekly")
     await scheduler.reload()
     weekly = scheduler.next_backup()
     assert weekly is not None and weekly.weekday() == 6
-    assert scheduler.job_ids() == sorted([BACKUP_JOB, PENDING_LOGINS_JOB])
+    assert scheduler.job_ids() == sorted([BACKUP_JOB, *HOUSEKEEPING_JOBS])
 
     await save_backup_settings(factory, schedule="six_hours")
     await scheduler.reload()
@@ -134,7 +139,7 @@ async def test_the_stored_schedule_is_applied_and_replaced(
     await save_backup_settings(factory, schedule="off")
     await scheduler.reload()
     assert scheduler.next_backup() is None
-    assert scheduler.job_ids() == [PENDING_LOGINS_JOB]
+    assert scheduler.job_ids() == sorted(HOUSEKEEPING_JOBS)
 
     await save_backup_settings(factory, schedule="daily")
     await scheduler.reload()
@@ -231,7 +236,7 @@ async def test_the_application_starts_the_scheduler_with_the_stored_schedule(
     """The lifespan registers the backup job from the settings, the hourly git push and the
     housekeeping job."""
     scheduler: BackupScheduler = web_app.state.backup_scheduler
-    assert scheduler.job_ids() == sorted([BACKUP_JOB, GIT_JOB, PENDING_LOGINS_JOB])
+    assert scheduler.job_ids() == sorted([BACKUP_JOB, GIT_JOB, *HOUSEKEEPING_JOBS])
     run = scheduler.next_backup()
     assert run is not None and run.hour == 2
 

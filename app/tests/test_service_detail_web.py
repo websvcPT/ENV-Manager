@@ -9,8 +9,19 @@ from fastapi import FastAPI
 from sqlalchemy import select
 from sqlalchemy.exc import OperationalError
 
-from app.models import Deployment, Service
+from app.models import (
+    Deployment,
+    DeployResult,
+    DeployResultStatus,
+    DeployRun,
+    DeployStatus,
+    DeployTrigger,
+    Environment,
+    Service,
+)
+from app.models.types import utc_now
 from app.tests.conftest import sign_in
+from app.tests.settings_helpers import browser_as
 from app.tests.web_helpers import HTMX, item_header_of, main_of, section_links
 from app.web import service_detail as service_detail_web
 
@@ -101,6 +112,54 @@ async def test_superadmin_sees_everything_and_the_command_settings(
     assert ">Success<" in page and ">Blocked<" in page
     assert "Command text and settings are visible to the superadmin only." not in page
     assert page.count("hx-ignore") == 2
+
+
+async def halt_replica(web_app: FastAPI, ids: ServiceIds) -> None:
+    """Record a newer halted attempt on the staging web replica file, so its row shows Halted."""
+    async with web_app.state.session_factory() as db:
+        replica = (
+            await db.execute(select(Environment).where(Environment.name == ".env.web.replica"))
+        ).scalar_one()
+        run = DeployRun(
+            service_id=ids.staging_web,
+            service_name="web",
+            deployment_name="staging",
+            trigger=DeployTrigger.UI,
+            dry_run=False,
+            status=DeployStatus.HALTED,
+            started_at=utc_now(),
+            finished_at=utc_now(),
+        )
+        db.add(run)
+        await db.flush()
+        db.add(
+            DeployResult(
+                run_id=run.id,
+                environment_id=replica.id,
+                environment_name=replica.name,
+                target_path=replica.target_path,
+                status=DeployResultStatus.HALTED,
+            )
+        )
+        await db.commit()
+
+
+async def test_a_halted_file_offers_the_drift_view_to_everyone_who_can_open_it(
+    web_app: FastAPI, ids: ServiceIds
+) -> None:
+    """The drift link sits in the row actions of a Halted row only, for every role."""
+    await halt_replica(web_app, ids)
+    for user, expected in (
+        ("root", ["edit", "history", "drift", "dist"]),
+        ("admin", ["edit", "history", "drift", "dist"]),
+        ("viewer", ["view", "history", "drift"]),
+    ):
+        async with browser_as(web_app, user) as http:
+            page = (await http.get(f"/services/{ids.staging_web}")).text
+        assert environment_rows(page)[".env.web.replica"] == "halted", user
+        assert row_actions(page, ".env.web.replica") == expected, user
+        assert row_actions(page, ".env.web") == [a for a in expected if a != "drift"], user
+        assert re.search(r'href="/environments/\d+/drift" id="env-\d+-drift"', page), user
 
 
 async def test_dist_and_versions_read_from_the_stored_figures(

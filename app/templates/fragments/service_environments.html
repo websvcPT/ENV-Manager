@@ -10,7 +10,7 @@
 {{ row_actions(prefix ~ row.id, row.name, [
   {"key": "edit" if row.can_edit else "view", "label": "Edit" if row.can_edit else "View", "icon": "pencil" if row.can_edit else "eye", "href": "/environments/" ~ row.id, "primary": true},
   {"key": "history", "label": "History", "icon": "clock", "href": "/environments/" ~ row.id ~ "/history"}
-] + ([{"key": "dist", "label": "Compare to dist", "icon": "diff", "href": "/environments/" ~ row.id ~ "/dist"}] if row.can_check_dist else [])) }}
+] + ([{"key": "drift", "label": "Open drift view", "icon": "warning", "href": "/environments/" ~ row.id ~ "/drift"}] if row.status == "halted" else []) + ([{"key": "dist", "label": "Compare to dist", "icon": "diff", "href": "/environments/" ~ row.id ~ "/dist"}] if row.can_check_dist else [])) }}
 {%- endmacro %}
 {% set retry_url = "/services/" ~ service.id ~ "/environments" %}
 <section aria-labelledby="environments-title" data-fragment="environments-table" id="environments" hx-get="{{ retry_url }}" hx-trigger="deploy-finished from:body, version-saved from:body" hx-swap="outerHTML" hx-status:503="swap:outerHTML target:#environments" class="rounded-panel border border-line bg-surface shadow-panel overflow-hidden"><div class="flex flex-wrap items-center gap-3 px-4 py-4 md:px-5"><h2 id="environments-title" class="flex-1 text-lg font-bold">Environments</h2>{{ add_environment }}</div>

@@ -130,6 +130,19 @@ async def test_shell_marks_follow_the_surface_they_sit_on(web_client: httpx.Asyn
         assert "ENV Manager" in part
 
 
+async def test_the_collapsed_sidebar_keeps_the_brand_name_for_assistive_technology(
+    web_client: httpx.AsyncClient,
+) -> None:
+    """Collapsing hides the heading visually only (it stays in the accessibility tree), so the
+    mark next to it still has a name."""
+    await sign_in(web_client, "viewer")
+    page = (await web_client.get("/projects")).text
+    sidebar = region(page, r'<nav aria-label="Primary".*?</nav>')
+    heading = region(sidebar, r"<span data-brand-name[^>]*>ENV Manager</span>")
+    assert "group-data-[collapsed=true]:sr-only" in heading
+    assert "group-data-[collapsed=true]:hidden" not in heading
+
+
 async def test_lockup_appears_only_on_pages_without_the_shell(
     web_client: httpx.AsyncClient,
 ) -> None:

@@ -241,6 +241,7 @@ async def save_general_route(
     context: ManageSettings,
     time_zone: Annotated[str, Form()] = "",
     date_format: Annotated[str, Form()] = "",
+    audit_retention_days: Annotated[str, Form()] = "",
     dist_missing_policy: Annotated[str, Form()] = "",
     drift_policy: Annotated[str, Form()] = "",
     missing_target_policy: Annotated[str, Form()] = "",
@@ -252,6 +253,7 @@ async def save_general_route(
     form = GeneralForm(
         time_zone=time_zone,
         date_format=date_format,
+        audit_retention_days=audit_retention_days,
         dist_missing_policy=dist_missing_policy,
         drift_policy=drift_policy,
         missing_target_policy=missing_target_policy,

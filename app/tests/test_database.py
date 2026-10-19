@@ -411,6 +411,54 @@ async def _migrate(
             await connection.exec_driver_sql("PRAGMA foreign_keys=ON")
 
 
+async def test_the_versions_migration_keeps_every_version_stops_id_reuse_and_goes_back(
+    database_path: Path, backup_dir: Path
+) -> None:
+    """Rebuilding the versions table keeps the rows and what points at them, hands out ids from
+    a monotonic sequence afterwards, and the way back keeps the rows and drops the sequence."""
+    engine = create_engine(database_path)
+    try:
+        await _migrate(engine, "0017")
+        async with engine.begin() as connection:
+            for statement in TREE_STATEMENTS:
+                await connection.execute(text(statement))
+        await migrate_database(engine, database_path, backup_dir)
+        async with engine.begin() as connection:
+            table_sql = (
+                await connection.execute(
+                    text("SELECT sql FROM sqlite_master WHERE name = 'environment_versions'")
+                )
+            ).scalar_one()
+            kept = await connection.execute(text("SELECT count(*) FROM environment_versions"))
+            assert kept.scalar_one() == 1
+            violations = (await connection.execute(text("PRAGMA foreign_key_check"))).all()
+            await connection.execute(text("DELETE FROM environment_versions WHERE id = 1"))
+            await connection.execute(
+                text(
+                    "INSERT INTO environment_versions (environment_id, number, content_encrypted,"
+                    " content_hash, created_at) VALUES (1, 1, 'c', 'h', '2026-01-01')"
+                )
+            )
+            new_id = (
+                await connection.execute(text("SELECT id FROM environment_versions"))
+            ).scalar_one()
+        assert "AUTOINCREMENT" in table_sql and violations == []
+        assert new_id == 2
+        await _migrate(engine, "0017", down=True)
+        async with engine.connect() as connection:
+            earlier_sql = (
+                await connection.execute(
+                    text("SELECT sql FROM sqlite_master WHERE name = 'environment_versions'")
+                )
+            ).scalar_one()
+            rows = (await connection.execute(text("SELECT id FROM environment_versions"))).all()
+            violations = (await connection.execute(text("PRAGMA foreign_key_check"))).all()
+        assert "AUTOINCREMENT" not in earlier_sql
+        assert [row[0] for row in rows] == [2] and violations == []
+    finally:
+        await engine.dispose()
+
+
 async def test_the_second_factor_time_column_is_added_and_removed_in_place(
     database_path: Path, backup_dir: Path
 ) -> None:

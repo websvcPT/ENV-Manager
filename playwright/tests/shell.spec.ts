@@ -157,7 +157,12 @@ test.describe('sidebar', () => {
     await expectImageLoaded(mark);
     await expect(mark).toBeVisible();
     expect(await renderedSize(mark)).toEqual({ width: 36, height: 36 });
-    await expect(nav.getByText('ENV Manager', { exact: true })).toBeHidden();
+    const name = nav.locator('[data-brand-name]');
+    await expect(name).toHaveText('ENV Manager');
+    const box = await name.boundingBox();
+    expect(box?.width ?? 0).toBeLessThanOrEqual(1);
+    expect(box?.height ?? 0).toBeLessThanOrEqual(1);
+    await expect(nav).toMatchAriaSnapshot('- text: ENV Manager');
   });
 });
 

@@ -10,6 +10,9 @@
 {{ select_field("df", "Date format", date_formats, selected=form.date_format, name="date_format", error=errors.get("date_format")) }}
 </div>
 <p class="-mt-1 text-xs text-ink2">Times on the audit log, project activity and user activity are shown in this zone and format. They are stored in UTC.</p>
+<div class="grid gap-4 md:grid-cols-2">
+{{ field("ar", "Keep audit entries for (days)", name="audit_retention_days", value=form.audit_retention_days, mono=true, hint="A daily job deletes older entries and records the purge. Enter 0 to keep every entry.", error=errors.get("audit_retention_days"), autocomplete="off", inputmode="numeric", maxlength="6") }}
+</div>
 <p class="text-xs font-bold uppercase tracking-wide text-ink3">Defaults for new deployments</p>
 <div class="grid gap-4 md:grid-cols-4">
 {{ select_field("d1", "Missing dist keys", dist_choices, selected=form.dist_missing_policy, name="dist_missing_policy", error=errors.get("dist_missing_policy")) }}

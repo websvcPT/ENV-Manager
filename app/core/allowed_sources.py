@@ -14,6 +14,7 @@ from collections.abc import Callable, Sequence
 
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from app.core.client_address import FALLBACK_SCOPE_KEY
 from app.core.cors import is_api_path
 from app.core.log import get_logger
 from app.core.networks import IPNetwork, NetworkSet, parse_address
@@ -86,8 +87,9 @@ class AllowedSourcesMiddleware:
     """Answer 403 to every request whose client address is not inside an allowed network.
 
     The address is the one the proxy header middleware resolved. A request with no usable client
-    address is refused too. Under ``/api`` the answer has the API error shape, elsewhere it is a
-    short plain text line; neither says anything about the list.
+    address is refused too, and so is one whose client is only the fallback for an unreadable
+    forwarded hop (the real client is not known). Under ``/api`` the answer has the API error
+    shape, elsewhere it is a short plain text line; neither says anything about the list.
     """
 
     def __init__(
@@ -111,7 +113,11 @@ class AllowedSourcesMiddleware:
             return
         client = scope.get("client")
         address = parse_address(client[0]) if client else None
-        if address is not None and self.allowed.contains(address):
+        if (
+            address is not None
+            and not scope.get(FALLBACK_SCOPE_KEY)
+            and self.allowed.contains(address)
+        ):
             await self.app(scope, receive, send)
             return
         self.denials.record(None if address is None else str(address))

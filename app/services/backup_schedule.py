@@ -1,5 +1,5 @@
-"""The in-process scheduler: the scheduled backup, the hourly git push and the housekeeping of
-pending sign-ins.
+"""The in-process scheduler: the scheduled backup, the hourly git push, the hourly read of the
+backup age gauge, the daily audit retention purge and the housekeeping of pending sign-ins.
 
 APScheduler runs with its default in-memory job store. Nothing about the jobs is persisted by
 APScheduler: the schedule lives in our own settings table and is read again whenever it can have
@@ -23,13 +23,16 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core import metrics
 from app.core.display_time import DisplayTime
 from app.core.log import get_logger
 from app.models import BackupTrigger
 from app.services.app_settings import BackupSettings, load_stored_settings
 from app.services.audit import AuditActor
+from app.services.audit_retention import purge_old_audit_entries
 from app.services.backup_events import BackupNotifier
 from app.services.backup_lock import BackupBusyError
+from app.services.backup_records import latest_snapshot_time
 from app.services.backup_run import BackupLocations, run_backup
 from app.services.pending_logins import purge_expired_pending_logins
 
@@ -38,6 +41,10 @@ log = get_logger("scheduler")
 BACKUP_JOB = "backup"
 GIT_JOB = "git-push"
 PENDING_LOGINS_JOB = "pending-logins"
+BACKUP_AGE_JOB = "backup-age"
+AUDIT_PURGE_JOB = "audit-retention"
+AUDIT_PURGE_HOUR = 3
+AUDIT_PURGE_MINUTE = 30
 SCHEDULER_ACTOR = "scheduler"
 MISFIRE_GRACE_SECONDS = 3600
 HOUSEKEEPING_HOURS = 1
@@ -86,6 +93,23 @@ class BackupScheduler:
             replace_existing=True,
             coalesce=True,
             max_instances=1,
+        )
+        self._scheduler.add_job(
+            self.refresh_backup_age,
+            IntervalTrigger(hours=HOUSEKEEPING_HOURS),
+            id=BACKUP_AGE_JOB,
+            replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+        )
+        self._scheduler.add_job(
+            self.purge_audit_entries,
+            CronTrigger(hour=AUDIT_PURGE_HOUR, minute=AUDIT_PURGE_MINUTE, timezone=UTC),
+            id=AUDIT_PURGE_JOB,
+            replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+            misfire_grace_time=MISFIRE_GRACE_SECONDS,
         )
         if self._git_push is not None:
             self._scheduler.add_job(
@@ -159,6 +183,26 @@ class BackupScheduler:
             log.info("the scheduled backup was skipped, another backup or restore is running")
         except Exception as error:
             log.error("the scheduled backup failed: %s", type(error).__name__)
+
+    async def refresh_backup_age(self) -> None:
+        """Set the backup age gauge from the newest backup in the database.
+
+        A backup taken by the command line is only in the database, so the hourly read is what
+        brings it into the gauge of a running server.
+        """
+        try:
+            async with self._session_factory() as db:
+                metrics.backup_clock.reset(await latest_snapshot_time(db))
+        except Exception as error:
+            log.error("reading the newest backup time failed: %s", type(error).__name__)
+
+    async def purge_audit_entries(self) -> None:
+        """Delete the audit entries older than the retention setting and audit the purge."""
+        try:
+            async with self._session_factory() as db:
+                await purge_old_audit_entries(db, AuditActor.system(SCHEDULER_ACTOR))
+        except Exception as error:
+            log.error("purging old audit entries failed: %s", type(error).__name__)
 
     async def purge_pending_logins(self) -> None:
         """Remove pending sign-ins that have expired."""

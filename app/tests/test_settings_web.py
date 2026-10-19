@@ -49,6 +49,7 @@ SECURITY_FORM = {
 GENERAL_FORM = {
     "time_zone": "UTC",
     "date_format": "iso",
+    "audit_retention_days": "90",
     "dist_missing_policy": "block",
     "drift_policy": "halt",
     "missing_target_policy": "create",
@@ -395,6 +396,7 @@ async def test_the_general_tab_shows_the_defaults(root: httpx.AsyncClient) -> No
     assert selected_of(page, "df") == "iso"
     assert [selected_of(page, name) for name in ("d1", "d2", "d3")] == ["block", "halt", "create"]
     assert [value_of(page, name) for name in ("d4", "d5", "d6")] == ["0600", "", ""]
+    assert value_of(page, "ar") == "90"
     assert '<option value="Europe/Lisbon"' in page and '<option value="UTC" selected' in page
     for label in ("2026-10-17 09:42", "17/10/2026 09:42", "10/17/2026 9:42 AM"):
         assert label in page
@@ -408,6 +410,7 @@ async def test_saving_the_general_tab_stores_audits_and_fills_the_deployment_for
     form = {
         "time_zone": "Europe/Lisbon",
         "date_format": "day_first",
+        "audit_retention_days": "30",
         "dist_missing_policy": "warn",
         "drift_policy": "backup_overwrite",
         "missing_target_policy": "halt",
@@ -425,6 +428,7 @@ async def test_saving_the_general_tab_stores_audits_and_fills_the_deployment_for
         "day_first",
         "0640",
     )
+    assert general.audit_retention_days == 30 and value_of(response.text, "ar") == "30"
     (entry,) = await settings_entries(web_app)
     settings = [change["setting"] for change in changes_of(entry)]
     assert settings == [f"general.{name}" for name in form]
@@ -446,6 +450,10 @@ async def test_saving_the_general_tab_stores_audits_and_fills_the_deployment_for
     [
         ("time_zone", "Mars/Base", "tz"),
         ("date_format", "x", "df"),
+        ("audit_retention_days", "-1", "ar"),
+        ("audit_retention_days", "abc", "ar"),
+        ("audit_retention_days", "", "ar"),
+        ("audit_retention_days", "36501", "ar"),
         ("dist_missing_policy", "never", "d1"),
         ("drift_policy", "x", "d2"),
         ("missing_target_policy", "x", "d3"),

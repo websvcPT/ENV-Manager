@@ -505,6 +505,7 @@ test.describe('general', () => {
       '17/10/2026 09:42',
       '10/17/2026 9:42 AM',
     ]);
+    await expect(form.locator('#ar')).toHaveValue('90');
     await expect(form.locator('#d1')).toHaveValue('block');
     await expect(form.locator('#d2')).toHaveValue('halt');
     await expect(form.locator('#d3')).toHaveValue('create');
@@ -537,9 +538,11 @@ test.describe('general', () => {
 
   test('a refused value shows its reason next to the field', async ({ page }) => {
     await page.goto('/settings/general');
+    await page.locator('#ar').fill('-3');
     await page.locator('#d4').fill('999');
     await page.locator('#d5').fill('bad name!');
     await page.locator('#general button[type="submit"]').click();
+    await expect(page.locator('#ar-e')).toHaveText('Enter a whole number from 0 to 36500.');
     await expect(page.locator('#d4-e')).toHaveText('Use an octal mode such as 0600.');
     await expect(page.locator('#d5-e')).toContainText('Owner must be a user or group name');
     await expect(page.locator('#d4')).toHaveValue('999');

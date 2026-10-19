@@ -314,3 +314,29 @@ async def test_failed_sign_ins_count_under_the_forwarded_address_whatever_a_clie
     assert by_kind[(LoginCounterKind.IP, "203.0.113.9")] == 1
     assert (LoginCounterKind.IP, "127.0.0.1") not in by_kind
     assert entry.ip_address == "203.0.113.9"
+
+
+async def test_failed_sign_ins_count_under_the_proxy_when_a_hop_is_unreadable(
+    trusted_loopback: None, web_client: httpx.AsyncClient, web_app: FastAPI
+) -> None:
+    """A trusted proxy that wrote an unreadable hop still gets counters, logs and audit entries
+    under its own address instead of none."""
+    await web_client.get("/healthz")
+    response = await web_client.post(
+        "/login",
+        data={
+            "identifier": "viewer@example.test",
+            "password": "wrong password",
+            "csrf_token": web_client.cookies[CSRF_COOKIE_NAME],
+        },
+        headers={"X-Forwarded-For": "unknown"},
+    )
+    assert response.status_code == 401
+    async with web_app.state.session_factory() as db:
+        counters = (await db.execute(select(LoginCounter))).scalars().all()
+        entry = (
+            await db.execute(select(AuditEntry).where(AuditEntry.action == "login.failure"))
+        ).scalar_one()
+    by_kind = {(row.kind, row.subject): row.failures for row in counters}
+    assert by_kind[(LoginCounterKind.IP, "127.0.0.1")] == 1
+    assert entry.ip_address == "127.0.0.1"

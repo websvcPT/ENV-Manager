@@ -4,8 +4,9 @@ The instruments come from one meter that binds to whatever meter provider the pr
 OpenTelemetry export is not configured that provider is the API's no-op proxy, so recording is a
 call that does nothing. Labels are fixed words only (a result, a status, a trigger, a scope):
 never a name, an address, a path or any value. The backup age gauge reads a timestamp held in
-this module, which the lifespan seeds from the database once and every backup updates, so a scrape
-never queries the database.
+this module, which the lifespan seeds from the database, every backup updates and the hourly
+scheduler job reads again (so a backup taken by the command line shows up), so a scrape never
+queries the database.
 """
 
 from collections.abc import Iterable

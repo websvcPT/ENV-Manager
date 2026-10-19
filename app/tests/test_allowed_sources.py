@@ -196,7 +196,8 @@ async def test_behind_a_trusted_proxy_the_list_applies_to_the_forwarded_client()
 
 
 async def test_an_unreadable_forwarded_list_is_refused_even_if_the_proxy_is_allowed() -> None:
-    """Garbage in the header never turns into the proxy's own, possibly allowed, address."""
+    """The proxy's own address stands in for the client but is never accepted as one: with a
+    list set, an unreadable hop fails closed."""
     application = build_app(allowed_sources=["203.0.113.50"], trusted_proxies=["203.0.113.50"])
     async with client_from(application, "203.0.113.50") as http:
         assert (await http.get("/page")).status_code == 200

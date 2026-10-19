@@ -99,9 +99,13 @@ server's access log all use:
 - The list is read from the right and the walk stops at the first address that is not a trusted
   proxy, so whatever a client wrote to the left of it (an `unknown` or any other junk it
   prepended) is never read and changes nothing. If the walk meets an entry that is not an address
-  before that (a trusted hop wrote something unreadable, or a trailing comma) the request has no
-  client address. It never falls back to the proxy's own address, which may be on the allowed
-  list; with allowed sources set such a request is refused.
+  before that (a trusted hop wrote something unreadable, or a trailing comma) the client becomes
+  the address of the trusted hop that wrote it (the proxy you connect to when its right-most
+  entry is the unreadable one), so the sign-in and API counters, lockouts, logs and audit entries
+  always have an address, and one warning line per proxy address names that proxy (never the
+  unreadable text). The request is marked as having an unknown client: with allowed sources set
+  it is refused, because the proxy's own address says nothing about where the client is. Fix the
+  proxy so it writes valid addresses.
 
 The allowed sources check runs right after the security headers, before CORS, CSRF, sessions and
 any database access: a refused request opens no database session, writes no audit entry and sets
@@ -131,7 +135,7 @@ secret, trusted proxies and allowed sources stay in environment variables.
 | Allowed paths | The list with mounted and writable status and the deployments under each entry, add with a live check, remove behind a confirm dialog. |
 | Security | Idle and absolute session timeouts, failed logins before lockout per user, per address and for the API per address, lockout duration, minimum password length, and the two-factor policy (Optional, shown read-only). |
 | Post-deploy | The Docker socket status and the switch for post-deploy commands. |
-| General | Time zone and date format, the defaults of a new deployment, and the read-only diagnostics. |
+| General | Time zone and date format, audit retention, the defaults of a new deployment, and the read-only diagnostics. |
 | Backup | Schedule, retention, an optional extra destination, the list of backups with Run now, Download and a confirmed Restore (see Backup and restore). |
 | SMTP | The mail server (host, port, TLS mode, username, password, from address) and a Send test mail button (see Notifications). |
 | Notifications | The event matrix: a switch for each event and who receives the events about a project, and the deploy webhook (address, shared secret, switch and Send test event; see Notifications). |
@@ -156,8 +160,11 @@ secret, trusted proxies and allowed sources stay in environment variables.
   service page say the same. Force does not override it.
 - **General.** The time zone and date format apply to the times on the audit log, project
   activity and user activity (stored times stay UTC; the audit date filters are days of that zone;
-  the CSV export stays UTC). The defaults (missing dist keys, drift, missing target, file mode,
-  owner and group) pre-fill the new deployment form; a deployment keeps its own values afterwards.
+  the CSV export stays UTC). The audit retention (90 days by default, 0 keeps every entry) is
+  applied by a daily job at 03:30 UTC that deletes the entries older than that in batches and
+  writes one `audit.purged` entry with the count and the cutoff. The defaults (missing dist keys,
+  drift, missing target, file mode, owner and group) pre-fill the new deployment form; a
+  deployment keeps its own values afterwards.
   The diagnostics show whether error reporting and OpenTelemetry are on, the OTLP endpoint host
   (the host name only), the version, the environment, the trusted proxies, the allowed sources and
   the client address the application resolved for the request. No secret is shown.

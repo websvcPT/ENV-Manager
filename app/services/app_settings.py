@@ -67,10 +67,12 @@ class PostDeploySettings:
 
 @dataclass(frozen=True)
 class GeneralSettings:
-    """Time zone and date format for audit times, and the defaults of a new deployment."""
+    """Time zone and date format for audit times, how long audit entries are kept in days (zero
+    keeps every entry) and the defaults of a new deployment."""
 
     time_zone: str = "UTC"
     date_format: str = "iso"
+    audit_retention_days: int = 90
     dist_missing_policy: str = "block"
     drift_policy: str = "halt"
     missing_target_policy: str = "create"

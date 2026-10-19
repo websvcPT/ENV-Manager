@@ -16,7 +16,7 @@ from pydantic import SecretStr
 from starlette.types import Receive, Scope, Send
 
 from app.config import Settings
-from app.core.client_address import ProxyHeadersMiddleware, client_address
+from app.core.client_address import FALLBACK_SCOPE_KEY, ProxyHeadersMiddleware, client_address
 from app.core.middleware import install_middleware
 from app.core.networks import parse_networks
 
@@ -133,10 +133,60 @@ async def test_ports_in_the_list_are_dropped_from_the_address() -> None:
 
 
 @pytest.mark.parametrize("value", ["unknown", "203.0.113.9, unknown", "203.0.113.9,", ",", "x"])
-async def test_a_hop_that_is_not_an_address_leaves_no_client_never_the_proxy(value: str) -> None:
-    """Never fall back to the proxy's address: it may be on the allowed list."""
+async def test_an_unreadable_right_most_hop_gives_the_peer_and_marks_the_fallback(
+    value: str,
+) -> None:
+    """The proxy wrote the unreadable entry itself, so the proxy is the client and is marked."""
     scope = await resolve(["10.0.0.5"], ("10.0.0.5", 4000), [forwarded(value)])
-    assert scope["client"] is None
+    assert scope["client"] == ("10.0.0.5", 4000)
+    assert scope[FALLBACK_SCOPE_KEY] is True
+
+
+async def test_an_unreadable_hop_after_trusted_hops_gives_the_last_trusted_hop() -> None:
+    """The walk goes right to left over trusted hops and stops at the first unreadable entry."""
+    scope = await resolve(
+        ["10.0.0.0/8"], ("10.0.0.5", 1), [forwarded("198.51.100.20, garbage, 10.1.2.3, 10.1.2.4")]
+    )
+    assert scope["client"] == ("10.1.2.3", 0)
+    assert scope[FALLBACK_SCOPE_KEY] is True
+
+
+async def test_a_readable_list_and_a_request_without_the_header_are_not_marked() -> None:
+    """Only an unreadable hop marks the fallback."""
+    readable = await resolve(["10.0.0.5"], ("10.0.0.5", 4000), [forwarded("203.0.113.9")])
+    bare = await resolve(["10.0.0.5"], ("10.0.0.5", 4000))
+    untrusted = await resolve(["10.0.0.5"], ("198.51.100.7", 1), [forwarded("unknown")])
+    for scope in (readable, bare, untrusted):
+        assert FALLBACK_SCOPE_KEY not in scope
+
+
+async def test_the_unreadable_hop_warns_once_per_proxy_and_never_logs_the_value(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """One warning line per proxy address and process, without the client controlled text."""
+    caplog.set_level(logging.WARNING, logger="envmanager.client_address")
+    seen: list[Scope] = []
+
+    async def app(scope: Scope, receive: Receive, send: Send) -> None:
+        seen.append(scope)
+
+    middleware = ProxyHeadersMiddleware(app, networks("10.0.0.0/8"))
+    for peer, value in (
+        ("10.0.0.5", "secret-junk-1"),
+        ("10.0.0.5", "secret-junk-2"),
+        ("10.0.0.6", "secret-junk-3"),
+    ):
+        scope: Scope = {
+            "type": "http",
+            "scheme": "http",
+            "client": (peer, 1),
+            "headers": [forwarded(value)],
+        }
+        await middleware(scope, None, None)  # type: ignore[arg-type]
+    messages = [r.getMessage() for r in caplog.records if r.name == "envmanager.client_address"]
+    assert len(messages) == 2
+    assert "10.0.0.5" in messages[0] and "10.0.0.6" in messages[1]
+    assert not any("secret-junk" in message for message in messages)
 
 
 @pytest.mark.parametrize(

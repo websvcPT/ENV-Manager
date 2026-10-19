@@ -22,6 +22,7 @@ from app.services.auth_policy import AuthPolicy
 from app.services.backup_lock import BackupBusyError, hold_backup_lock
 from app.services.backup_records import latest_snapshot_time
 from app.services.backup_run import BackupLocations, run_backup
+from app.services.backup_schedule import BackupScheduler
 from app.services.git_errors import GitProblem
 from app.services.git_process import GitOutput
 from app.services.git_push import PushStatus, SkipReason
@@ -122,6 +123,26 @@ async def test_the_age_gauge_reads_the_held_time_and_no_database(
     (point,) = telemetry_recorder.points("envmanager.backup.age")
     assert 5 * 3600 <= point.value < 5 * 3600 + 60
     assert point.attributes == {}
+
+
+async def test_the_hourly_job_brings_a_command_line_backup_into_the_age_gauge(
+    factory: async_sessionmaker[AsyncSession],
+    locations: BackupLocations,
+    telemetry_recorder: Telemetry,
+    clean_backup_clock: metrics._BackupClock,
+) -> None:
+    """A backup the running process did not take only reaches the gauge through the database."""
+    assert await backup(factory, locations, BackupTrigger.CLI) is BackupStatus.SUCCESS
+    clean_backup_clock.reset()
+    assert telemetry_recorder.points("envmanager.backup.age") == []
+
+    scheduler = BackupScheduler(factory, locations, lambda: RecordingBackupNotifier())
+    await scheduler.refresh_backup_age()
+
+    (point,) = telemetry_recorder.points("envmanager.backup.age")
+    assert 0 <= point.value < 60
+    async with factory() as db:
+        assert clean_backup_clock.newest == await latest_snapshot_time(db)
 
 
 async def test_a_busy_backup_is_counted_as_busy_and_its_span_is_an_error(

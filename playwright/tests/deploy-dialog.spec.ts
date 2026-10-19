@@ -376,6 +376,20 @@ test.describe('deploying', () => {
     expect(host.read('environments/.env.drift')).toBe('ON_DISK=1\n');
     expect(host.read('environments/.env.new')).toBe('NEW=1\n');
     await expectFitsViewport(page);
+
+    await page.goto(`/services/${service}`);
+    const halted = page.locator('#environments [data-fragment="env-row"]:visible', {
+      hasText: '.env.drift',
+    });
+    await expect(halted.locator('[data-status="halted"]')).toBeVisible();
+    await expect(halted.locator('[data-row-action="drift"]')).toHaveAttribute(
+      'href',
+      `/environments/${drift}/drift`,
+    );
+    const written = page.locator('#environments [data-fragment="env-row"]:visible', {
+      hasText: '.env.new',
+    });
+    await expect(written.locator('[data-row-action="drift"]')).toHaveCount(0);
   });
 
   test('missing dist keys block the deploy and link the dist report', async ({

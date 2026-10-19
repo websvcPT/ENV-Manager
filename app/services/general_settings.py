@@ -1,10 +1,12 @@
-"""The General settings: time zone, date format and the defaults of a new deployment.
+"""The General settings: time zone, date format, audit retention and the defaults of a new
+deployment.
 
 The form values arrive as text and are checked together, so a refused save lists every problem.
 The defaults only pre-fill the new deployment form; a deployment keeps its own values after it is
 created, so changing a default never changes a deployment that exists.
 """
 
+import re
 from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +16,7 @@ from app.models import DistMissingPolicy, DriftPolicy, MissingTargetPolicy
 from app.services.app_settings import GeneralSettings, SettingChange, save_section
 from app.services.audit import AuditActor
 from app.services.deployments import FILE_MODE_PATTERN, parse_account
+from app.services.security_settings import Bounds
 
 DIST_MISSING_CHOICES = (("block", "Block"), ("warn", "Warn and continue"))
 DRIFT_CHOICES = (
@@ -22,6 +25,8 @@ DRIFT_CHOICES = (
     ("backup_overwrite", "Back up then overwrite"),
 )
 MISSING_TARGET_CHOICES = (("create", "Create"), ("halt", "Halt"))
+RETENTION_BOUNDS = Bounds(0, 36500)
+_WHOLE_NUMBER = re.compile(r"[0-9]{1,6}")
 
 
 @dataclass(frozen=True)
@@ -30,6 +35,7 @@ class GeneralForm:
 
     time_zone: str = "UTC"
     date_format: str = "iso"
+    audit_retention_days: str = "90"
     dist_missing_policy: str = "block"
     drift_policy: str = "halt"
     missing_target_policy: str = "create"
@@ -43,6 +49,7 @@ class GeneralForm:
         return cls(
             time_zone=settings.time_zone,
             date_format=settings.date_format,
+            audit_retention_days=str(settings.audit_retention_days),
             dist_missing_policy=settings.dist_missing_policy,
             drift_policy=settings.drift_policy,
             missing_target_policy=settings.missing_target_policy,
@@ -69,6 +76,15 @@ def validate_general(form: GeneralForm) -> GeneralSettings:
         errors["time_zone"] = "Choose a time zone from the list."
     if form.date_format not in DATE_FORMATS:
         errors["date_format"] = "Choose a date format from the list."
+    retention_text = form.audit_retention_days.strip()
+    retention = 0
+    if (
+        _WHOLE_NUMBER.fullmatch(retention_text) is None
+        or not RETENTION_BOUNDS.low <= int(retention_text) <= RETENTION_BOUNDS.high
+    ):
+        errors["audit_retention_days"] = RETENTION_BOUNDS.message
+    else:
+        retention = int(retention_text)
     if form.dist_missing_policy not in {policy.value for policy in DistMissingPolicy}:
         errors["dist_missing_policy"] = "Choose one of the options."
     if form.drift_policy not in {policy.value for policy in DriftPolicy}:
@@ -85,6 +101,7 @@ def validate_general(form: GeneralForm) -> GeneralSettings:
     return GeneralSettings(
         time_zone=zone,
         date_format=form.date_format,
+        audit_retention_days=retention,
         dist_missing_policy=form.dist_missing_policy,
         drift_policy=form.drift_policy,
         missing_target_policy=form.missing_target_policy,
