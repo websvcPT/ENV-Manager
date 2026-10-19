@@ -207,11 +207,12 @@ def create_app() -> FastAPI:
     install_tracer_provider(telemetry)
     application = TraceGuardedFastAPI(
         trusted_proxies=settings.trusted_proxies,
-        title="ENV Manager",
+        title=settings.title,
+        description=settings.description,
         version=VERSION,
-        docs_url=None,
-        redoc_url=None,
-        openapi_url=None,
+        docs_url=settings.docs_url,
+        redoc_url=settings.redoc_url,
+        openapi_url=settings.openapi_url,
         lifespan=lifespan,
         telemetry=telemetry,
     )

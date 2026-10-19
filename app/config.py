@@ -27,6 +27,12 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="ENVMANAGER_", extra="ignore")
 
+    title: str = "ENV Manager"
+    description: str = (
+        "A self-hosted web application for keeping the .env files, certificates and other text "
+        "configuration of your Docker Compose deployments in one place, versioned and encrypted, "
+        "and for putting them on the server safely."
+    )
     key: SecretStr | None = None
     key_file: Path | None = None
     base_url: str = "http://localhost:8080"
@@ -42,6 +48,22 @@ class Settings(BaseSettings):
     demo_root: Path | None = None
     docker_socket: Path = Path("/var/run/docker.sock")
     login_ip_max_failures: int | None = None
+    serve_docs: bool = False
+
+    @property
+    def openapi_url(self) -> str:
+        """Path of the OpenAPI schema, empty (the route is off) unless the docs are served."""
+        return "/openapi.json" if self.serve_docs else ""
+
+    @property
+    def docs_url(self) -> str:
+        """Path of the interactive API docs, empty (the route is off) unless they are served."""
+        return "/docs" if self.serve_docs else ""
+
+    @property
+    def redoc_url(self) -> str:
+        """Path of the ReDoc API docs, empty (the route is off) unless they are served."""
+        return "/redoc" if self.serve_docs else ""
 
     @property
     def database_path(self) -> Path:

@@ -19,6 +19,7 @@ services:
       ENVMANAGER_ENVIRONMENT: development
       ENVMANAGER_LOG_LEVEL: debug
       ENVMANAGER_CSRF_SECRET: dev-not-secret-change-me-0123456789abcdef
+      ENVMANAGER_SERVE_DOCS: "true"
       # Browser specs share one client address, so failed sign ins would otherwise lock it out
       # (20 in 15 minutes). Refused outside development and testing.
       ENVMANAGER_LOGIN_IP_MAX_FAILURES: "1000"

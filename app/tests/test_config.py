@@ -5,8 +5,9 @@ import pytest
 from fastapi import FastAPI
 from pydantic import SecretStr, ValidationError
 
-from app.config import Settings
+from app.config import Settings, get_settings
 from app.core.csrf import CSRF_COOKIE_NAME
+from app.main import create_app
 from app.services.app_settings import SecuritySettings
 from app.services.auth_policy import AuthPolicy, policy_from_settings
 
@@ -96,3 +97,32 @@ async def test_one_address_keeps_signing_in_under_a_raised_limit(
     """The startup override reaches the live policy: the address is not locked at twenty."""
     assert web_app.state.login_ip_max_failures == 60
     assert await sign_in_failures(web_app, 25) == 401
+
+
+async def get_status(path: str) -> int:
+    """The status of a GET to a freshly built application, outside any lifespan."""
+    get_settings.cache_clear()
+    try:
+        application = create_app()
+        transport = httpx.ASGITransport(app=application)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as http:
+            return (await http.get(path)).status_code
+    finally:
+        get_settings.cache_clear()
+
+
+@pytest.mark.parametrize("path", ["/docs", "/redoc", "/openapi.json"])
+async def test_the_api_docs_are_not_served_by_default(
+    path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Without ``ENVMANAGER_SERVE_DOCS`` the docs pages and the schema answer 404."""
+    monkeypatch.setenv("ENVMANAGER_ENVIRONMENT", "testing")
+    assert Settings().serve_docs is False
+    assert await get_status(path) == 404
+
+
+async def test_the_api_schema_is_served_when_asked(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``ENVMANAGER_SERVE_DOCS=true`` turns the schema route on."""
+    monkeypatch.setenv("ENVMANAGER_ENVIRONMENT", "testing")
+    monkeypatch.setenv("ENVMANAGER_SERVE_DOCS", "true")
+    assert await get_status("/openapi.json") == 200
