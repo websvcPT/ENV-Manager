@@ -31,7 +31,7 @@ from app.core.db import create_engine, create_session_factory
 from app.core.log import get_logger
 from app.core.migrations import upgrade_to_head
 from app.models import AuditResult, Backup, PendingLogin, UserSession
-from app.services.audit import AuditActor, record_actor_audit, record_audit
+from app.services.audit import AuditActor, record_audit, record_committed_audit
 from app.services.backup import (
     BUSY_TIMEOUT_SECONDS,
     BackupSnapshotError,
@@ -194,7 +194,7 @@ async def _audit_refusal(
 ) -> None:
     """Record a refused or failed restore in the live database; never fails the caller."""
     try:
-        await record_actor_audit(
+        await record_committed_audit(
             db,
             actor,
             action=ACTION_RESTORE,
@@ -203,7 +203,6 @@ async def _audit_refusal(
             target_name=label,
             details={"backup": label, "reason": problem.value},
         )
-        await db.commit()
     except Exception as error:
         log.error("the audit entry of a refused restore failed: %s", type(error).__name__)
 

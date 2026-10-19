@@ -13,13 +13,11 @@ from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.core.client_address import client_address
 from app.core.crypto import CryptoService
 from app.core.display_time import display_of
 from app.core.templating import render
 from app.models.types import utc_now
 from app.services.app_settings import SMTP_PASSWORD_KEY, StoredSettings, has_secret
-from app.services.audit import AuditActor
 from app.services.mailer import TLS_MODES, MailTransport
 from app.services.shell_banners import load_shell_banners
 from app.services.smtp_settings import (
@@ -29,7 +27,13 @@ from app.services.smtp_settings import (
     send_test_mail,
     validate_smtp,
 )
-from app.web.dependencies import get_crypto, get_db, get_stored_settings
+from app.web.dependencies import (
+    audit_actor,
+    get_crypto,
+    get_db,
+    get_mail_transport,
+    get_stored_settings,
+)
 from app.web.settings_tabs import ManageSettings, tab_context
 
 router = APIRouter()
@@ -41,17 +45,7 @@ TEST_FRAGMENT = "fragments/smtp_test_result.html"
 Database = Annotated[AsyncSession, Depends(get_db)]
 Stored = Annotated[StoredSettings, Depends(get_stored_settings)]
 Crypto = Annotated[CryptoService, Depends(get_crypto)]
-
-
-def _transport(request: Request) -> MailTransport:
-    """The application's mail transport."""
-    transport: MailTransport = request.app.state.mail_transport
-    return transport
-
-
-def _actor(request: Request, context: ManageSettings) -> AuditActor:
-    """The signed-in superadmin as the actor of an audit entry."""
-    return AuditActor.for_user(context.user, client_address(request))
+Transport = Annotated[MailTransport, Depends(get_mail_transport)]
 
 
 async def _form_context(
@@ -106,7 +100,7 @@ async def save_smtp_route(
         shown = SmtpForm(host, port, tls_mode, username, "", from_address, removing)
         page = await _form_context(db, context, shown, errors=error.errors)
         return render(request, FORM_FRAGMENT, page, status_code=422)
-    changed = await save_smtp(db, crypto, clean, actor=_actor(request, context))
+    changed = await save_smtp(db, crypto, clean, actor=audit_actor(request, context))
     if changed:
         saved = {
             "tone": "success",
@@ -130,15 +124,16 @@ async def send_test_route(
     db: Database,
     crypto: Crypto,
     context: ManageSettings,
+    transport: Transport,
     test_to: Annotated[str, Form()] = "",
 ) -> Response:
     """Send a test mail through the stored settings and answer how it went."""
     check = await send_test_mail(
         db,
         crypto,
-        _transport(request),
+        transport,
         to=test_to,
-        actor=_actor(request, context),
+        actor=audit_actor(request, context),
         base_url=get_settings().base_url,
         now=utc_now(),
     )

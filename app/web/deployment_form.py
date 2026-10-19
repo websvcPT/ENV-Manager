@@ -28,6 +28,7 @@ from app.services.paths import PathValidationError, load_allowed_paths
 from app.services.permissions import Capability
 from app.web.dependencies import AuthContext, get_db, get_stored_settings, require_capability
 from app.web.deployments import DeploymentContext, deployment_access
+from app.web.htmx import hx_redirect
 from app.web.project_detail import ProjectContext, project_access
 
 router = APIRouter()
@@ -37,14 +38,6 @@ FORM_FRAGMENT = "fragments/deployment_form.html"
 CHECKS_FRAGMENT = "fragments/path_checks.html"
 PICKER_FRAGMENT = "fragments/path_picker.html"
 PICKER_ERROR = "That folder cannot be opened."
-
-
-def _redirect(url: str) -> Response:
-    """Tell htmx to navigate to ``url``."""
-    return Response(
-        status_code=200,
-        headers={"HX-Redirect": url, "Cache-Control": "no-store", "Vary": "HX-Request"},
-    )
 
 
 def _form_context(
@@ -173,7 +166,7 @@ async def create_deployment_route(
     deployment = await create_deployment(
         db, project, clean, actor=access.auth.user, ip_address=client_address(request)
     )
-    return _redirect(f"/deployments/{deployment.id}")
+    return hx_redirect(f"/deployments/{deployment.id}")
 
 
 @router.get("/deployments/{deployment_id:int}/edit", include_in_schema=False)
@@ -256,7 +249,7 @@ async def edit_deployment_route(
     await update_deployment(
         db, deployment, clean, actor=access.auth.user, ip_address=client_address(request)
     )
-    return _redirect(f"/deployments/{deployment.id}?saved=true")
+    return hx_redirect(f"/deployments/{deployment.id}?saved=true")
 
 
 @router.get("/paths/validate", include_in_schema=False)

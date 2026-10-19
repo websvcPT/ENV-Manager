@@ -5,7 +5,6 @@ holds no tokens and gets 403 everywhere here. A token that belongs to someone el
 missing one to an admin.
 """
 
-import json
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
@@ -14,10 +13,8 @@ from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.core.client_address import client_address
 from app.core.templating import render
 from app.models import ApiToken, User, UserGroup
-from app.services.audit import AuditActor
 from app.services.permissions import AccessScope, Capability
 from app.services.tokens import (
     OPERATIONS,
@@ -29,7 +26,8 @@ from app.services.tokens import (
     revoke_token,
     usage_example,
 )
-from app.web.dependencies import AuthContext, get_db, get_scope, require_capability
+from app.web.dependencies import AuthContext, audit_actor, get_db, get_scope, require_capability
+from app.web.htmx import events_response, hx_events
 
 router = APIRouter()
 
@@ -43,11 +41,6 @@ DEFAULT_OPERATIONS = frozenset({OPERATIONS[0].key})
 ManageTokens = Annotated[AuthContext, Depends(require_capability(Capability.MANAGE_OWN_TOKENS))]
 Scope = Annotated[AccessScope, Depends(get_scope)]
 Database = Annotated[AsyncSession, Depends(get_db)]
-
-
-def _events(*names: str) -> str:
-    """An ``HX-Trigger`` value firing the named events."""
-    return json.dumps(dict.fromkeys(names, True))
 
 
 async def _list_context(db: AsyncSession, user: User, scope: AccessScope) -> dict[str, Any]:
@@ -132,7 +125,7 @@ async def create_token_route(
             operations=chosen,
             restriction=restriction,
             expires=expires,
-            actor=AuditActor.for_user(context.user, client_address(request)),
+            actor=audit_actor(request, context),
         )
     except TokenError as error:
         page = await _form_context(
@@ -158,7 +151,7 @@ async def create_token_route(
             ),
         },
     )
-    response.headers["HX-Trigger"] = _events("token-changed")
+    response.headers["HX-Trigger"] = hx_events("token-changed")
     return response
 
 
@@ -200,16 +193,13 @@ async def revoke_token_route(
     tables refresh to show it.
     """
     token = await _manageable(db, context.user, token_id)
-    actor = AuditActor.for_user(context.user, client_address(request))
-    if not await revoke_token(db, token, actor):
+    if not await revoke_token(db, token, audit_actor(request, context)):
         response = render(
             request,
             REVOKE_FRAGMENT,
             await _revoke_view(db, context.user, token),
             status_code=409,
         )
-        response.headers["HX-Trigger"] = _events("token-changed")
+        response.headers["HX-Trigger"] = hx_events("token-changed")
         return response
-    return Response(
-        status_code=204, headers={"HX-Trigger": _events("token-changed", "close-dialogs")}
-    )
+    return events_response("token-changed", "close-dialogs")

@@ -16,8 +16,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.crypto import CryptoService
 from app.models import (
-    AuditActorType,
-    AuditResult,
     Deployment,
     DeployResult,
     DeployResultStatus,
@@ -26,7 +24,7 @@ from app.models import (
     EnvironmentVersion,
     User,
 )
-from app.services.audit import record_audit
+from app.services.audit import AuditActor, record_environment_audit
 from app.services.content import content_problem, normalize_newlines
 from app.services.env_parser import parse_env
 from app.services.env_text import VARIABLE_NAME, EnvEditError, VariableChanges, apply_changes
@@ -265,29 +263,26 @@ async def variable_row(
 async def audit_reveal(
     db: AsyncSession,
     header: EditorHeader,
-    version: EnvironmentVersion,
-    actor: User,
-    ip_address: str | None,
+    actor: AuditActor,
     details: dict[str, object],
+    *,
+    version: EnvironmentVersion | None = None,
 ) -> None:
-    """Write and commit the audit entry of a reveal before the value is handed out."""
-    entry = await record_audit(
+    """Write and commit the audit entry of a reveal before the value is handed out.
+
+    ``version`` is the stored version that is revealed; a reveal of the file as it was read from
+    the host has none.
+    """
+    if version is not None:
+        details = {"version": version.number, **details}
+    await record_environment_audit(
         db,
+        actor,
+        header,
         action="environment.reveal",
-        result=AuditResult.SUCCESS,
-        actor_type=AuditActorType.USER,
-        actor_user=actor,
-        ip_address=ip_address,
-        target_type="environment",
-        target_id=header.id,
-        target_name=header.name,
-        project_id=header.project_id,
-        deployment_id=header.deployment_id,
-        service_id=header.service_id,
-        environment_id=header.id,
-        details={"version": version.number, **details},
+        details=details,
+        version_ids=[version.id] if version is not None else (),
     )
-    entry.version_ids = [version.id]
     await db.commit()
 
 
@@ -313,7 +308,9 @@ async def reveal_value(
     variable = parsed.variables.get(key) if parsed.is_env_format else None
     if variable is None:
         raise VariableNotFoundError
-    await audit_reveal(db, header, stored, actor, ip_address, {"key": key})
+    await audit_reveal(
+        db, header, AuditActor.for_user(actor, ip_address), {"key": key}, version=stored
+    )
     return variable.value
 
 
@@ -330,7 +327,9 @@ async def reveal_content(
     stored = await stored_version(db, header.id, version)
     if stored is None:
         raise VariableNotFoundError
-    await audit_reveal(db, header, stored, actor, ip_address, {"scope": "file"})
+    await audit_reveal(
+        db, header, AuditActor.for_user(actor, ip_address), {"scope": "file"}, version=stored
+    )
     return crypto.decrypt_text(stored.content_encrypted)
 
 
@@ -440,23 +439,14 @@ async def save_version(
         }
         if changed_keys is not None:
             details["keys"] = changed_keys
-        entry = await record_audit(
+        await record_environment_audit(
             db,
+            AuditActor.for_user(actor, ip_address),
+            header,
             action="environment.save",
-            result=AuditResult.SUCCESS,
-            actor_type=AuditActorType.USER,
-            actor_user=actor,
-            ip_address=ip_address,
-            target_type="environment",
-            target_id=header.id,
-            target_name=header.name,
-            project_id=header.project_id,
-            deployment_id=header.deployment_id,
-            service_id=header.service_id,
-            environment_id=header.id,
             details=details,
+            version_ids=[version.id],
         )
-        entry.version_ids = [version.id]
         await db.commit()
     except IntegrityError as error:
         await db.rollback()

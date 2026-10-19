@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import AuditResult
 from app.services.app_settings import GitSettings, load_stored_settings
-from app.services.audit import AuditActor, record_actor_audit
+from app.services.audit import AuditActor, record_actor_audit, record_committed_audit
 from app.services.git_auth import git_access
 from app.services.git_errors import PROBLEMS, GitProblem, GitSyncError
 from app.services.git_hostkey import HostKey, pinned_key, preferred_key, scan_host_keys
@@ -73,7 +73,7 @@ async def _audit_test(
     if check.key is not None:
         details["fingerprint"] = check.key.fingerprint
     details["format"] = git.export_format
-    await record_actor_audit(
+    await record_committed_audit(
         db,
         actor,
         action=ACTION_TEST,
@@ -82,7 +82,6 @@ async def _audit_test(
         target_name=check.host or None,
         details=details,
     )
-    await db.commit()
 
 
 async def _probe(db: AsyncSession, services: GitServices, git: GitSettings) -> ConnectionCheck:

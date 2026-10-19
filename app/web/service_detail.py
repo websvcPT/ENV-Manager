@@ -9,14 +9,12 @@ from fastapi.responses import Response
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.client_address import client_address
 from app.core.crypto import CryptoService
 from app.core.log import get_logger
 from app.core.templating import render
 from app.models import ServiceHook
 from app.services.access_grid import NodeKind
 from app.services.app_settings import load_stored_settings
-from app.services.audit import AuditActor
 from app.services.docker_cli import DockerCli
 from app.services.hook_settings import (
     HookForbiddenError,
@@ -47,6 +45,7 @@ from app.services.service_detail import (
 from app.web.access_tabs import AccessSubject, mount_access_routes
 from app.web.dependencies import (
     AuthContext,
+    audit_actor,
     get_crypto,
     get_db,
     get_docker_cli,
@@ -281,7 +280,7 @@ async def save_post_deploy(
     typed = HookForm(
         working_directory, commands, timeout, run_only_if_changed is not None, reviewed
     )
-    actor = AuditActor.for_user(access.auth.user, client_address(request))
+    actor = audit_actor(request, access.auth)
     try:
         hook = await save_post_deploy_hook(db, cli, access.scope, actor, access.service.id, typed)
     except HookForbiddenError as error:
@@ -316,7 +315,7 @@ async def test_post_deploy(
     working_directory: Annotated[str, Form()] = "",
 ) -> Response:
     """Run the Compose check in the typed working directory (superadmin); the answer is a line."""
-    actor = AuditActor.for_user(access.auth.user, client_address(request))
+    actor = audit_actor(request, access.auth)
     try:
         check = await check_compose_setup(
             db, crypto, cli, access.scope, actor, access.service.id, working_directory

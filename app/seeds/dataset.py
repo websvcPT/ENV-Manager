@@ -76,7 +76,6 @@ from app.models import (
     AllowedPath,
     ApiToken,
     ApiTokenRestriction,
-    AuditActorType,
     AuditEntry,
     AuditResult,
     Deployment,
@@ -100,7 +99,7 @@ from app.models import (
 from app.models.types import utc_now
 from app.seeds.demo import SeedDemo, ensure_demo_project
 from app.services import totp
-from app.services.audit import record_audit
+from app.services.audit import AuditActor, record_actor_audit
 from app.services.versions import create_version
 
 # Fixed password of every seeded user. Development and testing only: the seed command refuses
@@ -405,20 +404,19 @@ async def _ensure_audit_history(db: AsyncSession, users: dict[str, User]) -> Non
     )
     for action, actor, result, at, deployment, service, environment in history:
         service_id, deployment_id, project_id = services[(deployment, service)]
-        entry = await record_audit(
+        await record_actor_audit(
             db,
+            AuditActor.for_user(users[actor]),
             action=action,
             result=result,
-            actor_type=AuditActorType.USER,
-            actor_user=users[actor],
             target_type="environment" if environment else "service",
             target_name=environment if environment else service,
             project_id=project_id,
             deployment_id=deployment_id,
             service_id=service_id,
             environment_id=environments[(deployment, environment)] if environment else None,
+            created_at=at,
         )
-        entry.created_at = at
     await db.flush()
 
 

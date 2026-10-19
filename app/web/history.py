@@ -29,6 +29,7 @@ from app.services.version_history import (
 )
 from app.web.dependencies import get_crypto, get_db, get_notifier
 from app.web.editor import EnvironmentContext, environment_access
+from app.web.htmx import hx_redirect
 
 router = APIRouter()
 
@@ -184,13 +185,6 @@ async def restore_environment(
             },
             status_code=422,
         )
-    return Response(
-        status_code=200,
-        headers={
-            "HX-Redirect": (
-                f"/environments/{access.env.id}/history?restored={version.number}&source={number}"
-            ),
-            "Cache-Control": "no-store",
-            "Vary": "HX-Request",
-        },
+    return hx_redirect(
+        f"/environments/{access.env.id}/history?restored={version.number}&source={number}"
     )

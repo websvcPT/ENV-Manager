@@ -14,7 +14,6 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.client_address import client_address
 from app.core.crypto import CryptoService
 from app.core.display_time import display_of
 from app.core.templating import render
@@ -25,7 +24,6 @@ from app.services.app_settings import (
     StoredSettings,
     has_secret,
 )
-from app.services.audit import AuditActor
 from app.services.git_connection import accept_host_key, check_connection
 from app.services.git_remote import without_password
 from app.services.git_services import GitServices
@@ -38,7 +36,7 @@ from app.services.git_settings import (
 )
 from app.services.git_view import load_git_status
 from app.services.shell_banners import load_shell_banners
-from app.web.dependencies import get_crypto, get_db, get_stored_settings
+from app.web.dependencies import audit_actor, get_crypto, get_db, get_stored_settings
 from app.web.settings_tabs import ManageSettings, tab_context
 
 router = APIRouter()
@@ -56,11 +54,6 @@ def _services(request: Request) -> GitServices:
     """The application's git services."""
     services: GitServices = request.app.state.git_services
     return services
-
-
-def _actor(request: Request, context: ManageSettings) -> AuditActor:
-    """The signed-in superadmin as the actor of an audit entry."""
-    return AuditActor.for_user(context.user, client_address(request))
 
 
 async def _form_context(
@@ -139,7 +132,11 @@ async def save_git_route(
         page = await _form_context(request, db, stored.git, shown, errors=error.errors)
         return render(request, FORM_FRAGMENT, page, status_code=422)
     changed = await save_git(
-        db, crypto, clean, actor=_actor(request, context), locations=_services(request).locations
+        db,
+        crypto,
+        clean,
+        actor=audit_actor(request, context),
+        locations=_services(request).locations,
     )
     if changed:
         saved = {
@@ -165,7 +162,7 @@ async def test_route(
     request: Request, db: Database, context: ManageSettings, stored: Stored
 ) -> Response:
     """Test the saved repository without sending anything and answer how it went."""
-    check = await check_connection(db, _services(request), actor=_actor(request, context))
+    check = await check_connection(db, _services(request), actor=audit_actor(request, context))
     status = await load_git_status(db, stored.git, display_of(request))
     return render(request, TEST_FRAGMENT, {"check": check, "status": status})
 
@@ -183,7 +180,7 @@ async def pin_route(
     check = await accept_host_key(
         db,
         _services(request),
-        actor=_actor(request, context),
+        actor=audit_actor(request, context),
         key_type=key_type.strip(),
         fingerprint=fingerprint.strip(),
     )

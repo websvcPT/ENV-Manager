@@ -28,6 +28,7 @@ from app.services.projects import (
 )
 from app.web.access_tabs import AccessSubject, mount_access_routes
 from app.web.dependencies import AuthContext, get_db, get_scope, require_auth
+from app.web.htmx import hx_redirect
 
 router = APIRouter()
 
@@ -229,14 +230,7 @@ async def rename_route(
             _page_context(access, "settings", form_value=name.strip(), form_error=str(error)),
             status_code=422,
         )
-    return Response(
-        status_code=200,
-        headers={
-            "HX-Redirect": f"/projects/{project.id}/settings?renamed=true",
-            "Cache-Control": "no-store",
-            "Vary": "HX-Request",
-        },
-    )
+    return hx_redirect(f"/projects/{project.id}/settings?renamed=true")
 
 
 @router.post("/projects/{project_id:int}/delete", include_in_schema=False)
@@ -269,7 +263,4 @@ async def delete_route(
             _page_context(access, "settings", form_value=confirm_name, form_error=error),
             status_code=422,
         )
-    return Response(
-        status_code=200,
-        headers={"HX-Redirect": "/projects", "Cache-Control": "no-store", "Vary": "HX-Request"},
-    )
+    return hx_redirect("/projects")

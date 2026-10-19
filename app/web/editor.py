@@ -40,6 +40,7 @@ from app.web.dependencies import (
     get_scope,
     require_auth,
 )
+from app.web.htmx import hx_redirect
 
 router = APIRouter()
 
@@ -348,11 +349,4 @@ async def save_environment(
         )
     except EditorError as error:
         return _save_error(request, access, form, str(error))
-    return Response(
-        status_code=200,
-        headers={
-            "HX-Redirect": f"/environments/{access.env.id}?saved={version.number}",
-            "Cache-Control": "no-store",
-            "Vary": "HX-Request",
-        },
-    )
+    return hx_redirect(f"/environments/{access.env.id}?saved={version.number}")

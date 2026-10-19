@@ -167,6 +167,7 @@ async def test_adding_a_path_stores_audits_announces_and_refreshes_the_table(
     response = await post(root, "/settings/paths", {"path": f"{host}/alpha"})
     assert response.status_code == 204
     assert json.loads(response.headers["hx-trigger"]) == CHANGED_AND_CLOSED
+    assert_never_cached(response)
     assert await entry_id(web_app, str(host / "alpha"))
     (entry,) = await settings_entries(web_app)
     assert entry.action == "allowed_path.add" and entry.actor_name == "root"

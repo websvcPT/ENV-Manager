@@ -12,8 +12,8 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AuditActorType, AuditResult, Project, User
-from app.services.audit import record_audit
+from app.models import AuditResult, Project, User
+from app.services.audit import AuditActor, record_actor_audit
 from app.services.mailer import valid_address
 
 MAX_ADDRESSES = 20
@@ -71,13 +71,11 @@ async def save_extra_addresses(
     kept = {address.lower() for address in addresses}
     before = {address.lower() for address in previous}
     project.extra_addresses = addresses
-    await record_audit(
+    await record_actor_audit(
         db,
+        AuditActor.for_user(actor, ip_address),
         action=AUDIT_ACTION,
         result=AuditResult.SUCCESS,
-        actor_type=AuditActorType.USER,
-        actor_user=actor,
-        ip_address=ip_address,
         target_type="project",
         target_id=project.id,
         target_name=project.name,

@@ -443,6 +443,7 @@ async def test_resetting_turns_the_factor_off_ends_sessions_and_pending_sign_ins
     response = await post(web_client, f"/users/{target.id}/reset-2fa", {"from": "detail"})
     assert response.status_code == 200
     assert response.headers["hx-redirect"] == f"/users/{target.id}?updated=two-factor-reset"
+    assert_never_cached(response)
     stored = await stored_user(web_app, target.id)
     assert (stored.totp_enabled, stored.totp_secret, stored.totp_last_step) == (False, None, None)
     async with web_app.state.session_factory() as db:
@@ -569,6 +570,7 @@ async def test_the_detail_origin_goes_back_to_the_detail_page_with_a_notice(
         response = await post(web_client, f"{base}/{action}", data)
         assert response.status_code == 200
         assert response.headers["hx-redirect"] == f"{base}?updated={updated}"
+        assert_never_cached(response)
     page = (await web_client.get(f"{base}?updated=group")).text
     assert "Group changed" in page and "viewer is now an Admin." in page
     assert "Group changed" not in (await web_client.get(f"{base}?updated=nonsense")).text
@@ -605,6 +607,7 @@ async def test_a_superadmin_who_disables_or_demotes_themselves_is_sent_to_projec
     root = await user_named(web_app, "root")
     response = await post(web_client, f"/users/{root.id}/disable", {"from": "list"})
     assert response.status_code == 200 and response.headers["hx-redirect"] == "/projects"
+    assert_never_cached(response)
     after = await web_client.get("/projects")
     assert after.status_code == 303 and after.headers["location"].startswith("/login")
 
@@ -617,6 +620,7 @@ async def test_a_superadmin_who_disables_or_demotes_themselves_is_sent_to_projec
     await sign_in(web_client, "root")
     response = await post(web_client, f"/users/{root.id}/group", {"group": "admin"})
     assert response.headers["hx-redirect"] == "/projects"
+    assert_never_cached(response)
     assert (await web_client.get("/users")).status_code == 403
     assert (await web_client.get("/projects")).status_code == 200
 

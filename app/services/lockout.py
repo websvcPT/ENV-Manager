@@ -13,9 +13,9 @@ from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import metrics
-from app.models import AuditActorType, AuditResult, LoginCounter, LoginCounterKind, User
+from app.models import AuditResult, LoginCounter, LoginCounterKind, User
 from app.models.types import UtcDateTime
-from app.services.audit import record_audit
+from app.services.audit import AuditActor, record_actor_audit
 from app.services.auth_policy import AuthPolicy
 from app.services.notify_events import EventNotifier, LockoutScope, LockoutStarted, announce_event
 
@@ -126,13 +126,11 @@ async def record_lockouts(
 ) -> None:
     """Audit each lockout that a failed attempt started. The caller commits."""
     for scope in locked:
-        await record_audit(
+        await record_actor_audit(
             db,
+            AuditActor.for_sign_in(user, ip_address),
             action="login.lockout",
             result=AuditResult.BLOCKED,
-            actor_type=AuditActorType.USER,
-            actor_user=user,
-            ip_address=ip_address,
             details={"scope": scope, "minutes": policy.lockout_duration.total_seconds() // 60},
         )
 

@@ -15,14 +15,13 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.client_address import client_address
 from app.core.crypto import CryptoService
 from app.core.display_time import display_of
 from app.core.sessions import SESSION_COOKIE_NAME
 from app.core.templating import render
 from app.models import AuditResult, Backup, BackupStatus, BackupTrigger
 from app.services.app_settings import BackupSettings, StoredSettings
-from app.services.audit import AuditActor, record_actor_audit
+from app.services.audit import record_actor_audit
 from app.services.backup_events import BackupNotifier
 from app.services.backup_files import (
     BackupFileMissingError,
@@ -47,7 +46,14 @@ from app.services.backup_settings import (
 from app.services.backup_view import extra_destination_problem, format_size, load_backup_list
 from app.services.paths import load_allowed_paths
 from app.services.shell_banners import load_shell_banners
-from app.web.dependencies import get_crypto, get_db, get_stored_settings
+from app.web.dependencies import (
+    audit_actor,
+    get_backup_notifier,
+    get_crypto,
+    get_db,
+    get_stored_settings,
+)
+from app.web.htmx import hx_redirect
 from app.web.settings_tabs import ManageSettings, tab_context
 
 router = APIRouter()
@@ -61,6 +67,7 @@ DOWNLOAD_TYPE = "application/vnd.sqlite3"
 Database = Annotated[AsyncSession, Depends(get_db)]
 Stored = Annotated[StoredSettings, Depends(get_stored_settings)]
 Crypto = Annotated[CryptoService, Depends(get_crypto)]
+Notifier = Annotated[BackupNotifier, Depends(get_backup_notifier)]
 
 REFUSAL_STATUS = {
     RestoreProblem.BUSY: status.HTTP_409_CONFLICT,
@@ -79,17 +86,6 @@ def _scheduler(request: Request) -> BackupScheduler:
     """The application's scheduler."""
     scheduler: BackupScheduler = request.app.state.backup_scheduler
     return scheduler
-
-
-def _notifier(request: Request) -> BackupNotifier:
-    """The application's backup notifier."""
-    notifier: BackupNotifier = request.app.state.backup_notifier
-    return notifier
-
-
-def _actor(request: Request, context: ManageSettings) -> AuditActor:
-    """The signed-in superadmin as the actor of an audit entry."""
-    return AuditActor.for_user(context.user, client_address(request))
 
 
 async def _form_context(
@@ -146,7 +142,7 @@ async def save_backup_route(
     except BackupFormError as error:
         page = await _form_context(request, db, stored.backup, form, errors=error.errors)
         return render(request, FORM_FRAGMENT, page, status_code=422)
-    changes = await save_backup(db, clean, actor=_actor(request, context))
+    changes = await save_backup(db, clean, actor=audit_actor(request, context))
     await _scheduler(request).reload()
     if changes:
         saved = {
@@ -181,7 +177,9 @@ def _result_toast(
 
 
 @router.post("/settings/backups", include_in_schema=False)
-async def run_now(request: Request, db: Database, context: ManageSettings) -> Response:
+async def run_now(
+    request: Request, db: Database, context: ManageSettings, notifier: Notifier
+) -> Response:
     """Take a backup now and answer the refreshed list and banner area."""
     locations = _locations(request)
     code = status.HTTP_200_OK
@@ -190,8 +188,8 @@ async def run_now(request: Request, db: Database, context: ManageSettings) -> Re
             db,
             locations,
             trigger=BackupTrigger.MANUAL,
-            actor=_actor(request, context),
-            notifier=_notifier(request),
+            actor=audit_actor(request, context),
+            notifier=notifier,
         )
     except BackupBusyError:
         code = status.HTTP_409_CONFLICT
@@ -222,7 +220,7 @@ async def download_backup(
     try:
         await record_actor_audit(
             db,
-            _actor(request, context),
+            audit_actor(request, context),
             action="backup.download",
             result=AuditResult.SUCCESS,
             target_type="backup",
@@ -293,15 +291,13 @@ async def restore(
             source=locations.backup_dir / record.filename,
             label=record.filename,
             crypto=crypto,
-            actor=_actor(request, context),
+            actor=audit_actor(request, context),
         )
     except RestoreRefusedError as error:
         page["refusal"] = str(error)
         code = REFUSAL_STATUS.get(error.problem, status.HTTP_422_UNPROCESSABLE_CONTENT)
         return render(request, RESTORE_FRAGMENT, page, status_code=code)
     await _scheduler(request).reload()
-    response = Response(
-        status_code=200, headers={"HX-Redirect": "/login", "Cache-Control": "no-store"}
-    )
+    response = hx_redirect("/login")
     response.delete_cookie(SESSION_COOKIE_NAME, path="/")
     return response

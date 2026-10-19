@@ -13,7 +13,7 @@ from app.core.sessions import PENDING_LOGIN_COOKIE_NAME, SESSION_COOKIE_NAME
 from app.models import AuditEntry, LoginCounter, LoginCounterKind
 from app.seeds import DEV_PASSWORD, DEV_TOTP_SECRET
 from app.tests.conftest import sign_in
-from app.tests.web_helpers import HTMX
+from app.tests.web_helpers import HTMX, assert_never_cached
 
 
 async def post_form(
@@ -109,6 +109,7 @@ async def test_successful_login_redirects(web_client: httpx.AsyncClient) -> None
     web_client.cookies.delete(SESSION_COOKIE_NAME)
     fragment = await post_form(web_client, "/login", form, htmx=True)
     assert (fragment.status_code, fragment.headers["hx-redirect"]) == (200, "/")
+    assert_never_cached(fragment)
     assert "httponly" in fragment.headers["set-cookie"].lower()
     assert (await web_client.get("/projects")).status_code == 200
 
@@ -158,6 +159,7 @@ async def test_second_factor_step(web_client: httpx.AsyncClient) -> None:
     code = pyotp.TOTP(DEV_TOTP_SECRET).now()
     done = await post_form(web_client, "/login/totp", {"code": code}, htmx=True)
     assert (done.status_code, done.headers["hx-redirect"]) == (200, "/")
+    assert_never_cached(done)
     assert PENDING_LOGIN_COOKIE_NAME not in web_client.cookies
     assert (await web_client.get("/projects")).status_code == 200
 
@@ -238,6 +240,7 @@ async def test_htmx_request_without_a_session_gets_hx_redirect(
 ) -> None:
     anonymous = await web_client.get("/projects", headers=HTMX)
     assert (anonymous.status_code, anonymous.headers["hx-redirect"]) == (401, "/login")
+    assert_never_cached(anonymous)
     assert SESSION_COOKIE_NAME not in anonymous.headers.get("set-cookie", "")
 
 
@@ -248,6 +251,7 @@ async def test_htmx_request_with_a_stale_session_goes_to_the_expired_state(
     web_client.cookies.set(SESSION_COOKIE_NAME, "not-a-live-session")
     stale = await web_client.get("/projects", headers=HTMX)
     assert (stale.status_code, stale.headers["hx-redirect"]) == (401, "/login?expired=1")
+    assert_never_cached(stale)
     assert f'{SESSION_COOKIE_NAME}=""' in stale.headers["set-cookie"]
 
 

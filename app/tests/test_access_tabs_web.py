@@ -1,7 +1,6 @@
 """The Access tabs of projects, deployments, services and environments, by role and state."""
 
 import html
-import json
 import re
 from dataclasses import dataclass
 
@@ -21,7 +20,7 @@ from app.models import (
     User,
 )
 from app.tests.conftest import sign_in
-from app.tests.web_helpers import HTMX, assert_never_cached, main_of, post
+from app.tests.web_helpers import HTMX, assert_never_cached, events_of, main_of, post
 
 PLURALS = {
     "project": "projects",
@@ -180,12 +179,6 @@ async def disable(web_app: FastAPI, *names: str) -> None:
     async with web_app.state.session_factory() as db:
         await db.execute(update(User).where(User.name.in_(names)).values(is_active=False))
         await db.commit()
-
-
-def events_of(response: httpx.Response) -> dict[str, object]:
-    """The events an HX-Trigger header fires."""
-    parsed: dict[str, object] = json.loads(response.headers["hx-trigger"])
-    return parsed
 
 
 async def test_the_project_tab_lists_users_with_how_they_reach_the_project(
@@ -405,6 +398,7 @@ async def test_adding_a_grant_answers_204_with_the_events_and_writes_one_audited
     response = await post(web_client, f"{base}/grants", {"user": user})
     assert response.status_code == 204
     assert events_of(response) == {"grants-changed": True, "close-dialogs": True}
+    assert_never_cached(response)
     assert await grants_of(web_app, "ungranted_admin") == {("deployment", items.staging)}
     assert await audit_details(web_app, "grant.add") == [
         {"level": "deployment", "item": "Fancy Proj. Name/staging"}
@@ -554,6 +548,7 @@ async def test_removing_a_grant_answers_204_with_the_events_and_audits_it(
     )
     assert response.status_code == 204
     assert events_of(response) == {"grants-changed": True, "close-dialogs": True}
+    assert_never_cached(response)
     assert await grants_of(web_app, "env_scoped_admin") == set()
     assert await audit_details(web_app, "grant.remove") == [
         {"level": "environment", "item": "Fancy Proj. Name/prod/mysql/.env.db"}

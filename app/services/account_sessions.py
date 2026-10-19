@@ -11,9 +11,9 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AuditActorType, AuditResult, User, UserSession
+from app.models import AuditResult, User, UserSession
 from app.models.types import utc_now
-from app.services.audit import record_audit
+from app.services.audit import AuditActor, record_actor_audit
 from app.services.auth_policy import AuthPolicy
 from app.services.sessions import revoke_user_sessions
 
@@ -137,13 +137,11 @@ async def revoke_other_session(
     session = await find_other_session(db, user, current_id, session_id)
     row = to_row(session, current_id)
     await db.delete(session)
-    await record_audit(
+    await record_actor_audit(
         db,
+        AuditActor.for_user(user, ip_address),
         action="account.session_revoke",
         result=AuditResult.SUCCESS,
-        actor_type=AuditActorType.USER,
-        actor_user=user,
-        ip_address=ip_address,
         target_type="user",
         target_id=user.id,
         target_name=user.name,
@@ -158,13 +156,11 @@ async def revoke_all_other_sessions(
 ) -> int:
     """End every session of the user but the current one, audited. Returns how many ended."""
     ended = await revoke_user_sessions(db, user.id, keep_session_id=current_id)
-    await record_audit(
+    await record_actor_audit(
         db,
+        AuditActor.for_user(user, ip_address),
         action="account.sessions_revoke_others",
         result=AuditResult.SUCCESS,
-        actor_type=AuditActorType.USER,
-        actor_user=user,
-        ip_address=ip_address,
         target_type="user",
         target_id=user.id,
         target_name=user.name,

@@ -20,7 +20,8 @@ from app.core.crypto import generate_master_key
 from app.core.csrf import CSRF_COOKIE_NAME
 from app.core.sessions import SESSION_COOKIE_NAME
 from app.main import create_app
-from app.models import AuditActorType, AuditEntry, User, UserGroup, UserSession
+from app.models import AuditEntry, User, UserGroup, UserSession
+from app.services.audit import AuditActor
 from app.services.users import set_user_active
 from app.tests.auth_helpers import PASSWORD, make_user
 from app.web.dependencies import require_auth, require_group
@@ -249,6 +250,6 @@ async def test_disabled_user_session_stops_working(
     await _post(http, "/login", {"identifier": "alice", "password": PASSWORD})
     async with application.state.session_factory() as db:
         user = (await db.execute(select(User))).scalar_one()
-        await set_user_active(db, user, False, actor_type=AuditActorType.CLI)
+        await set_user_active(db, user, False, actor=AuditActor.cli())
     response = await http.post("/logout", headers={"X-CSRFToken": http.cookies[CSRF_COOKIE_NAME]})
     assert response.status_code == 401

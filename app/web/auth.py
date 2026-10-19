@@ -11,13 +11,14 @@ from app.core.client_address import client_address
 from app.core.crypto import CryptoService
 from app.core.sessions import PENDING_LOGIN_COOKIE_NAME, SESSION_COOKIE_NAME
 from app.core.templating import render
-from app.models import AuditActorType, AuditResult
-from app.services.audit import record_audit
+from app.models import AuditResult
+from app.services.audit import record_actor_audit
 from app.services.auth_policy import AuthPolicy
 from app.services.login import LoginResult, LoginStatus, authenticate, complete_totp_login
 from app.services.sessions import revoke_session
 from app.web.dependencies import (
     AuthContext,
+    audit_actor,
     get_auth_policy,
     get_crypto,
     get_db,
@@ -26,6 +27,7 @@ from app.web.dependencies import (
     resolve_optional_auth,
 )
 from app.web.errors import is_htmx_request
+from app.web.htmx import hx_redirect
 
 router = APIRouter()
 
@@ -56,7 +58,7 @@ def _card(
 def _signed_in(request: Request, token: str, policy: AuthPolicy) -> Response:
     """Start the session: a redirect for plain posts, `HX-Redirect` for htmx."""
     if is_htmx_request(request):
-        response: Response = Response(status_code=200, headers={"HX-Redirect": "/"})
+        response: Response = hx_redirect("/")
     else:
         response = RedirectResponse("/", status_code=303)
     response.set_cookie(
@@ -201,13 +203,8 @@ async def logout(
     context: Annotated[AuthContext, Depends(require_auth)],
 ) -> Response:
     """End the current session and clear the cookie."""
-    await record_audit(
-        db,
-        action="logout",
-        result=AuditResult.SUCCESS,
-        actor_type=AuditActorType.USER,
-        actor_user=context.user,
-        ip_address=client_address(request),
+    await record_actor_audit(
+        db, audit_actor(request, context), action="logout", result=AuditResult.SUCCESS
     )
     await revoke_session(db, context.session)
     response = RedirectResponse("/login", status_code=303)

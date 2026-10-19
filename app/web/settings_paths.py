@@ -5,7 +5,6 @@ the paths, so every route holds the settings capability. A change answers 204 wi
 refresh the table and close the dialog; a refused add swaps the dialog again with the reason.
 """
 
-import json
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
@@ -13,7 +12,6 @@ from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.core.client_address import client_address
 from app.core.templating import render
 from app.services.allowed_paths import (
     AllowedPathError,
@@ -25,9 +23,9 @@ from app.services.allowed_paths import (
     stored_paths,
     uncovered_deployments,
 )
-from app.services.audit import AuditActor
 from app.services.settings_events import SettingsNotifier
-from app.web.dependencies import get_db
+from app.web.dependencies import audit_actor, get_db, get_settings_notifier
+from app.web.htmx import events_response, hx_events
 from app.web.settings_tabs import ManageSettings, tab_context
 
 router = APIRouter()
@@ -38,17 +36,7 @@ CHECKS_FRAGMENT = "fragments/settings_path_checks.html"
 REMOVE_FRAGMENT = "fragments/settings_path_remove.html"
 
 Database = Annotated[AsyncSession, Depends(get_db)]
-
-
-def _events(*names: str) -> str:
-    """An ``HX-Trigger`` value firing the named events."""
-    return json.dumps(dict.fromkeys(names, True))
-
-
-def _notifier(request: Request) -> SettingsNotifier:
-    """The application's settings notifier."""
-    notifier: SettingsNotifier = request.app.state.settings_notifier
-    return notifier
+Notifier = Annotated[SettingsNotifier, Depends(get_settings_notifier)]
 
 
 async def _table_context(db: AsyncSession) -> dict[str, Any]:
@@ -98,26 +86,23 @@ async def add_path(
     request: Request,
     db: Database,
     context: ManageSettings,
+    notifier: Notifier,
     path: Annotated[str, Form()] = "",
 ) -> Response:
     """Add an allowed path. A refused path swaps the dialog with the reason (422)."""
-    actor = AuditActor.for_user(context.user, client_address(request))
     try:
         await add_allowed_path(
             db,
             path,
-            actor=actor,
+            actor=audit_actor(request, context),
             data_path=get_settings().data_path,
-            notifier=_notifier(request),
+            notifier=notifier,
         )
     except AllowedPathError as error:
         check = check_entry(path, data_path=get_settings().data_path, existing=await _existing(db))
         page = {"value": path, "check": check, "error": str(error)}
         return render(request, ADD_FRAGMENT, page, status_code=422)
-    return Response(
-        status_code=status.HTTP_204_NO_CONTENT,
-        headers={"HX-Trigger": _events("paths-changed", "close-dialogs")},
-    )
+    return events_response("paths-changed", "close-dialogs")
 
 
 async def _remove_view(db: AsyncSession, path_id: int) -> dict[str, Any] | None:
@@ -142,22 +127,20 @@ async def remove_dialog(
 
 @router.post("/settings/paths/{path_id:int}/remove", include_in_schema=False)
 async def remove_path(
-    request: Request, path_id: int, db: Database, context: ManageSettings
+    request: Request, path_id: int, db: Database, context: ManageSettings, notifier: Notifier
 ) -> Response:
     """Remove an entry. Nothing on disk is touched.
 
     An entry that was removed meanwhile answers 409 with the dialog saying so, and the table
     refreshes to show the list as it is.
     """
-    actor = AuditActor.for_user(context.user, client_address(request))
     try:
-        await remove_allowed_path(db, path_id, actor=actor, notifier=_notifier(request))
+        await remove_allowed_path(
+            db, path_id, actor=audit_actor(request, context), notifier=notifier
+        )
     except AllowedPathError:
         view = {"path_id": path_id, "path": "", "flagged": 0, "gone": True}
         response = render(request, REMOVE_FRAGMENT, view, status_code=409)
-        response.headers["HX-Trigger"] = _events("paths-changed")
+        response.headers["HX-Trigger"] = hx_events("paths-changed")
         return response
-    return Response(
-        status_code=status.HTTP_204_NO_CONTENT,
-        headers={"HX-Trigger": _events("paths-changed", "close-dialogs")},
-    )
+    return events_response("paths-changed", "close-dialogs")

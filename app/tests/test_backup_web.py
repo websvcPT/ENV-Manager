@@ -459,7 +459,7 @@ async def test_a_confirmed_restore_replaces_the_data_ends_sessions_and_sends_to_
 
     assert response.status_code == 200
     assert response.headers["hx-redirect"] == "/login"
-    assert response.headers["cache-control"] == "no-store"
+    assert_never_cached(response)
     assert (
         'session=""' in response.headers["set-cookie"]
         or "Max-Age=0" in response.headers["set-cookie"]

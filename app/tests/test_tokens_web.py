@@ -366,6 +366,7 @@ async def test_revoking_stops_the_token_audits_it_and_updates_the_row(
 
     response = await post(web_client, f"/tokens/{token_id}/revoke")
     assert response.status_code == 204
+    assert_never_cached(response)
     assert json.loads(response.headers["hx-trigger"]) == {
         "token-changed": True,
         "close-dialogs": True,

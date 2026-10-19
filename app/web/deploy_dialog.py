@@ -15,9 +15,7 @@ from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.datastructures import FormData
 
-from app.core.client_address import client_address
 from app.core.templating import render
-from app.services.audit import AuditActor
 from app.services.deploy import DeployEngine
 from app.services.deploy_dialog import (
     build_result,
@@ -28,7 +26,8 @@ from app.services.deploy_types import DeployRequest, DeployRequestError
 from app.services.docker_cli import DockerCli
 from app.services.hook_settings import MAX_TIMEOUT_SECONDS
 from app.services.permissions import Capability, permitted_environment_ids
-from app.web.dependencies import get_db, get_deploy_engine, get_docker_cli
+from app.web.dependencies import audit_actor, get_db, get_deploy_engine, get_docker_cli
+from app.web.htmx import hx_events
 from app.web.service_detail import ServiceContext, service_access
 
 router = APIRouter()
@@ -126,7 +125,7 @@ async def preflight(
 ) -> Response:
     """Step one: a dry run of every environment the caller may deploy, with the policy outcome."""
     form = parse_dialog_form(await request.form())
-    actor = AuditActor.for_user(access.auth.user, client_address(request))
+    actor = audit_actor(request, access.auth)
     try:
         result = await run_preflight(
             db,
@@ -171,7 +170,7 @@ async def deploy(
         outcome = await engine.run(
             db,
             access.scope,
-            AuditActor.for_user(access.auth.user, client_address(request)),
+            audit_actor(request, access.auth),
             DeployRequest(
                 service_id=access.service.id,
                 environment_ids=tuple(sorted(form.selected)),
@@ -184,5 +183,5 @@ async def deploy(
     view = await build_result(db, access.service, outcome)
     response = render(request, RESULT, {**context, "result": view})
     if outcome.run_id is not None:
-        response.headers["HX-Trigger"] = "deploy-finished"
+        response.headers["HX-Trigger"] = hx_events("deploy-finished")
     return response

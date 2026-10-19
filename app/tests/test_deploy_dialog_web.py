@@ -27,7 +27,14 @@ from app.services.versions import create_version
 from app.tests.audit_helpers import web_audit_entries
 from app.tests.conftest import sign_in
 from app.tests.fake_docker import FakeDocker
-from app.tests.web_helpers import HTMX, assert_never_cached, main_of, post, stage_deployments
+from app.tests.web_helpers import (
+    HTMX,
+    assert_never_cached,
+    events_of,
+    main_of,
+    post,
+    stage_deployments,
+)
 
 DEPLOY_ROLES = ("root", "admin", "project_admin", "deployment_admin")
 SCOPED_BLOCKED = ("viewer", "env_scoped_viewer")
@@ -206,7 +213,7 @@ async def test_a_deploy_writes_the_chosen_files_runs_the_command_once_and_refres
 
     assert response.status_code == 200
     assert_never_cached(response)
-    assert response.headers["HX-Trigger"] == "deploy-finished"
+    assert events_of(response) == {"deploy-finished": True}
     assert 'data-tone="ok"' in page and "Success" in page
     assert "2 environments written. The post-deploy command ran once." in page
     assert "Ran once · exit code 0" in page and "recreated web" in page
@@ -263,7 +270,7 @@ async def test_a_forced_deploy_waits_for_its_confirmation_and_then_overwrites_wi
     assert await new_runs(web_app, staged) == []
 
     done = await deploy(web_client, service, chosen(tuning, force=True, confirm=True))
-    assert done.headers["HX-Trigger"] == "deploy-finished"
+    assert events_of(done) == {"deploy-finished": True}
     assert "forced past the checks" in done.text and "previous file backed up" in done.text
     assert target.read_text(encoding="utf-8") == "WORKERS=4\n"
     backups = [path for path in target.parent.iterdir() if ".bak-" in path.name]

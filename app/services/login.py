@@ -10,7 +10,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.crypto import CryptoService
 from app.core.passwords import verify_decoy, verify_password
 from app.models import (
-    AuditActorType,
     AuditResult,
     LoginCounter,
     LoginCounterKind,
@@ -18,7 +17,7 @@ from app.models import (
 )
 from app.models.types import utc_now
 from app.services import totp
-from app.services.audit import record_audit
+from app.services.audit import AuditActor, record_actor_audit
 from app.services.auth_policy import AuthPolicy
 from app.services.lockout import (
     announce_lockouts,
@@ -88,13 +87,11 @@ async def _locked_out(
     wait = remaining_lock(counters, now)
     if wait is None:
         return None
-    await record_audit(
+    await record_actor_audit(
         db,
+        AuditActor.for_sign_in(user, ip_address),
         action="login.failure",
         result=AuditResult.BLOCKED,
-        actor_type=AuditActorType.USER,
-        actor_user=user,
-        ip_address=ip_address,
         details={"reason": "locked"},
     )
     await db.commit()
@@ -221,13 +218,11 @@ async def _fail(
     locked_subjects = await register_attempt_failure(
         db, policy, subject=subject, ip_address=ip_address, now=now
     )
-    await record_audit(
+    await record_actor_audit(
         db,
+        AuditActor.for_sign_in(user, ip_address),
         action="login.failure",
         result=AuditResult.FAILURE,
-        actor_type=AuditActorType.USER,
-        actor_user=user,
-        ip_address=ip_address,
         details={"reason": reason},
     )
     await record_lockouts(db, policy, user=user, ip_address=ip_address, locked=locked_subjects)
@@ -264,13 +259,11 @@ async def _succeed(
     token = await create_session(
         db, user, policy, ip_address=ip_address, user_agent=user_agent, now=now
     )
-    await record_audit(
+    await record_actor_audit(
         db,
+        AuditActor.for_sign_in(user, ip_address),
         action="login.success",
         result=AuditResult.SUCCESS,
-        actor_type=AuditActorType.USER,
-        actor_user=user,
-        ip_address=ip_address,
     )
     new_address = await note_sign_in_address(db, crypto, user.id, ip_address, now)
     await db.commit()

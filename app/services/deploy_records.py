@@ -149,10 +149,8 @@ async def audit_run(
                 for outcome in outcomes
             ],
         },
+        version_ids=[outcome.version_id for outcome in outcomes if outcome.version_id is not None],
     )
-    entry.version_ids = [
-        outcome.version_id for outcome in outcomes if outcome.version_id is not None
-    ]
     run.audit_entry_id = entry.id
 
 

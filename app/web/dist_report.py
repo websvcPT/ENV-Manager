@@ -25,6 +25,7 @@ from app.services.permissions import CAPABILITY_GROUPS, Capability
 from app.web.dependencies import get_crypto, get_db, get_notifier
 from app.web.deployments import DeploymentContext, deployment_access
 from app.web.editor import EnvironmentContext, environment_access
+from app.web.htmx import hx_redirect
 
 router = APIRouter()
 
@@ -130,16 +131,8 @@ async def add_missing(
     except EditorError as error:
         check = await _check(db, request, access)
         return render(request, REFRESH, _context(access, check, error=str(error)), status_code=422)
-    return Response(
-        status_code=200,
-        headers={
-            "HX-Redirect": (
-                f"/environments/{access.env.id}/dist"
-                f"?added={len(added.keys)}&version={added.version.number}"
-            ),
-            "Cache-Control": "no-store",
-            "Vary": "HX-Request",
-        },
+    return hx_redirect(
+        f"/environments/{access.env.id}/dist?added={len(added.keys)}&version={added.version.number}"
     )
 
 

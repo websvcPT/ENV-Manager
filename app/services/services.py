@@ -4,8 +4,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AuditActorType, AuditResult, Deployment, Service, User
-from app.services.audit import record_audit
+from app.models import AuditResult, Deployment, Service, User
+from app.services.audit import AuditActor, record_actor_audit
 from app.services.slug_names import SLUG_MESSAGE, is_slug_name
 
 
@@ -41,13 +41,11 @@ async def add_service(
     service = Service(deployment_id=deployment.id, name=name)
     db.add(service)
     await db.flush()
-    await record_audit(
+    await record_actor_audit(
         db,
+        AuditActor.for_user(actor, ip_address),
         action="service.create",
         result=AuditResult.SUCCESS,
-        actor_type=AuditActorType.USER,
-        actor_user=actor,
-        ip_address=ip_address,
         target_type="service",
         target_id=service.id,
         target_name=service.name,

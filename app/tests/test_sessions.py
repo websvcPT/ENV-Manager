@@ -6,8 +6,9 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.core.db import create_session_factory
-from app.models import AuditActorType, AuditEntry, UserSession
+from app.models import AuditEntry, UserSession
 from app.models.types import utc_now
+from app.services.audit import AuditActor
 from app.services.auth_policy import AuthPolicy
 from app.services.sessions import (
     create_session,
@@ -130,7 +131,7 @@ async def test_disabling_a_user_ends_their_sessions_and_is_audited(engine: Async
     async with factory() as db:
         user = await db.get(type(target), target.id)
         assert user is not None
-        ended = await set_user_active(db, user, False, actor_type=AuditActorType.CLI)
+        ended = await set_user_active(db, user, False, actor=AuditActor.cli())
     assert ended == 2
     async with factory() as db:
         assert await resolve_session(db, first, POLICY) is None

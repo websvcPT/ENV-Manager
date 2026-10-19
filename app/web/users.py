@@ -1,18 +1,15 @@
 """User administration routes (superadmin): list, create, group, enable or disable, two-factor
 reset and grants."""
 
-import json
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, status
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.client_address import client_address
 from app.core.templating import render
-from app.models import AuditActorType, User, UserGroup
+from app.models import User, UserGroup
 from app.services import users as user_service
-from app.services.audit import AuditActor
 from app.services.grants import (
     GrantError,
     GrantTarget,
@@ -23,7 +20,14 @@ from app.services.grants import (
 )
 from app.services.permissions import Capability
 from app.services.user_detail import list_user_rows, load_user_detail
-from app.web.dependencies import AuthContext, get_db, get_notifier, require_capability
+from app.web.dependencies import (
+    AuthContext,
+    audit_actor,
+    get_db,
+    get_notifier,
+    require_capability,
+)
+from app.web.htmx import events_response, hx_events, hx_redirect
 
 router = APIRouter()
 
@@ -62,11 +66,6 @@ async def _user_row(db: AsyncSession, user_id: int) -> User:
     if user is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "user not found")
     return user
-
-
-def _events(*names: str) -> str:
-    """An ``HX-Trigger`` value firing the named events."""
-    return json.dumps(dict.fromkeys(names, True))
 
 
 def _form_context(
@@ -136,9 +135,7 @@ async def create_user_route(
                 name=name,
                 email=email,
                 group=chosen_group,
-                actor_type=AuditActorType.USER,
-                actor_user=context.user,
-                ip_address=client_address(request),
+                actor=audit_actor(request, context),
                 grants=targets,
                 notifier=get_notifier(request),
             )
@@ -154,7 +151,7 @@ async def create_user_route(
                     "password": password,
                 },
             )
-            response.headers["HX-Trigger"] = _events("user-changed")
+            response.headers["HX-Trigger"] = hx_events("user-changed")
             return response
     return render(
         request,
@@ -230,7 +227,7 @@ async def save_grants_route(
     once and tells other panels with ``grants-changed``.
     """
     user = await _user_row(db, user_id)
-    actor = AuditActor.for_user(context.user, client_address(request))
+    actor = audit_actor(request, context)
     try:
         desired = parse_targets(grant or [])
         started_from = parse_targets([key for key in base.split(",") if key])
@@ -243,7 +240,7 @@ async def save_grants_route(
     page = await _detail_context(db, user_id, saved, "success" if change.changed else "info")
     response = render(request, GRANTS_FRAGMENT, page)
     if change.changed:
-        response.headers["HX-Trigger"] = _events("grants-changed")
+        response.headers["HX-Trigger"] = hx_events("grants-changed")
     return response
 
 
@@ -325,20 +322,16 @@ def _done(user: User, actor: User, origin: str, updated: str) -> Response:
     when their session ended.
     """
     if user.id == actor.id:
-        return Response(status_code=200, headers={"HX-Redirect": "/projects"})
+        return hx_redirect("/projects")
     if origin == "detail":
-        return Response(
-            status_code=200, headers={"HX-Redirect": f"/users/{user.id}?updated={updated}"}
-        )
-    return Response(
-        status_code=204, headers={"HX-Trigger": _events("user-changed", "close-dialogs")}
-    )
+        return hx_redirect(f"/users/{user.id}?updated={updated}")
+    return events_response("user-changed", "close-dialogs")
 
 
 async def _apply_action(
     request: Request,
     db: AsyncSession,
-    actor: User,
+    context: AuthContext,
     user_id: int,
     action: str,
     origin: str,
@@ -353,7 +346,7 @@ async def _apply_action(
     """
     user = await _user_row(db, user_id)
     origin = origin if origin in ORIGINS else "list"
-    ip_address = client_address(request)
+    actor = context.user
     if action == "reset-2fa" and (user.id == actor.id or not user.totp_enabled):
         view = await _confirm_view(db, actor, user, action, origin, group)
         return render(request, CONFIRM_FRAGMENT, view, status_code=409)
@@ -362,23 +355,11 @@ async def _apply_action(
             target = _group_of(group)
             if target is None:
                 raise HTTPException(status.HTTP_404_NOT_FOUND, "group not found")
-            await user_service.set_user_group(
-                db,
-                user,
-                target,
-                actor_type=AuditActorType.USER,
-                actor_user=actor,
-                ip_address=ip_address,
-            )
+            await user_service.set_user_group(db, user, target, actor=audit_actor(request, context))
             updated = "group"
         elif action == "reset-2fa":
             await user_service.reset_two_factor(
-                db,
-                user,
-                actor_type=AuditActorType.USER,
-                actor_user=actor,
-                ip_address=ip_address,
-                notifier=get_notifier(request),
+                db, user, actor=audit_actor(request, context), notifier=get_notifier(request)
             )
             updated = "two-factor-reset"
         else:
@@ -388,9 +369,7 @@ async def _apply_action(
                     db,
                     user,
                     active,
-                    actor_type=AuditActorType.USER,
-                    actor_user=actor,
-                    ip_address=ip_address,
+                    actor=audit_actor(request, context),
                     notifier=get_notifier(request),
                 )
             updated = "enabled" if active else "disabled"
@@ -409,7 +388,7 @@ async def disable_user_route(
     origin: Annotated[str, Form(alias="from")] = "list",
 ) -> Response:
     """Disable a user: sessions end now and their API tokens are revoked."""
-    return await _apply_action(request, db, context.user, user_id, "disable", origin, "")
+    return await _apply_action(request, db, context, user_id, "disable", origin, "")
 
 
 @router.post("/users/{user_id:int}/enable", include_in_schema=False)
@@ -421,7 +400,7 @@ async def enable_user_route(
     origin: Annotated[str, Form(alias="from")] = "list",
 ) -> Response:
     """Enable a disabled user."""
-    return await _apply_action(request, db, context.user, user_id, "enable", origin, "")
+    return await _apply_action(request, db, context, user_id, "enable", origin, "")
 
 
 @router.post("/users/{user_id:int}/group", include_in_schema=False)
@@ -434,7 +413,7 @@ async def change_group_route(
     group: Annotated[str, Form()] = "",
 ) -> Response:
     """Move a user to another group, effective from their next request."""
-    return await _apply_action(request, db, context.user, user_id, "group", origin, group)
+    return await _apply_action(request, db, context, user_id, "group", origin, group)
 
 
 @router.post("/users/{user_id:int}/reset-2fa", include_in_schema=False)
@@ -446,4 +425,4 @@ async def reset_two_factor_route(
     origin: Annotated[str, Form(alias="from")] = "list",
 ) -> Response:
     """Turn off a user's two-factor sign-in (a lost authenticator): sessions end now."""
-    return await _apply_action(request, db, context.user, user_id, "reset-2fa", origin, "")
+    return await _apply_action(request, db, context, user_id, "reset-2fa", origin, "")

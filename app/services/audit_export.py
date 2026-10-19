@@ -7,8 +7,8 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models import AuditActorType, AuditResult, User
-from app.services.audit import record_audit
+from app.models import AuditResult, User
+from app.services.audit import AuditActor, record_actor_audit
 from app.services.audit_filters import AuditFilters, Cursor
 from app.services.audit_log import AuditRow, count_entries, list_page, newest_entry_id
 from app.services.permissions import Visibility
@@ -124,13 +124,11 @@ async def record_export(
     """
     up_to_id = await newest_entry_id(db)
     rows = await count_entries(db, visibility, filters, up_to_id=up_to_id)
-    await record_audit(
+    await record_actor_audit(
         db,
+        AuditActor.for_user(user, ip_address),
         action=EXPORT_ACTION,
         result=AuditResult.SUCCESS,
-        actor_type=AuditActorType.USER,
-        actor_user=user,
-        ip_address=ip_address,
         target_type="audit",
         target_name="audit log",
         details={"filters": filters.params(), "rows": rows},

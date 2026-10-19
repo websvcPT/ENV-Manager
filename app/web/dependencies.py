@@ -7,19 +7,25 @@ from typing import Annotated
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.client_address import client_address
 from app.core.crypto import CryptoService
 from app.core.display_time import DisplayTime, display_of
 from app.core.sessions import SESSION_COOKIE_NAME
 from app.models import User, UserGroup, UserSession
 from app.services.app_settings import StoredSettings, load_stored_settings
+from app.services.audit import AuditActor
 from app.services.auth_policy import AuthPolicy, policy_from_settings
+from app.services.backup_events import BackupNotifier
 from app.services.deploy import DeployEngine
 from app.services.docker_cli import DockerCli
 from app.services.hook_runner import DockerHookRunner
+from app.services.mailer import MailTransport
 from app.services.notify_events import FullNotifier
 from app.services.permissions import AccessScope, Capability, load_user_scope
 from app.services.sessions import resolve_session
+from app.services.settings_events import SettingsNotifier
 from app.services.shell_banners import load_shell_banners
+from app.services.webhook import WebhookTransport
 
 
 @dataclass(frozen=True)
@@ -28,6 +34,11 @@ class AuthContext:
 
     user: User
     session: UserSession
+
+
+def audit_actor(request: Request, context: AuthContext) -> AuditActor:
+    """The signed-in user as the actor of an audit entry, with the address of the request."""
+    return AuditActor.for_user(context.user, client_address(request))
 
 
 async def get_db(request: Request) -> AsyncIterator[AsyncSession]:
@@ -66,6 +77,30 @@ def get_notifier(request: Request) -> FullNotifier:
     """The application's notifier, which every service announces its events to."""
     notifier: FullNotifier = request.app.state.notifier
     return notifier
+
+
+def get_backup_notifier(request: Request) -> BackupNotifier:
+    """The application's backup notifier."""
+    notifier: BackupNotifier = request.app.state.backup_notifier
+    return notifier
+
+
+def get_settings_notifier(request: Request) -> SettingsNotifier:
+    """The application's settings notifier."""
+    notifier: SettingsNotifier = request.app.state.settings_notifier
+    return notifier
+
+
+def get_mail_transport(request: Request) -> MailTransport:
+    """The application's mail transport."""
+    transport: MailTransport = request.app.state.mail_transport
+    return transport
+
+
+def get_webhook_transport(request: Request) -> WebhookTransport:
+    """The application's webhook transport."""
+    transport: WebhookTransport = request.app.state.webhook_transport
+    return transport
 
 
 async def get_stored_settings(

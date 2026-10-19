@@ -16,7 +16,6 @@ from starlette.datastructures import FormData
 from app.core.client_address import client_address
 from app.core.templating import render
 from app.models import PostDeployStatus
-from app.services.audit import AuditActor
 from app.services.deploy import DeployEngine
 from app.services.deploy_types import DeployRequestError
 from app.services.drift import (
@@ -30,9 +29,10 @@ from app.services.drift import (
     reveal_drift,
 )
 from app.services.permissions import Capability
-from app.web.dependencies import get_crypto, get_db, get_deploy_engine, get_notifier
+from app.web.dependencies import audit_actor, get_crypto, get_db, get_deploy_engine, get_notifier
 from app.web.deploy_dialog import DEPLOY_TIMEOUT_MS
 from app.web.editor import EnvironmentContext, environment_access
+from app.web.htmx import hx_redirect
 
 router = APIRouter()
 
@@ -58,14 +58,6 @@ def _text(form: FormData, name: str) -> str:
     """A text field of the form, empty when missing."""
     value = form.get(name)
     return value[:MAX_HASH_LENGTH] if isinstance(value, str) else ""
-
-
-def _redirect(location: str) -> Response:
-    """Send the page to ``location`` once an action succeeded."""
-    return Response(
-        status_code=200,
-        headers={"HX-Redirect": location, "Cache-Control": "no-store", "Vary": "HX-Request"},
-    )
 
 
 def _overwrite_notice(result: OverwriteResult) -> tuple[str, str]:
@@ -186,7 +178,7 @@ async def import_file(
         )
     except DriftError as error:
         return render(request, NOTICE, {"error": str(error)}, status_code=422)
-    return _redirect(f"/environments/{access.env.id}/drift?imported={version.number}")
+    return hx_redirect(f"/environments/{access.env.id}/drift?imported={version.number}")
 
 
 def _overwrite_form(
@@ -227,7 +219,7 @@ async def overwrite(
             db,
             engine,
             access.scope,
-            AuditActor.for_user(access.auth.user, client_address(request)),
+            audit_actor(request, access.auth),
             access.env,
             base_number=base_version,
         )
@@ -236,7 +228,7 @@ async def overwrite(
     except DeployRequestError as error:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
     post = "failed" if result.post_deploy is PostDeployStatus.FAILED else "ok"
-    return _redirect(
+    return hx_redirect(
         f"/environments/{access.env.id}/drift?overwritten={result.version_number}"
         f"&backup={int(result.backed_up)}&same={int(result.unchanged)}&post={post}"
     )

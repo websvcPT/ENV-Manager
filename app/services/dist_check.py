@@ -27,7 +27,7 @@ from app.models import (
     User,
 )
 from app.models.types import utc_now
-from app.services.audit import AuditActor, record_actor_audit
+from app.services.audit import AuditActor, EnvironmentRef, record_environment_audit
 from app.services.dist import (
     DistError,
     DistProblem,
@@ -284,23 +284,22 @@ async def record_dist_check(db: AsyncSession, check: DistCheck, *, actor: AuditA
     if check.problem is not None:
         details["problem"] = check.problem.value
     subject = check.subject
-    entry = await record_actor_audit(
+    await record_environment_audit(
         db,
         actor,
+        EnvironmentRef(
+            subject.environment_id,
+            subject.name,
+            subject.project_id,
+            subject.deployment_id,
+            subject.service_id,
+        ),
         action="environment.dist_check",
         result=_audit_result(check.outcome),
-        target_type="environment",
-        target_id=subject.environment_id,
-        target_name=subject.name,
-        project_id=subject.project_id,
-        deployment_id=subject.deployment_id,
-        service_id=subject.service_id,
-        environment_id=subject.environment_id,
         details=details,
+        version_ids=[check.version_id] if check.version_id is not None else (),
+        created_at=check.checked_at,
     )
-    entry.created_at = check.checked_at
-    if check.version_id is not None:
-        entry.version_ids = [check.version_id]
 
 
 async def run_dist_check(

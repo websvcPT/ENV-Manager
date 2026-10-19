@@ -13,19 +13,12 @@ from app.services.permissions import Capability
 from app.services.services import ServiceNameError, create_service
 from app.web.dependencies import get_db
 from app.web.deployments import DeploymentContext, deployment_access
+from app.web.htmx import hx_redirect
 
 router = APIRouter()
 
 PAGE = "pages/service_form.html"
 FORM_FRAGMENT = "fragments/service_form.html"
-
-
-def _redirect(url: str) -> Response:
-    """Tell htmx to navigate to ``url``."""
-    return Response(
-        status_code=200,
-        headers={"HX-Redirect": url, "Cache-Control": "no-store", "Vary": "HX-Request"},
-    )
 
 
 @router.get("/deployments/{deployment_id:int}/services/new", include_in_schema=False)
@@ -59,4 +52,4 @@ async def create_service_route(
             {"deployment": access.deployment, "name": name, "error": str(error)},
             status_code=422,
         )
-    return _redirect(f"/services/{service.id}?added=service")
+    return hx_redirect(f"/services/{service.id}?added=service")

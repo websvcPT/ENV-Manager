@@ -14,7 +14,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.passwords import generate_password, hash_password
 from app.models import (
-    AuditActorType,
     AuditResult,
     LoginCounter,
     LoginCounterKind,
@@ -22,7 +21,7 @@ from app.models import (
     UserGroup,
 )
 from app.services import totp
-from app.services.audit import AuditActor, record_audit
+from app.services.audit import AuditActor, record_actor_audit
 from app.services.grants import (
     GrantTarget,
     add_grant_row,
@@ -73,11 +72,6 @@ class LastSuperadminError(UserError):
 
 class TwoFactorNotOnError(UserError):
     """The user has no two-factor sign-in to reset."""
-
-
-def _actor_name(actor_type: AuditActorType) -> str | None:
-    """The audit actor name for non-user actors."""
-    return "cli" if actor_type is AuditActorType.CLI else None
 
 
 async def find_user_by_name(db: AsyncSession, name: str) -> User | None:
@@ -131,9 +125,7 @@ async def create_user(
     name: str,
     email: str,
     group: UserGroup,
-    actor_type: AuditActorType,
-    actor_user: User | None = None,
-    ip_address: str | None = None,
+    actor: AuditActor,
     grants: Collection[GrantTarget] = (),
     notifier: EventNotifier = NO_EVENT_NOTIFIER,
 ) -> tuple[User, str]:
@@ -150,7 +142,6 @@ async def create_user(
         raise UserExistsError("Another user already has this email address.", "email")
     chosen = [] if group is UserGroup.SUPERADMIN else sorted(set(grants))
     labels = await require_existing(db, chosen)
-    actor = AuditActor(actor_type, user=actor_user, ip_address=ip_address)
     password = generate_password()
     user = User(name=name, email=email, password_hash=hash_password(password), group=group)
     db.add(user)
@@ -161,14 +152,11 @@ async def create_user(
         raise UserExistsError(
             "A user with this name or email address already exists.", "email"
         ) from error
-    await record_audit(
+    await record_actor_audit(
         db,
+        actor,
         action="user.create",
         result=AuditResult.SUCCESS,
-        actor_type=actor_type,
-        actor_user=actor_user,
-        actor_name=_actor_name(actor_type),
-        ip_address=ip_address,
         target_type="user",
         target_id=user.id,
         target_name=user.name,
@@ -188,9 +176,7 @@ async def reset_password(
     db: AsyncSession,
     user: User,
     *,
-    actor_type: AuditActorType,
-    actor_user: User | None = None,
-    ip_address: str | None = None,
+    actor: AuditActor,
     notifier: EventNotifier = NO_EVENT_NOTIFIER,
 ) -> str:
     """Give the user a new generated password, end their sessions and clear their lockout.
@@ -206,26 +192,18 @@ async def reset_password(
             LoginCounter.subject.in_([user.name.lower(), user.email.lower()]),
         )
     )
-    await record_audit(
+    await record_actor_audit(
         db,
+        actor,
         action="user.password_reset",
         result=AuditResult.SUCCESS,
-        actor_type=actor_type,
-        actor_user=actor_user,
-        actor_name=_actor_name(actor_type),
-        ip_address=ip_address,
         target_type="user",
         target_id=user.id,
         target_name=user.name,
         details={"sessions_ended": ended},
     )
     await db.commit()
-    await announce_event(
-        notifier,
-        UserChanged(
-            UserChange.PASSWORD_RESET, user.name, AuditActor(actor_type, user=actor_user).label
-        ),
-    )
+    await announce_event(notifier, UserChanged(UserChange.PASSWORD_RESET, user.name, actor.label))
     return password
 
 
@@ -233,9 +211,7 @@ async def reset_two_factor(
     db: AsyncSession,
     user: User,
     *,
-    actor_type: AuditActorType,
-    actor_user: User | None = None,
-    ip_address: str | None = None,
+    actor: AuditActor,
     notifier: EventNotifier = NO_EVENT_NOTIFIER,
 ) -> int:
     """Turn off a user's two-factor sign-in without their code, for a lost authenticator.
@@ -249,26 +225,18 @@ async def reset_two_factor(
     totp.disable(user)
     ended = await revoke_user_sessions(db, user.id)
     waiting = await discard_user_pending_logins(db, user.id)
-    await record_audit(
+    await record_actor_audit(
         db,
+        actor,
         action="user.totp_reset",
         result=AuditResult.SUCCESS,
-        actor_type=actor_type,
-        actor_user=actor_user,
-        actor_name=_actor_name(actor_type),
-        ip_address=ip_address,
         target_type="user",
         target_id=user.id,
         target_name=user.name,
         details={"sessions_ended": ended, "pending_logins_ended": waiting},
     )
     await db.commit()
-    await announce_event(
-        notifier,
-        UserChanged(
-            UserChange.TWO_FACTOR_RESET, user.name, AuditActor(actor_type, user=actor_user).label
-        ),
-    )
+    await announce_event(notifier, UserChanged(UserChange.TWO_FACTOR_RESET, user.name, actor.label))
     return ended
 
 
@@ -304,19 +272,14 @@ async def _record_blocked(
     action: str,
     details: dict[str, object],
     *,
-    actor_type: AuditActorType,
-    actor_user: User | None,
-    ip_address: str | None,
+    actor: AuditActor,
 ) -> None:
     """Audit and commit a refused account change."""
-    await record_audit(
+    await record_actor_audit(
         db,
+        actor,
         action=action,
         result=AuditResult.BLOCKED,
-        actor_type=actor_type,
-        actor_user=actor_user,
-        actor_name=_actor_name(actor_type),
-        ip_address=ip_address,
         target_type="user",
         target_id=user.id,
         target_name=user.name,
@@ -330,9 +293,7 @@ async def set_user_active(
     user: User,
     active: bool,
     *,
-    actor_type: AuditActorType,
-    actor_user: User | None = None,
-    ip_address: str | None = None,
+    actor: AuditActor,
     notifier: EventNotifier = NO_EVENT_NOTIFIER,
 ) -> int:
     """Enable or disable a user, audit it, and end the sessions of a disabled user.
@@ -343,32 +304,20 @@ async def set_user_active(
     """
     action = "user.enable" if active else "user.disable"
     if not active and await is_last_active_superadmin(db, user):
-        await _record_blocked(
-            db,
-            user,
-            action,
-            {"reason": "last_active_superadmin"},
-            actor_type=actor_type,
-            actor_user=actor_user,
-            ip_address=ip_address,
-        )
+        await _record_blocked(db, user, action, {"reason": "last_active_superadmin"}, actor=actor)
         raise LastSuperadminError("The last active superadmin cannot be disabled.")
     user.is_active = active
     ended = 0
     details: dict[str, object] = {}
     if not active:
         ended = await revoke_user_sessions(db, user.id)
-        actor = AuditActor(actor_type, user=actor_user, ip_address=ip_address)
         revoked = await revoke_user_tokens(db, user, actor, reason=REASON_USER_DISABLED)
         details["tokens_revoked"] = revoked
-    await record_audit(
+    await record_actor_audit(
         db,
+        actor,
         action=action,
         result=AuditResult.SUCCESS,
-        actor_type=actor_type,
-        actor_user=actor_user,
-        actor_name=_actor_name(actor_type),
-        ip_address=ip_address,
         target_type="user",
         target_id=user.id,
         target_name=user.name,
@@ -376,12 +325,7 @@ async def set_user_active(
     )
     await db.commit()
     if not active:
-        await announce_event(
-            notifier,
-            UserChanged(
-                UserChange.DISABLED, user.name, AuditActor(actor_type, user=actor_user).label
-            ),
-        )
+        await announce_event(notifier, UserChanged(UserChange.DISABLED, user.name, actor.label))
     return ended
 
 
@@ -390,9 +334,7 @@ async def set_user_group(
     user: User,
     group: UserGroup,
     *,
-    actor_type: AuditActorType,
-    actor_user: User | None = None,
-    ip_address: str | None = None,
+    actor: AuditActor,
 ) -> bool:
     """Move a user to another group and audit it; returns whether the group changed.
 
@@ -410,26 +352,20 @@ async def set_user_group(
             user,
             "user.group_change",
             {"reason": "last_active_superadmin", "from": previous.value, "to": group.value},
-            actor_type=actor_type,
-            actor_user=actor_user,
-            ip_address=ip_address,
+            actor=actor,
         )
         raise LastSuperadminError("The last active superadmin cannot be demoted.")
     user.group = group
     details: dict[str, object] = {"from": previous.value, "to": group.value}
     if group is UserGroup.VIEWER:
-        actor = AuditActor(actor_type, user=actor_user, ip_address=ip_address)
         details["tokens_revoked"] = await revoke_user_tokens(
             db, user, actor, reason=REASON_MOVED_TO_VIEWER
         )
-    await record_audit(
+    await record_actor_audit(
         db,
+        actor,
         action="user.group_change",
         result=AuditResult.SUCCESS,
-        actor_type=actor_type,
-        actor_user=actor_user,
-        actor_name=_actor_name(actor_type),
-        ip_address=ip_address,
         target_type="user",
         target_id=user.id,
         target_name=user.name,

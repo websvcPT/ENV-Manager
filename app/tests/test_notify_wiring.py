@@ -15,12 +15,13 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.core.crypto import CryptoService
 from app.core.db import create_session_factory
-from app.models import AuditActorType, AuditEntry, User, UserGroup
+from app.models import AuditEntry, User, UserGroup
 from app.models.types import utc_now
 from app.services import totp, users
 from app.services.account import AccountError, AccountLockedError, change_password
 from app.services.api_auth import authenticate_token
 from app.services.api_errors import ApiRefusal
+from app.services.audit import AuditActor
 from app.services.auth_policy import AuthPolicy
 from app.services.login import LoginResult, LoginStatus, authenticate, complete_totp_login
 from app.services.notify_events import (
@@ -310,7 +311,7 @@ async def test_creating_a_user_is_announced_with_the_group_and_never_the_passwor
             name="bob",
             email="bob@example.test",
             group=UserGroup.VIEWER,
-            actor_type=AuditActorType.CLI,
+            actor=AuditActor.cli(),
             notifier=notifier,
         )
     assert notifier.events == [UserChanged(UserChange.CREATED, "bob", "cli", "viewer")]
@@ -328,7 +329,7 @@ async def test_a_refused_creation_announces_nothing(engine: AsyncEngine) -> None
                 name="",
                 email="x@example.test",
                 group=UserGroup.VIEWER,
-                actor_type=AuditActorType.CLI,
+                actor=AuditActor.cli(),
                 notifier=notifier,
             )
     assert notifier.events == []
@@ -346,10 +347,10 @@ async def test_disabling_is_announced_with_who_did_it_and_enabling_is_not(
         target = await db.get(User, alice.id)
         assert target is not None
         await users.set_user_active(
-            db, target, False, actor_type=AuditActorType.USER, actor_user=admin, notifier=notifier
+            db, target, False, actor=AuditActor.for_user(admin), notifier=notifier
         )
         await users.set_user_active(
-            db, target, True, actor_type=AuditActorType.USER, actor_user=admin, notifier=notifier
+            db, target, True, actor=AuditActor.for_user(admin), notifier=notifier
         )
     assert notifier.events == [UserChanged(UserChange.DISABLED, "alice", "carol")]
 
@@ -364,9 +365,7 @@ async def test_a_refused_disable_of_the_last_superadmin_announces_nothing(
         db.add(only)
         await db.commit()
         with pytest.raises(users.LastSuperadminError):
-            await users.set_user_active(
-                db, only, False, actor_type=AuditActorType.CLI, notifier=notifier
-            )
+            await users.set_user_active(db, only, False, actor=AuditActor.cli(), notifier=notifier)
     assert notifier.events == []
 
 
@@ -381,10 +380,8 @@ async def test_a_password_reset_and_a_two_factor_reset_are_announced(
         await db.flush()
         totp.activate(user, pyotp.random_base32(), 1, crypto, now=utc_now())
         await db.commit()
-        password = await users.reset_password(
-            db, user, actor_type=AuditActorType.CLI, notifier=notifier
-        )
-        await users.reset_two_factor(db, user, actor_type=AuditActorType.CLI, notifier=notifier)
+        password = await users.reset_password(db, user, actor=AuditActor.cli(), notifier=notifier)
+        await users.reset_two_factor(db, user, actor=AuditActor.cli(), notifier=notifier)
     assert notifier.events == [
         UserChanged(UserChange.PASSWORD_RESET, "dave", "cli"),
         UserChanged(UserChange.TWO_FACTOR_RESET, "dave", "cli"),
@@ -401,7 +398,5 @@ async def test_a_two_factor_reset_that_is_refused_announces_nothing(
         target = await db.get(User, alice.id)
         assert target is not None
         with pytest.raises(users.TwoFactorNotOnError):
-            await users.reset_two_factor(
-                db, target, actor_type=AuditActorType.CLI, notifier=notifier
-            )
+            await users.reset_two_factor(db, target, actor=AuditActor.cli(), notifier=notifier)
     assert notifier.events == []

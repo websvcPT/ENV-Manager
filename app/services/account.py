@@ -12,10 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.crypto import CryptoService
 from app.core.passwords import hash_password, verify_password
-from app.models import AuditActorType, AuditResult, LoginCounterKind, User, UserSession
+from app.models import AuditResult, LoginCounterKind, User, UserSession
 from app.models.types import utc_now
 from app.services import totp
-from app.services.audit import record_audit
+from app.services.audit import AuditActor, record_actor_audit
 from app.services.auth_policy import AuthPolicy
 from app.services.lockout import (
     announce_lockouts,
@@ -67,13 +67,11 @@ async def _audit(
     details: dict[str, object] | None = None,
 ) -> None:
     """Add an audit entry for an action of the user on their own account. The caller commits."""
-    await record_audit(
+    await record_actor_audit(
         db,
+        AuditActor.for_user(user, ip_address),
         action=action,
         result=result,
-        actor_type=AuditActorType.USER,
-        actor_user=user,
-        ip_address=ip_address,
         target_type="user",
         target_id=user.id,
         target_name=user.name,

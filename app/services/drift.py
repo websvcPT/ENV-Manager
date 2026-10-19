@@ -24,8 +24,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core import metrics, telemetry
 from app.core.crypto import CryptoService
 from app.models import (
-    AuditActorType,
-    AuditResult,
     Deployment,
     DeployResultStatus,
     DriftState,
@@ -34,7 +32,7 @@ from app.models import (
     User,
 )
 from app.models.types import utc_now
-from app.services.audit import AuditActor, record_audit
+from app.services.audit import AuditActor, record_environment_audit
 from app.services.content import content_problem
 from app.services.deploy import DeployEngine
 from app.services.deploy_baseline import Baseline, load_baselines
@@ -513,33 +511,6 @@ def _same_hash(posted: str | None, current: str | None) -> bool:
     return hmac.compare_digest((posted or "").encode(), (current or "").encode())
 
 
-async def _audit_target_reveal(
-    db: AsyncSession,
-    header: EditorHeader,
-    actor: User,
-    ip_address: str | None,
-    details: dict[str, object],
-) -> None:
-    """Write and commit the audit entry of revealing the file read from the host."""
-    await record_audit(
-        db,
-        action="environment.reveal",
-        result=AuditResult.SUCCESS,
-        actor_type=AuditActorType.USER,
-        actor_user=actor,
-        ip_address=ip_address,
-        target_type="environment",
-        target_id=header.id,
-        target_name=header.name,
-        project_id=header.project_id,
-        deployment_id=header.deployment_id,
-        service_id=header.service_id,
-        environment_id=header.id,
-        details=details,
-    )
-    await db.commit()
-
-
 async def reveal_drift(
     db: AsyncSession,
     crypto: CryptoService,
@@ -588,10 +559,9 @@ async def reveal_drift(
         details["column"] = column
         if not comparison.whole_file:
             details["keys"] = [row.key for row, _value in shown]
-        if version is None:
-            await _audit_target_reveal(db, header, actor, ip_address, details)
-        else:
-            await audit_reveal(db, header, version, actor, ip_address, details)
+        await audit_reveal(
+            db, header, AuditActor.for_user(actor, ip_address), details, version=version
+        )
         for row, value in shown:
             values.setdefault(row.index, {})[column] = value
     return RevealedDrift(values)
@@ -641,23 +611,14 @@ async def import_target(
             author=actor,
             comment=IMPORT_COMMENT,
         )
-        entry = await record_audit(
+        await record_environment_audit(
             db,
+            AuditActor.for_user(actor, ip_address),
+            header,
             action="environment.import",
-            result=AuditResult.SUCCESS,
-            actor_type=AuditActorType.USER,
-            actor_user=actor,
-            ip_address=ip_address,
-            target_type="environment",
-            target_id=header.id,
-            target_name=header.name,
-            project_id=header.project_id,
-            deployment_id=header.deployment_id,
-            service_id=header.service_id,
-            environment_id=header.id,
             details={"number": version.number, "source": "target"},
+            version_ids=[version.id],
         )
-        entry.version_ids = [version.id]
         await db.commit()
     except IntegrityError as error:
         await db.rollback()

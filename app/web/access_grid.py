@@ -6,21 +6,19 @@ removed and applies at once, and the server decides what the grid may do whateve
 posts: inherited cells, deleted items, superadmins and out of date pages are refused.
 """
 
-import json
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.client_address import client_address
 from app.core.templating import render
 from app.models import User
 from app.services.access_grid import GridFilters, load_access_grid, toggle_cell
-from app.services.audit import AuditActor
 from app.services.grants import MAX_ID_DIGITS, GrantTarget
 from app.services.permissions import Capability
-from app.web.dependencies import AuthContext, get_db, require_capability
+from app.web.dependencies import AuthContext, audit_actor, get_db, require_capability
+from app.web.htmx import hx_events
 
 router = APIRouter()
 
@@ -72,7 +70,7 @@ async def toggle_route(
         row,
         grant_target,
         was=was == "1",
-        actor=AuditActor.for_user(context.user, client_address(request)),
+        actor=audit_actor(request, context),
     )
     response = render(
         request,
@@ -81,5 +79,5 @@ async def toggle_route(
         status_code=status.HTTP_409_CONFLICT if update.notice else status.HTTP_200_OK,
     )
     if update.changed:
-        response.headers["HX-Trigger"] = json.dumps({"grants-changed": True})
+        response.headers["HX-Trigger"] = hx_events("grants-changed")
     return response

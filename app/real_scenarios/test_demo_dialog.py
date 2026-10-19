@@ -16,7 +16,7 @@ from app.models import AuditEntry, DeployRun, PostDeployStatus
 from app.real_scenarios.conftest import DemoStack, Workloads, World
 from app.real_scenarios.helpers import MANAGED, snapshot
 from app.tests.conftest import sign_in
-from app.tests.web_helpers import post
+from app.tests.web_helpers import events_of, post
 
 DRIFTED_ENVIRONMENT = ".env.api"
 CREATED_ENVIRONMENT = "demo-ca.pem"
@@ -58,7 +58,7 @@ async def test_the_dialog_deploys_api_for_real_and_the_command_recreates_the_wor
 
     before = time.time()
     done = await post(web, f"/services/{api}/deploy", chosen(ca))
-    assert done.headers["HX-Trigger"] == "deploy-finished"
+    assert events_of(done) == {"deploy-finished": True}
     assert "1 environment written. The post-deploy command ran once." in done.text
     assert "Ran once · exit code 0" in done.text
 

@@ -15,7 +15,6 @@ from app.cli.session import run_command
 from app.config import Settings, get_settings
 from app.core.crypto import CryptoError, CryptoService, build_crypto_service, load_master_key
 from app.models import (
-    AuditActorType,
     BackupStatus,
     BackupTrigger,
     Deployment,
@@ -93,7 +92,7 @@ def create_user(
             name=name,
             email=email,
             group=group,
-            actor_type=AuditActorType.CLI,
+            actor=AuditActor.cli(),
             notifier=cli_notifier(db),
         )
         return password
@@ -134,7 +133,7 @@ def disable_user(name: Annotated[str, typer.Argument(help="Sign-in name.")]) -> 
     async def operation(db: AsyncSession) -> int:
         user = await user_service.get_user_by_name(db, name)
         return await user_service.set_user_active(
-            db, user, False, actor_type=AuditActorType.CLI, notifier=cli_notifier(db)
+            db, user, False, actor=AuditActor.cli(), notifier=cli_notifier(db)
         )
 
     ended = run_command(operation)
@@ -147,7 +146,7 @@ def enable_user(name: Annotated[str, typer.Argument(help="Sign-in name.")]) -> N
 
     async def operation(db: AsyncSession) -> int:
         user = await user_service.get_user_by_name(db, name)
-        return await user_service.set_user_active(db, user, True, actor_type=AuditActorType.CLI)
+        return await user_service.set_user_active(db, user, True, actor=AuditActor.cli())
 
     run_command(operation)
     typer.echo(f"enabled user {name.strip()}")
@@ -160,7 +159,7 @@ def reset_user_password(name: Annotated[str, typer.Argument(help="Sign-in name."
     async def operation(db: AsyncSession) -> str:
         user = await user_service.get_user_by_name(db, name)
         return await user_service.reset_password(
-            db, user, actor_type=AuditActorType.CLI, notifier=cli_notifier(db)
+            db, user, actor=AuditActor.cli(), notifier=cli_notifier(db)
         )
 
     password = run_command(operation)
@@ -176,7 +175,7 @@ def reset_user_two_factor(name: Annotated[str, typer.Argument(help="Sign-in name
     async def operation(db: AsyncSession) -> int:
         user = await user_service.get_user_by_name(db, name)
         return await user_service.reset_two_factor(
-            db, user, actor_type=AuditActorType.CLI, notifier=cli_notifier(db)
+            db, user, actor=AuditActor.cli(), notifier=cli_notifier(db)
         )
 
     ended = run_command(operation)

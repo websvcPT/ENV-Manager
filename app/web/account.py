@@ -5,7 +5,6 @@ two-factor secret travels in an HttpOnly cookie as ciphertext and never reaches 
 or a URL; the QR code is drawn by the server at an address that is never cached.
 """
 
-import json
 import math
 import secrets
 from datetime import timedelta
@@ -48,6 +47,7 @@ from app.web.dependencies import (
     get_notifier,
     require_auth,
 )
+from app.web.htmx import events_response, hx_events
 
 router = APIRouter()
 
@@ -62,11 +62,6 @@ Signed = Annotated[AuthContext, Depends(require_auth)]
 Database = Annotated[AsyncSession, Depends(get_db)]
 Policy = Annotated[AuthPolicy, Depends(get_auth_policy)]
 Crypto = Annotated[CryptoService, Depends(get_crypto)]
-
-
-def _events(*names: str) -> str:
-    """An ``HX-Trigger`` value firing the named events."""
-    return json.dumps(dict.fromkeys(names, True))
 
 
 def _wait_text(wait: timedelta) -> str:
@@ -227,7 +222,7 @@ async def password_route(
     response = render(
         request, CHANGE_PANEL_FRAGMENT, _password_context(policy, notice="changed", ended=ended)
     )
-    response.headers["HX-Trigger"] = _events("sessions-changed")
+    response.headers["HX-Trigger"] = hx_events("sessions-changed")
     return response
 
 
@@ -355,10 +350,7 @@ async def totp_remove(
             return render(request, TOTP_REMOVE_FRAGMENT, page, status_code=409)
         page = _remove_context("ask", errors={error.field: str(error)})
         return render(request, TOTP_REMOVE_FRAGMENT, page, status_code=422)
-    return Response(
-        status_code=status.HTTP_204_NO_CONTENT,
-        headers={"HX-Trigger": _events("totp-changed", "close-dialogs")},
-    )
+    return events_response("totp-changed", "close-dialogs")
 
 
 @router.get("/account/sessions", include_in_schema=False)
@@ -384,10 +376,7 @@ async def revoke_others(request: Request, db: Database, context: Signed) -> Resp
     await revoke_all_other_sessions(
         db, context.user, context.session.id, ip_address=client_address(request)
     )
-    return Response(
-        status_code=status.HTTP_204_NO_CONTENT,
-        headers={"HX-Trigger": _events("sessions-changed", "close-dialogs")},
-    )
+    return events_response("sessions-changed", "close-dialogs")
 
 
 @router.get("/account/sessions/{session_id:int}/revoke", include_in_schema=False)
@@ -418,7 +407,4 @@ async def revoke_session_route(
         )
     except (SessionNotFoundError, CurrentSessionError) as error:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "session not found") from error
-    return Response(
-        status_code=status.HTTP_204_NO_CONTENT,
-        headers={"HX-Trigger": _events("sessions-changed", "close-dialogs")},
-    )
+    return events_response("sessions-changed", "close-dialogs")

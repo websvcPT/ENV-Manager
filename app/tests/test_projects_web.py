@@ -12,7 +12,7 @@ from app.core.csrf import CSRF_COOKIE_NAME
 from app.models import ApiTokenRestriction, AuditEntry, Project, User
 from app.services.projects import delete_project
 from app.tests.conftest import sign_in
-from app.tests.web_helpers import HTMX
+from app.tests.web_helpers import HTMX, events_of
 from app.web import projects as projects_web
 
 TABLE = re.compile(r'<section data-fragment="projects-table".*?</section>', re.DOTALL)
@@ -161,7 +161,7 @@ async def test_create_project_swaps_the_table_and_closes_the_dialog(
     await sign_in(web_client, "root")
     response = await post_project(web_client, " fleetops ")
     assert response.status_code == 200
-    assert response.headers["hx-trigger"] == "close-dialogs"
+    assert events_of(response) == {"close-dialogs": True}
     assert project_names(response.text) == ["billing", "Fancy Proj. Name", "fleetops"]
     async with web_app.state.session_factory() as db:
         entry = (

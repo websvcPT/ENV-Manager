@@ -16,13 +16,11 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.client_address import client_address
 from app.core.crypto import CryptoService
 from app.core.display_time import display_of
 from app.core.templating import render
 from app.models.types import utc_now
 from app.services.app_settings import WEBHOOK_SECRET_KEY, StoredSettings, has_secret
-from app.services.audit import AuditActor
 from app.services.notification_settings import (
     NotificationsForm,
     NotificationsFormError,
@@ -34,7 +32,13 @@ from app.services.notify_catalog import EVENT_ROWS
 from app.services.shell_banners import load_shell_banners
 from app.services.webhook import WebhookTransport
 from app.services.webhook_delivery import send_test_event
-from app.web.dependencies import get_crypto, get_db, get_stored_settings
+from app.web.dependencies import (
+    audit_actor,
+    get_crypto,
+    get_db,
+    get_stored_settings,
+    get_webhook_transport,
+)
 from app.web.settings_tabs import ManageSettings, tab_context
 
 router = APIRouter()
@@ -46,17 +50,7 @@ TEST_FRAGMENT = "fragments/webhook_test_result.html"
 Database = Annotated[AsyncSession, Depends(get_db)]
 Stored = Annotated[StoredSettings, Depends(get_stored_settings)]
 Crypto = Annotated[CryptoService, Depends(get_crypto)]
-
-
-def _actor(request: Request, context: ManageSettings) -> AuditActor:
-    """The signed-in superadmin as the actor of an audit entry."""
-    return AuditActor.for_user(context.user, client_address(request))
-
-
-def _transport(request: Request) -> WebhookTransport:
-    """The application's webhook transport."""
-    transport: WebhookTransport = request.app.state.webhook_transport
-    return transport
+Transport = Annotated[WebhookTransport, Depends(get_webhook_transport)]
 
 
 async def _form_context(
@@ -118,7 +112,7 @@ async def save_notifications_route(
         )
         page = await _form_context(db, shown, errors=error.errors)
         return render(request, FORM_FRAGMENT, page, status_code=422)
-    changed = await save_notifications(db, crypto, clean, actor=_actor(request, context))
+    changed = await save_notifications(db, crypto, clean, actor=audit_actor(request, context))
     if changed:
         saved = {
             "tone": "success",
@@ -138,14 +132,19 @@ async def save_notifications_route(
 
 @router.post("/settings/notifications/webhook/test", include_in_schema=False)
 async def send_test_event_route(
-    request: Request, db: Database, crypto: Crypto, context: ManageSettings, stored: Stored
+    request: Request,
+    db: Database,
+    crypto: Crypto,
+    context: ManageSettings,
+    stored: Stored,
+    transport: Transport,
 ) -> Response:
     """Post the test event through the stored settings and answer how it went."""
     check = await send_test_event(
         db,
         crypto,
-        _transport(request),
-        actor=_actor(request, context),
+        transport,
+        actor=audit_actor(request, context),
         now=utc_now(),
         unix_time=int(time.time()),
     )

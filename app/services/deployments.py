@@ -14,7 +14,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
-    AuditActorType,
     AuditResult,
     Deployment,
     DistMissingPolicy,
@@ -24,7 +23,7 @@ from app.models import (
     User,
 )
 from app.services.app_settings import GeneralSettings
-from app.services.audit import record_audit
+from app.services.audit import AuditActor, record_actor_audit
 from app.services.paths import (
     AllowedPaths,
     PathValidationError,
@@ -310,13 +309,11 @@ async def create_deployment(
     )
     db.add(deployment)
     await db.flush()
-    await record_audit(
+    await record_actor_audit(
         db,
+        AuditActor.for_user(actor, ip_address),
         action="deployment.create",
         result=AuditResult.SUCCESS,
-        actor_type=AuditActorType.USER,
-        actor_user=actor,
-        ip_address=ip_address,
         target_type="deployment",
         target_id=deployment.id,
         target_name=deployment.name,
@@ -355,13 +352,11 @@ async def update_deployment(
         details["previous_root_path"] = deployment.root_path
     for key in changed:
         setattr(deployment, key, new_values[key])
-    await record_audit(
+    await record_actor_audit(
         db,
+        AuditActor.for_user(actor, ip_address),
         action="deployment.update",
         result=AuditResult.SUCCESS,
-        actor_type=AuditActorType.USER,
-        actor_user=actor,
-        ip_address=ip_address,
         target_type="deployment",
         target_id=deployment.id,
         target_name=deployment.name,

@@ -19,6 +19,7 @@ from app.web.dependencies import (
     require_auth,
     require_capability,
 )
+from app.web.htmx import ANSWER_HEADERS, hx_events
 
 log = get_logger("web.projects")
 
@@ -111,9 +112,5 @@ async def create_project_route(
     fresh_form = render(request, FORM_FRAGMENT, {"form_oob": True, "name_rule": NAME_RULE})
     return HTMLResponse(
         bytes(table.body) + bytes(fresh_form.body),
-        headers={
-            "Cache-Control": "no-store",
-            "Vary": "HX-Request",
-            "HX-Trigger": "close-dialogs",
-        },
+        headers={**ANSWER_HEADERS, "HX-Trigger": hx_events("close-dialogs")},
     )

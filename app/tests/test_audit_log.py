@@ -223,10 +223,13 @@ async def test_the_cursor_orders_entries_with_the_same_time_by_id(
     """A page boundary inside a group of entries with one timestamp loses none of them."""
     moment = datetime(2030, 1, 1, 12, 0, tzinfo=UTC)
     for _ in range(5):
-        entry = await record_audit(
-            db, action="tie.test", result=AuditResult.SUCCESS, actor_type=AuditActorType.SYSTEM
+        await record_audit(
+            db,
+            action="tie.test",
+            result=AuditResult.SUCCESS,
+            actor_type=AuditActorType.SYSTEM,
+            created_at=moment,
         )
-        entry.created_at = moment
     await db.commit()
     visibility = await visibility_of(db, seed_data.users.superadmin)
     filters = AuditFilters(action="tie.test")
@@ -337,10 +340,13 @@ async def test_the_last_day_of_the_range_is_included_whole(
         datetime(2031, 5, 5, 0, 0, 0, tzinfo=UTC),
         datetime(2031, 5, 3, 23, 59, 59, tzinfo=UTC),
     ):
-        entry = await record_audit(
-            db, action="range.test", result=AuditResult.SUCCESS, actor_type=AuditActorType.SYSTEM
+        await record_audit(
+            db,
+            action="range.test",
+            result=AuditResult.SUCCESS,
+            actor_type=AuditActorType.SYSTEM,
+            created_at=moment,
         )
-        entry.created_at = moment
     await db.commit()
     visibility = await visibility_of(db, seed_data.users.superadmin)
     rows = await every_row(
@@ -478,8 +484,8 @@ async def test_a_version_is_named_only_when_it_lies_within_the_item_of_the_entry
             deployment_id=deployment_id,
             service_id=service_id,
             environment_id=environment_id,
+            version_ids=[api, secrets, saved, 987654],
         )
-        created.version_ids = [api, secrets, saved, 987654]
         await db.commit()
         return created.id
 

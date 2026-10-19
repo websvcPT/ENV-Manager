@@ -16,14 +16,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.crypto import CryptoService
 from app.models import (
-    AuditActorType,
-    AuditResult,
     Deployment,
     Environment,
     Service,
     User,
 )
-from app.services.audit import record_audit
+from app.services.audit import AuditActor, EnvironmentRef, record_environment_audit
 from app.services.confined_read import (
     ConfinedReadError,
     PathProblem,
@@ -356,20 +354,13 @@ async def create_environment(
             author=actor,
             comment=f"Initial content ({clean.source.value})",
         )
-        entry = await record_audit(
+        await record_environment_audit(
             db,
+            AuditActor.for_user(actor, ip_address),
+            EnvironmentRef(
+                environment.id, environment.name, deployment.project_id, deployment.id, service_id
+            ),
             action="environment.create",
-            result=AuditResult.SUCCESS,
-            actor_type=AuditActorType.USER,
-            actor_user=actor,
-            ip_address=ip_address,
-            target_type="environment",
-            target_id=environment.id,
-            target_name=environment.name,
-            project_id=deployment.project_id,
-            deployment_id=deployment.id,
-            service_id=service_id,
-            environment_id=environment.id,
             details={
                 "target_path": clean.target_path,
                 "dist_path": clean.dist_path,
@@ -379,8 +370,8 @@ async def create_environment(
                 "source": clean.source.value,
                 "service_created": service_created,
             },
+            version_ids=[version.id],
         )
-        entry.version_ids = [version.id]
         await db.commit()
     except IntegrityError as error:
         await db.rollback()

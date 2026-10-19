@@ -27,7 +27,7 @@ from app.services.app_settings import (
     save_section,
     write_secret,
 )
-from app.services.audit import AuditActor, record_actor_audit
+from app.services.audit import AuditActor, record_committed_audit
 from app.services.mailer import TLS_MODES, MailFailure, MailTransport, valid_address
 from app.services.notify_messages import MessageContext, probe_mail_content, render_mail
 from app.services.notify_status import EMAIL_CHANNEL, clear_failures
@@ -210,7 +210,7 @@ async def _audit_test(
     details: dict[str, object] = {"to": recipient}
     if reason is not None:
         details["reason"] = reason
-    await record_actor_audit(
+    await record_committed_audit(
         db,
         actor,
         action="smtp.test",
@@ -219,4 +219,3 @@ async def _audit_test(
         target_name="smtp",
         details=details,
     )
-    await db.commit()

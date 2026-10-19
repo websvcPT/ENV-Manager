@@ -27,6 +27,7 @@ from app.services.environments import (
 from app.services.paths import load_allowed_paths
 from app.services.permissions import Capability
 from app.web.dependencies import get_crypto, get_db, get_notifier
+from app.web.htmx import hx_redirect
 from app.web.service_detail import ServiceContext, service_access
 
 router = APIRouter()
@@ -38,14 +39,6 @@ HINT_FRAGMENT = "fragments/target_hint.html"
 # bytes; anything larger is refused before the body is parsed.
 MAX_REQUEST_BYTES = 1024 * 1024
 FORM_TOO_LARGE = f"The form is larger than {MAX_REQUEST_BYTES // 1024} KiB."
-
-
-def _redirect(url: str) -> Response:
-    """Tell htmx to navigate to ``url``."""
-    return Response(
-        status_code=200,
-        headers={"HX-Redirect": url, "Cache-Control": "no-store", "Vary": "HX-Request"},
-    )
 
 
 def _text(form: FormData, key: str) -> str:
@@ -178,4 +171,4 @@ async def create_environment_route(
             await _form_context(db, access, deployment, form, error.errors),
             status_code=422,
         )
-    return _redirect(f"/services/{environment.service_id}?added=environment")
+    return hx_redirect(f"/services/{environment.service_id}?added=environment")

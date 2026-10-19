@@ -27,7 +27,7 @@ from app.models import (
     User,
 )
 from app.seeds.dataset import FANCY_PROJECT_NAME
-from app.services.audit import AuditActor, record_actor_audit, record_audit
+from app.services.audit import AuditActor, record_actor_audit
 
 BULK_ACTION = "backup.create"
 BULK_COUNT = 55
@@ -141,7 +141,7 @@ async def ensure_audit_figures(db: AsyncSession) -> None:
         versions: list[int] | None = None,
     ) -> None:
         """Add the entry of a signed-in user at a fixed time, with the versions it involved."""
-        entry = await record_actor_audit(
+        await record_actor_audit(
             db,
             AuditActor.for_user(users[who], ip),
             action=action,
@@ -153,9 +153,9 @@ async def ensure_audit_figures(db: AsyncSession) -> None:
             service_id=where.service,
             environment_id=where.environment,
             details=details,
+            version_ids=versions or [],
+            created_at=at,
         )
-        entry.created_at = at
-        entry.version_ids = versions or []
 
     fancy_db = scope(FANCY_PROJECT_NAME, "prod", "mysql", ".env.db")
     secrets = scope(FANCY_PROJECT_NAME, "prod", "mysql", ".env.db.secrets")
@@ -238,7 +238,7 @@ async def ensure_audit_figures(db: AsyncSession) -> None:
         await db.execute(select(ApiToken).where(ApiToken.name == CI_CLIENT_NAME))
     ).scalar_one_or_none()
     if token is not None:
-        entry = await record_actor_audit(
+        await record_actor_audit(
             db,
             AuditActor.for_token(token, users["admin"], "203.0.113.9"),
             action="service.deploy",
@@ -263,11 +263,11 @@ async def ensure_audit_figures(db: AsyncSession) -> None:
                     }
                 ],
             },
+            version_ids=[api_v1],
+            created_at=_at(2026, 10, 16, 18, 10),
         )
-        entry.created_at = _at(2026, 10, 16, 18, 10)
-        entry.version_ids = [api_v1]
 
-    entry = await record_actor_audit(
+    await record_actor_audit(
         db,
         AuditActor(AuditActorType.CLI, ip_address="127.0.0.1"),
         action="user.create",
@@ -275,28 +275,26 @@ async def ensure_audit_figures(db: AsyncSession) -> None:
         target_type="user",
         target_name="new.hire",
         details={"group": "viewer"},
+        created_at=_at(2026, 10, 16, 8, 2),
     )
-    entry.created_at = _at(2026, 10, 16, 8, 2)
-    entry = await record_audit(
+    await record_actor_audit(
         db,
+        AuditActor.for_sign_in(None, "198.51.100.7"),
         action="login.failure",
         result=AuditResult.FAILURE,
-        actor_type=AuditActorType.USER,
-        ip_address="198.51.100.7",
         details={"reason": "invalid_credentials"},
+        created_at=_at(2026, 10, 14, 22, 15),
     )
-    entry.created_at = _at(2026, 10, 14, 22, 15)
 
     for index in range(BULK_COUNT):
-        entry = await record_audit(
+        await record_actor_audit(
             db,
+            AuditActor.system("system"),
             action=BULK_ACTION,
             result=AuditResult.FAILURE if index % 11 == 10 else AuditResult.SUCCESS,
-            actor_type=AuditActorType.SYSTEM,
-            actor_name="system",
             target_type="backup",
             target_name=f"backup-{index + 1:02d}",
             details={"trigger": "scheduled", "size_bytes": 1_048_576 + index},
+            created_at=_at(2026, 9, 30, 2, 0) - timedelta(days=index),
         )
-        entry.created_at = _at(2026, 9, 30, 2, 0) - timedelta(days=index)
     await db.flush()

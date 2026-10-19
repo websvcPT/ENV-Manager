@@ -15,6 +15,7 @@ from app.core.security_headers import SECURITY_HEADERS
 from app.core.sessions import SESSION_COOKIE_NAME
 from app.core.templating import render
 from app.web.dependencies import AuthContext, resolve_optional_auth
+from app.web.htmx import hx_redirect
 
 log = get_logger("errors")
 
@@ -90,7 +91,7 @@ def unauthenticated_response(request: Request, headers: dict[str, str]) -> Respo
     target = "/login?expired=1" if expired else "/login"
     response: Response
     if is_htmx_request(request):
-        response = Response(status_code=401, headers={**headers, "HX-Redirect": target})
+        response = hx_redirect(target, status_code=401, headers=headers)
     else:
         response = RedirectResponse(target, status_code=303, headers=headers)
     if expired:

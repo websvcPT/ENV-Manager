@@ -70,7 +70,11 @@ async def test_create_user_stores_a_hash_and_audits_without_the_password(
     factory = create_session_factory(engine)
     async with factory() as db:
         user, password = await create_user(
-            db, name=" Bob ", email="bob@example.test", group=UserGroup.VIEWER, actor_type=CLI
+            db,
+            name=" Bob ",
+            email="bob@example.test",
+            group=UserGroup.VIEWER,
+            actor=AuditActor.cli(),
         )
     async with factory() as db:
         stored = await get_user_by_name(db, "BOB")
@@ -108,7 +112,9 @@ async def test_create_user_refuses_invalid_input(
 ) -> None:
     async with create_session_factory(engine)() as db:
         with pytest.raises(InvalidUserError):
-            await create_user(db, name=name, email=email, group=UserGroup.ADMIN, actor_type=CLI)
+            await create_user(
+                db, name=name, email=email, group=UserGroup.ADMIN, actor=AuditActor.cli()
+            )
         assert await list_users(db) == []
 
 
@@ -116,12 +122,16 @@ async def test_create_user_refuses_a_duplicate_name_ignoring_case(engine: AsyncE
     factory = create_session_factory(engine)
     async with factory() as db:
         await create_user(
-            db, name="dave", email="d@example.test", group=UserGroup.ADMIN, actor_type=CLI
+            db, name="dave", email="d@example.test", group=UserGroup.ADMIN, actor=AuditActor.cli()
         )
     async with factory() as db:
         with pytest.raises(UserExistsError):
             await create_user(
-                db, name="DAVE", email="e@example.test", group=UserGroup.ADMIN, actor_type=CLI
+                db,
+                name="DAVE",
+                email="e@example.test",
+                group=UserGroup.ADMIN,
+                actor=AuditActor.cli(),
             )
         assert len(await list_users(db)) == 1
 
@@ -162,7 +172,7 @@ async def test_reset_password_replaces_hash_ends_sessions_and_clears_lockout(
         await db.commit()
     async with factory() as db:
         user = await get_user_by_name(db, "erin")
-        password = await reset_password(db, user, actor_type=CLI)
+        password = await reset_password(db, user, actor=AuditActor.cli())
     async with factory() as db:
         stored = await get_user_by_name(db, "erin")
         assert stored.password_hash != old_hash
@@ -195,7 +205,7 @@ async def test_reset_two_factor_clears_the_factor_and_ends_sessions_and_pending_
         await db.commit()
     async with factory() as db:
         user = await get_user_by_name(db, "frank")
-        ended = await reset_two_factor(db, user, actor_type=CLI)
+        ended = await reset_two_factor(db, user, actor=AuditActor.cli())
     assert ended == 2
     async with factory() as db:
         stored = await get_user_by_name(db, "frank")
@@ -230,7 +240,7 @@ async def test_reset_two_factor_refuses_a_user_who_has_none_and_audits_nothing(
     async with factory() as db:
         user = await get_user_by_name(db, "hank")
         with pytest.raises(TwoFactorNotOnError, match="hank has no two-factor sign-in to reset"):
-            await reset_two_factor(db, user, actor_type=CLI)
+            await reset_two_factor(db, user, actor=AuditActor.cli())
     async with factory() as db:
         assert (await db.execute(select(AuditEntry))).first() is None
 
@@ -247,13 +257,7 @@ async def test_reset_two_factor_by_a_user_names_them_as_the_actor(
         await db.commit()
     async with factory() as db:
         root, ivy = await get_user_by_name(db, "root"), await get_user_by_name(db, "ivy")
-        await reset_two_factor(
-            db,
-            ivy,
-            actor_type=AuditActorType.USER,
-            actor_user=root,
-            ip_address="203.0.113.7",
-        )
+        await reset_two_factor(db, ivy, actor=AuditActor.for_user(root, "203.0.113.7"))
     async with factory() as db:
         entry = (await db.execute(select(AuditEntry))).scalar_one()
         assert (entry.actor_type, entry.actor_name, entry.ip_address) == (
@@ -271,7 +275,7 @@ async def test_last_active_superadmin_cannot_be_disabled(engine: AsyncEngine) ->
     async with factory() as db:
         root = await get_user_by_name(db, "root")
         with pytest.raises(LastSuperadminError):
-            await set_user_active(db, root, False, actor_type=CLI)
+            await set_user_active(db, root, False, actor=AuditActor.cli())
     async with factory() as db:
         assert (await get_user_by_name(db, "root")).is_active
         entry = (await db.execute(select(AuditEntry))).scalar_one()
@@ -286,12 +290,12 @@ async def test_a_superadmin_can_be_disabled_when_another_is_active(engine: Async
         )
         await db.commit()
     async with factory() as db:
-        await set_user_active(db, await get_user_by_name(db, "root"), False, actor_type=CLI)
+        await set_user_active(db, await get_user_by_name(db, "root"), False, actor=AuditActor.cli())
     async with factory() as db:
         assert not (await get_user_by_name(db, "root")).is_active
         two = await get_user_by_name(db, "two")
         with pytest.raises(LastSuperadminError):
-            await set_user_active(db, two, False, actor_type=CLI)
+            await set_user_active(db, two, False, actor=AuditActor.cli())
 
 
 async def test_a_disabled_superadmin_does_not_count_and_enabling_is_never_refused(
@@ -308,9 +312,11 @@ async def test_a_disabled_superadmin_does_not_count_and_enabling_is_never_refuse
         await db.commit()
     async with factory() as db:
         with pytest.raises(LastSuperadminError):
-            await set_user_active(db, await get_user_by_name(db, "root"), False, actor_type=CLI)
+            await set_user_active(
+                db, await get_user_by_name(db, "root"), False, actor=AuditActor.cli()
+            )
     async with factory() as db:
-        await set_user_active(db, await get_user_by_name(db, "old"), True, actor_type=CLI)
+        await set_user_active(db, await get_user_by_name(db, "old"), True, actor=AuditActor.cli())
     async with factory() as db:
         users = list((await db.execute(select(User))).scalars())
         assert len(users) == 2
@@ -323,12 +329,16 @@ async def test_email_is_unique_ignoring_case_and_the_refusal_names_the_field(
     factory = create_session_factory(engine)
     async with factory() as db:
         await create_user(
-            db, name="fay", email="Fay@Example.test", group=UserGroup.ADMIN, actor_type=CLI
+            db, name="fay", email="Fay@Example.test", group=UserGroup.ADMIN, actor=AuditActor.cli()
         )
     async with factory() as db:
         with pytest.raises(UserExistsError) as refused:
             await create_user(
-                db, name="faye", email="fay@EXAMPLE.test", group=UserGroup.ADMIN, actor_type=CLI
+                db,
+                name="faye",
+                email="fay@EXAMPLE.test",
+                group=UserGroup.ADMIN,
+                actor=AuditActor.cli(),
             )
         assert refused.value.field == "email"
         assert "email address" in str(refused.value)
@@ -343,7 +353,7 @@ async def test_a_duplicate_that_slips_past_the_check_is_refused_by_the_database(
     factory = create_session_factory(engine)
     async with factory() as db:
         await create_user(
-            db, name="gus", email="gus@example.test", group=UserGroup.ADMIN, actor_type=CLI
+            db, name="gus", email="gus@example.test", group=UserGroup.ADMIN, actor=AuditActor.cli()
         )
 
     async def not_found(db: AsyncSession, email: str) -> None:
@@ -353,7 +363,11 @@ async def test_a_duplicate_that_slips_past_the_check_is_refused_by_the_database(
     async with factory() as db:
         with pytest.raises(UserExistsError):
             await create_user(
-                db, name="gus2", email="GUS@example.test", group=UserGroup.ADMIN, actor_type=CLI
+                db,
+                name="gus2",
+                email="GUS@example.test",
+                group=UserGroup.ADMIN,
+                actor=AuditActor.cli(),
             )
         assert [user.name for user in await list_users(db)] == ["gus"]
         assert len((await db.execute(select(AuditEntry))).scalars().all()) == 1
@@ -373,9 +387,7 @@ async def test_create_user_with_grants_stores_them_and_audits_each(
             name="hana",
             email="hana@example.test",
             group=UserGroup.VIEWER,
-            actor_type=AuditActorType.USER,
-            actor_user=seed_data.users.superadmin,
-            ip_address="10.1.2.3",
+            actor=AuditActor.for_user(seed_data.users.superadmin, "10.1.2.3"),
             grants=targets,
         )
     async with factory() as db:
@@ -405,7 +417,7 @@ async def test_grants_chosen_for_a_superadmin_are_not_stored(
             name="ivan",
             email="ivan@example.test",
             group=UserGroup.SUPERADMIN,
-            actor_type=CLI,
+            actor=AuditActor.cli(),
             grants=[GrantTarget(GrantLevel.PROJECT, seed_data.projects.billing.id)],
         )
     async with factory() as db:
@@ -426,7 +438,7 @@ async def test_a_grant_on_a_missing_item_creates_nothing(seeded_database: AsyncE
                 name="jo",
                 email="jo@example.test",
                 group=UserGroup.VIEWER,
-                actor_type=CLI,
+                actor=AuditActor.cli(),
                 grants=[GrantTarget(GrantLevel.DEPLOYMENT, 987654)],
             )
         assert refused.value.field == "grants"
@@ -444,14 +456,9 @@ async def test_set_user_group_changes_the_group_and_audits_it(engine: AsyncEngin
         kim = await get_user_by_name(db, "kim")
         root = await get_user_by_name(db, "root")
         changed = await set_user_group(
-            db,
-            kim,
-            UserGroup.VIEWER,
-            actor_type=AuditActorType.USER,
-            actor_user=root,
-            ip_address="10.0.0.9",
+            db, kim, UserGroup.VIEWER, actor=AuditActor.for_user(root, "10.0.0.9")
         )
-        unchanged = await set_user_group(db, kim, UserGroup.VIEWER, actor_type=CLI)
+        unchanged = await set_user_group(db, kim, UserGroup.VIEWER, actor=AuditActor.cli())
     assert changed and not unchanged
     async with factory() as db:
         assert (await get_user_by_name(db, "kim")).group is UserGroup.VIEWER
@@ -475,7 +482,7 @@ async def test_the_last_active_superadmin_cannot_be_demoted_and_the_refusal_is_a
     async with factory() as db:
         root = await get_user_by_name(db, "root")
         with pytest.raises(LastSuperadminError) as refused:
-            await set_user_group(db, root, UserGroup.ADMIN, actor_type=CLI)
+            await set_user_group(db, root, UserGroup.ADMIN, actor=AuditActor.cli())
         assert "demoted" in str(refused.value)
     async with factory() as db:
         assert (await get_user_by_name(db, "root")).group is UserGroup.SUPERADMIN
@@ -497,12 +504,12 @@ async def test_a_superadmin_can_be_demoted_while_another_is_active(engine: Async
         await db.commit()
     async with factory() as db:
         assert await set_user_group(
-            db, await get_user_by_name(db, "root"), UserGroup.VIEWER, actor_type=CLI
+            db, await get_user_by_name(db, "root"), UserGroup.VIEWER, actor=AuditActor.cli()
         )
     async with factory() as db:
         with pytest.raises(LastSuperadminError):
             await set_user_group(
-                db, await get_user_by_name(db, "two"), UserGroup.ADMIN, actor_type=CLI
+                db, await get_user_by_name(db, "two"), UserGroup.ADMIN, actor=AuditActor.cli()
             )
 
 
@@ -544,12 +551,12 @@ async def test_disabling_the_owner_revokes_every_token_for_good(
         stamp = earlier.revoked_at
         assert await load_token_scope(db, seeded) is not None
 
-        await set_user_active(db, owner, False, actor_type=CLI, ip_address="10.0.0.9")
+        await set_user_active(db, owner, False, actor=AuditActor(CLI, ip_address="10.0.0.9"))
         assert await load_token_scope(db, seeded) is None
         assert seeded.revoked_at is not None and extra.revoked_at is not None
         assert earlier.revoked_at == stamp
 
-        await set_user_active(db, owner, True, actor_type=CLI)
+        await set_user_active(db, owner, True, actor=AuditActor.cli())
         assert await load_token_scope(db, seeded) is None
         assert await load_token_scope(db, extra) is None
 
@@ -581,9 +588,7 @@ async def test_moving_the_owner_to_viewer_revokes_every_token_for_good(
         assert owner is not None and root is not None
         seeded = (await db.execute(select(ApiToken))).scalars().one()
 
-        await set_user_group(
-            db, owner, UserGroup.VIEWER, actor_type=AuditActorType.USER, actor_user=root
-        )
+        await set_user_group(db, owner, UserGroup.VIEWER, actor=AuditActor.for_user(root))
         assert seeded.revoked_at is not None and await load_token_scope(db, seeded) is None
         (revoked,) = await _revoke_entries(db)
         assert (revoked.actor_name, revoked.target_name) == ("root", "billing-ci")
@@ -593,7 +598,7 @@ async def test_moving_the_owner_to_viewer_revokes_every_token_for_good(
         ).scalar_one()
         assert change.details == {"from": "admin", "to": "viewer", "tokens_revoked": 1}
 
-        await set_user_group(db, owner, UserGroup.ADMIN, actor_type=CLI)
+        await set_user_group(db, owner, UserGroup.ADMIN, actor=AuditActor.cli())
         assert await load_token_scope(db, seeded) is None
         assert len(await _revoke_entries(db)) == 1
 
@@ -607,16 +612,16 @@ async def test_other_group_changes_and_refused_changes_leave_tokens_alone(
         root = await db.get(User, seed_data.users.superadmin.id)
         assert admin is not None and root is not None
         seeded = (await db.execute(select(ApiToken))).scalars().one()
-        await set_user_group(db, admin, UserGroup.SUPERADMIN, actor_type=CLI)
+        await set_user_group(db, admin, UserGroup.SUPERADMIN, actor=AuditActor.cli())
         assert await load_token_scope(db, seeded) is not None
-        await set_user_group(db, admin, UserGroup.ADMIN, actor_type=CLI)
+        await set_user_group(db, admin, UserGroup.ADMIN, actor=AuditActor.cli())
         assert await load_token_scope(db, seeded) is not None
 
         roots_token = await _live_token(db, root, "roots")
         with pytest.raises(LastSuperadminError):
-            await set_user_active(db, root, False, actor_type=CLI)
+            await set_user_active(db, root, False, actor=AuditActor.cli())
         with pytest.raises(LastSuperadminError):
-            await set_user_group(db, root, UserGroup.VIEWER, actor_type=CLI)
+            await set_user_group(db, root, UserGroup.VIEWER, actor=AuditActor.cli())
         assert roots_token.revoked_at is None and await _revoke_entries(db) == []
         changes = await db.execute(
             select(AuditEntry)
@@ -634,10 +639,14 @@ async def test_the_generated_password_is_never_logged_or_audited(
     factory = create_session_factory(engine)
     async with factory() as db:
         _, password = await create_user(
-            db, name="lena", email="lena@example.test", group=UserGroup.ADMIN, actor_type=CLI
+            db,
+            name="lena",
+            email="lena@example.test",
+            group=UserGroup.ADMIN,
+            actor=AuditActor.cli(),
         )
         user = await get_user_by_name(db, "lena")
-        reset = await reset_password(db, user, actor_type=CLI)
+        reset = await reset_password(db, user, actor=AuditActor.cli())
     async with factory() as db:
         entries = (await db.execute(select(AuditEntry))).scalars().all()
         stored = (await db.execute(select(User.password_hash))).scalars().all()

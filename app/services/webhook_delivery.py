@@ -27,7 +27,7 @@ from app.core.log import get_logger
 from app.models import AuditResult
 from app.models.types import utc_now
 from app.services.app_settings import WEBHOOK_SECRET_KEY, load_stored_settings, read_secret
-from app.services.audit import AuditActor, record_actor_audit
+from app.services.audit import AuditActor, record_committed_audit
 from app.services.deploy_events import DeployFinished
 from app.services.notify_status import WEBHOOK_CHANNEL, clear_failures, record_failure
 from app.services.webhook import (
@@ -215,7 +215,7 @@ class WebhookDelivery:
             details["will_retry"] = will_retry
         try:
             async with self._session_factory() as db:
-                await record_actor_audit(
+                await record_committed_audit(
                     db,
                     AuditActor.system(WEBHOOK_ACTOR),
                     action=DELIVER_ACTION,
@@ -224,7 +224,6 @@ class WebhookDelivery:
                     target_name=host_of(target.url),
                     details=details,
                 )
-                await db.commit()
         except Exception as error:
             log.error("could not audit a webhook attempt: %s", type(error).__name__)
 
@@ -297,7 +296,7 @@ async def _audit_test(
         details["http_status"] = status
     if reason is not None:
         details["reason"] = reason
-    await record_actor_audit(
+    await record_committed_audit(
         db,
         actor,
         action=TEST_ACTION,
@@ -306,4 +305,3 @@ async def _audit_test(
         target_name="webhook",
         details=details,
     )
-    await db.commit()

@@ -11,7 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import (
     ApiToken,
     ApiTokenRestriction,
-    AuditActorType,
     AuditResult,
     Deployment,
     DeployRun,
@@ -23,7 +22,7 @@ from app.models import (
     User,
     UserGroup,
 )
-from app.services.audit import CLI_ACTOR_NAME, record_audit
+from app.services.audit import CLI_ACTOR_NAME, AuditActor, record_actor_audit
 from app.services.grants import projects_reached
 from app.services.permissions import AccessScope, Capability, ItemLevel, compute_visibility
 from app.services.tokens import is_live
@@ -123,13 +122,11 @@ async def create_project(
     project = Project(name=name)
     db.add(project)
     await _flush_unique(db, name)
-    await record_audit(
+    await record_actor_audit(
         db,
+        AuditActor.for_user(actor, ip_address),
         action="project.create",
         result=AuditResult.SUCCESS,
-        actor_type=AuditActorType.USER,
-        actor_user=actor,
-        ip_address=ip_address,
         target_type="project",
         target_id=project.id,
         target_name=project.name,
@@ -150,13 +147,11 @@ async def rename_project(
     previous = project.name
     project.name = name
     await _flush_unique(db, name)
-    await record_audit(
+    await record_actor_audit(
         db,
+        AuditActor.for_user(actor, ip_address),
         action="project.rename",
         result=AuditResult.SUCCESS,
-        actor_type=AuditActorType.USER,
-        actor_user=actor,
-        ip_address=ip_address,
         target_type="project",
         target_id=project.id,
         target_name=name,
@@ -198,16 +193,15 @@ async def delete_project(
     that is revoked or expired can never be used again, so its restriction rows are removed with
     the project instead of keeping the project from being deleted.
     """
+    who = AuditActor.for_user(actor, ip_address)
     restricting = await _restrictions_below(db, project)
     tokens = sorted({token.name for token, _ in restricting if is_live(token)})
     if tokens:
-        await record_audit(
+        await record_actor_audit(
             db,
+            who,
             action="project.delete",
             result=AuditResult.BLOCKED,
-            actor_type=AuditActorType.USER,
-            actor_user=actor,
-            ip_address=ip_address,
             target_type="project",
             target_id=project.id,
             target_name=project.name,
@@ -228,13 +222,11 @@ async def delete_project(
             select(func.count()).select_from(Deployment).where(Deployment.project_id == project.id)
         )
     ).scalar_one()
-    await record_audit(
+    await record_actor_audit(
         db,
+        who,
         action="project.delete",
         result=AuditResult.SUCCESS,
-        actor_type=AuditActorType.USER,
-        actor_user=actor,
-        ip_address=ip_address,
         target_type="project",
         target_id=project.id,
         target_name=project.name,

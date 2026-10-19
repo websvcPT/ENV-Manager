@@ -18,7 +18,6 @@ from app.core.client_address import client_address
 from app.core.display_time import DATE_FORMATS, zone_names
 from app.core.templating import render
 from app.services.app_settings import StoredSettings
-from app.services.audit import AuditActor
 from app.services.diagnostics import collect_diagnostics
 from app.services.docker_cli import DockerCli, DockerStatus
 from app.services.general_settings import (
@@ -37,7 +36,7 @@ from app.services.security_settings import (
     save_security,
     validate_security,
 )
-from app.web.dependencies import get_db, get_docker_cli, get_stored_settings
+from app.web.dependencies import audit_actor, get_db, get_docker_cli, get_stored_settings
 from app.web.settings_tabs import ManageSettings, tab_context
 
 router = APIRouter()
@@ -57,11 +56,6 @@ def _saved(changed: bool, title: str, message: str) -> dict[str, str]:
     if changed:
         return {"tone": "success", "title": title, "message": message}
     return {"tone": "info", "title": "Nothing to save", "message": "The settings are unchanged."}
-
-
-def _actor(request: Request, context: ManageSettings) -> AuditActor:
-    """The signed-in superadmin as the actor of an audit entry."""
-    return AuditActor.for_user(context.user, client_address(request))
 
 
 @router.get("/settings", include_in_schema=False)
@@ -145,7 +139,7 @@ async def save_security_route(
             _security_context(request, shown, errors=error.errors),
             status_code=422,
         )
-    changes = await save_security(db, clean, actor=_actor(request, context))
+    changes = await save_security(db, clean, actor=audit_actor(request, context))
     saved = _saved(bool(changes), "Security settings saved", "They apply now.")
     shown = _effective_security(request, StoredSettings(security=clean))
     return render(request, SECURITY_FRAGMENT, _security_context(request, shown, saved=saved))
@@ -194,7 +188,7 @@ async def save_post_deploy_route(
     docker = await cli.status()
     try:
         changes = await save_post_deploy_switch(
-            db, wanted, docker=docker, actor=_actor(request, context)
+            db, wanted, docker=docker, actor=audit_actor(request, context)
         )
     except PostDeploySwitchError as error:
         page = _post_deploy_context(stored, cli, docker, error=str(error))
@@ -274,7 +268,7 @@ async def save_general_route(
             _general_context(form, errors=error.errors),
             status_code=422,
         )
-    changes = await save_general(db, clean, actor=_actor(request, context))
+    changes = await save_general(db, clean, actor=audit_actor(request, context))
     if any(change.setting == TIME_ZONE_SETTING for change in changes):
         await request.app.state.backup_scheduler.reload()
     saved = _saved(bool(changes), "General settings saved", "They apply now.")

@@ -17,8 +17,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.crypto import CryptoService
-from app.models import AuditActorType, AuditResult, EnvironmentVersion, User
-from app.services.audit import record_audit
+from app.models import EnvironmentVersion, User
+from app.services.audit import AuditActor, record_environment_audit
 from app.services.editor import (
     STALE_MESSAGE,
     EditorHeader,
@@ -240,7 +240,9 @@ async def reveal_diff(
             if whole_file
             else {"scope": "diff", "compared_with": other.number, "keys": side}
         )
-        await audit_reveal(db, header, stored, actor, ip_address, details)
+        await audit_reveal(
+            db, header, AuditActor.for_user(actor, ip_address), details, version=stored
+        )
     return RevealedDiff(
         values={index: (entry.left, entry.right) for index, entry in enumerate(entries)}
     )
@@ -278,23 +280,14 @@ async def restore_version(
         version = await create_version(
             db, crypto, header.id, text, author=actor, comment=f"Restored from version {number}"
         )
-        entry = await record_audit(
+        await record_environment_audit(
             db,
+            AuditActor.for_user(actor, ip_address),
+            header,
             action="environment.restore",
-            result=AuditResult.SUCCESS,
-            actor_type=AuditActorType.USER,
-            actor_user=actor,
-            ip_address=ip_address,
-            target_type="environment",
-            target_id=header.id,
-            target_name=header.name,
-            project_id=header.project_id,
-            deployment_id=header.deployment_id,
-            service_id=header.service_id,
-            environment_id=header.id,
             details={"number": version.number, "restored": number},
+            version_ids=[source.id, version.id],
         )
-        entry.version_ids = [source.id, version.id]
         await db.commit()
     except IntegrityError as error:
         await db.rollback()

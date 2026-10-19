@@ -13,7 +13,6 @@ page is out of date, an item above already includes the access, the account is d
 what is stored.
 """
 
-import json
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Annotated, Any
@@ -22,7 +21,6 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.client_address import client_address
 from app.core.templating import render
 from app.models import User
 from app.services.access_grid import NodeKind
@@ -33,9 +31,9 @@ from app.services.access_list import (
     change_access,
     load_access_list,
 )
-from app.services.audit import AuditActor
 from app.services.grants import MAX_ID_DIGITS
-from app.web.dependencies import AuthContext, get_db
+from app.web.dependencies import AuthContext, audit_actor, get_db
+from app.web.htmx import events_response
 
 LIST_FRAGMENT = "fragments/access_list.html"
 ADD_FRAGMENT = "fragments/access_add.html"
@@ -83,12 +81,6 @@ def _user_id(raw: str) -> int | None:
     if raw.isascii() and raw.isdigit() and len(raw) <= MAX_ID_DIGITS:
         return int(raw) or None
     return None
-
-
-def _changed() -> Response:
-    """The answer to a change that was made: refresh every panel that lists grants, close."""
-    events = json.dumps({"grants-changed": True, "close-dialogs": True})
-    return Response(status_code=status.HTTP_204_NO_CONTENT, headers={"HX-Trigger": events})
 
 
 async def _load(db: AsyncSession, subject: AccessSubject) -> AccessList:
@@ -194,12 +186,12 @@ def mount_access_routes(
         if user_id is None:
             view = _add_view(subject, await _load(db, subject), error=CHOOSE_USER)
             return render(request, ADD_FRAGMENT, view, status_code=422)
-        actor = AuditActor.for_user(subject.auth.user, client_address(request))
+        actor = audit_actor(request, subject.auth)
         change = await change_access(
             db, subject.project_id, subject.node_id, user_id, grant=True, actor=actor
         )
         if change.notice is None:
-            return _changed()
+            return events_response("grants-changed", "close-dialogs")
         view = _add_view(subject, await _load(db, subject), chosen=user, notice=change.notice)
         return render(request, ADD_FRAGMENT, view, status_code=status.HTTP_409_CONFLICT)
 
@@ -232,12 +224,12 @@ def mount_access_routes(
         request: Request, db: Database, subject: Subject, user_id: int
     ) -> Response:
         """Remove the user's direct grant on the item; a refusal swaps the dialog."""
-        actor = AuditActor.for_user(subject.auth.user, client_address(request))
+        actor = audit_actor(request, subject.auth)
         change = await change_access(
             db, subject.project_id, subject.node_id, user_id, grant=False, actor=actor
         )
         if change.notice is None:
-            return _changed()
+            return events_response("grants-changed", "close-dialogs")
         view = _remove_view(
             subject,
             await _load(db, subject),

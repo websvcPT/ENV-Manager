@@ -88,6 +88,12 @@ def assert_never_cached(response: httpx.Response) -> None:
     assert response.headers["vary"] == "HX-Request"
 
 
+def events_of(response: httpx.Response) -> dict[str, object]:
+    """The client events an HX-Trigger header fires."""
+    parsed: dict[str, object] = json.loads(response.headers["hx-trigger"])
+    return parsed
+
+
 def main_of(page: str) -> str:
     """The page body without the sidebar and top bar."""
     return page.split("<main", 1)[1].split("</main>", 1)[0]

@@ -29,7 +29,7 @@ from app.schemas.api import (
 from app.services.api_auth import ApiCaller
 from app.services.api_errors import ApiRefusal, RefusalKind
 from app.services.api_runs import load_last_run_result, load_run_result
-from app.services.audit import record_actor_audit
+from app.services.audit import record_committed_audit
 from app.services.deploy import DeployEngine
 from app.services.deploy_records import ACTION_DEPLOY
 from app.services.deploy_types import DeployRefusal, DeployRequest, DeployRequestError
@@ -107,7 +107,7 @@ async def _audit_call(
 ) -> None:
     """Add and commit the entry of a call: the service is named only when the token reaches it."""
     service, deployment = call.service if call.service else (None, None)
-    await record_actor_audit(
+    await record_committed_audit(
         db,
         caller.actor,
         action=action,
@@ -120,7 +120,6 @@ async def _audit_call(
         service_id=service.id if service else None,
         details=details,
     )
-    await db.commit()
 
 
 async def _audit_refusal(
