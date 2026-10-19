@@ -1,8 +1,7 @@
-<p align="center">
-  <img src="app/static/brand/env-vertical-solid.svg" alt="ENV Manager logo" width="120">
-</p>
-
 # ENV Manager
+
+  <img src="app/static/brand/env-vertical-solid.svg" alt="ENV Manager logo" width="120">
+
 
 A self-hosted web application for keeping the `.env` files, certificates and other text
 configuration of your Docker Compose deployments in one place, versioned and encrypted, and for
