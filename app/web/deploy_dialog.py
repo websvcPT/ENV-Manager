@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.datastructures import FormData
 
 from app.core.templating import render
+from app.services.app_settings import StoredSettings
 from app.services.deploy import DeployEngine
 from app.services.deploy_dialog import (
     build_result,
@@ -26,7 +27,13 @@ from app.services.deploy_types import DeployRequest, DeployRequestError
 from app.services.docker_cli import DockerCli
 from app.services.hook_settings import MAX_TIMEOUT_SECONDS
 from app.services.permissions import Capability, permitted_environment_ids
-from app.web.dependencies import audit_actor, get_db, get_deploy_engine, get_docker_cli
+from app.web.dependencies import (
+    audit_actor,
+    get_db,
+    get_deploy_engine,
+    get_docker_cli,
+    get_stored_settings,
+)
 from app.web.htmx import hx_events
 from app.web.params import plain_number
 from app.web.service_detail import ServiceContext, service_access
@@ -113,6 +120,7 @@ async def preflight(
     db: Annotated[AsyncSession, Depends(get_db)],
     engine: Annotated[DeployEngine, Depends(get_deploy_engine)],
     cli: Annotated[DockerCli, Depends(get_docker_cli)],
+    stored: Annotated[StoredSettings, Depends(get_stored_settings)],
 ) -> Response:
     """Step one: a dry run of every environment the caller may deploy, with the policy outcome."""
     form = parse_dialog_form(await request.form())
@@ -128,6 +136,7 @@ async def preflight(
             selected_ids=form.selected,
             versions=form.versions,
             force=form.force,
+            stored=stored,
         )
     except DeployRequestError as error:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error

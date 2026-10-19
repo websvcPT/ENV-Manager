@@ -53,7 +53,6 @@ from app.services.notify_events import (
 )
 from app.services.paths import load_allowed_paths
 from app.services.permissions import AccessScope
-from app.services.structure_lookup import environment_chain
 from app.services.target_files import (
     PROBLEM_MESSAGES,
     TargetError,
@@ -407,17 +406,25 @@ def _unreadable_kind(problem: TargetProblem) -> tuple[DriftKind, str]:
 
 
 async def _load(db: AsyncSession, crypto: CryptoService, header: EditorHeader) -> _Snapshot | None:
-    """Everything the drift view needs, None when the file has no version or no deployment."""
+    """Everything the drift view needs, None when the file has no saved version.
+
+    The deployment root comes from the header, which the request loaded already. A version is
+    decrypted once even when the managed and the deployed version are the same one.
+    """
     managed = await stored_version(db, header.id)
-    chain = await environment_chain(db, header.id)
-    if managed is None or chain is None:
+    if managed is None:
         return None
-    deployment = chain.deployment
     baseline = (await load_baselines(db, [header.id])).get(header.id)
     deployed = await _deployed_version(db, header.id, baseline)
-    read = await _read_target(db, deployment.root_path, header.target_path)
+    read = await _read_target(db, header.deployment_root, header.target_path)
     managed_text = crypto.decrypt_text(managed.content_encrypted)
-    deployed_text = crypto.decrypt_text(deployed.content_encrypted) if deployed else None
+    deployed_text: str | None = None
+    if deployed is not None:
+        deployed_text = (
+            managed_text
+            if deployed.id == managed.id
+            else crypto.decrypt_text(deployed.content_encrypted)
+        )
     target_text: str | None = None
     target_hash: str | None = None
     if read.problem is not None:

@@ -147,7 +147,7 @@ async def save_post_deploy_hook(
     """
     _require_superadmin(scope)
     service, deployment = await _require_service(db, service_id)
-    status = await cli.status()
+    status = await cli.status(fresh=True)
     if not status.available:
         raise HookSettingsError({FORM_KEY: f"{status.reason} {UNAVAILABLE_SUFFIX}"})
 
@@ -275,7 +275,7 @@ async def _run_compose_check(
     working_directory: str,
 ) -> ComposeCheck:
     """The compose check itself, without permission checks or audit."""
-    status = await cli.status()
+    status = await cli.status(fresh=True)
     executable = cli.executable
     if not status.available or executable is None:
         return ComposeCheck(False, f"{status.reason} {CHECK_UNAVAILABLE_SUFFIX}")

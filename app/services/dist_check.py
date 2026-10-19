@@ -8,22 +8,27 @@ the list stops the next check at once. The same checks serve the report screen, 
 overview and later the API and the deploy sequence.
 """
 
+from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import datetime
 
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import metrics, telemetry
 from app.core.crypto import CryptoService
 from app.models import (
     AuditResult,
+    Deployment,
     DistMissingPolicy,
     DistOutcome,
+    Environment,
     EnvironmentVersion,
+    Service,
     User,
 )
 from app.models.types import utc_now
-from app.services.audit import AuditActor, EnvironmentRef, record_environment_audit
+from app.services.audit import AuditActor, EnvironmentRef, audit_batch, record_environment_audit
 from app.services.dist import (
     DistError,
     DistProblem,
@@ -41,7 +46,7 @@ from app.services.editor import (
 )
 from app.services.env_parser import parse_env
 from app.services.notify_events import NO_EVENT_NOTIFIER, EventNotifier
-from app.services.paths import load_allowed_paths
+from app.services.paths import AllowedPaths, load_allowed_paths
 from app.services.permissions import AccessScope, Capability, ItemLevel, load_items
 from app.services.structure_lookup import environment_chain
 
@@ -128,7 +133,13 @@ async def _load_subject(
     chain = await environment_chain(db, environment_id)
     if chain is None:
         return None
-    environment, service, deployment = chain
+    return _subject_of(chain.environment, chain.service, chain.deployment)
+
+
+def _subject_of(
+    environment: Environment, service: Service, deployment: Deployment
+) -> tuple[DistSubject, str, DistMissingPolicy]:
+    """The subject of a check, the deployment root and the policy in force for a file."""
     subject = DistSubject(
         environment_id=environment.id,
         name=environment.name,
@@ -151,6 +162,17 @@ def _outcome(report: DistReport, policy: DistMissingPolicy) -> DistOutcome:
     return DistOutcome.PASSED
 
 
+@dataclass(frozen=True)
+class LoadedEnvironment:
+    """What a check reads from the database about one environment: the subject, the deployment
+    root, the policy in force and the version to compare (None when nothing is saved)."""
+
+    subject: DistSubject
+    root_path: str
+    policy: DistMissingPolicy
+    latest: EnvironmentVersion | None
+
+
 async def evaluate_dist(
     db: AsyncSession,
     crypto: CryptoService,
@@ -158,6 +180,9 @@ async def evaluate_dist(
     *,
     checked_by: str,
     version_number: int | None = None,
+    opened: dict[int, str] | None = None,
+    loaded: LoadedEnvironment | None = None,
+    allowed: AllowedPaths | None = None,
 ) -> DistCheck:
     """Compare a saved version of an environment with its dist file, without auditing.
 
@@ -167,6 +192,11 @@ async def evaluate_dist(
     link. Otherwise the dist file is read with allowed paths loaded now. Every refusal to read
     becomes a failed check; nothing here raises for them.
 
+    ``opened`` maps version ids to text already decrypted by the caller's operation: a version
+    found there is not decrypted again, and one decrypted here is added to it. ``loaded`` and
+    ``allowed`` are what a caller that checks many files read for all of them in one go; without
+    them they are read here.
+
     The check runs in a span that carries ids and the outcome, and a check that could not run is
     counted by its problem.
     """
@@ -174,7 +204,9 @@ async def evaluate_dist(
         telemetry.DIST_CHECK_SPAN, {telemetry.ENVIRONMENT_ID: environment_id}
     ) as active:
         try:
-            check = await _evaluate_dist(db, crypto, environment_id, checked_by, version_number)
+            check = await _evaluate_dist(
+                db, crypto, environment_id, checked_by, version_number, opened, loaded, allowed
+            )
         except DistError as error:
             metrics.record_dist_check_failure(error.problem.value)
             raise
@@ -201,14 +233,25 @@ async def _evaluate_dist(
     environment_id: int,
     checked_by: str,
     version_number: int | None,
+    opened: dict[int, str] | None,
+    loaded: LoadedEnvironment | None,
+    allowed: AllowedPaths | None,
 ) -> DistCheck:
     """The comparison itself, without the span and the metric."""
-    loaded = await _load_subject(db, environment_id)
     if loaded is None:
-        missing = DistProblem.ENVIRONMENT_MISSING
-        raise DistError(missing, PROBLEM_MESSAGES[missing])
-    subject, root_path, policy = loaded
-    latest = await stored_version(db, environment_id, version_number)
+        found = await _load_subject(db, environment_id)
+        if found is None:
+            missing = DistProblem.ENVIRONMENT_MISSING
+            raise DistError(missing, PROBLEM_MESSAGES[missing])
+        loaded = LoadedEnvironment(
+            *found, latest=await stored_version(db, environment_id, version_number)
+        )
+    subject, root_path, policy, latest = (
+        loaded.subject,
+        loaded.root_path,
+        loaded.policy,
+        loaded.latest,
+    )
 
     def finish(
         outcome: DistOutcome,
@@ -229,14 +272,21 @@ async def _evaluate_dist(
 
     if latest is None:
         return finish(DistOutcome.FAILED, problem=DistProblem.NO_VERSION)
-    environment = parse_env(crypto.decrypt_text(latest.content_encrypted))
+    text = opened.get(latest.id) if opened is not None else None
+    if text is None:
+        text = crypto.decrypt_text(latest.content_encrypted)
+        if opened is not None:
+            opened[latest.id] = text
+    environment = parse_env(text)
     if not environment.is_env_format:
         report = DistReport(DistSkipReason.ENVIRONMENT_NOT_ENV_FORMAT, (), (), ())
         return finish(DistOutcome.SKIPPED, report)
     if not subject.dist_path:
         return finish(DistOutcome.SKIPPED, DistReport(DistSkipReason.NO_DIST_LINKED, (), (), ()))
     try:
-        dist_text = read_dist_file(await load_allowed_paths(db), root_path, subject.dist_path)
+        if allowed is None:
+            allowed = await load_allowed_paths(db)
+        dist_text = read_dist_file(allowed, root_path, subject.dist_path)
     except DistError as error:
         return finish(DistOutcome.FAILED, problem=error.problem)
     report = compare_to_dist(environment, parse_env(dist_text))
@@ -319,22 +369,78 @@ async def run_deployment_dist_checks(
     """Check every environment of a deployment the caller may run dist checks for.
 
     Environments outside the caller's scope are neither checked nor named. Each check is
-    audited on its own; the rows come back ordered by service and file name.
+    audited with an entry of its own, and the files, their newest versions and the allowed paths
+    are read once for all of them, the entries written together and committed once, so the cost
+    in statements does not grow with the number of files. The rows come back ordered by service
+    and file name.
     """
     environment_ids = [
         item.item_id
-        for item in await load_items(db, ItemLevel.ENVIRONMENT)
-        if item.deployment_id == deployment_id and scope.can(Capability.DEPLOY, item)
+        for item in await load_items(db, ItemLevel.ENVIRONMENT, deployment_id=deployment_id)
+        if scope.can(Capability.DEPLOY, item)
     ]
+    loaded = await _load_environments(db, environment_ids)
+    allowed = await load_allowed_paths(db) if environment_ids else None
     checks = [
-        await evaluate_dist(db, crypto, environment_id, checked_by=actor.name)
+        await evaluate_dist(
+            db,
+            crypto,
+            environment_id,
+            checked_by=actor.name,
+            loaded=loaded.get(environment_id),
+            allowed=allowed,
+        )
         for environment_id in environment_ids
     ]
     audit_actor = AuditActor.for_user(actor, ip_address)
-    for check in checks:
-        await record_dist_check(db, check, actor=audit_actor)
+    async with audit_batch(db):
+        for check in checks:
+            await record_dist_check(db, check, actor=audit_actor)
     await db.commit()
     return tuple(sorted(checks, key=lambda check: (check.subject.service_name, check.subject.name)))
+
+
+async def _load_environments(
+    db: AsyncSession, environment_ids: Collection[int]
+) -> dict[int, LoadedEnvironment]:
+    """The files with their service and deployment, and their newest versions, in two queries."""
+    if not environment_ids:
+        return {}
+    rows = await db.execute(
+        select(Environment, Service, Deployment)
+        .join(Service, Service.id == Environment.service_id)
+        .join(Deployment, Deployment.id == Service.deployment_id)
+        .where(Environment.id.in_(environment_ids))
+    )
+    newest = (
+        select(
+            EnvironmentVersion.environment_id,
+            func.max(EnvironmentVersion.number).label("number"),
+        )
+        .where(EnvironmentVersion.environment_id.in_(environment_ids))
+        .group_by(EnvironmentVersion.environment_id)
+        .subquery()
+    )
+    versions = {
+        version.environment_id: version
+        for version in (
+            await db.execute(
+                select(EnvironmentVersion).join(
+                    newest,
+                    and_(
+                        EnvironmentVersion.environment_id == newest.c.environment_id,
+                        EnvironmentVersion.number == newest.c.number,
+                    ),
+                )
+            )
+        ).scalars()
+    }
+    return {
+        environment.id: LoadedEnvironment(
+            *_subject_of(environment, service, deployment), latest=versions.get(environment.id)
+        )
+        for environment, service, deployment in rows.all()
+    }
 
 
 @dataclass(frozen=True)

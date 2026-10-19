@@ -23,6 +23,7 @@ from app.services.app_settings import (
     GitSettings,
     StoredSettings,
     has_secret,
+    has_secret_in,
 )
 from app.services.git_connection import accept_host_key, check_connection
 from app.services.git_remote import without_password
@@ -61,21 +62,32 @@ async def _form_context(
     db: AsyncSession,
     git: GitSettings,
     form: GitForm,
+    credentials: tuple[bool, bool],
     *,
     errors: dict[str, str] | None = None,
     saved: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """What the form needs: values, refusals, the choices, the toast, the credentials stored and
-    the state of the sync."""
+    the state of the sync.
+
+    ``credentials`` says whether a deploy key and whether a token are stored, as the caller read
+    it: from the request's settings when nothing was written, from the database after a save.
+    """
+    deploy_key_stored, token_stored = credentials
     return {
         "form": form,
         "errors": errors or {},
         "saved": saved,
         "format_options": format_options(),
-        "deploy_key_stored": await has_secret(db, GIT_DEPLOY_KEY_KEY),
-        "token_stored": await has_secret(db, GIT_TOKEN_KEY),
+        "deploy_key_stored": deploy_key_stored,
+        "token_stored": token_stored,
         "status": await load_git_status(db, git, display_of(request)),
     }
+
+
+def _credentials_in(stored: StoredSettings) -> tuple[bool, bool]:
+    """Whether a deploy key and a token were stored when the request's settings were read."""
+    return has_secret_in(stored, GIT_DEPLOY_KEY_KEY), has_secret_in(stored, GIT_TOKEN_KEY)
 
 
 @router.get("/settings/git", include_in_schema=False)
@@ -84,8 +96,8 @@ async def git_page(
 ) -> Response:
     """The Git tab."""
     form = GitForm.from_settings(stored.git)
-    page = {**tab_context("git"), **await _form_context(request, db, stored.git, form)}
-    return render(request, "pages/settings_git.html", page)
+    context = await _form_context(request, db, stored.git, form, _credentials_in(stored))
+    return render(request, "pages/settings_git.html", {**tab_context("git"), **context})
 
 
 @router.post("/settings/git", include_in_schema=False)
@@ -129,7 +141,9 @@ async def save_git_route(
             remove_deploy_key=remove_deploy_key == "on",
             remove_token=remove_token == "on",  # noqa: S105
         )
-        page = await _form_context(request, db, stored.git, shown, errors=error.errors)
+        page = await _form_context(
+            request, db, stored.git, shown, _credentials_in(stored), errors=error.errors
+        )
         return render(request, FORM_FRAGMENT, page, status_code=422)
     changed = await save_git(
         db,
@@ -151,8 +165,17 @@ async def save_git_route(
             "message": "The settings are unchanged.",
         }
     request.state.banners = await load_shell_banners(db, display_of(request))
+    credentials = (
+        await has_secret(db, GIT_DEPLOY_KEY_KEY),
+        await has_secret(db, GIT_TOKEN_KEY),
+    )
     page = await _form_context(
-        request, db, clean.settings, GitForm.from_settings(clean.settings), saved=saved
+        request,
+        db,
+        clean.settings,
+        GitForm.from_settings(clean.settings),
+        credentials,
+        saved=saved,
     )
     return render(request, SAVED_FRAGMENT, page)
 

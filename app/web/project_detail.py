@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Form, Request, status
 from fastapi.responses import RedirectResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,8 +11,8 @@ from app.core.client_address import client_address
 from app.core.templating import render
 from app.models import Project
 from app.services.access_grid import NodeKind
-from app.services.paths import load_allowed_paths
-from app.services.permissions import AccessScope, Capability, ItemLevel, ItemRef
+from app.services.paths import AllowedPaths
+from app.services.permissions import AccessScope, Capability, ItemLevel, ItemRef, Visibility
 from app.services.project_addresses import AddressesError, save_extra_addresses
 from app.services.project_detail import (
     ProjectDetail,
@@ -26,7 +26,7 @@ from app.services.projects import (
     rename_project,
 )
 from app.web.access_tabs import AccessSubject, mount_access_routes
-from app.web.dependencies import AuthContext, get_db, item_access
+from app.web.dependencies import AuthContext, get_db, get_visibility, item_access
 from app.web.htmx import hx_redirect
 
 router = APIRouter()
@@ -47,10 +47,14 @@ class ProjectContext:
 
 
 async def _load_project(
-    db: AsyncSession, scope: AccessScope, project_id: int
+    db: AsyncSession,
+    scope: AccessScope,
+    project_id: int,
+    visibility: Visibility,
+    allowed: AllowedPaths,
 ) -> ProjectDetail | None:
-    """The project as the caller sees it, with the allowed paths loaded for this request."""
-    return await load_project_detail(db, scope, project_id, await load_allowed_paths(db))
+    """The project as the caller sees it, with what the request already holds."""
+    return await load_project_detail(db, scope, project_id, allowed, visibility)
 
 
 project_access = item_access(
@@ -62,12 +66,9 @@ project_access = item_access(
 )
 
 
-async def _project_row(db: AsyncSession, access: ProjectContext) -> Project:
-    """The project row behind an already authorised context."""
-    project = await db.get(Project, access.project.id)
-    if project is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "project not found")
-    return project
+def _project_row(access: ProjectContext) -> Project:
+    """The stored project the authorised context was loaded from."""
+    return access.project.row
 
 
 def _page_context(access: ProjectContext, tab: str, **extra: Any) -> dict[str, Any]:
@@ -103,9 +104,10 @@ async def activity_tab(
     request: Request,
     access: Annotated[ProjectContext, Depends(project_access(Capability.VIEW_AUDIT))],
     db: Annotated[AsyncSession, Depends(get_db)],
+    visibility: Annotated[Visibility, Depends(get_visibility)],
 ) -> Response:
     """The Activity tab: the project's newest audit entries in the caller's scope, admins only."""
-    rows = await list_activity(db, access.scope, access.project.id)
+    rows = await list_activity(db, access.scope, access.project.id, visibility=visibility)
     context = _page_context(access, "activity", rows=rows)
     return render(request, "pages/project_activity.html", context)
 
@@ -143,11 +145,10 @@ async def members_redirect(
 async def settings_tab(
     request: Request,
     access: Annotated[ProjectContext, Depends(project_access(Capability.MANAGE_STRUCTURE))],
-    db: Annotated[AsyncSession, Depends(get_db)],
     renamed: bool = False,
 ) -> Response:
     """The Settings tab (superadmin): rename, the extra notification addresses and delete."""
-    project = await _project_row(db, access)
+    project = _project_row(access)
     return render(
         request,
         "pages/project_settings.html",
@@ -169,7 +170,7 @@ async def addresses_route(
 ) -> Response:
     """Save the extra notification addresses. A refused list answers the panel with the reason
     (422); nothing is stored then."""
-    project = await _project_row(db, access)
+    project = _project_row(access)
     try:
         change = await save_extra_addresses(
             db, project, addresses, actor=access.auth.user, ip_address=client_address(request)
@@ -208,7 +209,7 @@ async def rename_route(
     name: Annotated[str, Form()] = "",
 ) -> Response:
     """Rename the project. Success reloads the settings tab so every title shows the new name."""
-    project = await _project_row(db, access)
+    project = _project_row(access)
     try:
         await rename_project(
             db, project, name=name, actor=access.auth.user, ip_address=client_address(request)
@@ -235,7 +236,7 @@ async def delete_route(
     A wrong name or API tokens still restricted to the project swap the dialog form again with
     the reason; nothing is deleted.
     """
-    project = await _project_row(db, access)
+    project = _project_row(access)
     error: str | None = None
     if confirm_name.strip() != project.name:
         error = DELETE_CONFIRM_ERROR

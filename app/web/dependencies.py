@@ -21,7 +21,15 @@ from app.services.docker_cli import DockerCli
 from app.services.hook_runner import DockerHookRunner
 from app.services.mailer import MailTransport
 from app.services.notify_events import FullNotifier
-from app.services.permissions import AccessScope, Capability, ItemRef, load_user_scope
+from app.services.paths import AllowedPaths, load_allowed_paths
+from app.services.permissions import (
+    AccessScope,
+    Capability,
+    ItemRef,
+    Visibility,
+    compute_visibility,
+    load_user_scope,
+)
 from app.services.sessions import resolve_session
 from app.services.settings_events import SettingsNotifier
 from app.services.shell_banners import load_shell_banners
@@ -194,6 +202,30 @@ async def get_scope(
     return await load_user_scope(db, context.user)
 
 
+async def get_visibility(
+    scope: Annotated[AccessScope, Depends(get_scope)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> Visibility:
+    """What the signed-in user may see, computed once per request.
+
+    A dependency is cached for the length of a request, so the item loader, the route and
+    everything they call share one answer, and the next request computes it again (a revoked
+    grant applies at once). The value reflects the grants and the structure as they were read,
+    so a request that changes either and needs the new picture afterwards calls
+    ``compute_visibility`` itself instead of using this one.
+    """
+    return await compute_visibility(db, scope)
+
+
+async def get_allowed_paths(db: Annotated[AsyncSession, Depends(get_db)]) -> AllowedPaths:
+    """The allowed paths for the screens that only show them, loaded once per request.
+
+    Anything that reads or writes the host (a deploy, a dist check, a drift read, a root check,
+    a backup destination) loads the list itself, fresh, at the moment it acts.
+    """
+    return await load_allowed_paths(db)
+
+
 def require_capability(capability: Capability) -> Callable[..., Awaitable[AuthContext]]:
     """A dependency that admits only callers whose group holds a capability without a target.
 
@@ -221,7 +253,9 @@ class ItemAccess[ContextT](Protocol):
 
 def item_access[ItemT, ContextT](
     id_param: str,
-    loader: Callable[[AsyncSession, AccessScope, int], Awaitable[ItemT | None]],
+    loader: Callable[
+        [AsyncSession, AccessScope, int, Visibility, AllowedPaths], Awaitable[ItemT | None]
+    ],
     item_ref: Callable[[ItemT], ItemRef],
     not_found: str,
     context: Callable[[AuthContext, AccessScope, ItemT], ContextT],
@@ -231,9 +265,11 @@ def item_access[ItemT, ContextT](
     The dependency reads the item's id from the path parameter ``id_param`` (every route uses the
     ``int`` converter) and loads the item for the caller with ``loader``, which answers None for
     an item that does not exist or lies outside the caller's scope: that is a 404 with the
-    ``not_found`` text, so the existence of a hidden item is not revealed. Only then is the
-    capability checked, on the item ``item_ref`` names, and a group that lacks it gets a 403.
-    ``context`` builds what the route receives from the caller, their scope and the item.
+    ``not_found`` text, so the existence of a hidden item is not revealed. The loader gets the
+    visibility and the allowed paths of the request, which every other reader of the request
+    shares. Only then is the capability checked, on the item ``item_ref`` names, and a group
+    that lacks it gets a 403. ``context`` builds what the route receives from the caller, their
+    scope and the item.
     """
 
     def access(capability: Capability | None = None) -> Callable[..., Awaitable[ContextT]]:
@@ -242,8 +278,10 @@ def item_access[ItemT, ContextT](
             auth: Annotated[AuthContext, Depends(require_auth)],
             scope: Annotated[AccessScope, Depends(get_scope)],
             db: Annotated[AsyncSession, Depends(get_db)],
+            visibility: Annotated[Visibility, Depends(get_visibility)],
+            allowed: Annotated[AllowedPaths, Depends(get_allowed_paths)],
         ) -> ContextT:
-            item = await loader(db, scope, int(request.path_params[id_param]))
+            item = await loader(db, scope, int(request.path_params[id_param]), visibility, allowed)
             if item is None:
                 raise HTTPException(status.HTTP_404_NOT_FOUND, not_found)
             if capability is not None and not scope.can(capability, item_ref(item)):

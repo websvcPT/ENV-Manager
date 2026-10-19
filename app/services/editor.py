@@ -33,15 +33,16 @@ from app.services.notify_events import (
     FileChanged,
     announce_event,
 )
+from app.services.paths import AllowedPaths
 from app.services.permissions import (
     AccessScope,
     Capability,
     ItemLevel,
     ItemRef,
-    load_item,
+    Visibility,
 )
 from app.services.service_detail import load_environment_rows, load_service_header
-from app.services.structure_lookup import environment_chain
+from app.services.structure_lookup import ServiceChain, environment_chain
 from app.services.versions import create_version
 
 MAX_COMMENT_LENGTH = 500
@@ -67,7 +68,8 @@ class EditorHeader:
     successful write, None when nothing was written yet. ``status`` is a badge key.
     File mode, owner and group are the effective values (the environment's own or the
     deployment default); an empty owner or group means the application user.
-    ``can_manage_grants`` is True for the superadmin, who gets the Access tab.
+    ``can_manage_grants`` is True for the superadmin, who gets the Access tab. ``deployment_root``
+    is the folder of the deployment for the code that reads the host; no page shows it.
     """
 
     id: int
@@ -94,6 +96,7 @@ class EditorHeader:
     can_check_dist: bool
     item: ItemRef
     can_manage_grants: bool
+    deployment_root: str
 
     @property
     def can_deploy(self) -> bool:
@@ -135,21 +138,42 @@ class KeyValueSubmission:
 
 
 async def load_editor_header(
-    db: AsyncSession, scope: AccessScope, environment_id: int
+    db: AsyncSession,
+    scope: AccessScope,
+    environment_id: int,
+    visibility: Visibility | None = None,
+    allowed: AllowedPaths | None = None,
 ) -> EditorHeader | None:
-    """The environment for the caller, or None when it does not exist or is outside the scope."""
+    """The environment for the caller, or None when it does not exist or is outside the scope.
+
+    ``visibility`` and ``allowed`` are the ones the request already holds; without them they
+    are loaded here.
+    """
     chain = await environment_chain(db, environment_id)
     if chain is None:
         return None
     environment, deployment = chain.environment, chain.deployment
-    service = await load_service_header(db, scope, chain.service.id)
+    service = await load_service_header(
+        db,
+        scope,
+        chain.service.id,
+        visibility,
+        allowed,
+        chain=ServiceChain(chain.service, deployment, chain.project_name),
+    )
     if service is None or environment_id not in service.visible_environment_ids:
         return None
     rows = await load_environment_rows(db, scope, service)
     row = next((row for row in rows if row.id == environment_id), None)
-    item = await load_item(db, ItemLevel.ENVIRONMENT, environment_id)
-    if row is None or item is None:
+    if row is None:
         return None
+    item = ItemRef(
+        level=ItemLevel.ENVIRONMENT,
+        project_id=deployment.project_id,
+        deployment_id=deployment.id,
+        service_id=chain.service.id,
+        environment_id=environment_id,
+    )
     latest = (
         await db.execute(
             select(EnvironmentVersion, User.name)
@@ -204,6 +228,7 @@ async def load_editor_header(
         can_check_dist=row.can_check_dist,
         item=item,
         can_manage_grants=scope.can(Capability.MANAGE_GRANTS),
+        deployment_root=deployment.root_path,
     )
 
 

@@ -103,7 +103,7 @@ class DockerHookRunner:
             return PostDeployResult(PostDeployStatus.NONE)
         if hook.run_only_if_changed and not (request.changed or request.force):
             return _skipped(NOT_CHANGED_REASON)
-        status = await self.cli.status()
+        status = await self.cli.status(fresh=True)
         executable = self.cli.executable
         if not status.available or executable is None:
             return _skipped(status.reason or DOCKER_UNAVAILABLE_REASON)

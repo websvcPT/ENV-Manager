@@ -5,7 +5,7 @@ from enum import StrEnum
 
 from app.models import DeployResultStatus, DeployStatus, DistOutcome, DriftState
 from app.services.dist_check import DistCheck
-from app.services.hooks import PostDeployResult
+from app.services.hooks import PostDeployHook, PostDeployResult
 
 
 class DeployRequestError(Exception):
@@ -70,6 +70,8 @@ class DeployOutcome:
     """The result of a deploy request.
 
     ``run_id`` is None when the deploy was refused before it started (``refusal`` says why).
+    ``hook`` is the stored post-deploy command the run was made with, so a caller that describes
+    the post-deploy step does not read it again; it is not part of any answer to an API client.
     """
 
     run_id: int | None
@@ -80,3 +82,4 @@ class DeployOutcome:
     post_deploy: PostDeployResult
     refusal: DeployRefusal | None = None
     message: str | None = None
+    hook: PostDeployHook | None = field(default=None, repr=False)

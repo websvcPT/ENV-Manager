@@ -25,9 +25,15 @@ from app.services.deployments import (
     validate_deployment,
 )
 from app.services.path_browser import BrowseView, browse_directory, browse_top
-from app.services.paths import PathValidationError, load_allowed_paths
+from app.services.paths import AllowedPaths, PathValidationError, load_allowed_paths
 from app.services.permissions import Capability
-from app.web.dependencies import AuthContext, get_db, get_stored_settings, require_capability
+from app.web.dependencies import (
+    AuthContext,
+    get_allowed_paths,
+    get_db,
+    get_stored_settings,
+    require_capability,
+)
 from app.web.deployments import DeploymentContext, deployment_access
 from app.web.htmx import hx_redirect
 from app.web.project_detail import ProjectContext, project_access
@@ -117,13 +123,13 @@ def _refused(
     return render(request, FORM_FRAGMENT, context, status_code=422)
 
 
-async def _picker_view(db: AsyncSession) -> BrowseView:
-    """The picker's starting list, loaded with the allowed paths of this request."""
-    return browse_top(await load_allowed_paths(db))
+def _picker_view(allowed: AllowedPaths) -> BrowseView:
+    """The picker's starting list, from the allowed paths the request already loaded."""
+    return browse_top(allowed)
 
 
-async def _page_context(
-    db: AsyncSession,
+def _page_context(
+    allowed: AllowedPaths,
     *,
     title: str,
     project_id: int,
@@ -135,7 +141,7 @@ async def _page_context(
         "title": title,
         "project_id": project_id,
         "project_name": project_name,
-        "picker": await _picker_view(db),
+        "picker": _picker_view(allowed),
         **form_context,
     }
 
@@ -151,7 +157,7 @@ async def _initial_root_check(db: AsyncSession, root: str) -> RootCheck | None:
 async def new_deployment_page(
     request: Request,
     access: Annotated[ProjectContext, Depends(project_access(Capability.MANAGE_STRUCTURE))],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    allowed: Annotated[AllowedPaths, Depends(get_allowed_paths)],
     stored: Annotated[StoredSettings, Depends(get_stored_settings)],
 ) -> Response:
     """The deployment form, with the policies and file defaults of the General settings."""
@@ -162,8 +168,8 @@ async def new_deployment_page(
     return render(
         request,
         PAGE,
-        await _page_context(
-            db,
+        _page_context(
+            allowed,
             title="New deployment",
             project_id=project.id,
             project_name=project.name,
@@ -199,6 +205,7 @@ async def edit_deployment_page(
     request: Request,
     access: Annotated[DeploymentContext, Depends(deployment_access(Capability.MANAGE_STRUCTURE))],
     db: Annotated[AsyncSession, Depends(get_db)],
+    allowed: Annotated[AllowedPaths, Depends(get_allowed_paths)],
 ) -> Response:
     """The deployment form filled with the stored values."""
     deployment = await db.get(Deployment, access.deployment.id)
@@ -213,8 +220,8 @@ async def edit_deployment_page(
     return render(
         request,
         PAGE,
-        await _page_context(
-            db,
+        _page_context(
+            allowed,
             title=f"Edit {deployment.name}",
             project_id=access.deployment.project_id,
             project_name=access.deployment.project_name,

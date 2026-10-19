@@ -22,17 +22,17 @@ from app.models import (
     ServiceHook,
 )
 from app.services.deployment_detail import HistoryRow, load_history
-from app.services.paths import load_allowed_paths
+from app.services.paths import AllowedPaths, load_allowed_paths
 from app.services.permissions import (
     CAPABILITY_GROUPS,
     AccessScope,
     Capability,
     ItemLevel,
     ItemRef,
+    Visibility,
     compute_visibility,
-    load_items,
 )
-from app.services.structure_lookup import service_with_deployment
+from app.services.structure_lookup import ServiceChain, service_with_deployment
 
 # Environment status keys, shared with the badge vocabulary.
 STATUS_PENDING = "pending"
@@ -125,18 +125,33 @@ class PostDeployPanel:
 
 
 async def load_service_header(
-    db: AsyncSession, scope: AccessScope, service_id: int
+    db: AsyncSession,
+    scope: AccessScope,
+    service_id: int,
+    visibility: Visibility | None = None,
+    allowed: AllowedPaths | None = None,
+    *,
+    chain: ServiceChain | None = None,
 ) -> ServiceHeader | None:
-    """The service as the caller sees it, or None when it is outside the caller's scope."""
-    visibility = await compute_visibility(db, scope)
+    """The service as the caller sees it, or None when it is outside the caller's scope.
+
+    ``visibility`` and ``allowed`` are the ones the request already holds, and ``chain`` the
+    service with its deployment and project name when the caller read them already; whatever is
+    missing is loaded here.
+    """
+    if visibility is None:
+        visibility = await compute_visibility(db, scope)
     if (
         service_id not in visibility.full[ItemLevel.SERVICE]
         and service_id not in visibility.context[ItemLevel.SERVICE]
     ):
         return None
-    chain = await service_with_deployment(db, service_id)
+    if chain is None:
+        chain = await service_with_deployment(db, service_id)
     if chain is None:
         return None
+    if allowed is None:
+        allowed = await load_allowed_paths(db)
     service, deployment, project_name = chain
     environment_ids = set(
         (await db.execute(select(Environment.id).where(Environment.service_id == service_id)))
@@ -162,7 +177,7 @@ async def load_service_header(
         can_view_command=(
             scope.active and scope.group in CAPABILITY_GROUPS[Capability.VIEW_POST_DEPLOY_COMMAND]
         ),
-        outside_allowed=not (await load_allowed_paths(db)).contains(deployment.root_path),
+        outside_allowed=not allowed.contains(deployment.root_path),
     )
 
 
@@ -228,12 +243,15 @@ async def load_environment_rows(
         latest[environment_id] = (status, number)
         if status in _WRITTEN:
             deployed[environment_id] = number
-    items = {
-        item.environment_id: item for item in await load_items(db, ItemLevel.ENVIRONMENT, set(ids))
-    }
     rows: list[EnvironmentRow] = []
     for environment in environments:
-        item: ItemRef = items[environment.id]
+        item = ItemRef(
+            level=ItemLevel.ENVIRONMENT,
+            project_id=header.project_id,
+            deployment_id=header.deployment_id,
+            service_id=header.id,
+            environment_id=environment.id,
+        )
         rows.append(
             EnvironmentRow(
                 id=environment.id,

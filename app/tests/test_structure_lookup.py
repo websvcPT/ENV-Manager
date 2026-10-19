@@ -53,8 +53,9 @@ async def test_an_environment_comes_with_its_service_and_deployment(
     assert chain.environment.id == seed_data.envs.staging_web.id
     assert chain.service.id == seed_data.services.staging_web.id
     assert chain.deployment.id == seed_data.deployments.fancy_staging.id
-    environment, service, deployment = chain
+    environment, service, deployment, project_name = chain
     assert (environment.name, service.name, deployment.name) == (".env.web", "web", "staging")
+    assert project_name == "Fancy Proj. Name"
 
 
 async def test_a_deployment_comes_with_its_project_name(

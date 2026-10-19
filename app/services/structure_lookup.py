@@ -24,11 +24,12 @@ class ServiceChain(NamedTuple):
 
 
 class EnvironmentChain(NamedTuple):
-    """An environment with its service and the service's deployment."""
+    """An environment with its service, the service's deployment and its project's name."""
 
     environment: Environment
     service: Service
     deployment: Deployment
+    project_name: str
 
 
 class DeploymentChain(NamedTuple):
@@ -52,16 +53,17 @@ async def service_with_deployment(db: AsyncSession, service_id: int) -> ServiceC
 
 
 async def environment_chain(db: AsyncSession, environment_id: int) -> EnvironmentChain | None:
-    """The environment with its service and deployment, or None when there is no such file."""
+    """The environment with its service, deployment and project name, or None for a missing file."""
     row = (
         await db.execute(
-            select(Environment, Service, Deployment)
+            select(Environment, Service, Deployment, Project.name)
             .join(Service, Service.id == Environment.service_id)
             .join(Deployment, Deployment.id == Service.deployment_id)
+            .join(Project, Project.id == Deployment.project_id)
             .where(Environment.id == environment_id)
         )
     ).one_or_none()
-    return EnvironmentChain(row[0], row[1], row[2]) if row is not None else None
+    return EnvironmentChain(row[0], row[1], row[2], row[3]) if row is not None else None
 
 
 async def deployment_with_project(db: AsyncSession, deployment_id: int) -> DeploymentChain | None:

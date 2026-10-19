@@ -282,17 +282,19 @@ async def set_user_grants(
     *,
     actor: AuditActor,
     base: Collection[GrantTarget] | None = None,
+    held: Collection[GrantTarget] | None = None,
 ) -> GrantChange:
     """Make the user's direct grants exactly ``desired``, auditing every grant added or removed.
 
     ``base`` is the set the person edited from; when the stored set differs from it the change
-    is refused so a concurrent edit is never undone silently. Superadmins hold no grants. The
-    change is effective at once because scopes are loaded per request.
+    is refused so a concurrent edit is never undone silently. ``held`` is the stored set when
+    the caller read it a moment ago in the same request; without it it is read here. Superadmins
+    hold no grants. The change is effective at once because scopes are loaded per request.
     """
     if user.group is UserGroup.SUPERADMIN:
         raise GrantError(SUPERADMIN_REFUSAL)
     wanted = set(desired)
-    current = set(await list_grants(db, user.id))
+    current = set(held) if held is not None else set(await list_grants(db, user.id))
     if base is not None and set(base) != current:
         raise StaleGrantsError("This user's grants changed since the page was loaded.")
     added = sorted(wanted - current)
@@ -329,20 +331,24 @@ async def toggle_user_grant(
     *,
     was: bool,
     actor: AuditActor,
+    held: Collection[GrantTarget] | None = None,
 ) -> GrantChange:
     """Flip one direct grant of a user, auditing the grant added or removed.
 
     ``was`` is whether the person saw the grant as held; when the stored state differs the flip
     is refused, so a cell on an old page never undoes a change made meanwhile. Everything else
     goes through ``set_user_grants``, so a concurrent change to any other grant of the user is
-    caught too.
+    caught too. ``held`` is the stored set when the caller read it a moment ago in the same
+    request; without it it is read here.
     """
     if user.group is UserGroup.SUPERADMIN:
         raise GrantError(SUPERADMIN_REFUSAL)
-    current = set(await list_grants(db, user.id))
+    current = set(held) if held is not None else set(await list_grants(db, user.id))
     if (target in current) != was:
         raise StaleGrantsError("This grant changed since the page was loaded.")
-    return await set_user_grants(db, user, current ^ {target}, actor=actor, base=current)
+    return await set_user_grants(
+        db, user, current ^ {target}, actor=actor, base=current, held=current
+    )
 
 
 async def projects_reached(db: AsyncSession) -> dict[int, set[int]]:

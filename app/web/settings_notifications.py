@@ -20,7 +20,12 @@ from app.core.crypto import CryptoService
 from app.core.display_time import display_of
 from app.core.templating import render
 from app.models.types import utc_now
-from app.services.app_settings import WEBHOOK_SECRET_KEY, StoredSettings, has_secret
+from app.services.app_settings import (
+    WEBHOOK_SECRET_KEY,
+    StoredSettings,
+    has_secret,
+    has_secret_in,
+)
 from app.services.notification_settings import (
     NotificationsForm,
     NotificationsFormError,
@@ -53,15 +58,15 @@ Crypto = Annotated[CryptoService, Depends(get_crypto)]
 Transport = Annotated[WebhookTransport, Depends(get_webhook_transport)]
 
 
-async def _form_context(
-    db: AsyncSession,
+def _form_context(
     form: NotificationsForm,
     *,
+    secret_stored: bool,
     errors: dict[str, str] | None = None,
     saved: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """What the tab needs: the rows with their state, the webhook fields, the choices, refusals,
-    the toast and whether a webhook secret is stored."""
+    the toast and whether a webhook secret is stored (as the caller read it)."""
     return {
         "rows": [
             {
@@ -75,17 +80,21 @@ async def _form_context(
         "recipient_choices": recipient_choices(),
         "errors": errors or {},
         "saved": saved,
-        "secret_stored": await has_secret(db, WEBHOOK_SECRET_KEY),
+        "secret_stored": secret_stored,
     }
 
 
 @router.get("/settings/notifications", include_in_schema=False)
 async def notifications_page(
-    request: Request, db: Database, _context: ManageSettings, stored: Stored
+    request: Request, _context: ManageSettings, stored: Stored
 ) -> Response:
     """The Notifications tab."""
     form = NotificationsForm.from_settings(stored.notifications)
-    page = {**tab_context("notifications"), **await _form_context(db, form)}
+    secret_stored = has_secret_in(stored, WEBHOOK_SECRET_KEY)
+    page = {
+        **tab_context("notifications"),
+        **_form_context(form, secret_stored=secret_stored),
+    }
     return render(request, "pages/settings_notifications.html", page)
 
 
@@ -97,7 +106,7 @@ async def save_notifications_route(
     secret is not put back."""
     submitted = {key: str(value) for key, value in (await request.form()).items()}
     form = NotificationsForm.from_submission(submitted)
-    secret_stored = await has_secret(db, WEBHOOK_SECRET_KEY)
+    secret_stored = has_secret_in(stored, WEBHOOK_SECRET_KEY)
     try:
         clean = validate_notifications(
             form, stored=stored.notifications, secret_stored=secret_stored
@@ -110,7 +119,7 @@ async def save_notifications_route(
             form.webhook_url,
             remove_webhook_secret=form.remove_webhook_secret,
         )
-        page = await _form_context(db, shown, errors=error.errors)
+        page = _form_context(shown, secret_stored=secret_stored, errors=error.errors)
         return render(request, FORM_FRAGMENT, page, status_code=422)
     changed = await save_notifications(db, crypto, clean, actor=audit_actor(request, context))
     if changed:
@@ -127,7 +136,8 @@ async def save_notifications_route(
         }
     request.state.banners = await load_shell_banners(db, display_of(request), stored.smtp)
     shown = NotificationsForm.from_settings(clean.settings)
-    return render(request, SAVED_FRAGMENT, await _form_context(db, shown, saved=saved))
+    page = _form_context(shown, secret_stored=await has_secret(db, WEBHOOK_SECRET_KEY), saved=saved)
+    return render(request, SAVED_FRAGMENT, page)
 
 
 @router.post("/settings/notifications/webhook/test", include_in_schema=False)

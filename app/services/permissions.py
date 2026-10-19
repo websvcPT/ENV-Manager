@@ -304,12 +304,27 @@ def _item_query(level: ItemLevel) -> tuple[Any, Any]:
 
 
 async def load_items(
-    db: AsyncSession, level: ItemLevel, item_ids: set[int] | None = None
+    db: AsyncSession,
+    level: ItemLevel,
+    item_ids: set[int] | None = None,
+    *,
+    service_id: int | None = None,
+    deployment_id: int | None = None,
 ) -> list[ItemRef]:
-    """References with ancestry for every item of a level, or only the given ids."""
+    """References with ancestry for every item of a level, or only the given ids.
+
+    ``service_id`` and ``deployment_id`` keep the items inside one service or deployment (the
+    filter runs in SQL, so a caller that wants one service does not load the whole structure).
+    A service filter needs the service or environment level, a deployment filter any level
+    below the project.
+    """
     stmt, id_column = _item_query(level)
     if item_ids is not None:
         stmt = stmt.where(id_column.in_(item_ids))
+    if service_id is not None:
+        stmt = stmt.where(Service.id == service_id)
+    if deployment_id is not None:
+        stmt = stmt.where(Deployment.id == deployment_id)
     rows = (await db.execute(stmt)).all()
     return [
         ItemRef(
@@ -466,9 +481,5 @@ async def permitted_environment_ids(
     A deploy runs for one service: it is allowed when this list is not empty and covers only
     the environments in scope.
     """
-    environments = await load_items(db, ItemLevel.ENVIRONMENT)
-    return sorted(
-        item.item_id
-        for item in environments
-        if (service_id is None or item.service_id == service_id) and scope.can(capability, item)
-    )
+    environments = await load_items(db, ItemLevel.ENVIRONMENT, service_id=service_id)
+    return sorted(item.item_id for item in environments if scope.can(capability, item))

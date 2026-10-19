@@ -67,18 +67,28 @@ async def load_scrubber(
     crypto: CryptoService,
     deployment_id: int,
     written: Iterable[EnvironmentVersion | None] = (),
+    *,
+    opened: dict[int, str] | None = None,
 ) -> OutputScrubber:
-    """The scrubber for a deployment: current versions of all its files plus ``written``."""
+    """The scrubber for a deployment: current versions of all its files plus ``written``.
+
+    ``opened`` maps version ids to text the caller's operation already decrypted: those versions
+    are not decrypted again, and each one decrypted here is added to it.
+    """
     versions = {version.id: version for version in await _newest_versions(db, deployment_id)}
     for version in written:
         if version is not None:
             versions.setdefault(version.id, version)
     values: list[str] = []
     for version in versions.values():
-        try:
-            text = crypto.decrypt_text(version.content_encrypted)
-        except CryptoError:
-            log.warning("a saved version could not be read for output scrubbing")
-            continue
+        text = opened.get(version.id) if opened is not None else None
+        if text is None:
+            try:
+                text = crypto.decrypt_text(version.content_encrypted)
+            except CryptoError:
+                log.warning("a saved version could not be read for output scrubbing")
+                continue
+            if opened is not None:
+                opened[version.id] = text
         values.extend(secret_texts(text))
     return OutputScrubber(values)

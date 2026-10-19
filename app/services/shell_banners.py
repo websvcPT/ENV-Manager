@@ -16,14 +16,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.display_time import DisplayTime
 from app.models import (
-    SYNC_STATE_ID,
     Backup,
     BackupStatus,
     BackupTrigger,
-    GitSyncState,
     NotificationStatus,
 )
 from app.services.app_settings import SmtpSettings, load_stored_settings
+from app.services.git_state import read_state
 from app.services.notify_status import EMAIL_CHANNEL, WEBHOOK_CHANNEL, load_failures
 
 REQUESTED_TRIGGERS = (BackupTrigger.MANUAL, BackupTrigger.SCHEDULED, BackupTrigger.CLI)
@@ -79,7 +78,7 @@ def smtp_banner(smtp: SmtpSettings) -> ShellBanner | None:
 
 async def git_banner(db: AsyncSession, display: DisplayTime) -> ShellBanner | None:
     """The banner for a scheduled push that failed since one last worked, None when none did."""
-    state = await db.get(GitSyncState, SYNC_STATE_ID)
+    state = await read_state(db)
     if state is None or state.failures < 1 or state.last_attempt_at is None:
         return None
     return ShellBanner(

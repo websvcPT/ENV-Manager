@@ -185,7 +185,7 @@ async def save_post_deploy_route(
 ) -> Response:
     """Save the switch. It is refused while Docker is unusable, with the reason in the form."""
     wanted = enabled.lower() in {"on", "true", "1", "yes"}
-    docker = await cli.status()
+    docker = await cli.status(fresh=True)
     try:
         changes = await save_post_deploy_switch(
             db, wanted, docker=docker, actor=audit_actor(request, context)

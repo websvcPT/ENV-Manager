@@ -445,12 +445,17 @@ async def apply_toggle(
     message: str | None = None
     changed = False
     try:
-        changed = (await toggle_user_grant(db, user, target, was=was, actor=actor)).changed
+        changed = (
+            await toggle_user_grant(db, user, target, was=was, actor=actor, held=before)
+        ).changed
     except StaleGrantsError:
         refusal = Refusal.STALE
     except GrantError as error:
         refusal, message = Refusal.OTHER, str(error)
-    after = frozenset(await list_grants(db, user.id))
+    if refusal is not None:
+        after = frozenset(await list_grants(db, user.id))
+    else:
+        after = before ^ {target} if changed else before
     return ToggleOutcome(before, after, changed, refusal, message=message)
 
 

@@ -92,6 +92,64 @@ async def test_a_probe_that_hangs_is_stopped_and_counts_as_unreachable(
     assert time.monotonic() - started < 5
 
 
+class Clock:
+    """A clock a test moves by hand."""
+
+    def __init__(self) -> None:
+        self.now = 100.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def timed(fake: FakeDocker, clock: Clock) -> DockerCli:
+    """A cli on the fake docker that reads the given clock."""
+    fake.mount_socket()
+    return DockerCli(
+        executable=str(fake.executable),
+        socket_path=fake.socket_path,
+        scratch=fake.folder / "scratch",
+        clock=clock,
+    )
+
+
+async def test_two_views_inside_the_cache_time_probe_once_and_a_later_one_probes_again(
+    fake: FakeDocker,
+) -> None:
+    clock = Clock()
+    cli = timed(fake, clock)
+    first = await cli.status()
+    clock.now += docker_cli.STATUS_TTL_SECONDS - 0.1
+    second = await cli.status()
+    assert first == second and fake.probes() == 1
+    clock.now += 0.1
+    await cli.status()
+    assert fake.probes() == 2
+
+
+async def test_a_check_that_decides_always_probes_and_its_answer_is_what_views_then_show(
+    fake: FakeDocker,
+) -> None:
+    clock = Clock()
+    cli = timed(fake, clock)
+    assert (await cli.status()).available and fake.probes() == 1
+    fake.switch("no-daemon")
+    assert (await cli.status()).available, "a view inside the cache time may be stale"
+    assert fake.probes() == 1
+    decided = await cli.status(fresh=True)
+    assert not decided.available and fake.probes() == 2
+    assert await cli.status() == decided and fake.probes() == 2
+
+
+async def test_the_cheap_socket_test_is_never_cached(fake: FakeDocker) -> None:
+    clock = Clock()
+    cli = timed(fake, clock)
+    assert (await cli.status()).available and fake.probes() == 1
+    fake.socket_path.unlink()
+    status = await cli.status()
+    assert status.reason == NOT_MOUNTED_REASON and fake.probes() == 1
+
+
 def test_the_child_environment_is_built_from_fixed_values_only(
     fake: FakeDocker, monkeypatch: pytest.MonkeyPatch
 ) -> None:

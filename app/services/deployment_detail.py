@@ -37,8 +37,8 @@ from app.services.permissions import (
     AccessScope,
     Capability,
     ItemLevel,
+    Visibility,
     compute_visibility,
-    load_items,
 )
 from app.services.projects import LastDeploy, latest_runs
 from app.services.structure_lookup import deployment_with_project
@@ -175,10 +175,18 @@ async def load_check_summary(
 
 
 async def load_deployment_detail(
-    db: AsyncSession, scope: AccessScope, deployment_id: int, allowed: AllowedPaths
+    db: AsyncSession,
+    scope: AccessScope,
+    deployment_id: int,
+    allowed: AllowedPaths,
+    visibility: Visibility | None = None,
 ) -> DeploymentDetail | None:
-    """The deployment as the caller sees it, or None when it is outside the caller's scope."""
-    visibility = await compute_visibility(db, scope)
+    """The deployment as the caller sees it, or None when it is outside the caller's scope.
+
+    ``visibility`` is the one the request already computed; without it, it is computed here.
+    """
+    if visibility is None:
+        visibility = await compute_visibility(db, scope)
     full = deployment_id in visibility.full[ItemLevel.DEPLOYMENT]
     if not full and deployment_id not in visibility.context[ItemLevel.DEPLOYMENT]:
         return None
@@ -201,7 +209,9 @@ async def load_deployment_detail(
     )
     service_ids = {service.id for service in services}
     visible_environments = visibility.full[ItemLevel.ENVIRONMENT]
+    can_deploy = scope.active and scope.group in CAPABILITY_GROUPS[Capability.DEPLOY]
     environment_counts: dict[int, int] = {}
+    deployable_services: set[int] = set()
     for service_id, environment_id in (
         await db.execute(
             select(Environment.service_id, Environment.id).where(
@@ -211,12 +221,8 @@ async def load_deployment_detail(
     ).all():
         if environment_id in visible_environments:
             environment_counts[service_id] = environment_counts.get(service_id, 0) + 1
-
-    deployable_services = {
-        item.service_id
-        for item in await load_items(db, ItemLevel.ENVIRONMENT)
-        if item.deployment_id == deployment_id and scope.can(Capability.DEPLOY, item)
-    }
+            if can_deploy:
+                deployable_services.add(service_id)
     history = await load_history(db, service_ids, visible_environments, full)
     dist_outcome, check_drift = await load_check_summary(db, service_ids, visible_environments)
     latest = await latest_runs(db, service_ids)
@@ -250,7 +256,7 @@ async def load_deployment_detail(
         services=tuple(service_rows),
         history=tuple(history),
         last_run=history[0] if history else None,
-        can_check_dist=scope.active and scope.group in CAPABILITY_GROUPS[Capability.DEPLOY],
+        can_check_dist=can_deploy,
         can_view_output=(
             scope.active and scope.group in CAPABILITY_GROUPS[Capability.VIEW_POST_DEPLOY_OUTPUT]
         ),

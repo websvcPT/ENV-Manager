@@ -25,6 +25,7 @@ from app.services.permissions import (
     AccessScope,
     Capability,
     ItemLevel,
+    Visibility,
     compute_visibility,
 )
 from app.services.projects import LastDeploy, latest_runs, member_counts
@@ -57,11 +58,14 @@ class ProjectDetail:
 
     ``limited_to`` names the granted deployments and environments when the caller reaches the
     project only partly, and ``members`` is None unless the caller may see who has access.
-    ``attention`` counts the deployments that carry at least one flag.
+    ``attention`` counts the deployments that carry at least one flag. ``row`` is the stored
+    project the figures were read from, for the routes that change it, so they do not read it
+    again.
     """
 
     id: int
     name: str
+    row: Project
     deployments: tuple[DeploymentRow, ...]
     attention: int
     members: int | None
@@ -82,10 +86,18 @@ class ActivityRow:
 
 
 async def load_project_detail(
-    db: AsyncSession, scope: AccessScope, project_id: int, allowed: AllowedPaths
+    db: AsyncSession,
+    scope: AccessScope,
+    project_id: int,
+    allowed: AllowedPaths,
+    visibility: Visibility | None = None,
 ) -> ProjectDetail | None:
-    """The project as the caller sees it, or None when it is outside the caller's scope."""
-    visibility = await compute_visibility(db, scope)
+    """The project as the caller sees it, or None when it is outside the caller's scope.
+
+    ``visibility`` is the one the request already computed; without it, it is computed here.
+    """
+    if visibility is None:
+        visibility = await compute_visibility(db, scope)
     full_projects = visibility.full[ItemLevel.PROJECT]
     if project_id not in full_projects | visibility.context[ItemLevel.PROJECT]:
         return None
@@ -177,6 +189,7 @@ async def load_project_detail(
     return ProjectDetail(
         id=project.id,
         name=project.name,
+        row=project,
         deployments=tuple(rows),
         attention=sum(1 for row in rows if row.flags),
         members=members,
@@ -187,10 +200,19 @@ async def load_project_detail(
 
 
 async def list_activity(
-    db: AsyncSession, scope: AccessScope, project_id: int, *, limit: int = ACTIVITY_LIMIT
+    db: AsyncSession,
+    scope: AccessScope,
+    project_id: int,
+    *,
+    limit: int = ACTIVITY_LIMIT,
+    visibility: Visibility | None = None,
 ) -> list[ActivityRow]:
-    """The newest audit entries of the project that lie inside the caller's scope."""
-    visibility = await compute_visibility(db, scope)
+    """The newest audit entries of the project that lie inside the caller's scope.
+
+    ``visibility`` is the one the request already computed; without it, it is computed here.
+    """
+    if visibility is None:
+        visibility = await compute_visibility(db, scope)
     entries = (
         await db.execute(
             select(AuditEntry)

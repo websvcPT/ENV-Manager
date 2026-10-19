@@ -34,6 +34,28 @@ from app.services.permissions import AccessScope, load_user_scope
 from app.tests.dist_helpers import link_dist, write_dist
 
 
+class CountingCrypto(CryptoService):
+    """A crypto service that records every ciphertext it opens, in the order it opens them.
+
+    It takes over the keys of the service it wraps, so what it seals and opens is the same; a test
+    reads ``opened`` to pin how often one stored version is decrypted by one operation.
+    """
+
+    def __init__(self, crypto: CryptoService) -> None:
+        """Share the keys of ``crypto`` and start with nothing opened."""
+        self.__dict__.update(crypto.__dict__)
+        self.opened: list[str] = []
+
+    def decrypt(self, token: str, context: bytes = b"") -> bytes:
+        """Open the ciphertext and note it."""
+        self.opened.append(token)
+        return super().decrypt(token, context)
+
+    def most_often_opened(self) -> int:
+        """How many times the ciphertext opened most often was opened (0 when none was)."""
+        return max((self.opened.count(token) for token in set(self.opened)), default=0)
+
+
 class RecordingRunner:
     """A hook runner that records its requests and answers with a fixed result.
 

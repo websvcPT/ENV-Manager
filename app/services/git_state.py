@@ -15,6 +15,25 @@ BACKOFF_BASE = timedelta(hours=1)
 BACKOFF_CAP = timedelta(hours=24)
 
 
+_HELD_STATE = "git_sync_state"
+
+
+async def read_state(db: AsyncSession) -> GitSyncState | None:
+    """The state row for a screen that only shows it, None when it was never created.
+
+    A session forgets a row nobody refers to, so two readers of one request would each read it.
+    The session here keeps what it found (a missing row too), so the banner and the Git tab of
+    one request share a single read; the row is the session's own instance, so a change made
+    through the session is seen by the next reader, and ``load_state`` records a row it creates.
+    """
+    if _HELD_STATE in db.info:
+        held: GitSyncState | None = db.info[_HELD_STATE]
+        return held
+    state = await db.get(GitSyncState, SYNC_STATE_ID)
+    db.info[_HELD_STATE] = state
+    return state
+
+
 async def load_state(db: AsyncSession) -> GitSyncState:
     """The state row, created empty when it does not exist yet."""
     state = await db.get(GitSyncState, SYNC_STATE_ID)
@@ -22,6 +41,7 @@ async def load_state(db: AsyncSession) -> GitSyncState:
         state = GitSyncState(id=SYNC_STATE_ID, failures=0)
         db.add(state)
         await db.flush()
+    db.info[_HELD_STATE] = state
     return state
 
 

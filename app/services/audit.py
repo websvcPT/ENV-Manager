@@ -1,16 +1,20 @@
 """Writing audit entries. Details must never contain secret values."""
 
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 
+from sqlalchemy import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.telemetry import current_trace_id
 from app.models import ApiToken, AuditActorType, AuditEntry, AuditResult, User
+from app.models.types import utc_now
 
 CLI_ACTOR_NAME = "cli"
+_BATCH = "audit_batch"
 
 
 @dataclass(frozen=True)
@@ -138,6 +142,7 @@ async def record_audit(
     its trace; it has none while nothing is recording. ``actor_name`` is the name stored for the
     actor, the actor user's name when it is not given. ``version_ids`` and ``created_at`` are
     written with the entry: the table is append-only, so nothing may be set after the insert.
+    Inside ``audit_batch`` the entry is only collected and has no id until the block ends.
     """
     if actor_name is None and actor_user is not None:
         actor_name = actor_user.name
@@ -162,9 +167,42 @@ async def record_audit(
     )
     if created_at is not None:
         entry.created_at = created_at
+    batch: list[AuditEntry] | None = db.info.get(_BATCH)
+    if batch is not None:
+        batch.append(entry)
+        return entry
     db.add(entry)
     await db.flush()
     return entry
+
+
+@asynccontextmanager
+async def audit_batch(db: AsyncSession) -> AsyncIterator[None]:
+    """Collect the entries recorded inside the block and write them in one statement at its end.
+
+    A caller that audits many things at once (one entry per file of a deployment) costs one
+    insert instead of one per entry. The entries are not tracked by the session, are written in
+    the order they were recorded, and are written only when the block ends without an error. The
+    caller commits.
+    """
+    batch: list[AuditEntry] = []
+    db.info[_BATCH] = batch
+    try:
+        yield
+    finally:
+        del db.info[_BATCH]
+    if batch:
+        rows = [_row_of(entry) for entry in batch]
+        await db.execute(insert(AuditEntry), rows)
+
+
+def _row_of(entry: AuditEntry) -> dict[str, object]:
+    """The values of an entry for a bulk insert: every column but the id, the time defaulted."""
+    row = {column.key: getattr(entry, column.key) for column in AuditEntry.__table__.columns}
+    del row["id"]
+    if row["created_at"] is None:
+        row["created_at"] = utc_now()
+    return row
 
 
 async def record_actor_audit(

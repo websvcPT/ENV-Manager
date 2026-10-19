@@ -12,7 +12,6 @@ the group may read that.
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -22,11 +21,9 @@ from app.models import (
     DistMissingPolicy,
     DistOutcome,
     DriftState,
-    HookType,
     PostDeployStatus,
-    ServiceHook,
 )
-from app.services.app_settings import load_stored_settings
+from app.services.app_settings import StoredSettings, load_stored_settings
 from app.services.audit import AuditActor
 from app.services.deploy import ENVIRONMENT_NOT_FOUND, SERVICE_NOT_FOUND, DeployEngine
 from app.services.deploy_types import (
@@ -38,8 +35,8 @@ from app.services.deploy_types import (
 from app.services.dist import DistSkipReason
 from app.services.docker_cli import DockerCli
 from app.services.hook_runner import DOCKER_UNAVAILABLE_REASON, NOT_CHANGED_REASON
-from app.services.hooks import POST_DEPLOY_OFF_REASON
-from app.services.permissions import AccessScope, Capability, permitted_environment_ids
+from app.services.hooks import POST_DEPLOY_OFF_REASON, PostDeployHook
+from app.services.permissions import AccessScope
 from app.services.service_detail import (
     STATUS_NEVER,
     STATUS_PENDING,
@@ -202,37 +199,29 @@ def _is_older(row: PreflightRow) -> bool:
     return row.version is not None and row.newest is not None and row.version < row.newest
 
 
-async def _stored_hook(db: AsyncSession, service_id: int) -> ServiceHook | None:
-    """The stored post-deploy command of a service, if any."""
-    return await db.scalar(
-        select(ServiceHook).where(
-            ServiceHook.service_id == service_id, ServiceHook.type == HookType.POST_DEPLOY
-        )
-    )
-
-
 async def preview_post_deploy(
-    db: AsyncSession,
     cli: DockerCli,
     header: ServiceHeader,
     selected: Sequence[EnvironmentOutcome],
     *,
     force: bool,
+    hook: PostDeployHook | None,
+    post_deploy_enabled: bool,
 ) -> PostDeployPreview:
     """Whether the stored command would run once after the selected environments.
 
-    The same conditions the engine and the runner apply at deploy time: the feature switched on
-    in settings, nothing stopped (blocked, halted or failed), something would change unless the
-    command runs always or the deploy is forced, and Docker usable. Docker is probed only when
-    everything else lets the command run.
+    ``hook`` is the command the dry run was made with and ``post_deploy_enabled`` the switch of
+    the Settings, both read once for the request. The same conditions the engine and the runner
+    apply at deploy time: the feature switched on, nothing stopped (blocked, halted or failed),
+    something would change unless the command runs always or the deploy is forced, and Docker
+    usable. Docker is probed only when everything else lets the command run.
     """
-    hook = await _stored_hook(db, header.id)
     if hook is None or not hook.commands.strip():
         return PostDeployPreview("none", NO_COMMAND_TEXT)
     command = hook.commands if header.can_view_command else None
     if not selected:
         return PostDeployPreview("idle", command=command)
-    if not (await load_stored_settings(db)).post_deploy.enabled:
+    if not post_deploy_enabled:
         return PostDeployPreview("skipped", POST_DEPLOY_OFF_REASON, command)
     if any(item.status in _STOPPED for item in selected):
         return PostDeployPreview("skipped", NOT_DEPLOYED_REASON, command)
@@ -263,23 +252,25 @@ async def run_preflight(
     selected_ids: set[int] | None,
     versions: dict[int, int],
     force: bool,
+    stored: StoredSettings | None = None,
 ) -> Preflight:
     """Dry run every environment the caller may deploy and describe what a deploy would do.
 
     ``selected_ids`` is the choice the person made (None: pending and never deployed files, or
     the one file of a chosen version). ``versions`` pins version numbers; the rest use the newest.
+    ``stored`` is the settings the request already read; without it they are read here.
     Raises ``DeployRequestError`` when the caller may deploy nothing here or a version is unknown.
     """
-    permitted = await permitted_environment_ids(db, scope, Capability.DEPLOY, service_id=header.id)
+    status_rows = await load_environment_rows(db, scope, header)
+    permitted = {row.id for row in status_rows if row.can_check_dist}
     if not permitted:
         raise DeployRequestError(SERVICE_NOT_FOUND)
     pinned = {key: value for key, value in versions.items() if key in permitted}
-    status_rows = await load_environment_rows(db, scope, header)
     newest = {row.id: row.current for row in status_rows}
     chosen = (
         {item for item in selected_ids if item in permitted}
         if selected_ids is not None
-        else _default_selection(status_rows, pinned) & set(permitted)
+        else _default_selection(status_rows, pinned) & permitted
     )
     outcome = await engine.run(
         db,
@@ -306,12 +297,20 @@ async def run_preflight(
         )
     selected_outcomes = [item for item in outcome.environments if item.environment_id in chosen]
     older = [row for row in rows if row.selected and _is_older(row)]
+    settings = stored if stored is not None else await load_stored_settings(db)
     return Preflight(
         service=header,
         rows=tuple(rows),
         selected=len(selected_outcomes),
         summary=_summary(selected_outcomes),
-        preview=await preview_post_deploy(db, cli, header, selected_outcomes, force=force),
+        preview=await preview_post_deploy(
+            cli,
+            header,
+            selected_outcomes,
+            force=force,
+            hook=outcome.hook,
+            post_deploy_enabled=settings.post_deploy.enabled,
+        ),
         force=force,
         older_version=(
             f"Deploying version {older[0].version} of {older[0].name}, which is not the newest "
@@ -329,14 +328,12 @@ async def selected_names(
 
     Raises ``DeployRequestError`` when one of them is not an environment the caller may deploy.
     """
-    permitted = set(
-        await permitted_environment_ids(db, scope, Capability.DEPLOY, service_id=header.id)
-    )
+    rows = await load_environment_rows(db, scope, header)
+    permitted = {row.id for row in rows if row.can_check_dist}
     if not permitted:
         raise DeployRequestError(SERVICE_NOT_FOUND)
     if not selected_ids <= permitted:
         raise DeployRequestError(ENVIRONMENT_NOT_FOUND)
-    rows = await load_environment_rows(db, scope, header)
     return [row.name for row in rows if row.id in selected_ids]
 
 

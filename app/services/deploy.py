@@ -130,13 +130,19 @@ _DEPLOYED = (DeployResultStatus.WRITTEN, DeployResultStatus.UNCHANGED)
 
 @dataclass(frozen=True)
 class _Context:
-    """The loaded service, deployment, selected environments, versions and stored command."""
+    """The loaded service, deployment, selected environments, versions and stored command.
+
+    ``opened`` holds the text of each version already decrypted during this run, by version id,
+    so the checks and the output scrubber that need a version again do not decrypt it again. It
+    lives and dies with the run.
+    """
 
     service: Service
     deployment: Deployment
     environments: tuple[Environment, ...]
     versions: dict[int, EnvironmentVersion | None]
     hook: PostDeployHook | None
+    opened: dict[int, str] = field(default_factory=dict, repr=False)
 
 
 @dataclass(frozen=True)
@@ -435,9 +441,11 @@ class DeployEngine:
         if version is None:
             return _outcome(environment, version, failed, NO_VERSION_MESSAGE), None
         try:
-            data = self.crypto.decrypt_text(version.content_encrypted).encode("utf-8")
+            text = self.crypto.decrypt_text(version.content_encrypted)
         except CryptoError:
             return _outcome(environment, version, failed, DECRYPT_FAILED_MESSAGE), None
+        context.opened[version.id] = text
+        data = text.encode("utf-8")
         version_hash = self.crypto.content_hash(data)
         try:
             location = locate_target(allowed, context.deployment.root_path, environment.target_path)
@@ -450,6 +458,8 @@ class DeployEngine:
                 environment.id,
                 checked_by=actor.label,
                 version_number=version.number,
+                opened=context.opened,
+                allowed=allowed,
             )
         except DistError:
             return _outcome(environment, version, failed, FILE_NO_LONGER_EXISTS_MESSAGE), None
@@ -602,7 +612,9 @@ class DeployEngine:
             db, context, actor, request, started_at, status, outcomes, post_deploy, checks
         )
         await _finish_run(db, context, actor, request, run, outcomes)
-        return DeployOutcome(run.id, status, True, request.force, outcomes, post_deploy)
+        return DeployOutcome(
+            run.id, status, True, request.force, outcomes, post_deploy, hook=context.hook
+        )
 
     async def _deploy_locked(
         self,
@@ -644,7 +656,9 @@ class DeployEngine:
         _settle_run(run, status, post_deploy)
         await _finish_run(db, context, actor, request, run, outcomes)
         log.info("deploy run %s of service %s: %s", run.id, context.service.id, status.value)
-        outcome = DeployOutcome(run.id, status, False, request.force, outcomes, post_deploy)
+        outcome = DeployOutcome(
+            run.id, status, False, request.force, outcomes, post_deploy, hook=context.hook
+        )
         return outcome, self._event(context, actor, request, run.id, outcome)
 
     async def _close_cancelled(
@@ -720,7 +734,11 @@ class DeployEngine:
         if context.hook is not None and context.hook.commands.strip():
             try:
                 scrubber = await load_scrubber(
-                    db, self.crypto, context.deployment.id, context.versions.values()
+                    db,
+                    self.crypto,
+                    context.deployment.id,
+                    context.versions.values(),
+                    opened=context.opened,
                 )
             except Exception as error:
                 log.error("output scrubbing values could not be loaded: %s", type(error).__name__)

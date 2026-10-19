@@ -21,6 +21,7 @@ SCRIPT = """#!/bin/sh
 dir=$(dirname "$0")
 case "$1 $2" in
   "version --format")
+    echo probe >> "$dir/probes"
     [ -f "$dir/no-daemon" ] && { echo "Cannot connect to the Docker daemon" >&2; exit 1; }
     [ -f "$dir/slow-daemon" ] && exec sleep 300
     echo 29.9.1
@@ -94,6 +95,12 @@ class FakeDocker:
             socket_path=self.socket_path,
             scratch=self.folder / "scratch",
         )
+
+    def probes(self) -> int:
+        """How many times the app asked the daemon for its version, which is once per status
+        check that really probes (the compose probe always comes with it)."""
+        record = self.folder / "probes"
+        return len(record.read_text(encoding="utf-8").splitlines()) if record.exists() else 0
 
     def calls(self) -> list[Call]:
         """The recorded calls in order, probes excluded."""

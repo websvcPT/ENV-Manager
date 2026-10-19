@@ -9,6 +9,7 @@ from app.models import SYNC_STATE_ID, GitSyncState
 from app.services.app_settings import GitSettings
 from app.services.git_hostkey import parse_entry
 from app.services.git_remote import RemoteError, RemoteKind, parse_remote
+from app.services.git_state import read_state
 
 
 @dataclass(frozen=True)
@@ -39,7 +40,7 @@ class GitStatus:
 
 async def load_git_status(db: AsyncSession, git: GitSettings, display: DisplayTime) -> GitStatus:
     """The sync state for the tab. Nothing here reads a secret or writes a row."""
-    state = await db.get(GitSyncState, SYNC_STATE_ID) or GitSyncState(id=SYNC_STATE_ID, failures=0)
+    state = await read_state(db) or GitSyncState(id=SYNC_STATE_ID, failures=0)
     ssh = False
     pinned = None
     if git.configured:

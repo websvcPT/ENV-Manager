@@ -10,8 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.templating import render
 from app.services.access_grid import NodeKind
 from app.services.deployment_detail import DeploymentDetail, load_deployment_detail
-from app.services.paths import load_allowed_paths
-from app.services.permissions import AccessScope, Capability, ItemLevel, ItemRef
+from app.services.paths import AllowedPaths
+from app.services.permissions import AccessScope, Capability, ItemLevel, ItemRef, Visibility
 from app.web.access_tabs import AccessSubject, mount_access_routes
 from app.web.dependencies import AuthContext, item_access
 
@@ -28,11 +28,14 @@ class DeploymentContext:
 
 
 async def _load_deployment(
-    db: AsyncSession, scope: AccessScope, deployment_id: int
+    db: AsyncSession,
+    scope: AccessScope,
+    deployment_id: int,
+    visibility: Visibility,
+    allowed: AllowedPaths,
 ) -> DeploymentDetail | None:
-    """The deployment as the caller sees it, with the allowed paths loaded for this request."""
-    allowed = await load_allowed_paths(db)
-    return await load_deployment_detail(db, scope, deployment_id, allowed)
+    """The deployment as the caller sees it, with what the request already holds."""
+    return await load_deployment_detail(db, scope, deployment_id, allowed, visibility)
 
 
 # Capabilities that need an environment are not supported on a deployment.

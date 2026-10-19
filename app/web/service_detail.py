@@ -13,7 +13,7 @@ from app.core.log import get_logger
 from app.core.templating import render
 from app.models import ServiceHook
 from app.services.access_grid import NodeKind
-from app.services.app_settings import load_stored_settings
+from app.services.app_settings import StoredSettings
 from app.services.docker_cli import DockerCli
 from app.services.hook_settings import (
     HookForbiddenError,
@@ -29,7 +29,6 @@ from app.services.permissions import (
     Capability,
     ItemLevel,
     ItemRef,
-    permitted_environment_ids,
 )
 from app.services.service_detail import (
     HookSettings,
@@ -46,6 +45,7 @@ from app.web.dependencies import (
     get_crypto,
     get_db,
     get_docker_cli,
+    get_stored_settings,
     item_access,
 )
 
@@ -61,6 +61,8 @@ ADDED_TOASTS = ("service", "environment")
 SAVED_MESSAGE = "They apply from the next deploy."
 SAVED_EMPTY_MESSAGE = "No command is set, so deploys run none."
 NOTHING_STORED_MESSAGE = "No command is set, so nothing was stored."
+
+Stored = Annotated[StoredSettings, Depends(get_stored_settings)]
 
 
 @dataclass(frozen=True)
@@ -127,7 +129,7 @@ def _form_of(hook: HookSettings | ServiceHook | None) -> HookForm:
 
 
 async def _settings_context(
-    db: AsyncSession,
+    stored: StoredSettings,
     access: ServiceContext,
     cli: DockerCli,
     hook: HookSettings | ServiceHook | None,
@@ -139,7 +141,8 @@ async def _settings_context(
 ) -> dict[str, Any]:
     """What the settings form needs; only the superadmin gets the Docker status and the form.
 
-    ``review`` holds the parsed commands to show before they are stored.
+    ``stored`` is the settings of the request, ``review`` holds the parsed commands to show
+    before they are stored.
     """
     if not access.service.can_view_command:
         return {
@@ -152,7 +155,7 @@ async def _settings_context(
         }
     return {
         "docker": await cli.status(),
-        "post_deploy_enabled": (await load_stored_settings(db)).post_deploy.enabled,
+        "post_deploy_enabled": stored.post_deploy.enabled,
         "socket_path": str(cli.socket_path),
         "form": form or _form_of(hook),
         "errors": errors or {},
@@ -167,6 +170,7 @@ async def service_page(
     access: Annotated[ServiceContext, Depends(service_access())],
     db: Annotated[AsyncSession, Depends(get_db)],
     cli: Annotated[DockerCli, Depends(get_docker_cli)],
+    stored: Stored,
     added: str = "",
 ) -> Response:
     """The service page: header, explanation, environments, post-deploy panel and history.
@@ -176,16 +180,14 @@ async def service_page(
     rows = await load_environment_rows(db, access.scope, access.service)
     history = await load_service_history(db, access.service)
     post_deploy = await load_post_deploy(db, access.service, history)
-    deployable = await permitted_environment_ids(
-        db, access.scope, Capability.DEPLOY, service_id=access.service.id
-    )
+    deployable = any(row.can_check_dist for row in rows)
     return render(
         request,
         "pages/service.html",
         {
             **_flags(access),
-            "can_deploy": bool(deployable) and not access.service.outside_allowed,
-            **await _settings_context(db, access, cli, post_deploy.hook),
+            "can_deploy": deployable and not access.service.outside_allowed,
+            **await _settings_context(stored, access, cli, post_deploy.hook),
             "environments": rows,
             "pending": sum(1 for row in rows if row.status == "pending"),
             "history": history,
@@ -221,6 +223,7 @@ async def post_deploy_panel(
     access: Annotated[ServiceContext, Depends(service_access())],
     db: Annotated[AsyncSession, Depends(get_db)],
     cli: Annotated[DockerCli, Depends(get_docker_cli)],
+    stored: Stored,
 ) -> Response:
     """The post-deploy panel, refreshed when a deploy finishes."""
     history = await load_service_history(db, access.service)
@@ -230,7 +233,7 @@ async def post_deploy_panel(
         POST_DEPLOY_FRAGMENT,
         {
             **_flags(access),
-            **await _settings_context(db, access, cli, post_deploy.hook),
+            **await _settings_context(stored, access, cli, post_deploy.hook),
             "post_deploy": post_deploy,
         },
     )
@@ -242,6 +245,7 @@ async def save_post_deploy(
     access: Annotated[ServiceContext, Depends(service_access(Capability.MANAGE_STRUCTURE))],
     db: Annotated[AsyncSession, Depends(get_db)],
     cli: Annotated[DockerCli, Depends(get_docker_cli)],
+    stored: Stored,
     working_directory: Annotated[str, Form()] = "",
     commands: Annotated[str, Form()] = "",
     timeout: Annotated[str, Form()] = "",
@@ -263,10 +267,12 @@ async def save_post_deploy(
     except HookForbiddenError as error:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "not permitted") from error
     except HookReviewRequired as review:
-        context = await _settings_context(db, access, cli, None, form=typed, review=review)
+        context = await _settings_context(stored, access, cli, None, form=typed, review=review)
         return render(request, SETTINGS_FRAGMENT, {**_flags(access), **context})
     except HookSettingsError as error:
-        context = await _settings_context(db, access, cli, None, form=typed, errors=error.errors)
+        context = await _settings_context(
+            stored, access, cli, None, form=typed, errors=error.errors
+        )
         return render(
             request,
             SETTINGS_FRAGMENT,
@@ -278,7 +284,7 @@ async def save_post_deploy(
     else:
         message = SAVED_MESSAGE if hook.commands else SAVED_EMPTY_MESSAGE
         saved = {"tone": "success", "title": "Post-deploy settings saved", "message": message}
-    context = await _settings_context(db, access, cli, hook, saved=saved)
+    context = await _settings_context(stored, access, cli, hook, saved=saved)
     return render(request, SETTINGS_FRAGMENT, {**_flags(access), **context})
 
 

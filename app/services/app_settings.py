@@ -167,7 +167,11 @@ class GitSettings:
 
 @dataclass(frozen=True)
 class StoredSettings:
-    """Every typed section, as stored now."""
+    """Every typed section, as stored now, and the names of the secrets that are stored.
+
+    ``secrets`` holds names only (never a value, not even sealed), so a screen can say whether a
+    secret is set without reading its row again; see ``has_secret_in``.
+    """
 
     security: SecuritySettings = field(default_factory=SecuritySettings)
     post_deploy: PostDeploySettings = field(default_factory=PostDeploySettings)
@@ -176,6 +180,7 @@ class StoredSettings:
     smtp: SmtpSettings = field(default_factory=SmtpSettings)
     notifications: NotificationSettings = field(default_factory=NotificationSettings)
     git: GitSettings = field(default_factory=GitSettings)
+    secrets: frozenset[str] = frozenset()
 
 
 # Settings whose value is an address that can carry a token in its path or query.
@@ -284,6 +289,7 @@ async def load_stored_settings(db: AsyncSession) -> StoredSettings:
         smtp=read_section("smtp", SmtpSettings, stored),
         notifications=read_section("notifications", NotificationSettings, stored),
         git=read_section("git", GitSettings, stored),
+        secrets=frozenset(key for key in stored if key in SECRET_KEYS),
     )
 
 
@@ -377,9 +383,18 @@ async def read_secret(db: AsyncSession, crypto: CryptoService, key: str) -> str 
 
 
 async def has_secret(db: AsyncSession, key: str) -> bool:
-    """Whether a secret is stored, without decrypting it."""
+    """Whether a secret is stored, without decrypting it. Reads the row now."""
     _require_secret_key(key)
     return await db.get(AppSetting, key) is not None
+
+
+def has_secret_in(stored: StoredSettings, key: str) -> bool:
+    """Whether a secret was stored when ``stored`` was read, without another query.
+
+    For a screen that changed nothing in its request; after a write use ``has_secret``.
+    """
+    _require_secret_key(key)
+    return key in stored.secrets
 
 
 async def clear_secret(db: AsyncSession, key: str, *, actor: AuditActor) -> bool:
