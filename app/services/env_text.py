@@ -1,24 +1,21 @@
 """Change variables of an env text in place.
 
-The text is read with the same tokenizer as the parser. Every statement keeps its exact source
+The text is read with the same statements as the parser. Every statement keeps its exact source
 (comments, blank lines, ordering, ``export`` prefixes), and only the statements of variables
 whose value changes are rewritten, so saving a value that did not change never touches the file.
 The result is parsed again and must give back exactly the requested values, otherwise nothing is
 returned.
 """
 
-import io
 import re
 from collections.abc import Mapping, Set
 from dataclasses import dataclass
 
-from dotenv.parser import parse_stream
-
-from app.services.env_parser import parse_env
+from app.services.env_parser import parse_env, parse_statements
 
 VARIABLE_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_.-]*")
 _PLAIN_VALUE = re.compile(r"[A-Za-z0-9_./:@%+,=-]*")
-_LEADING_BLANK_LINES = re.compile(r"(?:[ \t]*\n)*")
+_LEADING_BLANK_LINES = re.compile(r"(?:[ \t\r]*\n)*")
 _EXPORT_PREFIX = re.compile(r"[ \t]*export[ \t]+")
 
 
@@ -37,15 +34,16 @@ class VariableChanges:
 def format_assignment(key: str, value: str) -> str:
     """One ``KEY=value`` statement with a line break.
 
-    Plain values are written bare. Anything else is single quoted, which both python-dotenv and
-    Compose read literally (no escapes, no interpolation). A value holding a single quote or a
-    backslash cannot be single quoted, so it is double quoted with those two escaped.
+    Plain values are written bare. Anything else is single quoted, which Compose reads literally
+    (no escapes, no interpolation). A value holding a single quote or a backslash cannot be
+    single quoted, so it is double quoted with the backslash, the double quote and the dollar
+    sign escaped (a bare dollar sign would start an interpolation).
     """
     if _PLAIN_VALUE.fullmatch(value):
         return f"{key}={value}\n"
     if "'" not in value and "\\" not in value:
         return f"{key}='{value}'\n"
-    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$")
     return f'{key}="{escaped}"\n'
 
 
@@ -56,21 +54,23 @@ def apply_changes(text: str, changes: VariableChanges) -> str:
     keeps its ``export`` prefix; a removed variable loses every assignment; new variables are
     appended. Raises ``EnvEditError`` when the result would not read back as requested.
     """
-    bindings = list(parse_stream(io.StringIO(text)))
+    statements = parse_statements(text)
     effective = parse_env(text).variables
     last_index = {
-        binding.key: index for index, binding in enumerate(bindings) if binding.key is not None
+        statement.key: index
+        for index, statement in enumerate(statements)
+        if statement.key is not None
     }
     pieces: list[str] = []
-    for index, binding in enumerate(bindings):
-        source = binding.original.string
-        key = binding.key
-        if key is None or binding.error:
+    for index, statement in enumerate(statements):
+        source = statement.source
+        key = statement.key
+        if key is None or statement.error:
             pieces.append(source)
             continue
         lead = _LEADING_BLANK_LINES.match(source)
         blank = lead.group(0) if lead else ""
-        statement = source[len(blank) :]
+        after_blank = source[len(blank) :]
         if key in changes.remove:
             pieces.append(blank)
         elif (
@@ -78,7 +78,7 @@ def apply_changes(text: str, changes: VariableChanges) -> str:
             and index == last_index[key]
             and (not effective[key].assigned or effective[key].value != changes.values[key])
         ):
-            prefix = _EXPORT_PREFIX.match(statement)
+            prefix = _EXPORT_PREFIX.match(after_blank)
             pieces.append(
                 blank
                 + (prefix.group(0) if prefix else "")

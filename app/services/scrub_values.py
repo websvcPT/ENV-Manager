@@ -30,7 +30,11 @@ def secret_texts(text: str) -> list[str]:
     """The strings of one file that count as values: each variable value, or the whole text."""
     parsed = parse_env(text)
     if parsed.is_env_format:
-        return [variable.value for variable in parsed.variables.values() if variable.assigned]
+        return [
+            variable.value
+            for variable in parsed.variables.values()
+            if variable.assigned and not variable.interpolated
+        ]
     return [text.strip()]
 
 

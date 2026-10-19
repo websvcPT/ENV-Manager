@@ -31,6 +31,10 @@ AWKWARD_VALUES = [
     "line one\nline two\n",
     "price is $5 and ${HOME}",
     "mix ' and \\ and \" and $",
+    "it's ${HOME} and $HOME and $$",
+    "ends with a backslash\\",
+    "\\u00e9 and \\x41 and \\0 as text",
+    "crlf\r\ninside",
     "  padded  ",
     "a=b=c",
     "unicode café",
@@ -109,3 +113,31 @@ def test_unreadable_lines_are_preserved() -> None:
 def test_a_value_that_cannot_read_back_is_refused() -> None:
     with pytest.raises(EnvEditError):
         apply_changes("A=1\n", changes({"A": "x"}, {"A"}))
+
+
+def test_a_variable_with_a_compose_key_name_is_edited_in_place() -> None:
+    source = "a.b=1\nA[1]=2\n\u00dcBER=3\n"
+    result = apply_changes(source, changes({"a.b": "x y", "\u00dcBER": "9"}))
+    assert result == "a.b='x y'\nA[1]=2\n\u00dcBER=9\n"
+
+
+def test_a_variable_with_a_reference_is_untouched_unless_its_text_changes() -> None:
+    source = "A=${HOST}:80\nB=2\n"
+    assert apply_changes(source, changes({"A": "${HOST}:80", "B": "3"})) == ("A=${HOST}:80\nB=3\n")
+    result = apply_changes(source, changes({"A": "${HOST}:81"}))
+    assert result == "A='${HOST}:81'\nB=2\n"
+    assert parse_env(result).variables["A"].value == "${HOST}:81"
+    assert not parse_env(result).variables["A"].interpolated
+
+
+def test_a_value_with_a_dollar_and_a_quote_is_written_without_interpolation() -> None:
+    text = format_assignment("KEY", "it's ${HOME}")
+    assert text == 'KEY="it\'s \\${HOME}"\n'
+    parsed = parse_env(text).variables["KEY"]
+    assert parsed.value == "it's ${HOME}"
+    assert not parsed.interpolated
+
+
+def test_a_file_that_uses_crlf_keeps_its_blank_lines_when_a_variable_is_removed() -> None:
+    result = apply_changes("A=1\r\n\r\nB=2\r\n", changes(remove={"B"}))
+    assert result == "A=1\r\n\r\n"

@@ -3,6 +3,7 @@
 import pytest
 
 from app.services.env_parser import parse_env
+from app.tests.compose_env_cases import CASES, REFUSED, ComposeCase
 
 PEM = (
     "-----BEGIN PRIVATE KEY-----\n"
@@ -89,12 +90,13 @@ def test_empty_values_are_reported() -> None:
     assert all(parsed.variables[key].assigned for key in ("A", "B", "D"))
 
 
-def test_bare_key_is_unassigned_and_empty() -> None:
+def test_bare_key_is_a_present_key_with_an_unknown_value() -> None:
     parsed = parse_env("A=1\nBARE\n")
     assert parsed.is_env_format
+    assert parsed.keys == ("A", "BARE")
     assert parsed.variables["BARE"].assigned is False
-    assert parsed.variables["BARE"].empty
-    assert parsed.empty_keys == ("BARE",)
+    assert not parsed.variables["BARE"].empty
+    assert parsed.empty_keys == ()
 
 
 def test_duplicate_keys_keep_first_position_and_last_value() -> None:
@@ -145,9 +147,16 @@ def test_unclosed_quote_is_a_problem_on_its_line() -> None:
 
 
 def test_invalid_key_names_are_problems() -> None:
-    parsed = parse_env("OK=1\n1BAD=2\nA B=3\n")
+    parsed = parse_env("OK=1\nA B=2\nA/B=3\nA:C=4\n")
     assert parsed.is_env_format is False
-    assert 2 in parsed.problem_lines
+    assert parsed.problem_lines == (2, 3, 4)
+    assert parsed.keys == ("OK",)
+
+
+def test_key_names_follow_compose() -> None:
+    parsed = parse_env("a.b=1\n1ABC=2\nA[1]=3\nÜBER=4\n")
+    assert parsed.is_env_format
+    assert parsed.keys == ("a.b", "1ABC", "A[1]", "ÜBER")
 
 
 def test_problem_report_holds_line_numbers_only() -> None:
@@ -155,27 +164,89 @@ def test_problem_report_holds_line_numbers_only() -> None:
     assert "never shown" not in repr(parsed.problem_lines)
 
 
-def test_interpolation_is_not_performed(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_reference_is_kept_as_written_and_never_read_from_the_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("FROM_PROCESS", "leaked")
-    assert values("A=${FROM_PROCESS}\nB=$FROM_PROCESS\nC=${UNSET:-fallback}\n") == {
+    text = 'A=${FROM_PROCESS}\nB=$FROM_PROCESS\nC=${UNSET:-fallback}\nD="${FROM_PROCESS}"\n'
+    parsed = parse_env(text)
+    assert values(text) == {
         "A": "${FROM_PROCESS}",
         "B": "$FROM_PROCESS",
         "C": "${UNSET:-fallback}",
+        "D": "${FROM_PROCESS}",
     }
+    assert all(variable.interpolated for variable in parsed.variables.values())
+
+
+def test_a_value_that_interpolates_is_never_reported_as_empty() -> None:
+    parsed = parse_env("A=${UNSET}\nB=$UNSET\nC=\nD=${UNSET:-}\n")
+    assert parsed.empty_keys == ("C",)
+    assert parsed.keys == ("A", "B", "C", "D")
+
+
+def test_a_dollar_that_starts_no_reference_is_a_plain_character() -> None:
+    parsed = parse_env("A=$$x\nB=$\nC=$1\nD=price$5\nE='$X'\n")
+    assert values("A=$$x\nB=$\nC=$1\nD=price$5\nE='$X'\n") == {
+        "A": "$x",
+        "B": "$",
+        "C": "$1",
+        "D": "price$5",
+        "E": "$X",
+    }
+    assert not any(variable.interpolated for variable in parsed.variables.values())
+
+
+def test_a_reference_compose_refuses_is_a_problem() -> None:
+    for template in ("A=${1X}", "A=${bad name}", "A=${UNSET", "A=${UNSET:=x}"):
+        assert parse_env(template + "\n").problem_lines == (1,), template
 
 
 def test_spaces_around_equals_are_accepted() -> None:
     assert values("A = 1\nB= 2\nC =3\n") == {"A": "1", "B": "2", "C": "3"}
 
 
-def test_single_quoted_escapes_differ_from_compose() -> None:
-    # python-dotenv treats \' and \\ as escapes inside single quotes and keeps \n literal.
-    # Compose takes single quoted text literally, so a backslash is never an escape there.
-    assert values("A='it\\'s'\nB='a\\\\b'\nC='x\\ny'\n") == {
+def test_single_quotes_are_literal_except_for_an_escaped_quote() -> None:
+    assert values("A='it\\'s'\nB='a\\\\b'\nC='x\\ny'\nD='$HOME'\n") == {
         "A": "it's",
-        "B": "a\\b",
+        "B": "a\\\\b",
         "C": "x\\ny",
+        "D": "$HOME",
     }
+
+
+def test_a_colon_is_not_a_separator() -> None:
+    # Compose reads "A: 1" as A=1; here it is a problem, so YAML and other text stay non-env.
+    parsed = parse_env("services:\n  app:\n    image: x\n")
+    assert parsed.is_env_format is False
+    assert parsed.variables == {}
+
+
+@pytest.mark.parametrize("case", CASES, ids=lambda case: case.name)
+def test_the_parser_reads_what_compose_printed(case: ComposeCase) -> None:
+    assert case.compose is not None
+    parsed = parse_env(case.text)
+    assert parsed.problem_lines == ()
+    assert parsed.is_env_format
+    assert set(parsed.keys) == set(case.compose) | set(case.bare)
+    for key, expected in case.compose.items():
+        variable = parsed.variables[key]
+        if key in case.interpolated:
+            assert variable.interpolated, key
+            assert not variable.empty, key
+        else:
+            assert variable.value == expected, key
+            assert not variable.interpolated, key
+    for key in case.bare:
+        assert parsed.variables[key].assigned is False
+        assert not parsed.variables[key].empty
+
+
+@pytest.mark.parametrize("case", REFUSED, ids=lambda case: case.name)
+def test_a_file_compose_refuses_has_a_problem_line(case: ComposeCase) -> None:
+    parsed = parse_env(case.text)
+    assert parsed.problem_lines
+    assert parsed.is_env_format is False
 
 
 def test_line_numbers_skip_the_blank_lines_before_a_variable() -> None:
