@@ -24,6 +24,7 @@ from app.services.notify_events import (
     GitPushFailed,
     LockoutScope,
     LockoutStarted,
+    MasterKeyRotated,
     SignInFromNewAddress,
     UserChange,
     UserChanged,
@@ -68,6 +69,7 @@ def test_the_defaults_are_the_decided_ones() -> None:
         EventKind.USER_CHANGED,
         EventKind.BACKUP_FAILED,
         EventKind.GIT_PUSH_FAILED,
+        EventKind.KEY_ROTATED,
     }
     assert not is_enabled(settings, EventKind.DEPLOY_SUCCEEDED)
     assert not is_enabled(settings, EventKind.FILE_CHANGED)
@@ -134,3 +136,4 @@ def test_every_other_event_has_its_kind() -> None:
         EventKind.FILE_CHANGED
     )
     assert kind_of(GitPushFailed("authentication failed", 3)) is EventKind.GIT_PUSH_FAILED
+    assert kind_of(MasterKeyRotated(10, 2, "cli")) is EventKind.KEY_ROTATED

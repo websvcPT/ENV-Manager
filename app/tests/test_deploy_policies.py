@@ -3,6 +3,8 @@
 import stat
 from pathlib import Path
 
+import pytest
+
 from app.models import (
     AuditResult,
     DeployResultStatus,
@@ -261,6 +263,71 @@ async def test_the_backup_policy_keeps_the_old_file_next_to_the_target_with_mode
     assert target.read_text(encoding="utf-8") != "WORKERS=old\n"
     stored = await results_of(h.db, outcome.run_id or 0)
     assert stored[".env.web"].backup_path == result.backup_path
+
+
+def seed_old_backups(folder: Path, count: int) -> list[str]:
+    """Plain mode 0600 backups of the web file, older than any deploy, oldest first."""
+    names = [f".env.web.bak-2020010{number}T100000Z-abcd" for number in range(1, count + 1)]
+    for name in names:
+        (folder / name).write_text("old", encoding="utf-8")
+        (folder / name).chmod(0o600)
+    return names
+
+
+async def test_a_deploy_that_backs_up_removes_the_backups_beyond_the_newest_five(
+    harness: Harness,
+) -> None:
+    h = harness
+    web = h.seed.envs.staging_web
+    target = folder_of(h) / web.name
+    target.write_text("WORKERS=old\n", encoding="utf-8")
+    old = seed_old_backups(folder_of(h), 6)
+    await set_staging(h, drift_policy=DriftPolicy.BACKUP_OVERWRITE)
+
+    outcome = await deploy_files(h, web)
+
+    (result,) = outcome.environments
+    assert result.status is DeployResultStatus.WRITTEN and result.backup_path is not None
+    assert "2 older backups removed." in result.message
+    assert files_in(folder_of(h)) == sorted([".env.web", Path(result.backup_path).name, *old[2:]])
+
+
+async def test_a_dry_run_and_a_deploy_that_makes_no_backup_remove_nothing(
+    harness: Harness,
+) -> None:
+    h = harness
+    web = h.seed.envs.staging_web
+    (folder_of(h) / web.name).write_text("WORKERS=old\n", encoding="utf-8")
+    old = seed_old_backups(folder_of(h), 7)
+    await set_staging(h, drift_policy=DriftPolicy.BACKUP_OVERWRITE)
+
+    dry = await deploy_files(h, web, dry_run=True)
+    assert dry.environments[0].status is DeployResultStatus.WOULD_WRITE
+    assert files_in(folder_of(h)) == sorted([".env.web", *old])
+
+    await set_staging(h, drift_policy=DriftPolicy.OVERWRITE)
+    written = await deploy_files(h, web)
+    assert written.environments[0].status is DeployResultStatus.WRITTEN
+    assert files_in(folder_of(h)) == sorted([".env.web", *old])
+
+
+async def test_a_failed_write_removes_no_old_backup(
+    harness: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    h = harness
+    web = h.seed.envs.staging_web
+    (folder_of(h) / web.name).write_text("WORKERS=old\n", encoding="utf-8")
+    old = seed_old_backups(folder_of(h), 7)
+    await set_staging(h, drift_policy=DriftPolicy.BACKUP_OVERWRITE)
+
+    def refuse(*arguments: object, **options: object) -> None:
+        raise OSError("rename refused")
+
+    monkeypatch.setattr("app.services.target_files.os.rename", refuse)
+    outcome = await deploy_files(h, web)
+
+    assert outcome.environments[0].status is DeployResultStatus.FAILED
+    assert files_in(folder_of(h)) == sorted([".env.web", *old])
 
 
 async def test_the_environment_drift_policy_wins_over_the_deployment_default(

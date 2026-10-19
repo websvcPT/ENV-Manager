@@ -101,6 +101,7 @@ from app.services.target_files import (
     TargetLocation,
     locate_target,
     parse_mode,
+    prune_backups,
     read_target_file,
     resolve_ownership,
     write_target_file,
@@ -581,6 +582,10 @@ class DeployEngine:
             return _outcome(environment, version, failed, str(error), findings)
         verb = "Created." if plan.created else "Written."
         suffix = " The previous file was backed up." if backup_name else ""
+        if backup_name:
+            pruned = await asyncio.to_thread(prune_backups, location, allowed, backup_name)
+            if pruned:
+                suffix += f" {pruned} older {'backup' if pruned == 1 else 'backups'} removed."
         backup_path = (
             (PurePosixPath(location.relative).parent / backup_name).as_posix()
             if backup_name

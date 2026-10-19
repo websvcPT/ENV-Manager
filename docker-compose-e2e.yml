@@ -1,6 +1,8 @@
 # Browser specs (`make e2e`): the official Playwright image runs the specs in `playwright/`
-# against the development stack (`make up-bg`) over its Compose network. The image tag must
-# match the exact @playwright/test version in playwright/package.json.
+# against the development stack (`make up-bg`) over its Compose network. The image tag comes
+# from PLAYWRIGHT_VERSION, which the Makefile exports; the default is for a direct run. The
+# version must equal the exact @playwright/test version in playwright/package.json, and
+# `make check-pins` compares the three.
 #
 # The demo service runs the specs in `playwright/docker-tests` against the stack with the demo
 # override up (`make e2e-demo`), where the app reaches the host Docker daemon. It also gets the
@@ -8,7 +10,7 @@
 name: env-manager-e2e
 
 x-browser: &browser
-  image: mcr.microsoft.com/playwright:v1.64.1-noble
+  image: mcr.microsoft.com/playwright:v${PLAYWRIGHT_VERSION:-1.64.1}-noble
   user: "${APP_UID:-1000}:${APP_GID:-1000}"
   init: true
   ipc: host
@@ -31,7 +33,7 @@ x-browser: &browser
 
 services:
   node-modules-owner:
-    image: mcr.microsoft.com/playwright:v1.64.1-noble
+    image: mcr.microsoft.com/playwright:v${PLAYWRIGHT_VERSION:-1.64.1}-noble
     user: "0:0"
     volumes:
       - node-modules:/node_modules

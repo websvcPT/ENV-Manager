@@ -14,12 +14,17 @@ from contextlib import contextmanager
 from typing import TypeGuard
 
 from opentelemetry import trace
+from opentelemetry.context import Context
+from opentelemetry.sdk.trace import Span as SdkSpan
+from opentelemetry.sdk.trace import SpanProcessor, TracerProvider
 from opentelemetry.trace import Span, StatusCode
 
 from app import VERSION
 
 TRACER_NAME = "env-manager"
 MAX_TEXT_LENGTH = 100
+REDACTED = "[redacted]"
+REDACTED_ATTRIBUTES = ("url.path", "url.query")
 
 PROJECT_ID = "envmanager.project.id"
 DEPLOYMENT_ID = "envmanager.deployment.id"
@@ -143,6 +148,37 @@ def span(name: str, attributes: Mapping[str, object] | None = None) -> Iterator[
                 current.set_attribute(ERROR_TYPE, error_type_name(error))
                 current.set_status(StatusCode.ERROR)
             raise
+
+
+class RedactRequestSpans(SpanProcessor):
+    """Keeps the raw path and the query string of a request out of every span.
+
+    FastAPI records ``url.path`` and ``url.query`` when it starts the request span. A path can
+    hold a key name (the reveal routes) and the query string can hold search text and a host path
+    being typed, so both are replaced before any exporter sees the span. The route template is
+    set by FastAPI as ``http.route`` once the route is known and stays on the span, so a trace
+    still tells which screen was served. The attributes cannot be changed after the span ends,
+    which is why this happens when it starts.
+    """
+
+    def on_start(self, span: SdkSpan, parent_context: Context | None = None) -> None:
+        """Overwrite the path and query attributes the span was created with."""
+        attributes = span.attributes or {}
+        for key in REDACTED_ATTRIBUTES:
+            if key in attributes:
+                span.set_attribute(key, REDACTED)
+
+
+def redacting_tracer_provider() -> TracerProvider:
+    """A tracer provider whose first processor redacts the request path and query.
+
+    The resource, the sampler and the id generator come from the standard OpenTelemetry
+    variables as they do for any provider. The exporter FastAPI adds later runs after the
+    redaction, in registration order.
+    """
+    provider = TracerProvider()
+    provider.add_span_processor(RedactRequestSpans())
+    return provider
 
 
 def current_trace_id() -> str | None:

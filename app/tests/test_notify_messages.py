@@ -21,6 +21,7 @@ from app.services.notify_events import (
     GitPushFailed,
     LockoutScope,
     LockoutStarted,
+    MasterKeyRotated,
     NotificationEvent,
     SignInFromNewAddress,
     UserChange,
@@ -90,6 +91,7 @@ EVENTS: dict[str, NotificationEvent] = {
     "two_factor": UserChanged(UserChange.TWO_FACTOR_RESET, "bob", "root"),
     "file": FileChanged(1, 2, 3, 4, ".env.db", 5, FileChange.RESTORED, "root"),
     "git": GitPushFailed("The repository refused the credentials.", 3),
+    "key_rotation": MasterKeyRotated(120, 3, "cli"),
 }
 
 

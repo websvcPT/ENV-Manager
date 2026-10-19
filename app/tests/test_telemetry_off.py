@@ -63,7 +63,10 @@ async def main():
     with telemetry.span("probe.span") as span:
         recording = span.is_recording()
         inside = telemetry.current_trace_id()
+    active = getattr(trace.get_tracer_provider(), "_active_span_processor", None)
+    processors = getattr(active, "_span_processors", ())
     report = {
+        "redaction": [type(item).__name__ for item in processors][:1] == ["RedactRequestSpans"],
         "probe": response.json(),
         "recording": recording,
         "inside": inside,
@@ -145,24 +148,45 @@ def test_nothing_is_set_up_and_a_traceparent_gives_no_span_context(
     assert not [name for name in threads if any(marker in name for marker in THREAD_MARKERS)]
 
 
-def test_with_export_configured_the_same_request_does_get_a_span_and_a_trace_id(
+EXPORTING = {
+    "FASTAPI_OTEL_AUTO_CONFIGURE": "true",
+    "OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:9",
+}
+SENDER_TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736"
+
+
+def test_with_export_configured_a_request_gets_a_span_and_a_trace_id_of_its_own(
     tmp_path: Path,
 ) -> None:
     """The control: a harness that could not see a span context would pass the cases above.
 
-    The trace id of a request that sent a sampled ``traceparent`` is the sender's, so an audit
-    entry written for it carries an id the client chose.
+    The peer is not a trusted proxy, so the ``traceparent`` it sent is ignored and the request
+    starts a root trace: an audit entry never carries an id the client chose.
     """
-    report = run_unconfigured_app(
-        tmp_path,
-        {
-            "FASTAPI_OTEL_AUTO_CONFIGURE": "true",
-            "OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:9",
-        },
-    )
+    report = run_unconfigured_app(tmp_path, EXPORTING)
 
-    assert report["probe"] == {"valid": True, "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"}
+    probe = report["probe"]
+    assert isinstance(probe, dict) and probe["valid"] is True
+    assert isinstance(probe["trace_id"], str) and len(probe["trace_id"]) == 32
+    assert probe["trace_id"] != SENDER_TRACE_ID
     assert report["recording"] is True and isinstance(report["inside"], str)
     assert report["tracer"] == "TracerProvider"
     assert report["meter"] == "MeterProvider"
     assert report["logger"] == "ProxyLoggerProvider", "logs use the application's own provider"
+
+
+def test_a_trusted_proxy_passes_the_trace_context_on(tmp_path: Path) -> None:
+    """From a peer inside the trusted networks the request joins the sender's trace."""
+    trusted = {**EXPORTING, "ENVMANAGER_TRUSTED_PROXIES": "127.0.0.1"}
+    report = run_unconfigured_app(tmp_path, trusted)
+
+    assert report["probe"] == {"valid": True, "trace_id": SENDER_TRACE_ID}
+
+
+def test_the_application_tracer_provider_is_the_global_one_when_traces_are_exported(
+    tmp_path: Path,
+) -> None:
+    report = run_unconfigured_app(tmp_path, EXPORTING)
+
+    assert report["tracer"] == "TracerProvider"
+    assert report["redaction"] is True

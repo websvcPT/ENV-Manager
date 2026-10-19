@@ -8,7 +8,7 @@ so concurrent failures from one subject are never lost.
 
 from datetime import datetime, timedelta
 
-from sqlalchemy import and_, case, literal, null, or_, select
+from sqlalchemy import and_, case, literal, null, or_, select, update
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -87,6 +87,24 @@ async def register_failure(
             metrics.record_login_lockout(kind.value)
         return True
     return False
+
+
+async def count_blocked_attempt(db: AsyncSession, counter: LoginCounter, limit: int) -> bool:
+    """Count one request refused while the subject is locked. Returns whether it is the first.
+
+    The count goes on the failure counter of the window with one atomic statement and never moves
+    the end of the lock. A lock starts when the failures reach the limit, so the first refused
+    request is the one that brings the count to one past it. The caller commits.
+    """
+    failures = (
+        await db.execute(
+            update(LoginCounter)
+            .where(LoginCounter.id == counter.id)
+            .values(failures=LoginCounter.failures + 1)
+            .returning(LoginCounter.failures)
+        )
+    ).scalar_one()
+    return bool(failures <= limit + 1)
 
 
 async def register_attempt_failure(

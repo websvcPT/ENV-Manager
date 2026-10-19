@@ -15,6 +15,7 @@ import errno
 import grp
 import os
 import pwd
+import re
 import secrets
 import shutil
 import stat
@@ -31,6 +32,7 @@ from app.services.paths import AllowedPaths, PathValidationError, is_within
 MAX_TARGET_BYTES = 4 * 1024 * 1024
 DEFAULT_FILE_MODE = 0o600
 BACKUP_MODE = 0o600
+BACKUPS_KEPT = 5
 _TEMP_NAME_LIMIT = 100
 
 ChangeOwner = Callable[[int, int, int], None]
@@ -348,6 +350,56 @@ def write_target_file(
         with suppress(OSError):
             os.fsync(directory_fd)
     return backup_name
+
+
+def _own_backups(directory_fd: int, name: str) -> list[str]:
+    """The names of this target's backups that are plain files of mode 0600, oldest first.
+
+    Only a name of the exact pattern ``<name>.bak-<stamp>-<4 hex>`` counts, so a file someone
+    else made with a similar name, a symlink and a file with another mode are never touched. The
+    stamp sorts in time order.
+    """
+    pattern = re.compile(rf"^{re.escape(name)}\.bak-(\d{{8}}T\d{{6}}Z)-[0-9a-f]{{4}}$")
+    found: list[tuple[str, str]] = []
+    for entry in os.listdir(directory_fd):
+        matched = pattern.match(entry)
+        if matched is None:
+            continue
+        try:
+            info = os.stat(entry, dir_fd=directory_fd, follow_symlinks=False)
+        except OSError:
+            continue
+        if stat.S_ISREG(info.st_mode) and stat.S_IMODE(info.st_mode) == BACKUP_MODE:
+            found.append((matched.group(1), entry))
+    return [entry for _, entry in sorted(found)]
+
+
+def prune_backups(
+    location: TargetLocation, allowed: AllowedPaths, keep_name: str, keep: int = BACKUPS_KEPT
+) -> int:
+    """Delete this target's older backups beyond the newest ``keep``; returns how many went.
+
+    The backup just written (``keep_name``) always stays and counts as the newest. The folder is
+    opened like for the write, so the deletion cannot leave the allowed paths. A backup that
+    cannot be removed is left and a folder that cannot be listed prunes nothing; neither is an
+    error, since the deploy already succeeded.
+    """
+    removed = 0
+    try:
+        with open_directory(location, allowed) as directory_fd:
+            names = _own_backups(directory_fd, location.name)
+            ordered = [entry for entry in names if entry != keep_name]
+            if keep_name in names:
+                ordered.append(keep_name)
+            for entry in ordered[: max(0, len(ordered) - keep)]:
+                try:
+                    os.unlink(entry, dir_fd=directory_fd)
+                except OSError:
+                    continue
+                removed += 1
+    except TargetError, OSError:
+        return removed
+    return removed
 
 
 def _account_id(value: str, lookup: Callable[[str], int]) -> int:

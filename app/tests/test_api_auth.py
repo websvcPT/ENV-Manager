@@ -210,7 +210,8 @@ async def test_failed_attempts_lock_the_address_and_answer_429_with_retry_after(
     assert valid.json() == tenth.json()
 
     stored = await counter(world)
-    assert stored is not None and stored.failures == 10 and stored.locked_until is not None
+    assert stored is not None and stored.failures == 11, "the refused valid call is counted too"
+    assert stored.locked_until is not None
     async with world.session() as db:
         assert (
             await db.scalar(select(LoginCounter).where(LoginCounter.kind == LoginCounterKind.IP))
@@ -412,6 +413,51 @@ async def test_disabling_or_demoting_the_owner_stops_the_token_at_once(
         await db.execute(update(User).where(User.name == "deployment_admin").values(is_active=True))
         await db.commit()
     assert (await prod_mysql_dry_run(world, secret)).status_code == 200
+
+
+async def test_a_flood_from_a_locked_address_writes_one_blocked_entry_per_window(
+    api_world: ApiWorld,
+) -> None:
+    """Only the first refusal of a lockout window is audited; the rest are counted and answered."""
+    world = api_world
+    policy = AuthPolicy()
+    base = utc_now()
+    async with world.session() as db:
+        for _ in range(10):
+            with pytest.raises(ApiRefusal):
+                await authenticate_token(db, None, ADDRESS, policy, now=base)
+    before = len(await audit_entries(world))
+    lock_seconds = int(policy.lockout_duration.total_seconds())
+    async with world.session() as db:
+        for number in range(1, 26):
+            moment = base + timedelta(seconds=number)
+            with pytest.raises(ApiRefusal) as refusal:
+                await authenticate_token(db, None, ADDRESS, policy, now=moment)
+            assert refusal.value.kind is RefusalKind.RATE_LIMITED
+            assert refusal.value.retry_after is not None
+            assert refusal.value.retry_after == lock_seconds - number
+
+    blocked = (await audit_entries(world))[before:]
+    assert [(entry.action, entry.result) for entry in blocked] == [
+        ("token.auth_failure", AuditResult.BLOCKED)
+    ]
+    assert blocked[0].details == {"reason": "locked"}
+    stored = await counter(world)
+    assert stored is not None and stored.failures == 10 + 25
+
+    after = base + policy.lockout_duration + timedelta(seconds=1)
+    async with world.session() as db:
+        for _ in range(10):
+            with pytest.raises(ApiRefusal):
+                await authenticate_token(db, None, ADDRESS, policy, now=after)
+        with pytest.raises(ApiRefusal) as again:
+            await authenticate_token(db, None, ADDRESS, policy, now=after)
+        assert again.value.kind is RefusalKind.RATE_LIMITED
+    later = (await audit_entries(world))[before + 1 :]
+    reasons = [
+        entry.details.get("reason") for entry in later if entry.result is AuditResult.BLOCKED
+    ]
+    assert reasons == ["too_many_failures", "locked"]
 
 
 async def test_failed_attempts_are_audited_without_the_secret(api_world: ApiWorld) -> None:

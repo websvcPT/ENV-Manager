@@ -133,6 +133,36 @@ def test_the_other_user_commands_send_theirs(cli_world: dict[str, Path]) -> None
     assert not any(password in text for _to, _subject, text in mails())
 
 
+def test_a_key_rotation_tells_the_superadmins_without_any_key_material(
+    cli_world: dict[str, Path], tmp_path: Path, master_key: str
+) -> None:
+    """The mail goes out through the new key, because the SMTP password is sealed with it now."""
+    keys = tmp_path / "keys"
+    keys.mkdir()
+    new_file = keys / "next.key"
+    result = runner.invoke(app, ["key", "rotate", "--new-key-file", str(new_file)])
+    assert result.exit_code == 0, result.output
+
+    ((to, subject, text),) = mails()
+    assert (to, subject) == ("root@example.test", "[ENV Manager] Master key rotated")
+    assert "Done by: cli" in text and "Versions sealed again:" in text
+    new_encoded = new_file.read_text(encoding="ascii").strip()
+    assert master_key not in text and new_encoded not in text
+    (client,) = FakeSMTP.instances
+    assert client.logins == [("mailer", "smtp-password-sentinel")]
+
+
+def test_a_disabled_key_rotation_switch_sends_nothing(
+    cli_world: dict[str, Path], tmp_path: Path
+) -> None:
+    database(lambda engine: switch(engine, key_rotated=False))
+    keys = tmp_path / "keys"
+    keys.mkdir()
+    result = runner.invoke(app, ["key", "rotate", "--new-key-file", str(keys / "next.key")])
+    assert result.exit_code == 0, result.output
+    assert FakeSMTP.instances == []
+
+
 def test_a_mail_server_that_is_down_never_changes_the_command(cli_world: dict[str, Path]) -> None:
     """The user is created, the password is printed, the exit code is 0 and the failure counts."""
     FakeSMTP.connect_error = ConnectionRefusedError("[Errno 111]")

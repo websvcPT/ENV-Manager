@@ -195,6 +195,74 @@ def test_backup_is_written_next_to_the_target_with_mode_0600(
     assert written.read_text(encoding="utf-8") == SECRET
 
 
+def make_backups(folder: Path, name: str, stamps: list[str]) -> list[str]:
+    """Create plain mode 0600 backups of ``name`` with the given stamps and return their names."""
+    names = [f"{name}.bak-{stamp}-abcd" for stamp in stamps]
+    for backup in names:
+        (folder / backup).write_text("old", encoding="utf-8")
+        (folder / backup).chmod(0o600)
+    return names
+
+
+def test_pruning_keeps_the_five_newest_backups_and_the_one_just_written(
+    allowed: AllowedPaths, host: Path
+) -> None:
+    folder = host / "app" / "environments"
+    names = make_backups(folder, ".env.api", [f"2026010{day}T100000Z" for day in range(1, 7)])
+    fresh = ".env.api.bak-20260101T000000Z-ffff"
+    (folder / fresh).write_text("new", encoding="utf-8")
+    (folder / fresh).chmod(0o600)
+
+    removed = target_files.prune_backups(locate(allowed, host), allowed, fresh)
+
+    assert removed == 2
+    left = sorted(entry.name for entry in folder.iterdir())
+    assert left == sorted([*names[2:], fresh])
+
+
+def test_pruning_with_five_or_fewer_backups_removes_nothing(
+    allowed: AllowedPaths, host: Path
+) -> None:
+    folder = host / "app" / "environments"
+    names = make_backups(folder, ".env.api", [f"2026010{day}T100000Z" for day in range(1, 6)])
+    assert target_files.prune_backups(locate(allowed, host), allowed, names[-1]) == 0
+    assert len(list(folder.iterdir())) == 5
+
+
+def test_pruning_leaves_foreign_files_symlinks_other_modes_and_other_targets_alone(
+    allowed: AllowedPaths, host: Path
+) -> None:
+    folder = host / "app" / "environments"
+    names = make_backups(folder, ".env.api", [f"2026010{day}T100000Z" for day in range(1, 8)])
+    other = make_backups(folder, ".env.db", [f"2026010{day}T100000Z" for day in range(1, 8)])
+    foreign = [".env.api.bak-notes", ".env.api.bak-20260101T100000Z-abcd.old", ".env.api.bak-1"]
+    for name in foreign:
+        (folder / name).write_text("mine", encoding="utf-8")
+    wide = folder / ".env.api.bak-20260102T100000Z-abce"
+    wide.write_text("wide", encoding="utf-8")
+    wide.chmod(0o644)
+    link = folder / ".env.api.bak-20260103T100000Z-abce"
+    link.symlink_to(folder / foreign[0])
+    directory = folder / ".env.api.bak-20260104T100000Z-abce"
+    directory.mkdir()
+
+    removed = target_files.prune_backups(locate(allowed, host), allowed, names[-1])
+
+    assert removed == 2
+    left = {entry.name for entry in folder.iterdir()}
+    assert left == {*names[2:], *other, *foreign, wide.name, link.name, directory.name}
+    assert link.is_symlink() and (folder / foreign[0]).read_text(encoding="utf-8") == "mine"
+
+
+def test_pruning_outside_the_allowed_paths_does_nothing(allowed: AllowedPaths, host: Path) -> None:
+    folder = host / "app" / "environments"
+    names = make_backups(folder, ".env.api", [f"2026010{day}T100000Z" for day in range(1, 8)])
+    location = locate(allowed, host)
+
+    assert target_files.prune_backups(location, AllowedPaths([host / "other"]), names[-1]) == 0
+    assert len(list(folder.iterdir())) == 7
+
+
 def test_backup_never_follows_a_symlink_planted_at_its_name(
     allowed: AllowedPaths, host: Path, outside: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

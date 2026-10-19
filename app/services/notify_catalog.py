@@ -16,6 +16,7 @@ from app.services.notify_events import (
     FileChanged,
     GitPushFailed,
     LockoutStarted,
+    MasterKeyRotated,
     NotificationEvent,
     SignInFromNewAddress,
     UserChanged,
@@ -34,6 +35,7 @@ class EventKind(StrEnum):
     USER_CHANGED = "user_changed"
     BACKUP_FAILED = "backup_failed"
     GIT_PUSH_FAILED = "git_push_failed"
+    KEY_ROTATED = "key_rotated"
     SETTINGS_CHANGED = "settings_changed"
 
 
@@ -87,6 +89,7 @@ EVENT_ROWS: tuple[EventRow, ...] = (
     ),
     EventRow(EventKind.BACKUP_FAILED, "Backup failure", None, False),
     EventRow(EventKind.GIT_PUSH_FAILED, "Git push failure", None, False),
+    EventRow(EventKind.KEY_ROTATED, "Master key rotated", None, False),
 )
 SWITCHABLE = frozenset(row.kind for row in EVENT_ROWS)
 PROJECT_KINDS = frozenset(row.kind for row in EVENT_ROWS if row.project)
@@ -115,6 +118,8 @@ def kind_of(event: NotificationEvent) -> EventKind | None:
         return EventKind.FILE_CHANGED
     if isinstance(event, GitPushFailed):
         return EventKind.GIT_PUSH_FAILED
+    if isinstance(event, MasterKeyRotated):
+        return EventKind.KEY_ROTATED
     if event.status is BackupStatus.SUCCESS:
         return None
     return EventKind.BACKUP_FAILED

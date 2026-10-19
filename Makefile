@@ -1,5 +1,5 @@
 .PHONY: up up-app upforce up-bg wait-app stop destroy logs app app-logs lint format tests \
-	tests-docker migrate revision seed dev-cleanup dev-reset e2e e2e-lock e2e-demo demo-up \
+	tests-docker migrate revision seed dev-cleanup dev-reset check-pins e2e e2e-lock e2e-demo demo-up \
 	demo-down demo-reset frontend-build tailwind-download tailwind-build tailwind-watch \
 	static-fetch help
 
@@ -8,9 +8,11 @@ ARGS ?=
 export ARGS
 TAILWIND_VERSION ?= 4.3.3
 HTMX_VERSION ?= 4.0.0
-# Must equal the @playwright/test pin in playwright/package.json and the image tag in
-# docker-compose-e2e.yml.
+# The Playwright image tag of docker-compose-e2e.yml takes this value. It must equal the
+# @playwright/test pin in playwright/package.json and the default in the compose file, and the
+# Tailwind version must equal the one in the Dockerfile (`make check-pins` compares them).
 PLAYWRIGHT_VERSION ?= 1.64.1
+export PLAYWRIGHT_VERSION
 TAILWIND_CLI := ./scripts/bin/tailwindcss
 TAILWIND_INPUT := ./app/assets/app.css
 TAILWIND_OUTPUT := ./app/static/style.css
@@ -95,7 +97,17 @@ dev-reset: ## Replace the development database with a fresh seeded one (the old 
 	@$(MAKE) --no-print-directory wait-app
 	sh scripts/seed-dev.sh
 
-e2e: ## Seed the dev dataset and run the Playwright specs (ARGS="--project=desktop tests/users.spec.ts" narrows the run)
+check-pins: ## Fail when a tool version written in more than one file differs between them
+	@package=$$(sed -n 's/.*"@playwright\/test": *"\([^"]*\)".*/\1/p' playwright/package.json); \
+	compose=$$(grep -o 'PLAYWRIGHT_VERSION:-[0-9.]*' docker-compose-e2e.yml | sed 's/.*-//' | sort -u); \
+	dockerfile=$$(sed -n 's/^ARG TAILWIND_VERSION=//p' Dockerfile); \
+	status=0; \
+	[ "$$package" = "$(PLAYWRIGHT_VERSION)" ] || { echo "Playwright: playwright/package.json pins '$$package', the Makefile '$(PLAYWRIGHT_VERSION)'"; status=1; }; \
+	[ "$$compose" = "$(PLAYWRIGHT_VERSION)" ] || { echo "Playwright: docker-compose-e2e.yml defaults to '$$compose', the Makefile '$(PLAYWRIGHT_VERSION)'"; status=1; }; \
+	[ "$$dockerfile" = "$(TAILWIND_VERSION)" ] || { echo "Tailwind: the Dockerfile pins '$$dockerfile', the Makefile '$(TAILWIND_VERSION)'"; status=1; }; \
+	exit $$status
+
+e2e: check-pins ## Seed the dev dataset and run the Playwright specs (ARGS="--project=desktop tests/users.spec.ts" narrows the run)
 	@docker compose ps --status running --services | grep -qx app \
 		|| { echo "the development stack is not running; run make up-bg"; exit 1; }
 	sh scripts/e2e-seed.sh
@@ -163,7 +175,7 @@ $(TAILWIND_CLI):
 $(TAILWIND_OUTPUT): $(TAILWIND_INPUT) app/assets/theme.css | $(TAILWIND_CLI)
 	$(TAILWIND_CMD)
 
-tailwind-build: $(TAILWIND_CLI) ## Build Tailwind CSS once (minified, in a container)
+tailwind-build: check-pins $(TAILWIND_CLI) ## Build Tailwind CSS once (minified, in a container)
 	$(TAILWIND_CMD)
 
 tailwind-watch: $(TAILWIND_CLI) ## Watch Tailwind CSS for local development (in a container)

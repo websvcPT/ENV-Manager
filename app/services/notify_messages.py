@@ -27,6 +27,7 @@ from app.services.notify_events import (
     GitPushFailed,
     LockoutScope,
     LockoutStarted,
+    MasterKeyRotated,
     NotificationEvent,
     SignInFromNewAddress,
     UserChange,
@@ -319,6 +320,23 @@ def git_content(event: GitPushFailed, ctx: MessageContext) -> MailContent:
     )
 
 
+def key_rotation_content(event: MasterKeyRotated, ctx: MessageContext) -> MailContent:
+    """The mail about a master key rotation: counts and who ran it, never any key material."""
+    return MailContent(
+        subject=_subject("Master key rotated"),
+        heading="Master key rotated",
+        summary="The master key was replaced and every sealed value now uses the new key.",
+        facts=(
+            ("Done by", one_line(event.actor)),
+            ("Versions sealed again", str(event.versions)),
+            ("Other secrets sealed again", str(event.secrets)),
+            ("When", ctx.when()),
+        ),
+        link=ctx.url("/audit"),
+        link_label="Open the audit log",
+    )
+
+
 def probe_mail_content(smtp: SmtpSettings, sender: str, ctx: MessageContext) -> MailContent:
     """The test mail. It names the server and mode, never the username or password."""
     return MailContent(
@@ -361,6 +379,8 @@ def describe_event(
         return user_content(event, ctx)
     if isinstance(event, GitPushFailed):
         return git_content(event, ctx)
+    if isinstance(event, MasterKeyRotated):
+        return key_rotation_content(event, ctx)
     return None
 
 

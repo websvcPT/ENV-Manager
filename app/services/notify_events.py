@@ -2,10 +2,10 @@
 
 Deploys, backups and allowed path changes already have their own seams (``deploy_events``,
 ``backup_events``, ``settings_events``); the events here cover the rest: a sign-in from a new
-address, a lockout, changes to a user, a changed file and a failed git push. Every service that
-produces one calls ``announce_event`` after its commit, so an event is never sent for a change
-that was rolled back, and a notifier that fails never fails the change. Events carry ids, names
-and fixed words only: no password, token, file content or value.
+address, a lockout, changes to a user, a changed file, a failed git push and a key rotation.
+Every service that produces one calls ``announce_event`` after its commit, so an event is never
+sent for a change that was rolled back, and a notifier that fails never fails the change. Events
+carry ids, names and fixed words only: no password, token, file content or value.
 """
 
 from dataclasses import dataclass
@@ -105,6 +105,15 @@ class GitPushFailed:
     attempts: int
 
 
+@dataclass(frozen=True)
+class MasterKeyRotated:
+    """The master key was replaced from the command line. It holds counts only, no key material."""
+
+    versions: int
+    secrets: int
+    actor: str
+
+
 NotificationEvent = (
     DeployFinished
     | BackupFinished
@@ -114,6 +123,7 @@ NotificationEvent = (
     | UserChanged
     | FileChanged
     | GitPushFailed
+    | MasterKeyRotated
 )
 
 

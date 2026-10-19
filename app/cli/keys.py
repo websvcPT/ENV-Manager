@@ -14,11 +14,12 @@ from app.core.crypto import CryptoError, CryptoService, load_master_key
 from app.core.log import get_logger
 from app.models import BackupStatus, BackupTrigger
 from app.services.audit import AuditActor
-from app.services.backup_lock import BackupBusyError
+from app.services.backup_lock import BackupBusyError, hold_backup_lock
 from app.services.backup_run import BackupLocations, run_backup
 from app.services.key_check import ensure_key_check
 from app.services.key_files import NewKey, prepare_new_key
 from app.services.key_rotation import RekeyReport, RotationError, rotate_master_key
+from app.services.notify_events import MasterKeyRotated, announce_event
 from app.services.server_lock import (
     ServerLockBusyError,
     ServerLockUnavailableError,
@@ -65,7 +66,8 @@ async def _rotate(
 
     The current key must open the data; the new key file must be usable (it is created only after
     that); a backup is taken (a failed one stops everything); and only then does the one
-    transaction run.
+    transaction run, under the backup lock so no backup or restore starts meanwhile. Superadmins
+    are told afterwards, through the new key.
     """
     await ensure_key_check(db, old)
     new_key = prepare_new_key(new_key_file, current)
@@ -80,12 +82,14 @@ async def _rotate(
     record = run.record
     if record.status is BackupStatus.FAILURE:
         raise RotationRefusedError(f"the backup taken first failed ({record.error})")
-    report = await rotate_master_key(
-        db,
-        old=old,
-        new=CryptoService(new_key.key),
-        actor=AuditActor.cli(),
-        backup=record.filename,
+    new = CryptoService(new_key.key)
+    with hold_backup_lock(locations.lock_dir):
+        report = await rotate_master_key(
+            db, old=old, new=new, actor=AuditActor.cli(), backup=record.filename
+        )
+    await announce_event(
+        cli_notifier(db, new),
+        MasterKeyRotated(report.versions, report.totp_secrets + report.setting_secrets, "cli"),
     )
     return RotationOutcome(
         report,

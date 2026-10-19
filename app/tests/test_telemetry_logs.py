@@ -132,13 +132,21 @@ def test_the_provider_is_only_installed_when_logs_are_exported() -> None:
         "an endpoint without the switch exports nothing"
     )
     assert fastapi_telemetry({"FASTAPI_OTEL_AUTO_CONFIGURE": "true"}) == {}
-    assert fastapi_telemetry({**EXPORTING, "OTEL_LOGS_EXPORTER": "none"}) == {}
+    assert set(fastapi_telemetry({**EXPORTING, "OTEL_LOGS_EXPORTER": "none"})) == {
+        "tracer_provider"
+    }
     assert fastapi_telemetry({**EXPORTING, "OTEL_SDK_DISABLED": "true"}) == {}
     traces_only = {
         "FASTAPI_OTEL_AUTO_CONFIGURE": "true",
         "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": "http://c:4318/v1/traces",
     }
-    assert fastapi_telemetry(traces_only) == {}
-    assert "logger_provider" in fastapi_telemetry(
-        {**traces_only, "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "http://c:4318/v1/logs"}
-    )
+    assert set(fastapi_telemetry(traces_only)) == {"tracer_provider"}
+    logs_only = {
+        "FASTAPI_OTEL_AUTO_CONFIGURE": "true",
+        "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "http://c:4318/v1/logs",
+    }
+    assert set(fastapi_telemetry(logs_only)) == {"logger_provider"}
+    assert set(fastapi_telemetry({**traces_only, **logs_only})) == {
+        "logger_provider",
+        "tracer_provider",
+    }

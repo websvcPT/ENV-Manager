@@ -5,7 +5,9 @@ part. Every way of failing (no header, a malformed one, an unknown secret, a rev
 stopped token) ends in the same refusal with nothing that says which it was; the reason goes to
 the audit log only. Failures are counted per client address in the persisted counters, and an
 address at the limit is refused before any token is looked at, so the answer never depends on
-whether the secret was right.
+whether the secret was right. Only the first request refused in a lockout window is audited, the
+later ones are counted on the window's counter, so a flood from a locked address cannot fill the
+audit log.
 
 The token is found by the SHA-256 hash of its secret, a 192 bit random value, so how long an index
 lookup takes says nothing about the secret. The stored hash is still compared in constant time.
@@ -24,7 +26,12 @@ from app.models.types import utc_now
 from app.services.api_errors import ApiRefusal, RefusalKind
 from app.services.audit import AuditActor, record_actor_audit, record_audit
 from app.services.auth_policy import AuthPolicy
-from app.services.lockout import get_counter, register_failure, remaining_lock
+from app.services.lockout import (
+    count_blocked_attempt,
+    get_counter,
+    register_failure,
+    remaining_lock,
+)
 from app.services.notify_events import (
     NO_EVENT_NOTIFIER,
     EventNotifier,
@@ -155,15 +162,16 @@ async def authenticate_token(
     subject = ip_address or UNKNOWN_ADDRESS
     counter = await get_counter(db, LoginCounterKind.API_IP, subject)
     wait = remaining_lock([counter], moment)
-    if wait is not None:
-        await _audit_failure(
-            db,
-            token=None,
-            owner=None,
-            ip_address=ip_address,
-            reason="locked",
-            result=AuditResult.BLOCKED,
-        )
+    if wait is not None and counter is not None:
+        if await count_blocked_attempt(db, counter, policy.api_ip_max_failures):
+            await _audit_failure(
+                db,
+                token=None,
+                owner=None,
+                ip_address=ip_address,
+                reason="locked",
+                result=AuditResult.BLOCKED,
+            )
         await db.commit()
         raise ApiRefusal(RefusalKind.RATE_LIMITED, RATE_LIMITED_MESSAGE, retry_after=_seconds(wait))
 

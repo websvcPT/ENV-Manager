@@ -111,12 +111,15 @@ given a secret value, a file's content, a command or its output or a token.
 | `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`, `OTEL_TRACES_SAMPLER` | The standard variables. The service name defaults to `env-manager`, and the attributes to the version and the deployment environment name. |
 
 **What is recorded.** FastAPI's own spans and metrics for every request (the method, the route
-template, the status, the URL path and the query string as FastAPI records them; never a request
-body or a header). The path and query of this application's pages hold ids, names, filters, the
-project search text and, for the live path checks of the deployment form, the allowed paths
-dialog and the file target check, the host path being typed; values, passwords and tokens travel
-in request bodies and headers and are never in a URL. The reveal routes name the environment key
-in their path. Besides those, these spans, which carry ids, names, counts and results only (no
+template, the status; never a request body or a header). The raw URL path and the query string
+are replaced on every request span (`url.path` and `url.query` read `[redacted]`) because they can
+hold an environment key name (the reveal routes), the project search text and the host path being
+typed in the live path checks; the route template (`http.route`, for example
+`/environments/{environment_id}/reveal/{key}`) stays, so a trace still shows which screen was
+served. When traces are exported the application owns the tracer provider and sets it as the
+global one; its resource, sampler and exporter still come from the standard variables below.
+Values, passwords and tokens travel in request bodies and headers and are never in a URL.
+Besides those, these spans, which carry ids, names, counts and results only (no
 path, command, output, address or text of an error):
 
 - `envmanager.deploy` (project, deployment and service ids and names, actor type, dry run, force,
@@ -151,7 +154,10 @@ exception.
 when it was written, so it can be matched to its trace (the audit log shows a shortened id when
 there is one). With export unconfigured a `traceparent` header is ignored: there is no span, no
 span context and no trace id. With export on, the request joins the trace of a sampled
-`traceparent` it carries, so the id on its audit entries is then one the client chose.
+`traceparent` only when the peer is one of `ENVMANAGER_TRUSTED_PROXIES`; the headers
+`traceparent`, `tracestate` and `baggage` of every other peer are dropped before the span starts,
+so the request begins a trace of its own and the id on its audit entries is never one a client
+chose.
 
 **Database parameters.** The database engine hides statement parameters, so the text of an error
 never holds a bound value, and no database instrumentation is installed.
@@ -340,6 +346,9 @@ What the command does, in order:
   file is usable. Nothing has changed if either is refused.
 - It takes a backup (reason `rotation`, listed in the Backup tab as "Before a key rotation"). If
   the backup fails, nothing is changed.
+- It takes the backup lock for the transaction below, so a `backup create` or `backup restore`
+  started in another container at the same moment is refused instead of meeting a half moved
+  database, and the rotation itself is refused when one of them holds the lock.
 - In one transaction it seals every value again with the new key and recomputes every keyed hash:
   the content of every environment version and its hash, the second factor secrets, every secret
   setting, the hashes of deploy results (the baselines of the drift checks) and the key check
@@ -347,6 +356,8 @@ What the command does, in order:
   entry `key.rotate` (counts and the name of the backup, never key material) is part of it. Any
   failure rolls everything back and the database is as it was; the new key file stays and the next
   run uses it.
+- Superadmins get the key rotation notification (switch "Master key rotated" in the Notifications
+  tab, on by default), sent through the new key because the mail settings are sealed with it now.
 
 What a rotation leaves behind:
 
@@ -492,7 +503,8 @@ stored settings each time a mail is sent, never at start-up, so a save applies t
   user has not used before, a lockout (a name, an address, or the API from an address), a failed,
   blocked or halted deploy (a failed post-deploy command included), a user created, disabled, given
   a new password (changed by the user or reset by a superadmin or the command line) or whose
-  two-factor sign-in was reset, a failed or not copied backup, and a failed git push (see Git sync).
+  two-factor sign-in was reset, a failed or not copied backup, a failed git push (see Git sync) and
+  a master key rotation (counts and the person or command that ran it, never key material).
   Off by default: every successful deploy and every file
   change (a new version saved, restored, imported from the host, created, or keys added from a dist
   report). Changes to the allowed paths are always announced to the superadmins; there is no
@@ -528,8 +540,8 @@ stored settings each time a mail is sent, never at start-up, so a save applies t
   how many mails could not be sent since one last worked (a save of the SMTP settings or a working
   test mail starts the count again). Events still waiting when the server stops are lost.
 - **Command line.** The commands send the same notifications when SMTP is configured: `user
-  create`, `disable`, `passwd` and `reset-2fa`, `deploy` (a blocked, halted or failed result) and
-  `backup create` (a failed or not copied backup). The command process cannot leave work behind, so
+  create`, `disable`, `passwd` and `reset-2fa`, `deploy` (a blocked, halted or failed result),
+  `backup create` (a failed or not copied backup) and `key rotate`. The command process cannot leave work behind, so
   it sends before it ends, once and without retries, within 30 seconds, and a mail that cannot be
   sent never changes the output or the exit code of the command. It needs the master key to read the
   SMTP password; without it nothing is sent.
@@ -707,7 +719,10 @@ post-deploy step did not fail; a blocked, halted or failed file (or a deploy ref
 another deploy holds the lock of the same deployment folder) exits 1. `--dry-run` runs the same
 checks without writing or backing anything up, `--force` overrides missing-key blocks and drift
 halts and is audited. A drifted file that a forced deploy replaces is backed up first, next to it
-(`<name>.bak-<UTC stamp>-<4 hex>`, mode 0600).
+(`<name>.bak-<UTC stamp>-<4 hex>`, mode 0600). After a deploy that wrote a backup, only the newest
+five backups of that file are kept: older ones of exactly that name pattern, plain files with mode
+0600, are deleted (a file with a similar name, a symlink or another mode is never touched) and the
+result says how many went. A dry run, a blocked, halted or failed file prunes nothing.
 
 ## Drift view
 
@@ -887,7 +902,7 @@ Every refusal under `/api` has one JSON shape, and no answer repeats what the cl
 | 405 | `method_not_allowed` | Wrong method (with `Allow`). |
 | 409 | `deploy_locked` | Another deploy holds the lock of the same deployment folder. |
 | 422 | `validation_error` | The body is not usable; `fields` lists `{field, message}` per problem. |
-| 429 | `rate_limited` | The client address is locked after failed token attempts; `Retry-After` says for how many seconds. |
+| 429 | `rate_limited` | The client address is locked after failed token attempts; `Retry-After` says for how many seconds. Only the first request refused in a lockout window is audited (`token.auth_failure`, result blocked); the later ones are counted and answered without an entry. |
 | 500 | `internal_error` | Unexpected error; only a `request_id` is given. |
 | 503 | `lock_unavailable` | The deploy lock could not be taken. |
 

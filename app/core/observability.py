@@ -8,12 +8,14 @@ from urllib.parse import urlsplit
 
 import sentry_sdk
 from fastapi.telemetry import TelemetryConfig
+from opentelemetry import trace
 from sentry_sdk.types import Breadcrumb, BreadcrumbHint, Event, Hint
 
 from app import VERSION
 from app.config import Settings
 from app.core.errors import ExpectedOutcome
 from app.core.log import get_logger
+from app.core.telemetry import redacting_tracer_provider
 from app.core.telemetry_logs import scrubbing_logger_provider
 
 log = get_logger("observability")
@@ -227,12 +229,30 @@ def otel_endpoint_host(environ: Mapping[str, str]) -> str | None:
 def fastapi_telemetry(environ: Mapping[str, str]) -> TelemetryConfig:
     """The ``telemetry`` argument of the application.
 
-    Nothing is changed unless logs are exported: FastAPI's own setup then finds the provider that
-    scrubs the exception text and stack of its logs before any exporter sees them, and adds the
-    OTLP exporter after it. Without a logs destination the argument stays empty, so FastAPI keeps
-    its defaults and skips telemetry altogether while nothing is configured.
+    Nothing is changed unless a signal is exported. With a logs destination FastAPI's own setup
+    finds the provider that scrubs the exception text and stack of its logs before any exporter
+    sees them. With a traces destination the tracer provider is ours (``install_tracer_provider``
+    sets it as the global one) and its first processor removes the raw request path and query
+    from the request spans. FastAPI adds the OTLP exporters after them. Without a
+    destination the argument stays empty, so FastAPI keeps its defaults and skips telemetry
+    altogether while nothing is configured.
     """
     config: TelemetryConfig = {}
-    if otel_enabled(environ) and otlp_endpoint(environ, "LOGS") is not None:
+    if not otel_enabled(environ):
+        return config
+    if otlp_endpoint(environ, "LOGS") is not None:
         config["logger_provider"] = scrubbing_logger_provider()
+    if otlp_endpoint(environ, "TRACES") is not None:
+        config["tracer_provider"] = redacting_tracer_provider()
     return config
+
+
+def install_tracer_provider(config: TelemetryConfig) -> None:
+    """Make the application's own tracer provider the global one, when it has one.
+
+    The application's spans take their tracer from the global provider, FastAPI's request spans
+    from the argument, so both must be the same provider.
+    """
+    provider = config.get("tracer_provider")
+    if provider is not None:
+        trace.set_tracer_provider(provider)

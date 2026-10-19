@@ -20,7 +20,13 @@ from app.core.log import configure_logging, get_logger
 from app.core.metrics import backup_clock
 from app.core.middleware import install_middleware
 from app.core.migrations import migrate_database
-from app.core.observability import configure_otel, fastapi_telemetry, init_sentry
+from app.core.observability import (
+    configure_otel,
+    fastapi_telemetry,
+    init_sentry,
+    install_tracer_provider,
+)
+from app.core.trace_context import TraceGuardedFastAPI
 from app.services.api_errors import ApiRefusal
 from app.services.backup_records import latest_snapshot_time
 from app.services.backup_run import BackupLocations, adopt_backups
@@ -184,14 +190,17 @@ def create_app() -> FastAPI:
     configure_logging(settings.log_level)
     init_sentry(settings)
     configure_otel(settings)
-    application = FastAPI(
+    telemetry = fastapi_telemetry(os.environ)
+    install_tracer_provider(telemetry)
+    application = TraceGuardedFastAPI(
+        trusted_proxies=settings.trusted_proxies,
         title="ENV Manager",
         version=VERSION,
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
         lifespan=lifespan,
-        telemetry=fastapi_telemetry(os.environ),
+        telemetry=telemetry,
     )
     install_middleware(application, settings)
     application.add_exception_handler(ApiRefusal, refusal_handler)

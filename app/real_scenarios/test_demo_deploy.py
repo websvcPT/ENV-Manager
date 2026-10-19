@@ -159,6 +159,44 @@ async def test_the_backup_policy_keeps_a_private_copy_of_the_drifted_file(
     assert (demo.targets / ".env.api").read_text(encoding="utf-8") == MANAGED[".env.api"]
 
 
+async def test_a_deploy_keeps_the_five_newest_backups_and_leaves_foreign_files_alone(
+    demo: DemoStack, world: World
+) -> None:
+    older = [f".env.api.bak-2024010{day}T120000Z-abcd" for day in range(1, 7)]
+    for name in older:
+        backup = demo.targets / name
+        backup.write_text("old backup", encoding="utf-8")
+        backup.chmod(0o600)
+    foreign = demo.targets / ".env.api.bak-notes"
+    foreign.write_text("kept by hand", encoding="utf-8")
+    loose = demo.targets / ".env.api.bak-20240101T120000Z-abce"
+    loose.write_text("wider mode", encoding="utf-8")
+    loose.chmod(0o644)
+    link = demo.targets / ".env.api.bak-20240102T120000Z-abce"
+    link.symlink_to(foreign)
+    async with world.session() as db:
+        deployment = await db.get(Deployment, world.demo_seed.deployment.id)
+        assert deployment is not None
+        deployment.drift_policy = DriftPolicy.BACKUP_OVERWRITE
+        await db.commit()
+
+    result = world.deploy("api", "--env", ".env.api")
+
+    assert result.returncode == 0, output(result)
+    assert "The previous file was backed up." in result.stdout
+    assert "2 older backups removed." in result.stdout
+    kept = sorted(
+        entry.name
+        for entry in demo.targets.iterdir()
+        if entry.name.startswith(".env.api.bak-") and entry.is_file() and not entry.is_symlink()
+    )
+    assert len(kept) == 5 + 2, "five own backups plus the two foreign files"
+    assert not any(name in kept for name in older[:2])
+    assert all(name in kept for name in older[2:])
+    assert foreign.read_text(encoding="utf-8") == "kept by hand"
+    assert loose.exists() and link.is_symlink()
+
+
 async def test_an_owner_the_container_user_cannot_set_fails_the_file_and_changes_nothing(
     demo: DemoStack, world: World
 ) -> None:

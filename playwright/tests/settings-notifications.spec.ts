@@ -16,6 +16,7 @@ const ROWS = [
   ['user_changed', 'User created, disabled, password changed or two-factor reset', true, false],
   ['backup_failed', 'Backup failure', true, false],
   ['git_push_failed', 'Git push failure', true, false],
+  ['key_rotated', 'Master key rotated', true, false],
 ] as const;
 
 /*

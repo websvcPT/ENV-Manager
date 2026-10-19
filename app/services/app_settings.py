@@ -140,6 +140,7 @@ class NotificationSettings:
     user_changed: bool = True
     backup_failed: bool = True
     git_push_failed: bool = True
+    key_rotated: bool = True
 
 
 @dataclass(frozen=True)

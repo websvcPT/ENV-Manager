@@ -22,6 +22,8 @@ from app.core.crypto import (
 )
 from app.main import create_app
 from app.services import key_rotation
+from app.services.backup_lock import hold_backup_lock
+from app.services.backup_run import BackupLocations
 from app.services.server_lock import acquire_server_lock
 from app.tests.backup_helpers import read_rows
 from app.tests.key_helpers import dump_database
@@ -195,6 +197,19 @@ def test_a_rotation_is_refused_while_a_server_holds_the_data_folder(setup: Setup
     assert "server pid=" in output
     assert dump_database(setup.database) == before
     assert backups(setup.folder) == [] and not (setup.keys / "next.key").exists()
+
+
+def test_a_rotation_is_refused_while_a_backup_or_restore_holds_the_backup_lock(
+    setup: Setup,
+) -> None:
+    before = dump_database(setup.database)
+    with hold_backup_lock(BackupLocations.from_settings(get_settings()).lock_dir):
+        result = rotate(setup, setup.keys / "next.key")
+    assert result.exit_code == 1, result.output
+    assert "another backup or restore is running" in result.output
+    assert dump_database(setup.database) == before
+    query = "SELECT id FROM audit_entries WHERE action = 'key.rotate'"
+    assert read_rows(setup.database, query) == []
 
 
 def test_a_lock_left_behind_by_a_crashed_server_does_not_block_a_rotation(setup: Setup) -> None:

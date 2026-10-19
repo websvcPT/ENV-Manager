@@ -28,6 +28,7 @@ KINDS = (
     "user_changed",
     "backup_failed",
     "git_push_failed",
+    "key_rotated",
 )
 PROJECT_KINDS = ("deploy_succeeded", "deploy_problem", "file_changed")
 DEFAULTS_ON = {
@@ -37,6 +38,7 @@ DEFAULTS_ON = {
     "user_changed",
     "backup_failed",
     "git_push_failed",
+    "key_rotated",
 }
 
 
@@ -186,5 +188,6 @@ async def test_the_stored_matrix_is_what_the_tab_shows_next_time(
         user_changed=False,
         backup_failed=False,
         git_push_failed=False,
+        key_rotated=False,
         file_changed_to="superadmins",
     )
