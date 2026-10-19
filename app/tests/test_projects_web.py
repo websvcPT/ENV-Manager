@@ -174,8 +174,11 @@ async def test_create_project_swaps_the_table_and_closes_the_dialog(
     ("name", "message"),
     [
         ("", "Enter a project name."),
-        ("Bad Name!", "Use 1 to 100 characters"),
+        ("Bad Name!", "Use 3 to 100 characters"),
+        ("ab", "Use 3 to 100 characters"),
+        ("...", "at least one letter or number"),
         ("fancy PROJ. name", "already exists"),
+        ("Fancy  Proj.   Name", "already exists"),
         ("Fancy Proj. Name", "already exists"),
     ],
 )

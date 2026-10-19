@@ -358,11 +358,13 @@ test.describe('security', () => {
     await expect(page.locator('#sg')).toBeDisabled();
     await expect(page.locator('#sg')).toHaveValue(/^\d+$/);
     await expect(page.locator('#sg-h')).toContainText('ENVMANAGER_LOGIN_IP_MAX_FAILURES');
-    await expect(form.locator('legend')).toHaveText('Two-factor authentication policy');
-    await expect(form.locator('input[name="tfa"][value="opt"]')).toBeChecked();
-    await expect(form.locator('input[name="tfa"][value="off"]')).toBeDisabled();
-    await expect(form.locator('input[name="tfa"][value="req"]')).toBeDisabled();
-    await expect(form).toContainText('Optional is the decided policy');
+    const policy = form.locator('[data-two-factor-policy]');
+    await expect(policy).toContainText('Two-factor authentication policy');
+    await expect(policy).toContainText('Optional');
+    await expect(policy).toContainText('Users can enable TOTP in their account.');
+    await expect(form.locator('input[name="tfa"]')).toHaveCount(0);
+    await expect(form.locator('input[type="radio"]')).toHaveCount(0);
+    await expect(form).not.toContainText('decided policy');
     if (!isWide(page)) {
       expect(await height(form.locator('button[type="submit"]'))).toBeGreaterThanOrEqual(
         TOUCH_TARGET,

@@ -1,5 +1,6 @@
 """Error reporting scrubbing, initialisation and OpenTelemetry resource setup tests."""
 
+import warnings
 from typing import Any
 
 import pytest
@@ -10,12 +11,14 @@ from app import VERSION
 from app.config import Settings
 from app.core.errors import ExpectedOutcome
 from app.core.observability import (
+    DATA_COLLECTION,
     FILTERED,
     configure_otel,
     init_sentry,
     otel_resource_environment,
     scrub_breadcrumb,
     scrub_event,
+    sentry_options,
 )
 
 SECRET_VALUE = "hunter2-database-password"
@@ -117,7 +120,8 @@ def test_sentry_init_options(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = Settings(environment="testing", sentry_dsn=SecretStr("https://key@sentry.example/1"))
     assert init_sentry(settings) is True
     options = calls[0]
-    assert options["send_default_pii"] is False
+    assert "send_default_pii" not in options
+    assert options["data_collection"] == DATA_COLLECTION
     assert options["include_local_variables"] is False
     assert options["max_request_body_size"] == "never"
     assert options["traces_sample_rate"] == 0
@@ -125,6 +129,39 @@ def test_sentry_init_options(monkeypatch: pytest.MonkeyPatch) -> None:
     assert options["environment"] == "testing"
     assert options["before_send"] is scrub_event
     assert options["before_breadcrumb"] is scrub_breadcrumb
+
+
+def test_the_client_resolves_the_collection_to_nothing_personal_and_warns_of_nothing() -> None:
+    """The real client takes the options without a deprecation warning and collects no data."""
+    settings = Settings(environment="testing", sentry_dsn=SecretStr("https://key@sentry.example/1"))
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        client = sentry_sdk.Client(**sentry_options(settings))
+    try:
+        collected = client.options["data_collection"]
+        assert collected["provided_by_user"] is True
+        assert collected["user_info"] is False
+        assert collected["cookies"]["mode"] == "off"
+        assert collected["http_headers"]["request"]["mode"] == "off"
+        assert collected["url_query_params"]["mode"] == "off"
+        assert collected["http_bodies"] == []
+        assert collected["stack_frame_variables"] is False
+        assert collected["database_query_data"] is False and collected["queues"] is False
+        assert collected["graphql"] == {"document": False, "variables": False}
+        assert collected["gen_ai"] == {"inputs": False, "outputs": False}
+        assert client.options["max_request_body_size"] == "never"
+        assert client.options["include_local_variables"] is False
+        assert client.options["before_send"] is scrub_event
+    finally:
+        client.close(timeout=0)
+
+
+def test_the_options_are_a_fresh_copy_each_time() -> None:
+    settings = Settings(environment="testing")
+    first = sentry_options(settings)
+    first["data_collection"]["cookies"]["mode"] = "denylist"
+    assert sentry_options(settings)["data_collection"] == DATA_COLLECTION
+    assert DATA_COLLECTION["cookies"] == {"mode": "off"}
 
 
 def test_otel_resource_environment_defaults_and_overrides() -> None:

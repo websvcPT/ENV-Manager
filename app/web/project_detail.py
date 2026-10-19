@@ -20,6 +20,7 @@ from app.services.project_detail import (
     load_project_detail,
 )
 from app.services.projects import (
+    NAME_RULE,
     ProjectError,
     ProjectInUseError,
     delete_project,
@@ -79,6 +80,7 @@ def _page_context(access: ProjectContext, tab: str, **extra: Any) -> dict[str, A
         "can_manage_structure": access.scope.can(Capability.MANAGE_STRUCTURE),
         "can_manage_grants": access.scope.can(Capability.MANAGE_GRANTS),
         "can_view_audit": access.scope.can(Capability.VIEW_AUDIT),
+        "name_rule": NAME_RULE,
         **extra,
     }
 

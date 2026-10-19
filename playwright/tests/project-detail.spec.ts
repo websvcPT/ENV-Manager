@@ -162,7 +162,7 @@ test.describe('superadmin', () => {
 
     await form.locator('#rn').fill('Bad Name!');
     await form.getByRole('button', { name: 'Save name' }).click();
-    await expect(form.locator('#rn-e[role="alert"]')).toContainText('Use 1 to 100 characters');
+    await expect(form.locator('#rn-e[role="alert"]')).toContainText('Use 3 to 100 characters');
     await expect(form.locator('#rn')).toHaveAttribute('aria-invalid', 'true');
     await expect(form.locator('#rn')).toHaveValue('Bad Name!');
 

@@ -27,14 +27,19 @@ from app.services.grants import projects_reached
 from app.services.permissions import AccessScope, Capability, ItemLevel, compute_visibility
 from app.services.tokens import is_live
 
+MIN_PROJECT_NAME_LENGTH = 3
 MAX_PROJECT_NAME_LENGTH = 100
 # ASCII letters only: SQLite folds the case of ASCII letters alone, so the unique index on
 # ``lower(name)`` and the check in code agree on what a duplicate is.
 PROJECT_NAME_PATTERN = re.compile(r"[A-Za-z0-9 ._-]+")
-NAME_RULE = "Letters, numbers, spaces and the characters . - _"
+REPEATED_SPACES = re.compile(r" {2,}")
+NAME_RULE = (
+    f"{MIN_PROJECT_NAME_LENGTH} to {MAX_PROJECT_NAME_LENGTH} characters with at least one letter "
+    "or number. Letters, numbers, spaces and the characters . - _ are allowed."
+)
 NAME_MESSAGE = (
-    f"Use 1 to {MAX_PROJECT_NAME_LENGTH} characters: letters, numbers, spaces and the "
-    "characters . - _"
+    f"Use {MIN_PROJECT_NAME_LENGTH} to {MAX_PROJECT_NAME_LENGTH} characters with at least one "
+    "letter or number: letters, numbers, spaces and the characters . - _"
 )
 
 
@@ -82,15 +87,21 @@ class ProjectRow:
 
 
 def validate_project_name(name: str) -> str:
-    """The trimmed display name when it is acceptable, else ``InvalidProjectNameError``.
+    """The display name when it is acceptable, else ``InvalidProjectNameError``.
 
-    A project name is a display name: letters in any case, numbers, spaces and ``. - _``,
-    1 to 100 characters once trimmed.
+    A project name is a display name: letters in any case, numbers, spaces and ``. - _``, 3 to
+    100 characters once trimmed and with repeated spaces made one, and at least one letter or
+    number, so a name of dots and dashes is refused. The rule applies when a name is created or
+    changed; names stored before it are not touched.
     """
-    name = name.strip()
+    name = REPEATED_SPACES.sub(" ", name.strip())
     if not name:
         raise InvalidProjectNameError("Enter a project name.")
-    if len(name) > MAX_PROJECT_NAME_LENGTH or PROJECT_NAME_PATTERN.fullmatch(name) is None:
+    if (
+        not MIN_PROJECT_NAME_LENGTH <= len(name) <= MAX_PROJECT_NAME_LENGTH
+        or PROJECT_NAME_PATTERN.fullmatch(name) is None
+        or not any(character.isalnum() for character in name)
+    ):
         raise InvalidProjectNameError(NAME_MESSAGE)
     return name
 

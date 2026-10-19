@@ -3,7 +3,7 @@
     (messages by field), saved (none, or tone, title and message of a toast) and
     address_limit_fixed (the startup override sets the sign-in limit per address, so its field is
     shown and not editable). -#}
-{% from "macros/forms.html" import field, form_actions, radio_option %}
+{% from "macros/forms.html" import field, form_actions %}
 <form id="security" data-fragment="security" hx-post="/settings/security" hx-target="this" hx-swap="outerHTML" class="flex flex-col gap-4 px-4 pb-5 md:px-5">
 <div class="grid gap-4 md:grid-cols-2">
 {{ field("si", "Idle session timeout (minutes)", name="idle_timeout_minutes", value=form.idle_timeout_minutes, mono=true, error=errors.get("idle_timeout_minutes"), inputmode="numeric", autocomplete="off") }}
@@ -14,10 +14,6 @@
 {{ field("sm", "Lockout duration (minutes)", name="lockout_minutes", value=form.lockout_minutes, mono=true, error=errors.get("lockout_minutes"), inputmode="numeric", autocomplete="off") }}
 {{ field("sp", "Minimum password length", name="min_password_length", value=form.min_password_length, mono=true, error=errors.get("min_password_length"), inputmode="numeric", autocomplete="off") }}
 </div>
-<fieldset class="min-w-0"><legend class="mb-2 text-[13px] font-semibold">Two-factor authentication policy</legend><div class="flex flex-col gap-2">
-{{ radio_option("tfa", "off", "Off", "TOTP is not offered.", disabled=true) }}
-{{ radio_option("tfa", "opt", "Optional", "Users can enable TOTP in their account.", checked=true) }}
-{{ radio_option("tfa", "req", "Required", "Every user must set up TOTP.", disabled=true) }}
-</div><p class="mt-2 text-xs text-ink2">Optional is the decided policy, so Off and Required cannot be chosen.</p></fieldset>
+<div class="min-w-0" data-two-factor-policy><p class="mb-1 text-[13px] font-semibold">Two-factor authentication policy</p><p class="font-semibold">Optional</p><p class="mt-1 text-xs text-ink2">Users can enable TOTP in their account.</p></div>
 {{ form_actions(saved) }}
 </form>

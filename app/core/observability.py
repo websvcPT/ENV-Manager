@@ -2,6 +2,7 @@
 
 import os
 from collections.abc import Mapping
+from copy import deepcopy
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -97,14 +98,35 @@ def scrub_breadcrumb(crumb: Breadcrumb, hint: BreadcrumbHint) -> Breadcrumb | No
     return scrubbed
 
 
+DATA_COLLECTION: dict[str, Any] = {
+    "user_info": False,
+    "cookies": {"mode": "off"},
+    "http_headers": {"request": {"mode": "off"}},
+    "http_bodies": [],
+    "url_query_params": {"mode": "off"},
+    "graphql": {"document": False, "variables": False},
+    "gen_ai": {"inputs": False, "outputs": False},
+    "database_query_data": False,
+    "queues": False,
+    "stack_frame_variables": False,
+}
+
+
 def sentry_options(settings: Settings) -> dict[str, Any]:
-    """The Sentry client options: no personal data, no variables, no bodies, no tracing."""
+    """The Sentry client options: no personal data, no variables, no bodies, no tracing.
+
+    ``data_collection`` replaces the deprecated ``send_default_pii``: it collects no user
+    identity, cookies, request headers, query strings, request bodies, SQL data, queue data or
+    stack frame variables. The SDK's own scrubber is not used when it is set, so ``before_send``
+    and ``before_breadcrumb`` carry that work. The older body and variable options stay as a
+    second guard for the integrations that still read them.
+    """
     dsn = settings.sentry_dsn
     return {
         "dsn": dsn.get_secret_value() if dsn is not None else None,
         "release": VERSION,
         "environment": settings.environment,
-        "send_default_pii": False,
+        "data_collection": deepcopy(DATA_COLLECTION),
         "include_local_variables": False,
         "max_request_body_size": "never",
         "traces_sample_rate": 0,

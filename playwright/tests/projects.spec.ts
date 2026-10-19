@@ -64,7 +64,9 @@ test.describe('superadmin', () => {
     await expect(dialog).toBeVisible();
     await expect(dialog.getByText('Superadmin only')).toBeVisible();
     await expect(dialog.locator('#pn')).toBeFocused({ timeout: 2000 }).catch(() => undefined);
-    await expect(dialog.getByText('Letters, numbers, spaces and the characters . - _')).toBeVisible();
+    await expect(
+      dialog.getByText('3 to 100 characters with at least one letter or number'),
+    ).toBeVisible();
     await dialog.locator('[data-js="dialog-close"]').last().click();
     await expect(page.locator('#project-new[open]')).toHaveCount(0);
   });
@@ -76,9 +78,16 @@ test.describe('superadmin', () => {
 
     await dialog.locator('#pn').fill('Bad Name!');
     await dialog.getByRole('button', { name: 'Create project' }).click();
-    await expect(dialog.locator('#pn-e[role="alert"]')).toContainText('Use 1 to 100 characters');
+    await expect(dialog.locator('#pn-e[role="alert"]')).toContainText('Use 3 to 100 characters');
     await expect(dialog.locator('#pn')).toHaveAttribute('aria-invalid', 'true');
     await expect(dialog.locator('#pn')).toHaveValue('Bad Name!');
+
+    for (const short of ['ab', '...']) {
+      await dialog.locator('#pn').fill(short);
+      await dialog.getByRole('button', { name: 'Create project' }).click();
+      await expect(dialog.locator('#pn-e[role="alert"]')).toContainText('at least one letter or number');
+      await expect(dialog.locator('#pn')).toHaveValue(short);
+    }
 
     await dialog.locator('#pn').fill('Fancy Proj. Name');
     await dialog.getByRole('button', { name: 'Create project' }).click();

@@ -695,8 +695,9 @@ docker compose exec app envmanager deploy <project>/<deployment>/<service> \
     [--env <file name> ...] [--dry-run] [--force]
 ```
 
-A project name is a display name (letters in any case, numbers, spaces and `. - _`, 1 to 100
-characters, unique ignoring case), so quote the path when it holds spaces:
+A project name is a display name (letters in any case, numbers, spaces and `. - _`, 3 to 100
+characters with at least one letter or number, repeated spaces made one, unique ignoring case),
+so quote the path when it holds spaces:
 `envmanager deploy "Fancy Proj. Name/prod/web"`. Deployment and service names stay lowercase
 slugs (letters, numbers and dashes), as they usually mirror the Compose project and service.
 

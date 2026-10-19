@@ -123,7 +123,16 @@ async def test_search_filters_by_name_ignoring_case(
 BAD_NAMES = [
     "",
     "   ",
+    "a",
+    "ab",
+    "a  ",
+    "a b ",
     "a" * 101,
+    "...",
+    "---",
+    "_ _",
+    " . - ",
+    "..",
     "ünï",
     "é",
     "名前",
@@ -144,17 +153,21 @@ BAD_NAMES = [
 
 @pytest.mark.parametrize("name", BAD_NAMES)
 def test_invalid_names_are_refused(name: str) -> None:
-    """Only ASCII letters, digits, spaces and . - _ within the length limit are accepted."""
+    """ASCII letters, digits, spaces and . - _ are accepted, 3 to 100 characters long once
+    trimmed and collapsed, with a letter or a digit among them."""
     with pytest.raises(InvalidProjectNameError):
         validate_project_name(name)
 
 
 def test_a_refused_name_says_what_is_allowed() -> None:
-    with pytest.raises(InvalidProjectNameError) as raised:
-        validate_project_name("bang!")
-    assert str(raised.value) == (
-        "Use 1 to 100 characters: letters, numbers, spaces and the characters . - _"
+    expected = (
+        "Use 3 to 100 characters with at least one letter or number: letters, numbers, "
+        "spaces and the characters . - _"
     )
+    for name in ("bang!", "ab", "...", "a" * 101):
+        with pytest.raises(InvalidProjectNameError) as raised:
+            validate_project_name(name)
+        assert str(raised.value) == expected, name
     with pytest.raises(InvalidProjectNameError, match=r"Enter a project name\."):
         validate_project_name("  ")
 
@@ -166,15 +179,25 @@ VALID_NAMES = [
     ("UPPER lower 123", "UPPER lower 123"),
     ("  under_score.dot-dash  ", "under_score.dot-dash"),
     ("-leading", "-leading"),
-    ("7", "7"),
+    ("A B", "A B"),
+    ("A  B", "A B"),
+    ("  A     B    C ", "A B C"),
+    ("Fancy   Proj.  Name", "Fancy Proj. Name"),
+    ("1.1", "1.1"),
+    ("..a", "..a"),
+    ("a.b", "a.b"),
+    ("abc", "abc"),
     ("a" * 100, "a" * 100),
     (" " + "a" * 100 + " ", "a" * 100),
+    ("a" + " " * 200 + "b", "a b"),
 ]
 
 
 @pytest.mark.parametrize(("typed", "stored"), VALID_NAMES)
-def test_valid_names_are_display_names_and_trimmed(typed: str, stored: str) -> None:
-    """Letters in any case, digits, spaces and . - _ are kept as typed; the ends are trimmed."""
+def test_valid_names_are_display_names_trimmed_with_repeated_spaces_made_one(
+    typed: str, stored: str
+) -> None:
+    """The name is kept as typed except that its ends are trimmed and runs of spaces become one."""
     assert validate_project_name(typed) == stored
 
 
@@ -192,6 +215,34 @@ async def test_create_project_is_audited(db: AsyncSession, seed_data: SeedData) 
     assert (entry.actor_name, entry.ip_address) == ("root", "10.0.0.5")
 
 
+async def test_repeated_spaces_are_made_one_when_a_name_is_created_or_changed(
+    db: AsyncSession, seed_data: SeedData
+) -> None:
+    actor = seed_data.users.superadmin
+    created = await create_project(db, name="Fleet   Ops", actor=actor)
+    assert created.name == "Fleet Ops"
+    renamed = await rename_project(db, created, name="Fleet    Ops   Two", actor=actor)
+    assert renamed.name == "Fleet Ops Two"
+    (entry,) = await audit_entries(db, "project.rename")
+    assert entry.target_name == "Fleet Ops Two"
+    assert entry.details == {"previous_name": "Fleet Ops"}
+
+
+async def test_a_name_stored_before_the_rule_stays_and_can_be_renamed(
+    db: AsyncSession, seed_data: SeedData
+) -> None:
+    """The rule applies on create and rename; a stored name is neither checked nor migrated."""
+    legacy = Project(name="ab")
+    db.add(legacy)
+    await db.commit()
+    assert "ab" in await _rows(db, seed_data.users.superadmin)
+    renamed = await rename_project(db, legacy, name="abc", actor=seed_data.users.superadmin)
+    assert renamed.name == "abc"
+    with pytest.raises(InvalidProjectNameError):
+        await rename_project(db, renamed, name="ab", actor=seed_data.users.superadmin)
+    assert renamed.name == "abc"
+
+
 async def test_a_display_name_is_stored_as_typed(db: AsyncSession, seed_data: SeedData) -> None:
     project = await create_project(
         db, name="  Fleet Ops. v2_beta-1 ", actor=seed_data.users.superadmin
@@ -202,7 +253,14 @@ async def test_a_display_name_is_stored_as_typed(db: AsyncSession, seed_data: Se
 
 
 @pytest.mark.parametrize(
-    "name", ["Fancy Proj. Name", "fancy proj. name", "FANCY PROJ. NAME", "  fAnCy PROJ. name  "]
+    "name",
+    [
+        "Fancy Proj. Name",
+        "fancy proj. name",
+        "FANCY PROJ. NAME",
+        "  fAnCy PROJ. name  ",
+        "Fancy   Proj.  Name",
+    ],
 )
 async def test_duplicate_name_is_refused_whatever_the_case(
     db: AsyncSession, seed_data: SeedData, name: str

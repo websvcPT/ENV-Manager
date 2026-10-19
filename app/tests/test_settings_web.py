@@ -131,12 +131,14 @@ async def test_the_security_tab_shows_the_stored_values_and_the_policy_read_only
         "12",
     ]
     assert re.search(r'<input id="sg"[^>]*? disabled(?=[\s>])', page) is None
-    radios = re.findall(r'<input type="radio" name="tfa" value="(\w+)"([^>]*)>', page)
-    assert [(value, "checked" in rest, "disabled" in rest) for value, rest in radios] == [
-        ("off", False, True),
-        ("opt", True, False),
-        ("req", False, True),
-    ]
+    policy = re.search(r"<div [^>]*data-two-factor-policy>(.*?)</div>", page, re.DOTALL)
+    assert policy is not None
+    text = " ".join(re.sub(r"<[^>]+>", " ", policy.group(1)).split())
+    assert text == (
+        "Two-factor authentication policy Optional Users can enable TOTP in their account."
+    )
+    assert "<input" not in policy.group(1) and 'name="tfa"' not in page
+    assert "decided policy" not in page
 
 
 async def test_saving_the_security_tab_stores_audits_and_applies_at_once(
