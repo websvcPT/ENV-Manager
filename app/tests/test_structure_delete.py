@@ -71,8 +71,8 @@ async def test_a_refused_new_name_changes_nothing(
 ) -> None:
     with pytest.raises(ServiceNameError, match=message):
         await rename_service(db, seed_data.services.web, raw, actor=seed_data.users.superadmin)
-    await db.refresh(seed_data.services.web)
-    assert seed_data.services.web.name == "web"
+    stored = await db.get(Service, seed_data.services.web.id)
+    assert stored is not None and stored.name == "web"
     assert await audit_entries(db, "service.rename") == []
 
 

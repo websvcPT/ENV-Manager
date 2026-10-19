@@ -43,6 +43,7 @@ from app.tests.web_helpers import HTMX, assert_never_cached, main_of, post
 GENERAL_FORM = {
     "time_zone": "UTC",
     "date_format": "iso",
+    "audit_retention_days": "90",
     "dist_missing_policy": "block",
     "drift_policy": "halt",
     "missing_target_policy": "create",

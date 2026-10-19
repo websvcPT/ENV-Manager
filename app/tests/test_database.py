@@ -266,8 +266,8 @@ async def test_the_upgrade_refuses_users_that_share_an_email_and_changes_nothing
     engine = create_engine(database_path)
     try:
         await migrate_database(engine, database_path, backup_dir)
+        await _migrate(engine, "0009", down=True)
         async with engine.begin() as connection:
-            await connection.run_sync(lambda sync: command.downgrade(build_config(sync), "0009"))
             for name, email in (("ann", "Shared@example.test"), ("bob", "shared@example.test")):
                 await connection.execute(text(USER_INSERT), {"name": name, "email": email})
         with pytest.raises(RuntimeError) as refused:
@@ -474,7 +474,7 @@ async def test_the_second_factor_time_column_is_added_and_removed_in_place(
             assert next(row[3] for row in columns if row[1] == "totp_enabled_at") == 0
             stored = await connection.execute(text("SELECT totp_enabled_at FROM users"))
             assert stored.scalar_one() is None
-            await connection.run_sync(lambda sync: command.downgrade(build_config(sync), "0010"))
+        await _migrate(engine, "0010", down=True)
         async with engine.connect() as connection:
             info = await connection.execute(text("PRAGMA table_info(users)"))
             names = [row[1] for row in info.all()]
@@ -495,8 +495,8 @@ async def test_the_failure_notice_time_is_added_and_removed_in_place_and_keeps_t
     engine = create_engine(database_path)
     try:
         await migrate_database(engine, database_path, backup_dir)
+        await _migrate(engine, "0016", down=True)
         async with engine.begin() as connection:
-            await connection.run_sync(lambda sync: command.downgrade(build_config(sync), "0016"))
             columns = (await connection.execute(text("PRAGMA table_info(git_sync_state)"))).all()
             assert "failure_notified_at" not in [row[1] for row in columns]
             await connection.execute(
@@ -530,15 +530,16 @@ async def test_the_extra_addresses_column_is_added_and_removed_in_place_and_keep
     engine = create_engine(database_path)
     try:
         await migrate_database(engine, database_path, backup_dir)
+        await _migrate(engine, "0012", down=True)
         async with engine.begin() as connection:
-            await connection.run_sync(lambda sync: command.downgrade(build_config(sync), "0012"))
             await connection.execute(
                 text(
                     "INSERT INTO projects (id, name, created_at, updated_at)"
                     " VALUES (7, 'before', '2026-01-01', '2026-01-01')"
                 )
             )
-            await connection.run_sync(lambda sync: command.upgrade(build_config(sync), "head"))
+        await _migrate(engine, "head")
+        async with engine.begin() as connection:
             columns = (await connection.execute(text("PRAGMA table_info(projects)"))).all()
             added = next(row for row in columns if row[1] == "extra_addresses")
             assert added[3] == 1 and added[4] == "'[]'"
@@ -548,7 +549,7 @@ async def test_the_extra_addresses_column_is_added_and_removed_in_place_and_keep
                 text("UPDATE projects SET extra_addresses = :list WHERE id = 7"),
                 {"list": '["team@example.org"]'},
             )
-            await connection.run_sync(lambda sync: command.downgrade(build_config(sync), "0012"))
+        await _migrate(engine, "0012", down=True)
         async with engine.connect() as connection:
             info = await connection.execute(text("PRAGMA table_info(projects)"))
             names = [row[1] for row in info.all()]
@@ -560,8 +561,8 @@ async def test_the_extra_addresses_column_is_added_and_removed_in_place_and_keep
             ).scalar_one()
         assert "extra_addresses" not in names and [tuple(row) for row in kept] == [(7, "before")]
         assert "AUTOINCREMENT" in table_sql
+        await _migrate(engine, "head")
         async with engine.begin() as connection:
-            await connection.run_sync(lambda sync: command.upgrade(build_config(sync), "head"))
             again = await connection.execute(text("SELECT extra_addresses FROM projects"))
             assert again.scalar_one() == "[]"
     finally:
@@ -634,8 +635,8 @@ async def test_the_upgrade_refuses_projects_that_share_a_name_and_changes_nothin
     engine = create_engine(database_path)
     try:
         await migrate_database(engine, database_path, backup_dir)
+        await _migrate(engine, "0014", down=True)
         async with engine.begin() as connection:
-            await connection.run_sync(lambda sync: command.downgrade(build_config(sync), "0014"))
             for name in ("Alpha", "alpha", "other"):
                 await connection.execute(text(PROJECT_INSERT), {"name": name})
         with pytest.raises(RuntimeError) as refused:
@@ -661,7 +662,7 @@ async def test_the_project_name_index_is_added_and_removed_in_place_and_keeps_pr
         await migrate_database(engine, database_path, backup_dir)
         async with engine.begin() as connection:
             await connection.execute(text(PROJECT_INSERT), {"name": "Fancy Proj. Name"})
-            await connection.run_sync(lambda sync: command.downgrade(build_config(sync), "0014"))
+        await _migrate(engine, "0014", down=True)
         async with engine.connect() as connection:
             gone = await connection.execute(
                 text("SELECT count(*) FROM sqlite_master WHERE name = 'uq_projects_name_lower'")

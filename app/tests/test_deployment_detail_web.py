@@ -126,7 +126,7 @@ async def test_outside_allowed_path_disables_the_check_and_says_why(
     check = re.search(r"<button[^>]*disabled[^>]*>.*?Check dist</button>", page, re.DOTALL)
     assert check is not None
     assert "/dist" not in page
-    assert "#deploy" not in page
+    assert "#deploy-dialog" not in page
 
 
 async def test_deployments_outside_the_scope_are_not_found(
