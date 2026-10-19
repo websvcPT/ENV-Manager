@@ -277,6 +277,103 @@ test.describe('superadmin: the access grid', () => {
     await expect(rowOf(page, `environment-${scratch.envA1}`)).toBeHidden();
   });
 
+  test('opens one project and loads the rows of another when it is expanded', async ({
+    page,
+    scratch,
+    makeUser,
+  }) => {
+    const viewer = await makeUser('viewer');
+    const loads: string[] = [];
+    page.on('request', (request) => {
+      if (request.url().includes('/access/grid/project/')) {
+        loads.push(request.url());
+      }
+    });
+    await page.goto('/access/grid');
+    await expect(page.locator('#grid-table table')).toBeVisible();
+    const projects = page.locator('#grid-table tbody[data-fragment="grid-project"]');
+    expect(await projects.count()).toBeGreaterThan(1);
+    const project = `project-${scratch.projectId}`;
+    await expect(rowOf(page, project)).toBeVisible();
+    await expect(rowOf(page, `deployment-${scratch.depA}`)).toHaveCount(0);
+    await expect(rowOf(page, `environment-${scratch.envA1}`)).toHaveCount(0);
+    const toggle = page.locator(`#tree-toggle-${project}`);
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(toggle).toHaveAttribute('hx-get', `/access/grid/project/${scratch.projectId}`);
+    expect(loads).toHaveLength(0);
+
+    await box(page, viewer, project).click();
+    await expect(cell(page, viewer, project)).toHaveAttribute('data-cell', 'direct');
+    await expect(rowOf(page, `deployment-${scratch.depA}`)).toHaveCount(0);
+
+    await toggle.focus();
+    await toggle.click();
+    await expect(rowOf(page, `environment-${scratch.envB}`)).toBeVisible();
+    await expect(page.locator(`#tree-toggle-${project}`)).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.locator(`#tree-toggle-${project}`)).toBeFocused();
+    expect(loads).toHaveLength(1);
+    await expect(page.locator(`tbody#grid-project-${scratch.projectId} tr[data-node]`)).toHaveCount(8);
+    await expect(cell(page, viewer, `environment-${scratch.envA1}`)).toHaveAttribute(
+      'data-cell',
+      'inherited',
+    );
+    await expect(cell(page, viewer, `service-${scratch.serviceA}`)).toContainText('Sees 2 of 2');
+    expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+
+    await page.locator(`#tree-toggle-${project}`).click();
+    await expect(rowOf(page, `deployment-${scratch.depA}`)).toBeHidden();
+    await page.locator(`#tree-toggle-${project}`).click();
+    await expect(rowOf(page, `deployment-${scratch.depA}`)).toBeVisible();
+    expect(loads).toHaveLength(1);
+
+    await box(page, viewer, project).click();
+    await expect(cell(page, viewer, project)).toHaveAttribute('data-cell', 'none');
+    await expect(cell(page, viewer, `environment-${scratch.envA1}`)).toHaveAttribute(
+      'data-cell',
+      'none',
+    );
+  });
+
+  test('loads the rows of a project under the group chosen in the filter', async ({
+    page,
+    scratch,
+    makeUser,
+  }) => {
+    const viewer = await makeUser('viewer');
+    const admin = await makeUser('admin');
+    await page.goto('/access/grid');
+    await page.locator('#g-g').selectOption('viewer');
+    await expect(page).toHaveURL(/\/access\/grid\?group=viewer$/);
+    await expect(page.locator(`#grid-user-${admin.id}`)).toHaveCount(0);
+    const project = `project-${scratch.projectId}`;
+    const answer = page.waitForResponse((response) =>
+      response.url().endsWith(`/access/grid/project/${scratch.projectId}?group=viewer`),
+    );
+    await page.locator(`#tree-toggle-${project}`).click();
+    expect((await answer).status()).toBe(200);
+    await expect(rowOf(page, `environment-${scratch.envA1}`)).toBeVisible();
+    await expect(box(page, viewer, `environment-${scratch.envA1}`)).toBeVisible();
+    await expect(page.locator(`#cell-${admin.id}-environment-${scratch.envA1}`)).toHaveCount(0);
+  });
+
+  test('says so and keeps the view when the project is gone before it is expanded', async ({
+    page,
+    scratch,
+  }) => {
+    await page.goto('/access/grid');
+    const project = `project-${scratch.projectId}`;
+    await page.route(`**/access/grid/project/${scratch.projectId}`, (route) =>
+      route.fulfill({ status: 404, contentType: 'text/plain', body: 'gone' }),
+    );
+    await page.locator(`#tree-toggle-${project}`).click();
+    await expect(page.locator('[data-fragment="toast"][data-toast-source="request"]')).toBeVisible();
+    await expect(rowOf(page, project)).toBeVisible();
+    await expect(rowOf(page, `deployment-${scratch.depA}`)).toHaveCount(0);
+    await page.unroute(`**/access/grid/project/${scratch.projectId}`);
+    await page.locator(`#tree-toggle-${project}`).click();
+    await expect(rowOf(page, `deployment-${scratch.depA}`)).toBeVisible();
+  });
+
   test('filters the columns by group and keeps the view in the address', async ({
     page,
     scratch,
@@ -474,7 +571,12 @@ for (const role of REFUSED_ROLES) {
       await page.goto('/projects');
       await expect(page.locator('nav[aria-label="Primary"] a[href="/users"]')).toHaveCount(0);
       await expect(page.locator('main a[href="/access/grid"]')).toHaveCount(0);
-      for (const url of ['/access/grid', '/access/grid/table', '/access/grid?group=viewer']) {
+      for (const url of [
+        '/access/grid',
+        '/access/grid/table',
+        '/access/grid?group=viewer',
+        '/access/grid/project/1',
+      ]) {
         const response = await page.request.get(url);
         expect(response.status(), url).toBe(403);
       }

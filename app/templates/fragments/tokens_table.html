@@ -8,7 +8,7 @@
 {% set columns = ["Name", "Owner", "Scope", "Project", "Created", "Last used", "Expiry", "Status", "Actions"] if show_owner else ["Name", "Scope", "Project", "Created", "Last used", "Expiry", "Status", "Actions"] %}
 <section data-fragment="tokens-table" id="tokens-table" aria-label="Tokens" hx-get="/tokens/table" hx-trigger="token-changed from:body" hx-swap="outerHTML" class="rounded-panel border border-line bg-surface shadow-panel overflow-hidden">
 {%- if rows %}
-{% call table("API tokens", columns, right_columns=[8 if show_owner else 7], min_width_class="min-w-[1000px]") %}
+{% call table("API tokens", columns, right_columns=[8 if show_owner else 7], min_width_class="min-w-[900px]") %}
 {%- for row in rows %}
 <tr data-fragment="token-row" id="token-{{ row.id }}"><th scope="row" class="border-t border-line px-4 py-3.5 text-left font-semibold"><span class="inline-flex flex-col items-start gap-0.5"><span class="font-mono text-[13px]">{{ row.name }}</span><span class="font-mono text-xs font-normal text-ink3">{{ row.prefix }}</span></span></th>
 {%- if show_owner %}

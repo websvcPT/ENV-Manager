@@ -175,6 +175,42 @@ def test_dialog_and_confirm_dialog() -> None:
     assert 'hx-delete="/x"' in page and "border-danger" in page
 
 
+def test_the_item_header_names_the_type_before_the_item_and_its_parents_after() -> None:
+    """Label in regular weight, name in its own style, parents nearest first, details apart."""
+    page = render_snippet(
+        "{% from 'macros/panels.html' import item_header, item_chain %}"
+        "{{ item_header('environment', '.env.<db>', item_chain([('Service', 'mysql'),"
+        " ('Deployment', 'prod'), ('Project', 'Fancy & Co')], '/srv/x/.env'),"
+        " details='Version 2 saved') }}"
+        "{{ item_header('project', 'Fancy', 'two deployments') }}"
+    )
+    assert page.count('data-item-type="') == 2 and 'data-item-type="environment"' in page
+    assert '<h1 class="text-[26px] font-bold leading-tight md:text-3xl">' in page
+    assert '<span class="font-normal">Environment:</span> ' in page
+    assert '<span data-item-name class="font-mono">.env.&lt;db&gt;</span>' in page
+    assert "<span data-item-name>Fancy</span>" in page
+    text = re.sub(r"<[^>]+>", "", page.split("</h1>", 1)[1].split("</section>", 1)[0])
+    assert " ".join(text.split()) == (
+        "Service mysql in deployment prod in Fancy &amp; Co · /srv/x/.env Version 2 saved"
+    )
+    assert page.count("data-header-details") == 1
+    chain = render_snippet(
+        "{% from 'macros/panels.html' import item_chain %}{{ item_chain([('Project', 'Fancy')]) }}"
+    )
+    assert re.sub(r"<[^>]+>", "", chain) == "Project Fancy" and " · " not in chain
+
+
+def test_the_load_more_row_replaces_itself_with_the_next_rows() -> None:
+    page = render_snippet(
+        "{% from 'macros/panels.html' import more_row %}"
+        "{{ more_row('/users/rows?after=4', 7, 'users-more') }}"
+    )
+    assert '<tr data-fragment="users-more"><td colspan="7"' in page
+    assert 'hx-get="/users/rows?after=4"' in page
+    assert 'hx-target="closest tr"' in page and 'hx-swap="outerHTML"' in page
+    assert ">Load more</button>" in page
+
+
 def test_panel_table_tabs_and_breadcrumb() -> None:
     """Panel, table, tabs and breadcrumb produce the expected landmarks."""
     page = render_snippet(

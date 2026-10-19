@@ -2,8 +2,9 @@ import type { APIRequestContext, Browser, Locator, Page } from '@playwright/test
 
 import { SESSION_USERS, stateFile, SUPERADMIN_STATE } from '../global-setup';
 import { csrfHeaders } from '../http';
+import { expectItemHeader } from '../item-header';
 import { listProjects } from '../projects-api';
-import { disableUser, listUsers, type CreatedUser } from '../users-api';
+import { disableUser, listUsers, seededEmail, type CreatedUser } from '../users-api';
 import { horizontalOverflow, isWide, TOUCH_TARGET } from '../viewport';
 import { rowAction } from './row-actions';
 import { expect, test, type Scratch } from './scratch-access';
@@ -144,7 +145,7 @@ test.describe('superadmin: project Access tab', () => {
     ]);
     const nothing = await makeUser('viewer');
     await openTab(page, 'project', scratch.projectId);
-    await expect(page.locator('[data-fragment="page-header"] h1')).toHaveText(scratch.projectName);
+    await expectItemHeader(page, 'project', scratch.projectName);
     await expect(sections(page)).toHaveText([
       'Deployments',
       'Members and accessSuperadmin',
@@ -292,8 +293,8 @@ test.describe('superadmin: deployment Access tab', () => {
     const viaFile = await makeUser('admin', [`environment:${scratch.envA1}`]);
     const added = await makeUser('admin');
     await openTab(page, 'deployment', scratch.depA);
-    await expect(page.locator('[data-fragment="page-header"] h1')).toHaveText('dep-a');
-    await expect(page.locator('[data-fragment="page-header"] p')).toHaveText(
+    await expectItemHeader(page, 'deployment', 'dep-a');
+    await expect(page.locator('[data-fragment="page-header"] p')).toContainText(
       `Project ${scratch.projectName}`,
     );
     await expect(page.locator('[data-fragment="page-header"] a, [data-fragment="page-header"] button')).toHaveCount(0);
@@ -330,7 +331,7 @@ test.describe('superadmin: deployment Access tab', () => {
 
     await sections(page).nth(0).click();
     await expect(page).toHaveURL(new RegExp(`/deployments/${scratch.depA}$`));
-    await expect(page.locator('[data-fragment="page-header"] h1')).toHaveText('dep-a');
+    await expectItemHeader(page, 'deployment', 'dep-a');
     await expect(sections(page)).toHaveText(['Services', 'Deploy history', 'AccessSuperadmin']);
     await sections(page).nth(2).click();
     await expect(page).toHaveURL(new RegExp(`/deployments/${scratch.depA}/access$`));
@@ -361,7 +362,7 @@ test.describe('superadmin: environment Access tab', () => {
     await sections(page).filter({ hasText: 'Access' }).click();
     await expect(page).toHaveURL(new RegExp(`/environments/${scratch.envA1}/access$`));
     await expect(sections(page).filter({ hasText: 'Access' })).toHaveAttribute('aria-current', 'page');
-    await expect(page.locator('[data-fragment="page-header"] h1')).toHaveText('.env.cache');
+    await expectItemHeader(page, 'environment', '.env.cache');
     await expect(list(page)).toContainText('Users with access to environment cache/.env.cache');
     await expect(list(page)).not.toContainText('A project grant includes');
     await expect(row(page, inherited)).toContainText('from dep-a (Deployment)');
@@ -395,9 +396,8 @@ test.describe('superadmin: service Access tab', () => {
     const viaDeployment = await makeUser('admin', [`deployment:${scratch.depA}`]);
     const viaFile = await makeUser('viewer', [`environment:${scratch.envA1}`]);
     await openTab(page, 'service', scratch.serviceA);
-    await expect(page.locator('[data-fragment="page-header"] h1')).toHaveText('cache');
-    await expect(page.locator('[data-fragment="page-header"]')).toContainText('Service');
-    await expect(page.locator('[data-fragment="page-header"] p')).toHaveText(
+    await expectItemHeader(page, 'service', 'cache');
+    await expect(page.locator('[data-fragment="page-header"] p')).toContainText(
       `Deployment dep-a in ${scratch.projectName}`,
     );
     await expect(sections(page)).toHaveText(['Environments', 'Deploy history', 'AccessSuperadmin']);
@@ -536,7 +536,7 @@ test.describe('superadmin: refusals', () => {
     const viewer = await makeUser('viewer');
     const disabled = await makeUser('viewer');
     await disableUser(request, disabled.id);
-    const root = (await listUsers(request)).find(([, name]) => name === 'root');
+    const root = (await listUsers(request, seededEmail('root'))).find(([, name]) => name === 'root');
     expect(root).toBeTruthy();
     const base = tabPath('project', scratch.projectId);
     const add = async (user: string) => postForm(request, `${base}/grants`, { user });

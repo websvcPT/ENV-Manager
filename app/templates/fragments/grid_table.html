@@ -1,6 +1,7 @@
 {#- The grid under its filters: the table of rows by users, or an empty state. This is the unit
-    the filter form swaps, so the selects keep their focus. Context: grid (AccessGrid). -#}
-{% from "macros/access_grid.html" import grid_cell, row_header %}
+    the filter form swaps, so the selects keep their focus. Only the open project has its rows;
+    the others are loaded when expanded. Context: grid (AccessGrid). -#}
+{% from "macros/access_grid.html" import project_rows %}
 {% from "macros/badges.html" import badge %}
 {% from "macros/feedback.html" import empty_state %}
 <div id="grid-table" data-fragment="grid-table">
@@ -11,14 +12,10 @@
 {%- else %}
 <div class="relative overflow-x-auto"><table class="w-full border-separate border-spacing-0 text-left md:min-w-[900px]"><caption class="sr-only">Access grid: rows are projects, deployments, services and environments; columns are users</caption><thead><tr><th scope="col" class="bg-head px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-head-ink sticky left-0 z-10 min-w-[260px]">Item</th>
 {%- for user in grid.users %}<th scope="col" id="grid-user-{{ user.id }}" class="bg-head px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-head-ink min-w-[150px]">{{ user.name }}<span class="mt-0.5 block break-all text-xs font-normal normal-case tracking-normal">{{ user.email }}</span><span class="mt-1 block normal-case tracking-normal">{{ badge(user.group.value) }}</span></th>{% endfor -%}
-</tr></thead><tbody>
+</tr></thead>
 {%- for project in grid.projects %}
-{%- for node in project.nodes %}
-<tr data-fragment="grid-row" data-node="{{ node.id }}"{% if node.parent_id %} data-parent="{{ node.parent_id }}"{% endif %}>{{ row_header(node) }}
-{%- for user in grid.users %}{{ grid_cell(user, node, grid.cell(node, user)) }}{% endfor -%}
-</tr>
+{{ project_rows(grid, project) }}
 {%- endfor %}
-{%- endfor %}
-</tbody></table></div>
+</table></div>
 {%- endif %}
 </div>

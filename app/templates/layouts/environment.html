@@ -1,17 +1,17 @@
-{#- Shared frame of the environment pages: page header with the file name and status, then the
-    section links. Pages extend this and fill the `tab` block; the dist report replaces the
-    `header` block with its own header. Context: env (an EditorHeader), tab (edit, history, dist
-    or access) and is_viewer. -#}
+{#- Shared frame of the environment pages: item header with the file name, its parents and
+    status, then the section links. Pages extend this and fill the `tab` block; the dist report
+    replaces the `header` block with its own details line. Context: env (an EditorHeader), tab
+    (edit, history, dist or access) and is_viewer. -#}
 {% extends "layouts/app.html" %}
 {% from "macros/badges.html" import badge %}
-{% from "macros/panels.html" import page_header, tabs %}
+{% from "macros/panels.html" import environment_chain, item_header, tabs %}
 {% set active_nav = "projects" %}
 {% set breadcrumbs = [("Projects", "/projects"), (env.project_name, "/projects/" ~ env.project_id), (env.deployment_name, "/deployments/" ~ env.deployment_id), (env.service_name, "/services/" ~ env.service_id), (env.name, none)] %}
 {% block title %}{{ env.name }}{% endblock %}
 {% block content %}
 {% block header %}
-{% set subtitle %}Service {{ env.service_name }} · {% if env.current is not none %}version {{ env.current }} saved, {% if env.deployed is not none %}version {{ env.deployed }} deployed{% else %}never deployed{% endif %}{% else %}no version saved{% endif %}{% if env.current_author %} · last edited by {{ env.current_author }}{% endif %}{% endset %}
-{{ page_header(env.name, subtitle, mono=true, badges=badge(env.status)) }}
+{% set details %}{% if env.current is not none %}Version {{ env.current }} saved, {% if env.deployed is not none %}version {{ env.deployed }} deployed{% else %}never deployed{% endif %}{% else %}No version saved{% endif %}{% if env.current_author %} · last edited by {{ env.current_author }}{% endif %}{% endset %}
+{{ item_header("environment", env.name, environment_chain(env), details=details, badges=badge(env.status)) }}
 {% endblock %}
 {% set section_links = [{"label": "View" if is_viewer else "Edit", "href": "/environments/" ~ env.id}, {"label": "History", "href": "/environments/" ~ env.id ~ "/history"}] %}
 {% if env.can_check_dist %}{% set section_links = section_links + [{"label": "Compare to dist", "href": "/environments/" ~ env.id ~ "/dist"}] %}{% endif %}

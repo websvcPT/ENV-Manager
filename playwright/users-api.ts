@@ -16,9 +16,18 @@ export interface CreatedUser {
   password: string;
 }
 
-/** Users in the list as [id, name] pairs, read from the table fragment as the caller. */
-export async function listUsers(request: APIRequestContext): Promise<Array<[number, string]>> {
-  const response = await request.get('/users/table', { headers: { 'HX-Request': 'true' } });
+/**
+ * Users matching a search as [id, name] pairs, read from the table fragment as the caller. The
+ * list is paged, so a spec that wants one user searches for its name or email instead of reading
+ * the first page.
+ */
+export async function listUsers(
+  request: APIRequestContext,
+  search = '',
+): Promise<Array<[number, string]>> {
+  const response = await request.get(`/users/table?q=${encodeURIComponent(search)}`, {
+    headers: { 'HX-Request': 'true' },
+  });
   return idLinks(await response.text(), '/users');
 }
 
@@ -49,7 +58,7 @@ export async function createUser(
   if (!response.ok() || !shown) {
     throw new Error(`creating user ${name} failed with status ${response.status()}`);
   }
-  const found = (await listUsers(request)).find(([, listed]) => listed === name);
+  const found = (await listUsers(request, email)).find(([, listed]) => listed === name);
   if (!found) {
     throw new Error(`user ${name} was created but is not listed`);
   }

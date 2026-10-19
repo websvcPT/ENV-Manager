@@ -4,7 +4,7 @@ import { expect, test, type Browser, type Locator, type Page } from '@playwright
 
 import { auditEntryIds } from '../audit-api';
 import { stateFile, SUPERADMIN_STATE } from '../global-setup';
-import { listUsers } from '../users-api';
+import { listUsers, seededEmail } from '../users-api';
 import { horizontalOverflow, isWide } from '../viewport';
 
 /*
@@ -57,7 +57,9 @@ async function idsAsSuperadmin(browser: Browser, query: string): Promise<number[
 async function seededUserId(browser: Browser, name: string): Promise<number> {
   const context = await browser.newContext({ storageState: SUPERADMIN_STATE });
   try {
-    const found = (await listUsers(context.request)).find(([, listed]) => listed === name);
+    const found = (await listUsers(context.request, seededEmail(name))).find(
+      ([, listed]) => listed === name,
+    );
     if (!found) {
       throw new Error(`seeded user ${name} is missing`);
     }

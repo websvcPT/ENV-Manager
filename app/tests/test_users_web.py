@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 import httpx
 import pytest
 from fastapi import FastAPI
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from app.core.passwords import verify_password
 from app.models import (
@@ -29,8 +29,10 @@ from app.services.auth_policy import AuthPolicy
 from app.services.pending_logins import create_pending_login
 from app.services.permissions import load_token_scope
 from app.services.sessions import create_session
+from app.services.user_detail import PAGE_SIZE
 from app.tests.audit_helpers import web_audit_entries
 from app.tests.conftest import sign_in
+from app.tests.grant_helpers import grow
 from app.tests.web_helpers import HTMX, assert_never_cached, main_of, post
 
 NOT_SUPERADMIN = (
@@ -53,6 +55,12 @@ PASSWORD = re.compile(r'id="secret" readonly value="([^"]+)"')
 def listed(page: str) -> dict[str, int]:
     """User ids by name, as the users table lists them."""
     return {name: int(user_id) for user_id, name, _ in ROW.findall(page)}
+
+
+def more_href(page: str) -> str | None:
+    """The address the load more row of the users table requests, None on the last page."""
+    found = re.search(r'data-fragment="users-more".*?hx-get="([^"]+)"', page, re.DOTALL)
+    return html.unescape(found.group(1)) if found else None
 
 
 def password_of(page: str) -> str:
@@ -145,6 +153,7 @@ async def test_nobody_but_the_superadmin_reaches_the_users_screens_or_their_acti
     for url in (
         "/users",
         "/users/table",
+        "/users/rows?after=1",
         "/users/new",
         "/users/1",
         "/users/1/confirm/disable",
@@ -205,6 +214,92 @@ async def test_the_superadmin_sees_the_link_and_every_account_with_its_figures(
     fragment = await web_client.get("/users/table", headers=HTMX)
     assert_never_cached(fragment)
     assert listed(fragment.text) == ids and "<html" not in fragment.text
+    assert fragment.text.lstrip().startswith('<div id="users-table" data-fragment="users-table"')
+    assert 'hx-include="#users-filters"' in fragment.text
+    assert 'data-fragment="users-more"' not in body
+
+
+async def add_bulk_users(web_app: FastAPI, count: int, disabled: tuple[str, ...] = ()) -> None:
+    """Add viewers named bulk-0 and on, the ones named in ``disabled`` already disabled."""
+    async with web_app.state.session_factory() as db:
+        await grow(db, projects=0, users=count)
+        await db.execute(update(User).where(User.name.in_(disabled)).values(is_active=False))
+        await db.commit()
+
+
+async def test_the_list_pages_with_load_more_and_the_filters_stay_in_the_links(
+    web_client: httpx.AsyncClient, web_app: FastAPI
+) -> None:
+    await add_bulk_users(web_app, 60, disabled=("bulk-5", "bulk-6"))
+    await sign_in(web_client, "root")
+    page = await web_client.get("/users?q=bulk&status=active")
+    body = main_of(page.text)
+    shown = listed(body)
+    assert len(shown) == PAGE_SIZE and "root" not in shown
+    href = more_href(body)
+    assert href is not None and href.startswith("/users/rows?q=bulk&status=active&after=")
+    assert 'id="u-q" name="q" type="search" value="bulk"' in body
+    assert '<option value="active" selected>Active</option>' in body
+    rest = await web_client.get(href, headers=HTMX)
+    assert_never_cached(rest)
+    assert rest.status_code == 200 and "<html" not in rest.text and "<table" not in rest.text
+    more_rows = listed(rest.text)
+    assert len(more_rows) == 58 - PAGE_SIZE and not set(more_rows) & set(shown)
+    assert 'data-fragment="users-more"' not in rest.text
+    assert not {"bulk-5", "bulk-6"} & (set(shown) | set(more_rows))
+
+
+async def test_disabled_accounts_follow_the_active_ones_across_the_pages(
+    web_client: httpx.AsyncClient, web_app: FastAPI
+) -> None:
+    await add_bulk_users(web_app, 55, disabled=("bulk-0", "bulk-1"))
+    await sign_in(web_client, "root")
+    page = main_of((await web_client.get("/users")).text)
+    first = listed(page)
+    assert "bulk-0" not in first and len(first) == PAGE_SIZE
+    href = more_href(page)
+    assert href is not None
+    second = await web_client.get(href, headers=HTMX)
+    assert list(listed(second.text))[-2:] == ["bulk-0", "bulk-1"]
+    assert more_href(second.text) is None
+
+
+async def test_the_filter_form_swaps_the_results_and_pushes_the_address_of_the_view(
+    web_client: httpx.AsyncClient,
+) -> None:
+    await sign_in(web_client, "root")
+    response = await web_client.get("/users/table?q=ADMIN&status=active", headers=HTMX)
+    assert response.status_code == 200
+    assert_never_cached(response)
+    assert response.headers["HX-Push-Url"] == "/users?q=ADMIN&status=active"
+    names = set(listed(response.text))
+    assert {"admin", "ungranted_admin"} <= names and "viewer" not in names
+    refresh = await web_client.get(
+        "/users/table?q=ADMIN&status=active",
+        headers={**HTMX, "HX-Current-URL": "http://test/users?q=ADMIN&status=active"},
+    )
+    assert "HX-Push-Url" not in refresh.headers and listed(refresh.text) == listed(response.text)
+    plain = await web_client.get("/users/table", headers=HTMX)
+    assert plain.headers["HX-Push-Url"] == "/users"
+    reset = await web_client.get(
+        "/users/table", headers={**HTMX, "HX-Current-URL": "http://test/users"}
+    )
+    assert "HX-Push-Url" not in reset.headers
+
+
+async def test_a_search_with_no_match_says_so_and_a_bad_cursor_starts_again(
+    web_client: httpx.AsyncClient,
+) -> None:
+    await sign_in(web_client, "root")
+    empty = await web_client.get("/users?q=nobody-by-this-name")
+    assert "No users match" in empty.text and "<table" not in main_of(empty.text)
+    assert 'value="nobody-by-this-name"' in empty.text
+    disabled = await web_client.get("/users/table?status=disabled", headers=HTMX)
+    assert "No users match" in disabled.text
+    everyone = listed((await web_client.get("/users")).text)
+    for after in ("zz", "-4", "0", "9" * 16, ""):
+        rows = await web_client.get(f"/users/rows?after={after}", headers=HTMX)
+        assert rows.status_code == 200 and listed(rows.text) == everyone, after
 
 
 async def test_the_create_dialog_offers_the_group_and_the_whole_grant_tree(

@@ -2,6 +2,7 @@ import type { Browser, Page } from '@playwright/test';
 
 import { deploymentId } from '../deployments-api';
 import { stateFile, SUPERADMIN_STATE } from '../global-setup';
+import { expectItemHeader } from '../item-header';
 import { listProjects } from '../projects-api';
 import { horizontalOverflow, isWide } from '../viewport';
 import { expect, test } from './scratch-project';
@@ -197,7 +198,7 @@ test.describe('superadmin create', () => {
     await form(page).getByRole('button', { name: 'Create deployment' }).click();
 
     await expect(page).toHaveURL(/\/deployments\/\d+$/);
-    await expect(page.locator('[data-fragment="page-header"] h1')).toHaveText('created-one');
+    await expectItemHeader(page, 'deployment', 'created-one');
     await expect(page.locator('[data-fragment="page-header"] p')).toContainText(
       `Project ${scratch.name} · ${SAMPLE_A}`,
     );
@@ -274,7 +275,7 @@ test.describe('superadmin edit', () => {
 
     await expect(page).toHaveURL(`/deployments/${id}?saved=true`);
     await expect(page.locator('[data-fragment="toast"]')).toContainText('Deployment saved');
-    await expect(page.locator('[data-fragment="page-header"] h1')).toHaveText('edited-name');
+    await expectItemHeader(page, 'deployment', 'edited-name');
     await expect(page.locator('[data-fragment="page-header"] p')).toContainText(SAMPLE_B);
     await expect(page.locator('[data-fragment="policies-panel"]')).toContainText(
       'Back up, then overwrite',

@@ -2,6 +2,7 @@ import type { Browser, Page } from '@playwright/test';
 
 import { deploymentId } from '../deployments-api';
 import { stateFile } from '../global-setup';
+import { expectItemHeader } from '../item-header';
 import { horizontalOverflow, isWide } from '../viewport';
 import { actionControls, rowAction } from './row-actions';
 import { expect, test } from './scratch-project';
@@ -34,7 +35,7 @@ test.describe('superadmin', () => {
     const id = await prod(browser);
     await page.goto(`/deployments/${id}`);
 
-    await expect(header(page).locator('h1')).toHaveText('prod');
+    await expectItemHeader(page, 'deployment', 'prod');
     await expect(header(page).locator('[data-status]')).toHaveText(['Failed']);
     await expect(header(page).locator('p')).toContainText('Project Fancy Proj. Name · /opt/rentals/prod');
     await expect(header(page).getByRole('link', { name: 'Check dist' })).toHaveAttribute(
@@ -230,7 +231,7 @@ test.describe('viewer', () => {
   test('reads the deployment with no check, deploy, edit or output', async ({ page, browser }) => {
     const id = await prod(browser);
     await page.goto(`/deployments/${id}`);
-    await expect(header(page).locator('h1')).toHaveText('prod');
+    await expectItemHeader(page, 'deployment', 'prod');
     await expect(header(page).getByRole('link')).toHaveCount(0);
     await expect(header(page).getByRole('button')).toHaveCount(0);
     await expect(serviceRows(page).locator('th a')).toHaveText(['mysql', 'web']);

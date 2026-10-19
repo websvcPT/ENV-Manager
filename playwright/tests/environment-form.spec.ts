@@ -2,6 +2,7 @@ import type { APIRequestContext, Browser, Page } from '@playwright/test';
 
 import { createDeployment, deploymentId } from '../deployments-api';
 import { stateFile } from '../global-setup';
+import { expectItemHeader } from '../item-header';
 import { createService, serviceId } from '../services-api';
 import { horizontalOverflow, usesMenus } from '../viewport';
 import { expect, test } from './scratch-project';
@@ -126,7 +127,7 @@ test.describe('superadmin add service', () => {
     await page.locator('#svc-name').fill('redis');
     await page.locator('#service-form').getByRole('button', { name: 'Add service' }).click();
     await expect(page).toHaveURL(/\/services\/\d+\?added=service$/);
-    await expect(page.locator('[data-fragment="page-header"] h1')).toHaveText('redis');
+    await expectItemHeader(page, 'service', 'redis');
     await expect(toast(page)).toContainText('Service added');
     await expect(page.locator('#environments [data-fragment="empty-state"]')).toContainText(
       'No environments yet',
@@ -340,7 +341,7 @@ test.describe('superadmin add environment', () => {
     await submit(page);
     await expect(page).toHaveURL(/\/services\/\d+\?added=environment$/);
     expect(page.url()).not.toContain(`/services/${service}?`);
-    await expect(page.locator('[data-fragment="page-header"] h1')).toHaveText('redis');
+    await expectItemHeader(page, 'service', 'redis');
     await expect(environmentLink(page, 'redis.conf')).toBeVisible();
   });
 

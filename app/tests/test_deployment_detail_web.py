@@ -10,7 +10,7 @@ from sqlalchemy import select
 
 from app.models import Deployment
 from app.tests.conftest import sign_in
-from app.tests.web_helpers import HTMX, main_of, section_links
+from app.tests.web_helpers import HTMX, item_header_of, main_of, section_links
 
 
 @dataclass(frozen=True)
@@ -47,8 +47,10 @@ async def test_superadmin_sees_everything_and_the_edit_actions(
     page = response.text
     assert response.headers["cache-control"] == "no-store"
     assert response.headers["vary"] == "HX-Request"
-    assert '<h1 class="font-mono' in page and ">prod</h1>" in page
-    assert "Project <strong" in page and "/opt/rentals/prod" in page
+    header = item_header_of(page)
+    assert (header.type, header.title) == ("deployment", "Deployment: prod")
+    assert header.subtitle == "Project Fancy Proj. Name · /opt/rentals/prod"
+    assert header.details is None
     assert ">Failed<" in page
     assert section_links(page) == ["Services", "Deploy history", "AccessSuperadmin"]
     assert f'href="/deployments/{ids.prod}/access"' in page

@@ -2,9 +2,9 @@
     row and the export link. Details are escaped text inside hx-ignore; they never hold a
     secret value, and a key that names one is already replaced by the service. -#}
 {% from "macros/badges.html" import badge %}
-{% from "macros/buttons.html" import button %}
 {% from "macros/feedback.html" import code_block %}
 {% from "macros/icons.html" import icon %}
+{% from "macros/panels.html" import more_row %}
 {% from "macros/time.html" import moment with context %}
 
 {% set RESULT_BADGES = {"success": "success", "failure": "failed", "blocked": "blocked", "halted": "halted"} %}
@@ -37,7 +37,7 @@
 
 {#- The last row of a page that has more: loading it appends the next rows in its place. -#}
 {% macro audit_more(href) -%}
-<tr data-fragment="audit-more"><td colspan="7" class="{{ CELL }} text-center">{{ button("Load more", hx_get=href, hx_target="closest tr", hx_swap="outerHTML", hx_sync="this:drop", extra_class="h-11 md:h-10") }}</td></tr>
+{{ more_row(href, 7, "audit-more") }}
 {%- endmacro %}
 
 {#- The export link of the current filters. -#}

@@ -160,10 +160,10 @@ async def test_table_lists_versions_newest_first_with_the_deployed_marker(
         ("2", True),
         ("1", False),
     ]
-    assert "version 3 saved, never deployed" in page
+    assert "Version 3 saved, never deployed" in page
     tuning = main_of((await web_client.get(f"/environments/{ids.tuning}/history")).text)
     assert [('data-status="deployed"' in row) for row in version_rows(tuning)] == [False, True]
-    assert "version 2 saved, version 1 deployed" in tuning
+    assert "Version 2 saved, version 1 deployed" in tuning
 
 
 async def test_diff_panel_lists_masked_rows_with_empty_slots(
@@ -338,7 +338,7 @@ async def test_admin_restore_saves_a_new_version_and_redirects_with_a_toast(
     assert await version_numbers(web_app, ids.editor) == [1, 2, 3, 4]
     page = main_of((await web_client.get(response.headers["hx-redirect"])).text)
     assert "Restored version 1 as version 4. Pending deploy." in page
-    assert "Restored from version 1" in page and "version 4 saved" in page
+    assert "Restored from version 1" in page and "Version 4 saved" in page
     assert page.count('data-fragment="version-row"') == 4
     entries = await web_audit_entries(web_app, "environment.restore")
     assert [entry.details for entry in entries] == [{"number": 4, "restored": 1}]

@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from sqlalchemy import select
 
 from app.models import AuditEntry, EnvironmentVersion
-from app.seeds import EDITOR_SECRET_VALUES
+from app.seeds import EDITOR_ENVIRONMENT_NAME, EDITOR_SECRET_VALUES
 from app.services.notify_events import FileChange, FileChanged
 from app.tests.conftest import sign_in
 from app.tests.notify_helpers import RecordingEvents, file_event_ids
@@ -17,6 +17,7 @@ from app.tests.web_helpers import (
     HTMX,
     EnvironmentIds,
     assert_never_cached,
+    item_header_of,
     main_of,
     post,
     without_csrf_token,
@@ -187,7 +188,9 @@ async def test_admin_page_has_the_editor_controls(
     assert "Values masked. Each reveal is audited and hides after 30 s." in page
     assert 'name="base_version" value="3"' in page
     assert "Pending" not in page and "Never deployed" in page
-    assert "version 3 saved, never deployed" in page and "last edited by root" in page
+    header = item_header_of(page)
+    assert header.details == "Version 3 saved, never deployed · last edited by root"
+    assert header.title == f"Environment: {EDITOR_ENVIRONMENT_NAME}"
     assert "v3 · " in page and "www-data : www-data" in page
     assert "Saved as version" not in page
     toast = main_of((await web_client.get(f"/environments/{ids.editor}?saved=4")).text)
@@ -330,7 +333,7 @@ async def test_key_value_save_redirects_and_stores_the_patched_text(
     assert "export MAX_CONNECTIONS=500\n" in text and "TLS_MIN_VERSION" not in text
     assert "MYSQL_PORT=3306\n" in text and text.endswith("EXTRA='a b'\n")
     page = main_of((await web_client.get(f"{base}?saved=4")).text)
-    assert "version 4 saved" in page and "Saved as version 4" in page
+    assert "Version 4 saved" in page and "Saved as version 4" in page
 
 
 async def test_raw_save_and_the_refusals_swap_the_save_bar(
@@ -406,3 +409,16 @@ async def test_saving_a_version_announces_the_file_change_to_the_notifier(
         {"mode": "raw", "base_version": "3", "content": "B=2\n", "comment": ""},
     )
     assert refused.status_code == 422 and len(recorder.events) == 1
+
+
+async def test_the_header_of_a_scoped_user_names_the_parents_and_no_sibling_file(
+    web_client: httpx.AsyncClient, ids: EnvironmentIds
+) -> None:
+    """The chain above a granted file is names only, and the other files of its service stay out."""
+    await sign_in(web_client, "env_scoped_admin")
+    page = (await web_client.get(f"/environments/{ids.db}")).text
+    header = item_header_of(main_of(page))
+    assert (header.type, header.title) == ("environment", "Environment: .env.db")
+    assert header.subtitle.startswith("Service mysql in deployment prod in Fancy Proj. Name · ")
+    assert header.details is not None and header.details.startswith("Version ")
+    assert EDITOR_ENVIRONMENT_NAME not in f"{header.subtitle} {header.details}"

@@ -1,0 +1,22 @@
+{#- Table rows of one page of the users list, then the load more row while more accounts remain:
+    the group, status, last sign-in and the number of projects the grants reach (All for a
+    superadmin). The Disable or Enable button opens the confirm dialog of the page. Context:
+    rows (UserRow list) and more_href. -#}
+{% from "macros/badges.html" import badge %}
+{% from "macros/panels.html" import more_row %}
+{% from "macros/row_actions.html" import row_actions %}
+{%- for row in rows %}
+<tr data-fragment="user-row" id="user-{{ row.id }}"><th scope="row" class="border-t border-line px-4 py-3.5 text-left font-semibold"><a href="/users/{{ row.id }}" class="font-semibold text-link hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus text-ink">{{ row.name }}</a></th>
+<td class="border-t border-line px-4 py-3.5"><span class="text-ink2">{{ row.email }}</span></td>
+<td class="border-t border-line px-4 py-3.5">{{ badge(row.group.value) }}</td>
+<td class="border-t border-line px-4 py-3.5">{% if row.is_active %}{{ badge("deployed", "Active") }}{% else %}{{ badge("never", "Disabled") }}{% endif %}</td>
+<td class="border-t border-line px-4 py-3.5 whitespace-nowrap">{% if row.last_login_at %}<time datetime="{{ row.last_login_at.strftime('%Y-%m-%dT%H:%M:%SZ') }}" title="UTC">{{ row.last_login_at.strftime("%Y-%m-%d %H:%M") }}</time>{% else %}Never{% endif %}</td>
+<td class="border-t border-line px-4 py-3.5">{{ "All" if row.projects is none else row.projects }}</td>
+<td class="border-t border-line px-4 py-3.5 whitespace-nowrap text-right">{{ row_actions("user-" ~ row.id, row.name, [
+  {"key": "edit", "label": "Edit", "icon": "pencil", "href": "/users/" ~ row.id, "primary": true},
+  {"key": "disable" if row.is_active else "enable", "label": "Disable" if row.is_active else "Enable", "icon": "circle-minus" if row.is_active else "check", "danger": row.is_active, "attrs": {"data_js": "dialog-open", "data_target": "user-action", "aria_haspopup": "dialog", "hx_get": "/users/" ~ row.id ~ "/confirm/" ~ ("disable" if row.is_active else "enable") ~ "?from=list", "hx_target": "#user-action", "hx_swap": "innerHTML"}}
+]) }}</td></tr>
+{%- endfor %}
+{%- if more_href %}
+{{ more_row(more_href, 7, "users-more") }}
+{%- endif %}

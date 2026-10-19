@@ -106,7 +106,7 @@ test.describe('superadmin history', () => {
     const id = await prepare(request, scratch.id, '.env.history', [FIRST, SECOND]);
     await page.goto(`/environments/${id}/history`);
     await expect(header(page).locator('h1')).toHaveText('.env.history');
-    await expect(header(page)).toContainText('version 2 saved, never deployed');
+    await expect(header(page)).toContainText('Version 2 saved, never deployed');
     await expect(page.locator('nav[aria-label="Sections"] a')).toHaveText([
       'Edit',
       'History',
@@ -259,7 +259,7 @@ test.describe('superadmin history', () => {
     await dialog.getByRole('button', { name: 'Restore as new version' }).click();
     await expect(page).toHaveURL(/\/history\?restored=3&source=1$/);
     await expect(toast(page)).toContainText('Restored version 1 as version 3. Pending deploy.');
-    await expect(header(page)).toContainText('version 3 saved');
+    await expect(header(page)).toContainText('Version 3 saved');
     await expect(table(page).locator('[data-fragment="version-row"] th[scope="row"]')).toHaveText([
       'v3',
       'v2',
@@ -269,7 +269,7 @@ test.describe('superadmin history', () => {
     await expect(panel(page).locator('h2#dt')).toHaveText('Comparing v2 to v3');
     await expect(diffRow(page, 'LEGACY').locator('[data-status="added"]')).toBeVisible();
     await page.goto(`/environments/${id}`);
-    await expect(header(page)).toContainText('version 3 saved');
+    await expect(header(page)).toContainText('Version 3 saved');
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
   });
 
@@ -353,7 +353,7 @@ test.describe('superadmin history', () => {
     await page.goto(`/environments/${id}/history`);
     await expect(versionRow(page, 1).locator('[data-status="deployed"]')).toBeVisible();
     await expect(versionRow(page, 2).locator('[data-status="deployed"]')).toHaveCount(0);
-    await expect(header(page)).toContainText('version 2 saved, version 1 deployed');
+    await expect(header(page)).toContainText('Version 2 saved, version 1 deployed');
   });
 });
 

@@ -18,6 +18,6 @@
 <ul class="m-0 ml-auto flex list-none flex-wrap items-center gap-x-5 gap-y-2 text-[13px] text-ink2" aria-label="Legend"><li class="flex items-center gap-1.5">{{ icon("check", "size-3.5", "2.6") }}Direct grant</li><li class="flex items-center gap-1.5 text-info-fg">{{ icon("arrow-right", "size-3.5", "2.6") }}Inherited, not editable</li><li class="flex items-center gap-1.5">{{ icon("eye", "size-3.5", "2.2") }}Service result</li></ul>
 </div>
 {% include "fragments/grid_table.html" %}
-<p class="border-t border-line bg-surface2 px-5 py-3 text-[13px] text-ink2">Grants exist at project, deployment and environment rows. A grant on a project or deployment row includes items added later. Service rows show the result. Superadmins reach everything, so they have no column.</p>
+<p class="border-t border-line bg-surface2 px-5 py-3 text-[13px] text-ink2">Grants exist at project, deployment and environment rows. A grant on a project or deployment row includes items added later. Service rows show the result. Superadmins reach everything, so they have no column. A project loads its rows when you expand it.</p>
 </section>
 {% endblock %}

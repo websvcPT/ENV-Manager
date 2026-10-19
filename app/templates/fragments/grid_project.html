@@ -1,0 +1,4 @@
+{#- The rows of one project of the access grid, in the tbody that replaces its project row when
+    the person expands it. Context: grid (an AccessGrid holding that project only). -#}
+{% from "macros/access_grid.html" import project_rows %}
+{{ project_rows(grid, grid.projects[0]) }}

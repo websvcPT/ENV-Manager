@@ -7,8 +7,11 @@ for the user, because services are not a grant level. Superadmins reach everythi
 column; disabled accounts have none either, their grants stay stored and are edited on the
 user's own page.
 
-Loading takes a fixed number of queries whatever the size of the tree or the number of users:
-the tree, the users and their grants are read once and every cell is computed from them.
+The page holds the rows of one project only, the one a filter names or else the first by name;
+every other project is its project row, and its rows are loaded when it is expanded. Loading
+takes a fixed number of queries whatever the size of the tree or the number of users: the list
+of projects, the tree of the open project, the users and their grants are read once and every
+cell is computed from them.
 """
 
 from collections.abc import Mapping
@@ -16,10 +19,19 @@ from dataclasses import dataclass, replace
 from enum import StrEnum
 from urllib.parse import urlencode
 
-from sqlalchemy import ColumnElement, func, or_, select
+from sqlalchemy import ColumnElement, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AccessGrant, Deployment, Environment, GrantLevel, Service, User, UserGroup
+from app.models import (
+    AccessGrant,
+    Deployment,
+    Environment,
+    GrantLevel,
+    Project,
+    Service,
+    User,
+    UserGroup,
+)
 from app.services.audit import AuditActor
 from app.services.grants import (
     MAX_ID_DIGITS,
@@ -117,11 +129,16 @@ class GridNode:
 
 @dataclass(frozen=True)
 class GridProject:
-    """A project of the grid with its rows in tree order, the project row first."""
+    """A project of the grid with its rows in tree order, the project row first.
+
+    A project that is not ``loaded`` has its project row only; the rows below it are read when
+    the person expands it.
+    """
 
     id: int
     name: str
     nodes: tuple[GridNode, ...]
+    loaded: bool = True
 
 
 @dataclass(frozen=True)
@@ -166,6 +183,11 @@ class AccessGrid:
         """The cell of a user at a row."""
         return cell_for(node, self.grants.get(user.id, frozenset()))
 
+    def rows_href(self, project_id: int) -> str:
+        """The address of the rows of a project, under the same columns as this grid."""
+        query = GridFilters(self.filters.group).query_string()
+        return f"/access/grid/project/{project_id}" + (f"?{query}" if query else "")
+
 
 @dataclass(frozen=True)
 class CellUpdate:
@@ -190,26 +212,27 @@ def node_dom_id(target: GrantTarget) -> str:
     return f"{target.level.value}-{target.item_id}"
 
 
+def project_node(project_id: int, name: str, *, expandable: bool) -> GridNode:
+    """The row of a project, the top of its tree."""
+    target = GrantTarget(GrantLevel.PROJECT, project_id)
+    node_id = node_dom_id(target)
+    return GridNode(node_id, NodeKind.PROJECT, name, None, 0, target, (), (), expandable)
+
+
+def unloaded_project(project_id: int, name: str, *, has_deployments: bool) -> GridProject:
+    """A project drawn as its row alone, to be expanded later."""
+    node = project_node(project_id, name, expandable=has_deployments)
+    return GridProject(project_id, name, (node,), loaded=False)
+
+
 def build_projects(tree: tuple[GrantProject, ...]) -> tuple[GridProject, ...]:
-    """The rows of every project in tree order, from the grant tree."""
+    """The rows of every project of the grant tree in tree order."""
     projects: list[GridProject] = []
     for project in tree:
         project_target = GrantTarget(GrantLevel.PROJECT, project.id)
         project_source = GridSource(project_target, project.name)
         project_id = node_dom_id(project_target)
-        nodes = [
-            GridNode(
-                project_id,
-                NodeKind.PROJECT,
-                project.name,
-                None,
-                0,
-                project_target,
-                (),
-                (),
-                bool(project.deployments),
-            )
-        ]
+        nodes = [project_node(project.id, project.name, expandable=bool(project.deployments))]
         for deployment in project.deployments:
             deployment_target = GrantTarget(GrantLevel.DEPLOYMENT, deployment.id)
             deployment_source = GridSource(deployment_target, deployment.name)
@@ -350,26 +373,61 @@ async def load_user_grants(
     return {user_id: frozenset(targets) for user_id, targets in held.items()}
 
 
+async def load_project_list(db: AsyncSession) -> tuple[tuple[int, str, bool], ...]:
+    """Every project as id, name and whether it has deployments, ordered by name, in one query."""
+    has_deployments = exists().where(Deployment.project_id == Project.id)
+    rows = (await db.execute(select(Project.id, Project.name, has_deployments))).all()
+    ordered = sorted(rows, key=lambda row: row[1].lower())
+    return tuple((project_id, name, bool(found)) for project_id, name, found in ordered)
+
+
 async def load_access_grid(db: AsyncSession, filters: GridFilters) -> AccessGrid:
     """The grid for the filters, in a fixed number of queries.
 
-    A project filter that names no existing project is ignored, like a value that does not
-    parse, so what the selects show is what the grid shows.
+    The project the filter names, or else the first by name, comes with its rows; every other
+    project is its row alone. A project filter that names no existing project is ignored, like
+    a value that does not parse, so what the selects show is what the grid shows.
     """
-    projects = build_projects(await load_grant_tree(db))
-    options = tuple((project.id, project.name) for project in projects)
+    listing = await load_project_list(db)
+    options = tuple((project_id, name) for project_id, name, _found in listing)
     known = {project_id for project_id, _name in options}
     effective = replace(
         filters, project_id=filters.project_id if filters.project_id in known else None
     )
-    shown = tuple(project for project in projects if effective.project_id in (None, project.id))
+    shown = tuple(item for item in listing if effective.project_id in (None, item[0]))
+    tree = await load_grant_tree(db, shown[0][0]) if shown else ()
+    opened = {project.id: project for project in build_projects(tree)}
     groups = (effective.group,) if effective.group is not None else GRID_GROUPS
     return AccessGrid(
         users=await load_grid_users(db, groups),
-        projects=shown,
+        projects=tuple(
+            opened.get(project_id)
+            or unloaded_project(project_id, name, has_deployments=has_deployments)
+            for project_id, name, has_deployments in shown
+        ),
         project_options=options,
         grants=await load_user_grants(db, groups),
         filters=effective,
+    )
+
+
+async def load_grid_project(
+    db: AsyncSession, project_id: int, group: UserGroup | None
+) -> AccessGrid | None:
+    """The rows of one project under the columns of ``group``, or None when it does not exist.
+
+    Four queries for the tree, one for the users and one for the grants inside the project.
+    """
+    projects = build_projects(await load_grant_tree(db, project_id))
+    if not projects:
+        return None
+    groups = (group,) if group is not None else GRID_GROUPS
+    return AccessGrid(
+        users=await load_grid_users(db, groups),
+        projects=projects,
+        project_options=(),
+        grants=await load_user_grants(db, groups, project_id=project_id),
+        filters=GridFilters(group),
     )
 
 

@@ -1,0 +1,8 @@
+{#- The filter form of the users list: a text search on name and email and the status. Typing
+    requests the results after a short pause, the status and Enter at once. Context: filters
+    (UserFilters). -#}
+{% set control_classes = "h-11 rounded-ctl border border-line-strong bg-surface px-3 text-sm text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus md:h-10" %}
+<form id="users-filters" action="/users" method="get" hx-get="/users/table" hx-target="#users-table" hx-swap="outerHTML" hx-trigger="input delay:300ms from:#u-q, change from:#u-s, submit" hx-sync="this:replace" class="flex flex-wrap items-end gap-3">
+<div class="flex min-w-0 max-w-full items-center gap-2"><label for="u-q" class="text-[13px] font-semibold text-ink2">Search</label><input id="u-q" name="q" type="search" value="{{ filters.query }}" maxlength="100" autocomplete="off" placeholder="Name or email" class="min-w-0 w-64 max-w-full {{ control_classes }}"></div>
+<div class="flex items-center gap-2"><label for="u-s" class="text-[13px] font-semibold text-ink2">Status</label><select id="u-s" name="status" class="{{ control_classes }}"><option value="">All</option><option value="active"{% if filters.status == "active" %} selected{% endif %}>Active</option><option value="disabled"{% if filters.status == "disabled" %} selected{% endif %}>Disabled</option></select></div>
+</form>

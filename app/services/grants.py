@@ -351,30 +351,33 @@ async def toggle_user_grant(
     )
 
 
-async def projects_reached(db: AsyncSession) -> dict[int, set[int]]:
+async def projects_reached(
+    db: AsyncSession, user_ids: Collection[int] | None = None
+) -> dict[int, set[int]]:
     """The ids of the projects each user's grants reach, by user id.
 
-    A grant reaches a project when it is on the project or on anything inside it.
+    A grant reaches a project when it is on the project or on anything inside it. With
+    ``user_ids`` only the grants of those users are read, in the same three queries.
     """
-    deployment_project = dict(
-        (await db.execute(select(Deployment.id, Deployment.project_id))).all()
+    only = [AccessGrant.user_id.in_(user_ids)] if user_ids is not None else []
+    on_project = select(AccessGrant.user_id, AccessGrant.project_id).where(
+        AccessGrant.project_id.is_not(None), *only
     )
-    environment_project = dict(
-        (
-            await db.execute(
-                select(Environment.id, Deployment.project_id)
-                .join(Service, Service.id == Environment.service_id)
-                .join(Deployment, Deployment.id == Service.deployment_id)
-            )
-        ).all()
+    on_deployment = (
+        select(AccessGrant.user_id, Deployment.project_id)
+        .join(Deployment, Deployment.id == AccessGrant.deployment_id)
+        .where(*only)
+    )
+    on_environment = (
+        select(AccessGrant.user_id, Deployment.project_id)
+        .join(Environment, Environment.id == AccessGrant.environment_id)
+        .join(Service, Service.id == Environment.service_id)
+        .join(Deployment, Deployment.id == Service.deployment_id)
+        .where(*only)
     )
     reached: dict[int, set[int]] = {}
-    for grant in (await db.execute(select(AccessGrant))).scalars():
-        project_id = {
-            GrantLevel.PROJECT: grant.project_id,
-            GrantLevel.DEPLOYMENT: deployment_project.get(grant.deployment_id or 0),
-            GrantLevel.ENVIRONMENT: environment_project.get(grant.environment_id or 0),
-        }[grant.level]
-        if project_id is not None:
-            reached.setdefault(grant.user_id, set()).add(project_id)
+    for query in (on_project, on_deployment, on_environment):
+        for user_id, project_id in (await db.execute(query)).all():
+            if project_id is not None:
+                reached.setdefault(user_id, set()).add(project_id)
     return reached

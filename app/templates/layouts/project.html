@@ -4,7 +4,7 @@
 {% extends "layouts/app.html" %}
 {% from "macros/badges.html" import badge %}
 {% from "macros/buttons.html" import button %}
-{% from "macros/panels.html" import page_header, tabs %}
+{% from "macros/panels.html" import item_header, tabs %}
 {% set active_nav = "projects" %}
 {% set breadcrumbs = [("Projects", "/projects"), (project.name, none)] %}
 {% block title %}{{ project.name }}{% endblock %}
@@ -18,7 +18,7 @@
 {%- set count = project.deployments | length -%}
 {%- set summary = count ~ (" deployment" if count == 1 else " deployments") ~ ((" · " ~ project.members ~ (" member" if project.members == 1 else " members")) if project.members is not none else "") -%}
 {%- endif -%}
-{{ page_header(project.name, summary, badges=header_badges, actions=header_actions) }}
+{{ item_header("project", project.name, summary, badges=header_badges, actions=header_actions) }}
 {{ tabs(
   [{"label": "Deployments", "href": base_href}]
   + ([{"label": "Members and access", "href": base_href ~ "/access", "superadmin": true}] if can_manage_grants else [])

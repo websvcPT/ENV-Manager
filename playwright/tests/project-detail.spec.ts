@@ -1,6 +1,7 @@
 import type { Browser, Page } from '@playwright/test';
 
 import { stateFile, SUPERADMIN_STATE } from '../global-setup';
+import { expectItemHeader } from '../item-header';
 import { listProjects } from '../projects-api';
 import { seededEmail } from '../users-api';
 import { horizontalOverflow, isWide } from '../viewport';
@@ -38,7 +39,7 @@ test.describe('superadmin', () => {
     await page.goto('/projects');
     await page.locator('[data-fragment="project-row"] th a', { hasText: /^Fancy Proj\. Name$/ }).click();
     await expect(page).toHaveURL(new RegExp(`/projects/${fancy}$`));
-    await expect(page.locator('[data-fragment="page-header"] h1')).toHaveText('Fancy Proj. Name');
+    await expectItemHeader(page, 'project', 'Fancy Proj. Name');
     await expect(page.locator('[data-fragment="page-header"] p')).toHaveText(
       /^2 deployments · \d+ members$/,
     );
@@ -123,7 +124,7 @@ test.describe('superadmin', () => {
 
   test('shows the empty state and the creation in the activity', async ({ page, scratch }) => {
     await page.goto(`/projects/${scratch.id}`);
-    await expect(page.locator('[data-fragment="page-header"] h1')).toHaveText(scratch.name);
+    await expectItemHeader(page, 'project', scratch.name);
     await expect(page.locator('[data-fragment="page-header"] [data-status="drift"]')).toHaveText(
       'Empty',
     );
@@ -174,7 +175,7 @@ test.describe('superadmin', () => {
     await form.getByRole('button', { name: 'Save name' }).click();
     await expect(page).toHaveURL(new RegExp(`/projects/${scratch.id}/settings\\?renamed=true$`));
     await expect(page.locator('[data-fragment="toast"]')).toContainText('Project renamed');
-    await expect(page.locator('[data-fragment="page-header"] h1')).toHaveText(renamed);
+    await expectItemHeader(page, 'project', renamed);
     await expect(page.locator('nav[aria-label="Breadcrumb"] [aria-current="page"]')).toHaveText(
       renamed,
     );

@@ -287,7 +287,7 @@ test.describe('destructive actions keep their confirm dialog', () => {
   }, testInfo) => {
     const user = await createUser(request, uniqueUserName(testInfo.project.name), 'viewer');
     try {
-      await page.goto('/users');
+      await page.goto(`/users?q=${encodeURIComponent(user.name)}`);
       const row = page.locator('[data-fragment="user-row"]', {
         has: page.locator('th[scope="row"] a', { hasText: new RegExp(`^${user.name}$`) }),
       });

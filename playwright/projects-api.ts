@@ -53,7 +53,7 @@ export async function deleteProjectIfPresent(
   if (!page.ok()) {
     return;
   }
-  const heading = /<h1[^>]*>([^<]+)<\/h1>/.exec(await page.text());
+  const heading = /<span data-item-name[^>]*>([^<]+)<\/span>/.exec(await page.text());
   if (heading) {
     await deleteProject(request, id, heading[1]);
   }

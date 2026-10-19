@@ -4,6 +4,7 @@ import { expect, test } from '@playwright/test';
 
 import { deploymentId } from '../deployments-api';
 import { stateFile } from '../global-setup';
+import { expectItemHeader } from '../item-header';
 import { serviceId } from '../services-api';
 import { horizontalOverflow, isWide } from '../viewport';
 import { actionControls, rowAction } from './row-actions';
@@ -70,8 +71,7 @@ test.describe('superadmin', () => {
     const id = await stagingWeb(browser);
     await page.goto(`/services/${id}`);
 
-    await expect(header(page).locator('h1')).toHaveText('web');
-    await expect(header(page)).toContainText('Service');
+    await expectItemHeader(page, 'service', 'web');
     await expect(header(page).locator('[data-status]')).toHaveText(['1 pending']);
     await expect(header(page).locator('p')).toContainText('Deployment staging in Fancy Proj. Name');
     await expect(header(page).locator('p')).toContainText('/opt/rentals/staging');
@@ -160,7 +160,7 @@ test.describe('superadmin', () => {
     const firstService = page.locator('#services [data-fragment="service-row"]').first();
     await (await rowAction(firstService, 'open')).click();
     await expect(page).toHaveURL(/\/services\/\d+$/);
-    await expect(header(page).locator('h1')).toHaveText('mysql');
+    await expectItemHeader(page, 'service', 'mysql');
     await expect(statuses(page)).toHaveText(['Failed', 'Never deployed', 'Failed']);
     await expect(page.locator('#postdeploy')).toContainText('Skipped');
     await expect(page.locator('#postdeploy')).toContainText('deploy did not finish');

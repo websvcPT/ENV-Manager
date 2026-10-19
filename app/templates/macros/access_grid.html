@@ -9,6 +9,7 @@
 {% set LEVEL_LABELS = {"project": "Project", "deployment": "Deployment", "service": "Service", "environment": "Environment"} %}
 {% set INDENTS = ["", "ml-5", "ml-10", "ml-[60px]"] %}
 {% set CELL_CLASSES = "border-t border-line px-4 py-3.5" %}
+{% set TOGGLE_CLASSES = "inline-flex size-6 shrink-0 items-center justify-center rounded-ctl border border-line-strong text-ink hover:bg-surface2 max-md:size-11 aria-[expanded=false]:*:-rotate-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus" %}
 
 {#- Users and Access grid, the two sections of user administration. `current` is the open path. -#}
 {% macro section_tabs(current) -%}
@@ -16,15 +17,31 @@
 {%- endmacro %}
 
 {#- The sticky first cell of a row: the expand control (when the row has rows below it), the
-    level and the name. -#}
-{% macro row_header(node) -%}
+    level and the name. A project whose rows are not on the page yet has `rows_href`: its control
+    loads them in place of the project's tbody, which then holds the rows and a control that
+    only shows and hides them. -#}
+{% macro row_header(node, rows_href=none) -%}
 <th scope="row" class="sticky left-0 z-10 border-t border-line bg-surface px-4 py-3 text-left"><div class="flex items-center gap-2"><span class="{{ INDENTS[node.depth] }} flex items-center gap-2">
-{%- if node.expandable -%}
-<button type="button" data-js="tree-toggle" aria-expanded="true" aria-label="Expand or collapse {{ node.name }}" class="inline-flex size-6 shrink-0 items-center justify-center rounded-ctl border border-line-strong text-ink hover:bg-surface2 max-md:size-11 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ icon("chevron-down", "size-3.5", "2.4") }}</button>
+{%- if node.expandable and rows_href -%}
+<button type="button" id="tree-toggle-{{ node.id }}" aria-expanded="false" aria-label="Expand or collapse {{ node.name }}" hx-get="{{ rows_href }}" hx-target="closest tbody" hx-swap="outerHTML" hx-sync="this:drop" class="{{ TOGGLE_CLASSES }}">{{ icon("chevron-down", "size-3.5", "2.4") }}</button>
+{%- elif node.expandable -%}
+<button type="button" id="tree-toggle-{{ node.id }}" data-js="tree-toggle" aria-expanded="true" aria-label="Expand or collapse {{ node.name }}" class="{{ TOGGLE_CLASSES }}">{{ icon("chevron-down", "size-3.5", "2.4") }}</button>
 {%- else -%}
 <span class="size-6 shrink-0 max-md:size-11"></span>
 {%- endif -%}
 <span><span class="block text-xs font-semibold uppercase tracking-wide text-ink3">{{ LEVEL_LABELS[node.kind.value] }}</span><span class="{{ "font-mono text-[13px]" if node.kind.value == "environment" else "font-semibold" }}">{{ node.name }}</span></span></span></div></th>
+{%- endmacro %}
+
+{#- The rows of one project in a tbody of their own, so the control of a project that is not
+    loaded can swap exactly its rows. Context: grid (AccessGrid), project (GridProject). -#}
+{% macro project_rows(grid, project) -%}
+<tbody id="grid-project-{{ project.id }}" data-fragment="grid-project">
+{%- for node in project.nodes %}
+<tr data-fragment="grid-row" data-node="{{ node.id }}"{% if node.parent_id %} data-parent="{{ node.parent_id }}"{% endif %}>{{ row_header(node, none if project.loaded else grid.rows_href(project.id)) }}
+{%- for user in grid.users %}{{ grid_cell(user, node, grid.cell(node, user)) }}{% endfor -%}
+</tr>
+{%- endfor %}
+</tbody>
 {%- endmacro %}
 
 {#- The checkbox of a direct grant or of none. It posts the user, the item and what it showed;

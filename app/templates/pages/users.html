@@ -10,7 +10,10 @@
 {% set header_actions %}{{ button("Access grid", href="/access/grid") }}{{ button("Create user", kind="primary", icon_name="plus", icon_stroke="2.2", data_js="dialog-open", data_target="user-create", aria_haspopup="dialog", hx_get="/users/new", hx_target="#user-create", hx_swap="innerHTML") }}{% endset %}
 {{ page_header("Users", "Accounts are created by a superadmin. Disabled users keep their audit entries.", actions=header_actions) }}
 {{ section_tabs("/users") }}
+<section aria-label="Users" class="rounded-panel border border-line bg-surface shadow-panel overflow-hidden">
+<div class="p-4 md:px-5">{% include "fragments/users_filters.html" %}</div>
 {% include "fragments/users_table.html" %}
+</section>
 {{ loaded_dialog("user-create", "Create user", width="720", clear_on_close=true, narrows=true) }}
 {{ loaded_dialog("user-action", "User", width="560") }}
 {% endblock %}

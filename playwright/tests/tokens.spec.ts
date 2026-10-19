@@ -80,6 +80,13 @@ async function openRevoke(page: Page, name: string): Promise<Locator> {
   return dialog;
 }
 
+/** How far the table is wider than the panel it sits in; above zero the table scrolls inside it. */
+async function tableOverflow(page: Page): Promise<number> {
+  return page
+    .locator('#tokens-table .overflow-x-auto')
+    .evaluate((wrapper) => wrapper.scrollWidth - wrapper.clientWidth);
+}
+
 function inDays(days: number): string {
   return new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
 }
@@ -229,6 +236,9 @@ test.describe('admin: creating and revoking tokens', () => {
     await createToken(page.context().request, name);
     await page.goto('/tokens');
     expect(await horizontalOverflow(page)).toBe(0);
+    if (isWide(page)) {
+      expect(await tableOverflow(page)).toBeLessThanOrEqual(0);
+    }
     const revoke = row(page, name).locator('[data-row-action="revoke"]');
     if (!isWide(page)) {
       const box = await revoke.boundingBox();
@@ -255,6 +265,9 @@ test.describe('superadmin: every owner and the user page', () => {
     await expect(listed.locator('td').first()).toContainText(owner.user.email);
     await expect(row(page, 'billing-ci')).toHaveCount(1);
     expect(await horizontalOverflow(page)).toBe(0);
+    if (isWide(page)) {
+      expect(await tableOverflow(page)).toBeLessThanOrEqual(0);
+    }
 
     const dialog = await openRevoke(page, name);
     await expect(dialog.getByText(`Owner ${owner.user.name}`)).toBeVisible();

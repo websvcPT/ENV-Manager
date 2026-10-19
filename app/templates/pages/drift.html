@@ -9,7 +9,7 @@
 {% from "macros/dialogs.html" import dialog %}
 {% from "macros/feedback.html" import toast %}
 {% from "macros/icons.html" import icon %}
-{% from "macros/panels.html" import page_header %}
+{% from "macros/panels.html" import environment_chain, item_header %}
 {% set active_nav = "projects" %}
 {% set breadcrumbs = [("Projects", "/projects"), (env.project_name, "/projects/" ~ env.project_id), (env.deployment_name, "/deployments/" ~ env.deployment_id), (env.service_name, "/services/" ~ env.service_id), (env.name, none)] %}
 {% block title %}Drift · {{ env.name }}{% endblock %}
@@ -40,7 +40,7 @@
 {% macro cell(column, row, presence, absent_label, extra_class) -%}
 <div class="px-4 py-3.5 font-mono text-[13px]{{ extra_class }}">{% if presence.value == "set" %}<span class="group-data-[revealed=true]:hidden">••••••••</span><span id="drift-{{ column }}-{{ row.index }}" data-value class="hidden whitespace-pre-wrap break-all group-data-[revealed=true]:inline"></span>{% elif presence.value == "not_set" %}<span class="text-ink3">not set</span>{% else %}<span class="text-ink3">{{ absent_label }}</span>{% endif %}</div>
 {%- endmacro %}
-{{ page_header(env.name, view.message, mono=true, badges=badge(badge_key, badge_label), actions=actions) }}
+{{ item_header("environment", env.name, environment_chain(env), details=view.message, badges=badge(badge_key, badge_label), actions=actions) }}
 <section data-fragment="drift-view" id="drift-view" data-reveal-row data-revealed="false" aria-labelledby="dv" class="group overflow-hidden rounded-panel border border-line bg-surface shadow-panel">
 <div class="flex flex-wrap items-center gap-3 p-4 md:px-5"><h2 id="dv" class="flex-1 text-lg font-bold">Three-way comparison</h2>
 {%- if env.can_reveal and comparison.rows %}

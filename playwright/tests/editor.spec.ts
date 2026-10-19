@@ -77,7 +77,7 @@ test.describe('superadmin editor', () => {
     await expect(header(page).locator('h1')).toHaveText('.env.masked');
     await expect(header(page).locator('[data-status]')).toHaveAttribute('data-status', 'never');
     await expect(header(page)).toContainText('Service cache');
-    await expect(header(page)).toContainText('version 1 saved, never deployed');
+    await expect(header(page)).toContainText('Version 1 saved, never deployed');
     await expect(page.locator('nav[aria-label="Sections"] a')).toHaveText([
       'Edit',
       'History',
@@ -161,7 +161,7 @@ test.describe('superadmin editor', () => {
     await saveButton(page).click();
     await expect(page).toHaveURL(new RegExp(`/environments/${id}\\?saved=2$`));
     await expect(toast(page)).toContainText('Saved as version 2. Pending deploy.');
-    await expect(header(page)).toContainText('version 2 saved, never deployed');
+    await expect(header(page)).toContainText('Version 2 saved, never deployed');
     await expect(page.locator('[data-fragment="file-sidepanel"]')).toContainText('v2 · ');
     await reveal(page, 'HOST');
     await expect(row(page, 'HOST').locator('[data-reveal-value]')).toHaveText('db2.example.test');

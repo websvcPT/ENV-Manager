@@ -126,6 +126,42 @@ def section_links(page: str) -> list[str]:
     return [re.sub(r"<[^>]+>", "", anchor).strip() for anchor in anchors]
 
 
+@dataclass(frozen=True)
+class ItemHeader:
+    """The visible text of the header of a project, deployment, service or environment page."""
+
+    type: str
+    title: str
+    subtitle: str
+    details: str | None
+
+
+def _text(markup: str) -> str:
+    """The text of a piece of markup with tags removed and spaces collapsed."""
+    return " ".join(html.unescape(re.sub(r"<[^>]+>", "", markup)).split())
+
+
+def item_header_of(page: str) -> ItemHeader:
+    """The item header of a page: its type, the title, the subtitle and the details line."""
+    header = re.search(
+        r'<section data-fragment="page-header" data-item-type="(\w+)".*?</section>',
+        page,
+        re.DOTALL,
+    )
+    assert header is not None, "no item header on the page"
+    markup = header.group(0)
+    title = re.search(r"<h1[^>]*>(.*?)</h1>", markup, re.DOTALL)
+    subtitle = re.search(r'<p class="mt-1.5 text-ink2">(.*?)</p>', markup, re.DOTALL)
+    details = re.search(r"<div data-header-details[^>]*>(.*?)</div>", markup, re.DOTALL)
+    assert title is not None and subtitle is not None
+    return ItemHeader(
+        header.group(1),
+        _text(title.group(1)),
+        _text(subtitle.group(1)),
+        _text(details.group(1)) if details else None,
+    )
+
+
 async def add_version(web_app: FastAPI, environment: int, text: str) -> None:
     """Save a text as the next version of an environment."""
     async with web_app.state.session_factory() as db:

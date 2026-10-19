@@ -2,6 +2,7 @@
 reset and grants."""
 
 from typing import Annotated, Any
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, status
 from fastapi.responses import Response
@@ -19,7 +20,7 @@ from app.services.grants import (
     set_user_grants,
 )
 from app.services.permissions import Capability
-from app.services.user_detail import list_user_rows, load_user_detail
+from app.services.user_detail import UserFilters, UserPage, list_user_rows, load_user_detail
 from app.web.dependencies import (
     AuthContext,
     audit_actor,
@@ -28,6 +29,7 @@ from app.web.dependencies import (
     require_capability,
 )
 from app.web.htmx import events_response, hx_events, hx_redirect
+from app.web.params import plain_number
 
 router = APIRouter()
 
@@ -36,6 +38,9 @@ CREATED_FRAGMENT = "fragments/user_created.html"
 CONFIRM_FRAGMENT = "fragments/user_confirm.html"
 GRANTS_FRAGMENT = "fragments/user_grants.html"
 TABLE_FRAGMENT = "fragments/users_table.html"
+ROWS_FRAGMENT = "fragments/users_rows.html"
+USERS_PATH = "/users"
+ROWS_PATH = "/users/rows"
 TOKENS_FRAGMENT = "fragments/user_tokens.html"
 ACTIONS = ("disable", "enable", "group", "reset-2fa")
 ORIGINS = ("list", "detail")
@@ -84,16 +89,50 @@ def _form_context(
     }
 
 
-@router.get("/users", include_in_schema=False)
+def _list_context(filters: UserFilters, page: UserPage) -> dict[str, Any]:
+    """What the filter form, the table and its load more row need."""
+    more = None
+    if page.next_after is not None:
+        more = f"{ROWS_PATH}?{filters.query_string(after=page.next_after)}"
+    return {"rows": page.rows, "filters": filters, "more_href": more}
+
+
+@router.get(USERS_PATH, include_in_schema=False)
 async def users_page(request: Request, db: Database, _context: ManageUsers) -> Response:
-    """The users page: every account with its group, status and reach."""
-    return render(request, "pages/users.html", {"rows": await list_user_rows(db)})
+    """The users page under the filters of the query string: the first page of accounts."""
+    filters = UserFilters.parse(request.query_params)
+    page = await list_user_rows(db, filters)
+    return render(request, "pages/users.html", _list_context(filters, page))
 
 
 @router.get("/users/table", include_in_schema=False)
 async def users_table(request: Request, db: Database, _context: ManageUsers) -> Response:
-    """The users table fragment, refreshed after any change to an account."""
-    return render(request, TABLE_FRAGMENT, {"rows": await list_user_rows(db)})
+    """The users table for the filters of the form, refreshed after any change to an account.
+
+    A change of the filters sets ``HX-Push-Url`` to the same view as a full page; a refresh
+    under the filters already in the address leaves the history alone.
+    """
+    filters = UserFilters.parse(request.query_params)
+    page = await list_user_rows(db, filters)
+    response = render(request, TABLE_FRAGMENT, _list_context(filters, page))
+    query = filters.query_string()
+    target = f"{USERS_PATH}?{query}" if query else USERS_PATH
+    current = urlsplit(request.headers.get("HX-Current-URL", ""))
+    if f"{current.path}?{current.query}".rstrip("?") != target:
+        response.headers["HX-Push-Url"] = target
+    return response
+
+
+@router.get(ROWS_PATH, include_in_schema=False)
+async def users_rows(request: Request, db: Database, _context: ManageUsers) -> Response:
+    """The next rows behind the user of ``after`` and the next load more row.
+
+    A missing or malformed cursor answers the first page again.
+    """
+    filters = UserFilters.parse(request.query_params)
+    after = plain_number(request.query_params.get("after"))
+    page = await list_user_rows(db, filters, after=after)
+    return render(request, ROWS_FRAGMENT, _list_context(filters, page))
 
 
 @router.get("/users/new", include_in_schema=False)

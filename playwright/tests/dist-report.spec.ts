@@ -4,6 +4,7 @@ import { createDeployment, deploymentId } from '../deployments-api';
 import { createEnvironment, saveRaw, seededEnvironmentId } from '../environments-api';
 import { stateFile } from '../global-setup';
 import { csrfHeaders } from '../http';
+import { expectItemHeader } from '../item-header';
 import { createService } from '../services-api';
 import { horizontalOverflow, isWide } from '../viewport';
 import { rowAction } from './row-actions';
@@ -108,7 +109,7 @@ test.describe('superadmin report', () => {
     const row = page.locator('[data-fragment="env-row"]:visible', { hasText: '.env.blocked' });
     await (await rowAction(row, 'dist')).click();
     await expect(page).toHaveURL(new RegExp(`/environments/${environment}/dist$`));
-    await expect(header(page).locator('h1')).toHaveText('.env.blocked');
+    await expectItemHeader(page, 'environment', '.env.blocked');
     await expect(header(page).locator('[data-status="blocked"]')).toHaveText('Blocked');
     await expect(header(page)).toContainText(`Dist file ${BLOCKED_DIST}`);
     await expect(header(page)).toContainText(/checked \d{4}-\d\d-\d\d \d\d:\d\d by root/);
@@ -305,7 +306,7 @@ test.describe('superadmin report', () => {
       'Added missing keys from the dist file',
     );
     await page.goto(`/environments/${environment}`);
-    await expect(header(page)).toContainText('version 2 saved');
+    await expect(header(page)).toContainText('Version 2 saved');
     await expect(page.locator('main')).toContainText('DB_PORT');
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
   });
@@ -455,7 +456,7 @@ test.describe('other roles', () => {
     const page = await context.newPage();
     try {
       expect((await page.goto(`/environments/${id}/dist`))?.status()).toBe(200);
-      await expect(header(page).locator('h1')).toHaveText('.env.db');
+      await expectItemHeader(page, 'environment', '.env.db');
       await expect(page.locator('nav[aria-label="Sections"] a')).toHaveText([
         'Edit',
         'History',

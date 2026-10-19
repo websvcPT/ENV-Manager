@@ -3,10 +3,12 @@
 Everything here is for the superadmin, who sees every account, so nothing is scoped.
 """
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
+from urllib.parse import urlencode
 
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import ApiToken, AuditEntry, AuditResult, User, UserGroup
@@ -14,6 +16,8 @@ from app.services.grants import GrantTarget, list_grants, projects_reached
 from app.services.tokens import TokenStatus, token_status
 
 ACTIVITY_LIMIT = 10
+PAGE_SIZE = 50
+MAX_QUERY_LENGTH = 100
 
 
 @dataclass(frozen=True)
@@ -70,11 +74,102 @@ class UserDetail:
     activity: tuple[ActivityRow, ...]
 
 
-async def list_user_rows(db: AsyncSession) -> list[UserRow]:
-    """Every user ordered by name, with the number of projects their grants reach."""
-    reached = await projects_reached(db)
-    users = (await db.execute(select(User).order_by(func.lower(User.name), User.id))).scalars()
-    return [
+@dataclass(frozen=True)
+class UserFilters:
+    """The text search and the status of the users list.
+
+    ``query`` matches part of the name or the email, ignoring case. ``status`` is ``all``,
+    ``active`` or ``disabled``.
+    """
+
+    query: str = ""
+    status: str = "all"
+
+    @classmethod
+    def parse(cls, params: Mapping[str, str]) -> UserFilters:
+        """Filters from query parameters; a value that does not parse is ignored."""
+        query = " ".join(params.get("q", "").split())[:MAX_QUERY_LENGTH]
+        status = params.get("status", "")
+        return cls(query, status if status in ("active", "disabled") else "all")
+
+    @property
+    def active(self) -> bool:
+        """Whether anything narrows the list."""
+        return bool(self.query) or self.status != "all"
+
+    def query_string(self, after: int | None = None) -> str:
+        """The filters, and the cursor when there is one, as a query string."""
+        pairs: list[tuple[str, str]] = []
+        if self.query:
+            pairs.append(("q", self.query))
+        if self.status != "all":
+            pairs.append(("status", self.status))
+        if after is not None:
+            pairs.append(("after", str(after)))
+        return urlencode(pairs)
+
+    def conditions(self) -> list[ColumnElement[bool]]:
+        """The conditions of the filters on the users table."""
+        found: list[ColumnElement[bool]] = []
+        if self.query:
+            found.append(
+                or_(
+                    User.name.icontains(self.query, autoescape=True),
+                    User.email.icontains(self.query, autoescape=True),
+                )
+            )
+        if self.status != "all":
+            found.append(User.is_active.is_(self.status == "active"))
+        return found
+
+
+@dataclass(frozen=True)
+class UserPage:
+    """A page of the users list and the cursor of the next one, None on the last page."""
+
+    rows: tuple[UserRow, ...]
+    next_after: int | None
+
+
+async def _behind(db: AsyncSession, user_id: int) -> ColumnElement[bool] | None:
+    """The condition for the users after ``user_id`` in the list order, None when it is gone."""
+    key = func.lower(User.name)
+    found = (await db.execute(select(User.is_active, key).where(User.id == user_id))).one_or_none()
+    if found is None:
+        return None
+    active, name_key = found
+    same_state = and_(
+        User.is_active == active,
+        or_(key > name_key, and_(key == name_key, User.id > user_id)),
+    )
+    return or_(User.is_active.is_(False), same_state) if active else same_state
+
+
+async def list_user_rows(
+    db: AsyncSession,
+    filters: UserFilters | None = None,
+    *,
+    after: int | None = None,
+    limit: int = PAGE_SIZE,
+) -> UserPage:
+    """A page of the users matching the filters, with the number of projects their grants reach.
+
+    Active accounts come first, then disabled ones, each by name and then id. ``after`` is the
+    id of the last user of the previous page: the page starts behind that user in the same
+    order, compared in the database so a name of any script sorts the way the list does. An id
+    that no longer exists starts from the top again.
+    """
+    query = select(User).where(*(filters or UserFilters()).conditions())
+    if after is not None:
+        later = await _behind(db, after)
+        if later is not None:
+            query = query.where(later)
+    query = query.order_by(User.is_active.desc(), func.lower(User.name), User.id).limit(limit + 1)
+    users = list((await db.execute(query)).scalars())
+    more = len(users) > limit
+    users = users[:limit]
+    reached = await projects_reached(db, [user.id for user in users])
+    rows = tuple(
         UserRow(
             id=user.id,
             name=user.name,
@@ -85,7 +180,8 @@ async def list_user_rows(db: AsyncSession) -> list[UserRow]:
             projects=None if user.group is UserGroup.SUPERADMIN else len(reached.get(user.id, ())),
         )
         for user in users
-    ]
+    )
+    return UserPage(rows, users[-1].id if more else None)
 
 
 def token_row(token: ApiToken, owner: User, *, now: datetime | None = None) -> TokenRow:

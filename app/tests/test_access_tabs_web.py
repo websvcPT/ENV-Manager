@@ -20,7 +20,14 @@ from app.models import (
     User,
 )
 from app.tests.conftest import sign_in
-from app.tests.web_helpers import HTMX, assert_never_cached, events_of, main_of, post
+from app.tests.web_helpers import (
+    HTMX,
+    assert_never_cached,
+    events_of,
+    item_header_of,
+    main_of,
+    post,
+)
 
 PLURALS = {
     "project": "projects",
@@ -281,7 +288,10 @@ async def test_the_environment_tab_lists_direct_and_inherited_access(
     body = main_of(response.text)
     assert section_labels(response.text) == ["Edit", "History", "Compare to dist", "Access"]
     assert f'href="/environments/{items.db_env}/access" aria-current="page"' in body
-    assert "<h1" in body and ">.env.db</h1>" in body
+    header = item_header_of(body)
+    assert (header.type, header.title) == ("environment", "Environment: .env.db")
+    assert header.subtitle.startswith("Service mysql in deployment prod in Fancy Proj. Name · ")
+    assert header.details is not None and header.details.startswith("Version ")
     rows = listed(body)
     assert "Direct" in rows["env_scoped_admin"]
     assert row_actions(body)["env_scoped_admin"] == ["remove"]

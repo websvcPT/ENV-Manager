@@ -23,7 +23,7 @@ from app.models import (
     UserGroup,
 )
 from app.tests.conftest import sign_in
-from app.tests.web_helpers import HTMX, assert_never_cached, main_of, post
+from app.tests.web_helpers import HTMX, assert_never_cached, main_of, post, without_csrf_token
 
 NOT_SUPERADMIN = (
     "admin",
@@ -116,7 +116,12 @@ async def test_nobody_but_the_superadmin_reaches_the_grid_or_changes_a_grant(
     web_client: httpx.AsyncClient, web_app: FastAPI, name: str
 ) -> None:
     await sign_in(web_client, name)
-    for url in ("/access/grid", "/access/grid/table", "/access/grid?group=viewer"):
+    for url in (
+        "/access/grid",
+        "/access/grid/table",
+        "/access/grid?group=viewer",
+        "/access/grid/project/1",
+    ):
         for headers in ({}, HTMX):
             response = await web_client.get(url, headers=headers)
             assert response.status_code == 403, (name, url)
@@ -172,7 +177,92 @@ async def test_the_page_lists_the_tree_by_users_with_a_control_only_where_a_gran
     assert f'data-parent="project-{item["billing"]}"' in rows[f"deployment-{item['main']}"]
     assert "data-parent" not in project_row.split(">", 1)[0]
     assert 'hx-trigger="grants-changed' not in body
-    assert body.count('data-js="tree-toggle"') >= 4
+    assert body.count('data-js="tree-toggle"') >= 3
+
+
+async def test_only_the_first_project_has_rows_and_the_others_load_them_when_expanded(
+    web_client: httpx.AsyncClient, web_app: FastAPI
+) -> None:
+    await sign_in(web_client, "root")
+    item = await ids(web_app)
+    fancy = item["Fancy Proj. Name"]
+    body = main_of((await web_client.get("/access/grid")).text)
+    rows = rows_of(body)
+    assert f"deployment-{item['main']}" in rows
+    assert f"environment-{item['db']}" not in rows
+    assert [node for node in rows if node.startswith("project-")] == [
+        f"project-{item['billing']}",
+        f"project-{fancy}",
+    ]
+    assert body.count('<tbody id="grid-project-') == 2
+    closed = rows[f"project-{fancy}"]
+    assert 'aria-expanded="false"' in closed and 'data-js="tree-toggle"' not in closed
+    assert f'hx-get="/access/grid/project/{fancy}"' in closed
+    assert 'hx-target="closest tbody" hx-swap="outerHTML"' in closed
+    filtered = main_of((await web_client.get(f"/access/grid?group=viewer&project={fancy}")).text)
+    assert f"environment-{item['db']}" in rows_of(filtered)
+    assert 'hx-get="/access/grid/project/' not in filtered
+    grouped = main_of((await web_client.get("/access/grid?group=viewer")).text)
+    assert f'hx-get="/access/grid/project/{fancy}?group=viewer"' in grouped
+
+
+async def test_a_project_answers_its_rows_in_its_own_tbody_under_the_group_columns(
+    web_client: httpx.AsyncClient, web_app: FastAPI
+) -> None:
+    await sign_in(web_client, "root")
+    item = await ids(web_app)
+    fancy = item["Fancy Proj. Name"]
+    response = await web_client.get(f"/access/grid/project/{fancy}?group=viewer", headers=HTMX)
+    assert response.status_code == 200
+    assert_never_cached(response)
+    assert response.text.lstrip().startswith(
+        f'<tbody id="grid-project-{fancy}" data-fragment="grid-project">'
+    )
+    assert "<html" not in response.text and "<table" not in response.text
+    rows = rows_of(response.text)
+    assert next(iter(rows)) == f"project-{fancy}"
+    assert f"environment-{item['db']}" in rows
+    viewer = await user_id(web_app, "viewer")
+    admin = await user_id(web_app, "admin")
+    assert f'id="grant-{viewer}-project-{fancy}" checked' in response.text
+    assert f'id="cell-{admin}-' not in response.text
+    opened = rows[f"project-{fancy}"]
+    assert 'aria-expanded="true"' in opened and 'data-js="tree-toggle"' in opened
+    assert "hx-get" not in opened
+    assert 'data-fragment="grid-row"' in response.text
+
+
+@pytest.mark.parametrize("project", ["999999", "0", "9" * 16, "abc"])
+async def test_the_rows_of_a_project_that_does_not_exist_or_is_not_an_id_are_refused(
+    web_client: httpx.AsyncClient, project: str
+) -> None:
+    await sign_in(web_client, "root")
+    response = await web_client.get(f"/access/grid/project/{project}", headers=HTMX)
+    assert response.status_code in (404, 422)
+    assert "<tbody" not in response.text
+
+
+async def test_the_page_does_not_grow_with_the_rows_of_a_collapsed_project(
+    web_client: httpx.AsyncClient, web_app: FastAPI
+) -> None:
+    """Files added below a project that is not open leave the page as it was."""
+    await sign_in(web_client, "root")
+    item = await ids(web_app)
+    fancy = item["Fancy Proj. Name"]
+    before = without_csrf_token((await web_client.get("/access/grid")).text)
+    async with web_app.state.session_factory() as db:
+        service = await db.scalar(
+            select(Service.id).join(Deployment).where(Deployment.project_id == fancy).limit(1)
+        )
+        db.add_all(
+            Environment(service_id=service, name=f".env.extra{number}", target_path="/x")
+            for number in range(40)
+        )
+        await db.commit()
+    after = without_csrf_token((await web_client.get("/access/grid")).text)
+    assert len(after) == len(before)
+    rows = await web_client.get(f"/access/grid/project/{fancy}", headers=HTMX)
+    assert rows.text.count(".env.extra") >= 40
 
 
 async def test_the_table_fragment_follows_the_filters_and_pushes_the_page_address(

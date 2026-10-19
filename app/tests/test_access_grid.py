@@ -21,6 +21,7 @@ from app.services.access_grid import (
     GridFilters,
     GridNode,
     load_access_grid,
+    load_grid_project,
     toggle_cell,
 )
 from app.services.grants import SUPERADMIN_REFUSAL, GrantTarget, list_grants, set_user_grants
@@ -33,6 +34,17 @@ from app.tests.grant_helpers import (
     count_statements,
     grow,
 )
+
+
+async def fancy_grid(db: AsyncSession, seed_data: SeedData) -> AccessGrid:
+    """The grid with the rows of the Fancy project, which is not the one open by default."""
+    return await load_access_grid(db, GridFilters(project_id=seed_data.projects.fancy.id))
+
+
+# The page reads the project list, the tree of the open project (four), the users and the grants.
+PAGE_STATEMENTS = 7
+# The rows of one project read its tree (four), the users and the grants inside it.
+ROWS_STATEMENTS = 6
 
 
 def node_of(grid: AccessGrid, node_id: str) -> GridNode:
@@ -118,7 +130,7 @@ def test_filters_round_trip_through_a_query_string() -> None:
 async def test_a_project_grant_is_direct_and_passes_down_as_inherited(
     db: AsyncSession, seed_data: SeedData
 ) -> None:
-    grid = await load_access_grid(db, GridFilters())
+    grid = await fancy_grid(db, seed_data)
     viewer = seed_data.users.viewer
     project = f"project-{seed_data.projects.fancy.id}"
     deployment = f"deployment-{seed_data.deployments.fancy_prod.id}"
@@ -136,6 +148,7 @@ async def test_a_project_grant_is_direct_and_passes_down_as_inherited(
     assert result.kind is CellKind.RESULT
     assert result.reaches
     assert result.seen == result.total == len(node_of(grid, service).environments) > 1
+    grid = await load_access_grid(db, GridFilters(project_id=seed_data.projects.billing.id))
     billing = f"project-{seed_data.projects.billing.id}"
     api = f"environment-{seed_data.envs.api.id}"
     assert cell_of(grid, viewer, billing) == GridCell(CellKind.NONE)
@@ -146,7 +159,7 @@ async def test_a_project_grant_is_direct_and_passes_down_as_inherited(
 async def test_a_deployment_grant_passes_down_with_the_deployment_as_source(
     db: AsyncSession, seed_data: SeedData
 ) -> None:
-    grid = await load_access_grid(db, GridFilters())
+    grid = await fancy_grid(db, seed_data)
     user = seed_data.users.deployment_admin
     prod = f"deployment-{seed_data.deployments.fancy_prod.id}"
     staging = f"deployment-{seed_data.deployments.fancy_staging.id}"
@@ -163,7 +176,7 @@ async def test_a_deployment_grant_passes_down_with_the_deployment_as_source(
 async def test_an_environment_grant_shows_a_partial_service_result(
     db: AsyncSession, seed_data: SeedData
 ) -> None:
-    grid = await load_access_grid(db, GridFilters())
+    grid = await fancy_grid(db, seed_data)
     user = seed_data.users.env_scoped_admin
     db_file = f"environment-{seed_data.envs.db.id}"
     assert cell_of(grid, user, db_file) == GridCell(CellKind.DIRECT)
@@ -188,7 +201,7 @@ async def test_the_widest_item_is_the_source_and_a_redundant_grant_stays_direct(
     db_file = GrantTarget(ENVIRONMENT, seed_data.envs.db.id)
     project = GrantTarget(PROJECT, seed_data.projects.fancy.id)
     await set_user_grants(db, user, {project, prod, db_file}, actor=actor_of(seed_data))
-    grid = await load_access_grid(db, GridFilters())
+    grid = await fancy_grid(db, seed_data)
     assert cell_of(grid, user, f"deployment-{prod.item_id}") == GridCell(
         CellKind.DIRECT, also="Fancy Proj. Name"
     )
@@ -211,7 +224,64 @@ async def test_loading_takes_the_same_queries_for_a_small_and_a_large_tree(
             grid = await load_access_grid(session, GridFilters())
     assert len(grid.projects) == 14
     assert len(grid.users) >= 15
-    assert len(small) == len(large) <= 8
+    assert len(small) == len(large) == PAGE_STATEMENTS
+
+
+async def test_only_the_open_project_has_its_rows(db: AsyncSession, seed_data: SeedData) -> None:
+    """The first project by name is open; every other project is its project row alone."""
+    grid = await load_access_grid(db, GridFilters())
+    billing, fancy = grid.projects
+    assert (billing.name, billing.loaded) == ("billing", True)
+    assert len(billing.nodes) > 1
+    assert (fancy.name, fancy.loaded) == ("Fancy Proj. Name", False)
+    assert [node.id for node in fancy.nodes] == [f"project-{fancy.id}"]
+    assert fancy.nodes[0].expandable
+    assert grid.rows_href(fancy.id) == f"/access/grid/project/{fancy.id}"
+    filtered = await load_access_grid(db, GridFilters(UserGroup.VIEWER, fancy.id))
+    assert [(project.name, project.loaded) for project in filtered.projects] == [
+        ("Fancy Proj. Name", True)
+    ]
+    assert filtered.rows_href(billing.id) == f"/access/grid/project/{billing.id}?group=viewer"
+
+
+async def test_the_project_row_of_an_unloaded_project_still_shows_its_grants(
+    db: AsyncSession, seed_data: SeedData
+) -> None:
+    """A project grant is a cell of the project row, so it is drawn before the rows load."""
+    grid = await load_access_grid(db, GridFilters())
+    fancy = f"project-{seed_data.projects.fancy.id}"
+    assert cell_of(grid, seed_data.users.viewer, fancy) == GridCell(CellKind.DIRECT)
+    assert cell_of(grid, seed_data.users.ungranted_admin, fancy) == GridCell(CellKind.NONE)
+
+
+async def test_the_rows_of_a_project_match_the_open_project_and_use_the_group_columns(
+    db: AsyncSession, seed_data: SeedData
+) -> None:
+    fancy = seed_data.projects.fancy.id
+    opened = await fancy_grid(db, seed_data)
+    loaded = await load_grid_project(db, fancy, UserGroup.VIEWER)
+    assert loaded is not None
+    assert loaded.projects == opened.projects
+    assert {user.group for user in loaded.users} == {UserGroup.VIEWER}
+    viewer = seed_data.users.viewer
+    deployment = f"deployment-{seed_data.deployments.fancy_prod.id}"
+    assert cell_of(loaded, viewer, deployment) == GridCell(
+        CellKind.INHERITED, source="Fancy Proj. Name"
+    )
+    assert await load_grid_project(db, 999_999, None) is None
+
+
+async def test_the_rows_of_a_project_take_the_same_queries_for_a_small_and_a_large_tree(
+    seeded_database: AsyncEngine, seed_data: SeedData
+) -> None:
+    fancy = seed_data.projects.fancy.id
+    async with create_session_factory(seeded_database)() as session:
+        with count_statements(seeded_database) as small:
+            await load_grid_project(session, fancy, None)
+        await grow(session, projects=12, users=15)
+        with count_statements(seeded_database) as large:
+            await load_grid_project(session, fancy, None)
+    assert len(small) == len(large) == ROWS_STATEMENTS
 
 
 async def test_a_toggle_takes_the_same_queries_for_a_small_and_a_large_tree(
@@ -294,13 +364,8 @@ async def test_a_cell_that_shows_an_old_state_is_refused_and_nothing_changes(
     assert await audit_entries(db, "grant.remove") == before
     shown = {node.id: cell for node, cell in update.cells}
     assert shown[f"project-{project.item_id}"].kind is CellKind.DIRECT
-    assert len(shown) == len(
-        next(
-            item
-            for item in (await load_access_grid(db, GridFilters())).projects
-            if item.id == project.item_id
-        ).nodes
-    )
+    grid = await load_access_grid(db, GridFilters(project_id=project.item_id))
+    assert len(shown) == len(grid.projects[0].nodes)
 
 
 async def test_access_an_item_above_already_includes_cannot_be_granted_again(

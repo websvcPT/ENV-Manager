@@ -1,20 +1,21 @@
-"""Access grid routes (superadmin only): the page, its table for a filter and cell toggles.
+"""Access grid routes (superadmin only): the page, its table for a filter, the rows of a project
+and cell toggles.
 
 Every answer is for the superadmin, who manages grants; any other group gets a 403 on all
-three routes. A toggle goes through the grants service, so it is audited per grant added or
+four routes. A toggle goes through the grants service, so it is audited per grant added or
 removed and applies at once, and the server decides what the grid may do whatever a client
 posts: inherited cells, deleted items, superadmins and out of date pages are refused.
 """
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Path, Request, status
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.templating import render
 from app.models import User
-from app.services.access_grid import GridFilters, load_access_grid, toggle_cell
+from app.services.access_grid import GridFilters, load_access_grid, load_grid_project, toggle_cell
 from app.services.grants import MAX_ID_DIGITS, GrantTarget
 from app.services.permissions import Capability
 from app.web.dependencies import AuthContext, audit_actor, get_db, require_capability
@@ -42,6 +43,21 @@ async def grid_table(request: Request, db: Database, _context: ManageGrants) -> 
     query = grid.filters.query_string()
     response.headers["HX-Push-Url"] = f"{GRID_PATH}?{query}" if query else GRID_PATH
     return response
+
+
+@router.get(f"{GRID_PATH}/project/{{project_id}}", include_in_schema=False)
+async def grid_project(
+    request: Request,
+    db: Database,
+    _context: ManageGrants,
+    project_id: Annotated[int, Path(ge=1, lt=10**MAX_ID_DIGITS)],
+) -> Response:
+    """The rows of one project, under the columns of the ``group`` filter, in their own tbody."""
+    group = GridFilters.parse(request.query_params).group
+    grid = await load_grid_project(db, project_id, group)
+    if grid is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "project not found")
+    return render(request, "fragments/grid_project.html", {"grid": grid})
 
 
 @router.post(f"{GRID_PATH}/toggle", include_in_schema=False)

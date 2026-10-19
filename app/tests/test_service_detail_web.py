@@ -11,7 +11,7 @@ from sqlalchemy.exc import OperationalError
 
 from app.models import Deployment, Service
 from app.tests.conftest import sign_in
-from app.tests.web_helpers import HTMX, main_of, section_links
+from app.tests.web_helpers import HTMX, item_header_of, main_of, section_links
 from app.web import service_detail as service_detail_web
 
 FRAGMENTS = ("environments", "postdeploy", "history")
@@ -74,9 +74,10 @@ async def test_superadmin_sees_everything_and_the_command_settings(
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"
     assert response.headers["vary"] == "HX-Request"
-    assert '<h1 class="font-mono' in page and ">web</h1>" in page
-    assert ">Service</span>" in page and ">1 pending</span>" in page
-    assert "Deployment <strong" in page and "/opt/rentals/staging" in page
+    header = item_header_of(page)
+    assert (header.type, header.title) == ("service", "Service: web")
+    assert header.subtitle == "Deployment staging in Fancy Proj. Name · /opt/rentals/staging"
+    assert ">Service</span>" not in page and ">1 pending</span>" in page
     assert section_links(page) == ["Environments 4", "Deploy history", "AccessSuperadmin"]
     assert f'href="/services/{ids.staging_web}/access"' in page
     assert page.count('data-fragment="service-explainer"') == 2

@@ -16,7 +16,7 @@ from app.models import (
     RestrictionLevel,
 )
 from app.tests.conftest import sign_in
-from app.tests.web_helpers import HTMX, post
+from app.tests.web_helpers import HTMX, item_header_of, post
 
 
 @dataclass(frozen=True)
@@ -56,6 +56,9 @@ async def test_superadmin_sees_all_tabs_and_actions(
     fancy = ids.fancy
     page = (await web_client.get(f"/projects/{fancy}")).text
     assert tab_labels(page) == ["Deployments", "Members and access", "Activity", "Settings"]
+    header = item_header_of(page)
+    assert (header.type, header.title) == ("project", "Project: Fancy Proj. Name")
+    assert header.subtitle == "2 deployments · 6 members"
     assert "2 deployments · 6 members" in page
     assert "1 needs attention" in page
     assert f'href="/projects/{fancy}/deployments/new"' in page

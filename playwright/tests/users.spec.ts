@@ -1,4 +1,4 @@
-import { expect as baseExpect, test as base, type Locator, type Page } from '@playwright/test';
+import { expect, test as base, type Locator, type Page } from '@playwright/test';
 
 import { createDeployment } from '../deployments-api';
 import { createEnvironment } from '../environments-api';
@@ -9,6 +9,7 @@ import {
   createUser,
   disableUser,
   listUsers,
+  seededEmail,
   uniqueUserName,
   type CreatedUser,
 } from '../users-api';
@@ -17,13 +18,6 @@ import { horizontalOverflow, isWide } from '../viewport';
 import { actionControls, rowAction, rowMenu } from './row-actions';
 import { signedInAs } from './sign-in';
 import { totpCode } from './totp';
-
-// The users list is not paged and accounts cannot be deleted, so on the development stack it holds
-// every scratch user of every earlier run (thousands of rows). Its table is rendered and swapped
-// slowly and the single server process answers the other specs meanwhile, so the specs of this
-// file wait up to 15 s for what they assert instead of 5 s, and the list specs get the longer
-// test timeout.
-const expect = baseExpect.configure({ timeout: 15_000 });
 
 const SAMPLE_A = '/srv/deployments/sample-a';
 
@@ -88,9 +82,8 @@ async function saveGrants(page: Page, grants: Locator): Promise<void> {
 }
 
 /**
- * The row of a user by name. The list holds every account ever made on the development stack,
- * so the row is found from its name link and climbed to, which is one pass over the links, not
- * a search inside every row.
+ * The row of a user by name. The list is paged and the development stack holds the scratch users
+ * of earlier runs, so a spec opens the list with a search (`usersPage`) before it looks for a row.
  */
 function row(page: Page, name: string) {
   return page
@@ -100,6 +93,12 @@ function row(page: Page, name: string) {
 
 function rowNames(page: Page) {
   return page.locator('#users-table [data-fragment="user-row"] th[scope="row"] a');
+}
+
+/** The users list under a search, as the address of the view holds it. */
+async function usersPage(page: Page, search = ''): Promise<void> {
+  await page.goto(search ? `/users?q=${encodeURIComponent(search)}` : '/users');
+  await expect(page.locator('#users-table')).toBeVisible();
 }
 
 async function openCreate(page: Page) {
@@ -122,10 +121,8 @@ async function turnOnTwoFactor(page: Page, user: CreatedUser): Promise<void> {
 }
 
 test.describe('superadmin: the users list', () => {
-  test.slow();
-
-  test('lists every account with its group, status, last login and reach', async ({ page }) => {
-    await page.goto('/users');
+  test('lists the accounts with their group, status, last login and reach', async ({ page }) => {
+    await usersPage(page);
     await expect(page.locator('[data-fragment="page-header"] h1')).toHaveText('Users');
     await expect(page.getByText('Accounts are created by a superadmin.')).toBeVisible();
     await expect(page.locator('#users-table th[scope="col"]')).toHaveText([
@@ -143,21 +140,105 @@ test.describe('superadmin: the users list', () => {
     await expect(page.locator('nav[aria-label="Breadcrumb"] [aria-current="page"]')).toHaveText(
       'Users',
     );
+    await expect(page.locator('#u-q')).toHaveAttribute('type', 'search');
+    await expect(page.locator('#u-s option')).toHaveText(['All', 'Active', 'Disabled']);
+    await usersPage(page, seededEmail('root'));
     const root = row(page, 'root');
     await expect(root.locator('td').nth(1)).toHaveText('Superadmin');
     await expect(root.locator('td').nth(2)).toHaveText('Active');
     await expect(root.locator('td').nth(4)).toHaveText('All');
     await expect(actionControls(root, 'edit').first()).toHaveAttribute('href', /^\/users\/\d+$/);
+    await usersPage(page, seededEmail('admin'));
     const admin = row(page, 'admin');
     await expect(admin.locator('td').nth(0)).toHaveText('admin@example.test');
     await expect(admin.locator('td').nth(1)).toHaveText('Admin');
     await expect(admin.locator('td').nth(4)).toHaveText('2');
+    await usersPage(page, seededEmail('viewer'));
     await expect(row(page, 'viewer').locator('td').nth(1)).toHaveText('Viewer');
+    await usersPage(page, seededEmail('ungranted_admin'));
     await expect(row(page, 'ungranted_admin').locator('td').nth(4)).toHaveText('0');
     await expect(
       page.locator('[data-js="dialog-open"][data-target="user-create"]').first(),
     ).toBeVisible();
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+  });
+
+  test('pages the list by 50 with Load more and narrows it by search and status', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(120_000);
+    const base = uniqueUserName(test.info().project.name);
+    const names = Array.from({ length: 51 }, (_, index) => `${base}-${index}`);
+    const created: CreatedUser[] = [];
+    try {
+      for (const name of names) {
+        created.push(await createUser(request, name));
+      }
+      await usersPage(page, base);
+      await expect(rowNames(page)).toHaveCount(50);
+      const more = page.locator('#users-table [data-fragment="users-more"]');
+      await expect(more).toBeVisible();
+      await more.getByRole('button', { name: 'Load more' }).click();
+      await expect(rowNames(page)).toHaveCount(51);
+      await expect(more).toHaveCount(0);
+      const listed = await rowNames(page).allTextContents();
+      expect(listed).toEqual([...names].sort((left, right) => left.localeCompare(right)));
+      expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+
+      await disableUser(request, created[3].id);
+      await disableUser(request, created[40].id);
+      await page.locator('#u-s').selectOption('disabled');
+      await expect(page).toHaveURL(new RegExp(`status=disabled`));
+      await expect(rowNames(page)).toHaveCount(2);
+      await page.locator('#u-s').selectOption('active');
+      await expect(rowNames(page)).toHaveCount(49);
+      await page.locator('#u-s').selectOption('');
+      await expect(rowNames(page)).toHaveCount(50);
+      expect((await rowNames(page).allTextContents()).at(-1)).toBe(names[3]);
+      await more.getByRole('button', { name: 'Load more' }).click();
+      await expect(rowNames(page)).toHaveCount(51);
+      expect((await rowNames(page).allTextContents()).at(-1)).toBe(names[40]);
+
+      await page.locator('#u-q').fill(`${base}-5`);
+      await expect(page).toHaveURL(new RegExp(`q=${encodeURIComponent(base)}-5`));
+      await expect(rowNames(page)).toHaveCount(2);
+      await expect(page.locator('#u-q')).toBeFocused();
+      await page.locator('#u-q').fill(`${base}-no-such-user`);
+      await expect(page.locator('#users-table [data-fragment="empty-state"]')).toContainText(
+        'No users match',
+      );
+      await page.reload();
+      await expect(page.locator('#u-q')).toHaveValue(`${base}-no-such-user`);
+      await expect(page.locator('#users-table [data-fragment="empty-state"]')).toBeVisible();
+    } finally {
+      for (const user of created) {
+        await disableUser(request, user.id);
+      }
+    }
+  });
+
+  test('keeps the search and status after an account is disabled from the list', async ({
+    page,
+    makeUser,
+  }) => {
+    const user = await makeUser();
+    await usersPage(page, user.name);
+    await page.locator('#u-s').selectOption('active');
+    await expect(row(page, user.name)).toBeVisible();
+    await (await rowAction(row(page, user.name), 'disable')).click();
+    await page
+      .locator('#user-action[open]')
+      .getByRole('button', { name: 'Disable user' })
+      .click();
+    await expect(page.locator('#user-action[open]')).toHaveCount(0);
+    await expect(page.locator('#users-table [data-fragment="empty-state"]')).toContainText(
+      'No users match',
+    );
+    await expect(page.locator('#u-q')).toHaveValue(user.name);
+    await expect(page.locator('#u-s')).toHaveValue('active');
+    await page.locator('#u-s').selectOption('disabled');
+    await expect(row(page, user.name).locator('td').nth(2)).toHaveText('Disabled');
   });
 
   test('opens the create dialog with the grant tree and closes it with Cancel', async ({
@@ -217,7 +298,7 @@ test.describe('superadmin: the users list', () => {
     await expect(dialog.locator('#un')).toHaveValue(name);
     await expect(dialog.locator('#secret')).toHaveCount(0);
     await dialog.locator('[data-js="dialog-close"]').last().click();
-    expect((await listUsers(page.request)).some(([, listed]) => listed === name)).toBe(false);
+    expect((await listUsers(page.request, name)).some(([, listed]) => listed === name)).toBe(false);
   });
 
   test('creates a user with grants, shows the password once and clears it on close', async ({
@@ -228,7 +309,10 @@ test.describe('superadmin: the users list', () => {
   }) => {
     const name = uniqueUserName(test.info().project.name);
     const email = `${name}@example.test`;
-    await page.goto('/users');
+    await usersPage(page, name);
+    await expect(page.locator('#users-table [data-fragment="empty-state"]')).toContainText(
+      'No users match',
+    );
     const dialog = await openCreate(page);
     await dialog.locator('#un').fill(name);
     await dialog.locator('#ue').fill(email);
@@ -262,7 +346,7 @@ test.describe('superadmin: the users list', () => {
     expect(await page.content()).not.toContain(password);
     await again.locator('[data-js="dialog-close"]').last().click();
 
-    const id = (await listUsers(request)).find(([, listed]) => listed === name)?.[0] ?? 0;
+    const id = (await listUsers(request, email)).find(([, listed]) => listed === name)?.[0] ?? 0;
     expect(id).toBeGreaterThan(0);
     try {
       const person = await signedInAs(browser, { id, name, email, password });
@@ -283,7 +367,7 @@ test.describe('superadmin: the users list', () => {
 
   test('disables and enables from the list through confirm dialogs', async ({ page, makeUser }) => {
     const user = await makeUser();
-    await page.goto('/users');
+    await usersPage(page, user.name);
     const current = row(page, user.name);
     await (await rowAction(current, 'disable')).click();
     const dialog = page.locator('#user-action[open]');
@@ -318,7 +402,7 @@ test.describe('superadmin: the users list', () => {
 
 test.describe('superadmin: the user detail', () => {
   test('shows the account, its grants, tokens and activity', async ({ page }) => {
-    await page.goto('/users');
+    await usersPage(page, seededEmail('admin'));
     await (await rowAction(row(page, 'admin'), 'edit')).click();
     await expect(page).toHaveURL(/\/users\/\d+$/);
     const adminId = new URL(page.url()).pathname.split('/').pop();
@@ -465,9 +549,10 @@ test.describe('superadmin: the user detail', () => {
     page,
     request,
   }) => {
-    const users = new Map(await listUsers(request).then((all) => all.map(([id, name]) => [name, id])));
-    const withFactor = users.get('totp_user');
-    const without = users.get('viewer');
+    const idOf = async (name: string) =>
+      (await listUsers(request, seededEmail(name))).find(([, listed]) => listed === name)?.[0];
+    const withFactor = await idOf('totp_user');
+    const without = await idOf('viewer');
     expect(withFactor).toBeDefined();
     expect(without).toBeDefined();
     await page.goto(`/users/${withFactor}`);
@@ -534,7 +619,7 @@ test.describe('superadmin: the user detail', () => {
   });
 
   test('says superadmins hold no grants', async ({ page }) => {
-    await page.goto('/users');
+    await usersPage(page, seededEmail('root'));
     await (await rowAction(row(page, 'root'), 'edit')).click();
     await expect(page.locator('#user-grants')).toContainText(
       'Superadmins reach every project, so grants do not apply to this account.',
@@ -550,7 +635,7 @@ test.describe('superadmin: the user detail', () => {
       expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
     }
     if (!isWide(page)) {
-      await page.goto('/users');
+      await usersPage(page, user.name);
       const current = row(page, user.name);
       const more = current.locator('[data-row-menu-button]');
       expect((await more.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);

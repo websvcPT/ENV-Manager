@@ -86,18 +86,25 @@
     toggle.setAttribute('aria-label', collapsed ? 'Expand navigation' : 'Collapse navigation');
   }
 
+  /* One pass over the rows: a row is hidden when its parent is collapsed or hidden. The rows are
+     indexed once and each answer is remembered, so the cost grows with the rows, not with the
+     rows times their depth times the size of the document. */
   function applyTree() {
-    document.querySelectorAll('[data-node]').forEach(function (row) {
-      var hidden = false;
-      var parentId = row.getAttribute('data-parent');
-      while (parentId) {
-        var parent = document.querySelector('[data-node="' + parentId + '"]');
-        var toggle = parent && parent.querySelector('[data-js=tree-toggle]');
-        if (toggle && toggle.getAttribute('aria-expanded') === 'false') { hidden = true; break; }
-        parentId = parent && parent.getAttribute('data-parent');
-      }
-      row.classList.toggle('hidden', hidden);
-    });
+    var rows = document.querySelectorAll('[data-node]');
+    var byId = new Map();
+    var hiddenById = new Map();
+    rows.forEach(function (row) { byId.set(row.getAttribute('data-node'), row); });
+    function isHidden(row) {
+      var id = row.getAttribute('data-node');
+      if (hiddenById.has(id)) { return hiddenById.get(id); }
+      var parent = byId.get(row.getAttribute('data-parent'));
+      var toggle = parent && parent.querySelector('[data-js=tree-toggle]');
+      var hidden = !!parent &&
+        ((!!toggle && toggle.getAttribute('aria-expanded') === 'false') || isHidden(parent));
+      hiddenById.set(id, hidden);
+      return hidden;
+    }
+    rows.forEach(function (row) { row.classList.toggle('hidden', isHidden(row)); });
   }
 
   var revealTimers = new WeakMap();
