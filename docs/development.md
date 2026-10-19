@@ -1,8 +1,6 @@
 # Development
 
-Developer conventions are in [`AGENTS.md`](../AGENTS.md); live work state is in
-[`PROGRESS.md`](../PROGRESS.md). Run everything through `make` (see `make help`); nothing runs on
-the host directly. Application commands, linting and tests all run in containers.
+Run everything through `make` (see `make help`); nothing runs on the host directly. Application commands, linting and tests all run in containers.
 
 ## The development stack
 
@@ -37,7 +35,7 @@ stack, which is what a CI run does. Tests stand alone: they use temporary files 
 fake only the boundaries (filesystem, clock, Docker CLI, git, SMTP) and reuse the seed dataset
 in `app/seeds`. Browser specs live under `playwright/tests` and run with `make e2e`. Flows that
 write host files also have scenarios under `app/real_scenarios`, run by `make e2e-demo` against
-the demo stack. See [`AGENTS.md`](../AGENTS.md) for the testing rules and the development cycle.
+the demo stack.
 
 ## Demo deployment
 

@@ -139,7 +139,7 @@ The detailed guide, including file ownership, reverse proxies, backups and upgra
 ## Development
 
 Contributors work in a Docker based development stack driven by `make`. See
-[docs/development.md](docs/development.md) and [AGENTS.md](AGENTS.md).
+[docs/development.md](docs/development.md).
 
 ## License
 
