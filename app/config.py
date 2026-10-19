@@ -153,6 +153,20 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
+    def _restrict_docs(self) -> Self:
+        """Serve the API docs in development and testing only.
+
+        The docs pages need a relaxed content security policy and are public, so production
+        refuses the setting instead of exposing them.
+        """
+        if self.serve_docs and self.environment not in TUNING_ENVIRONMENTS:
+            raise ValueError(
+                "ENVMANAGER_SERVE_DOCS is only accepted when ENVMANAGER_ENVIRONMENT "
+                f"is one of {sorted(TUNING_ENVIRONMENTS)}"
+            )
+        return self
+
+    @model_validator(mode="after")
     def _require_csrf_secret(self) -> Self:
         """Require a long CSRF secret everywhere except the testing environment."""
         if self.environment == "testing":

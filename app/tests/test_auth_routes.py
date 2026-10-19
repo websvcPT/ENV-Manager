@@ -256,3 +256,17 @@ async def test_disabled_user_session_stops_working(
         await set_user_active(db, user, False, actor=AuditActor.cli())
     response = await http.post("/logout", headers={"X-CSRFToken": http.cookies[CSRF_COOKIE_NAME]})
     assert response.status_code == 401
+
+
+def test_the_public_docs_routes_exist_only_when_the_docs_are_served(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With the docs served, their routes are the only unauthenticated ones left."""
+    monkeypatch.setenv("ENVMANAGER_ENVIRONMENT", "testing")
+    monkeypatch.setenv("ENVMANAGER_SERVE_DOCS", "true")
+    get_settings.cache_clear()
+    try:
+        unprotected = routes_without_auth(create_app())
+    finally:
+        get_settings.cache_clear()
+    assert sorted(unprotected) == ["/docs", "/docs/oauth2-redirect", "/openapi.json", "/redoc"]

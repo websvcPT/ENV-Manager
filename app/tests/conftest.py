@@ -46,12 +46,13 @@ def no_inherited_demo_root(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
-def no_inherited_network_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+def no_inherited_network_settings(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Start from the defaults of the proxy, source, lockout and API docs settings.
 
     The development container raises the sign-in failure limit per address for browser specs and
     serves the API docs, and an environment file could list proxies or allowed sources; tests that
-    need a value set it.
+    need a value set it. The settings cache is dropped so the module level application of the
+    server, which read the container environment, does not leak into the test.
     """
     for name in (
         "ENVMANAGER_TRUSTED_PROXIES",
@@ -60,6 +61,9 @@ def no_inherited_network_settings(monkeypatch: pytest.MonkeyPatch) -> None:
         "ENVMANAGER_SERVE_DOCS",
     ):
         monkeypatch.delenv(name, raising=False)
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
 
 
 @pytest.fixture(scope="session")

@@ -21,7 +21,11 @@ from app.core.csrf import (
     is_valid_token,
 )
 from app.core.middleware import install_middleware
-from app.core.security_headers import CONTENT_SECURITY_POLICY, SecurityHeadersMiddleware
+from app.core.security_headers import (
+    CONTENT_SECURITY_POLICY,
+    DOCS_CONTENT_SECURITY_POLICY,
+    SecurityHeadersMiddleware,
+)
 from app.core.sessions import SESSION_COOKIE_NAME
 
 SECRET = "test-secret-0123456789abcdef0123456789"
@@ -115,6 +119,29 @@ async def test_security_headers_on_success(client: httpx.AsyncClient) -> None:
     assert "frame-ancestors 'none'" in CONTENT_SECURITY_POLICY
     assert response.headers["x-content-type-options"] == "nosniff"
     assert response.headers["referrer-policy"] == "no-referrer"
+
+
+async def test_the_docs_routes_get_the_relaxed_policy_and_nothing_else_does() -> None:
+    """With the docs on only the docs pages get the relaxed policy.
+
+    Every other route keeps the strict policy byte for byte.
+    """
+    async with await client_for(build_app(serve_docs=True)) as http:
+        for path in ("/docs", "/docs/oauth2-redirect", "/redoc"):
+            policy = (await http.get(path)).headers["content-security-policy"]
+            assert policy == DOCS_CONTENT_SECURITY_POLICY
+            assert "https://cdn.jsdelivr.net" in policy
+        for path in ("/page", "/openapi.json", "/nothing-here"):
+            response = await http.get(path)
+            assert response.headers["content-security-policy"] == CONTENT_SECURITY_POLICY
+
+
+async def test_the_docs_paths_keep_the_strict_policy_when_the_docs_are_off() -> None:
+    """Without ``serve_docs`` no path is relaxed, whether or not the application has a route."""
+    async with await client_for(build_app()) as http:
+        for path in ("/docs", "/redoc"):
+            response = await http.get(path)
+            assert response.headers["content-security-policy"] == CONTENT_SECURITY_POLICY
 
 
 async def test_security_headers_on_not_found_and_csrf_rejection(

@@ -8,7 +8,7 @@ from app.core.allowed_sources import AllowedSourcesMiddleware
 from app.core.client_address import ProxyHeadersMiddleware
 from app.core.cors import ApiCorsMiddleware
 from app.core.csrf import CSRFMiddleware
-from app.core.security_headers import SecurityHeadersMiddleware
+from app.core.security_headers import DOCS_PATHS, SecurityHeadersMiddleware
 
 
 def install_middleware(application: FastAPI, settings: Settings) -> None:
@@ -33,5 +33,7 @@ def install_middleware(application: FastAPI, settings: Settings) -> None:
         application.add_middleware(
             AllowedSourcesMiddleware, allowed_sources=settings.allowed_sources
         )
-    application.add_middleware(SecurityHeadersMiddleware)
+    application.add_middleware(
+        SecurityHeadersMiddleware, docs_paths=DOCS_PATHS if settings.serve_docs else ()
+    )
     application.add_middleware(ProxyHeadersMiddleware, trusted_proxies=settings.trusted_proxies)

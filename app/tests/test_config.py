@@ -126,3 +126,16 @@ async def test_the_api_schema_is_served_when_asked(monkeypatch: pytest.MonkeyPat
     monkeypatch.setenv("ENVMANAGER_ENVIRONMENT", "testing")
     monkeypatch.setenv("ENVMANAGER_SERVE_DOCS", "true")
     assert await get_status("/openapi.json") == 200
+
+
+@pytest.mark.parametrize("environment", ["development", "testing"])
+def test_the_api_docs_are_accepted_in_development_and_testing(environment: str) -> None:
+    """The docs pages are a development aid."""
+    assert Settings(environment=environment, serve_docs=True).serve_docs is True
+
+
+@pytest.mark.parametrize("environment", ["production", "staging", ""])
+def test_the_api_docs_are_refused_anywhere_else(environment: str) -> None:
+    """A value left over from a development setup must not expose the public docs pages."""
+    with pytest.raises(ValidationError, match="ENVMANAGER_SERVE_DOCS is only accepted"):
+        Settings(environment=environment, csrf_secret=SecretStr("x" * 40), serve_docs=True)
