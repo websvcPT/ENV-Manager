@@ -7,7 +7,7 @@ audit entry or an error message.
 """
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 from sqlalchemy import select
@@ -96,7 +96,7 @@ class EditorHeader:
     can_check_dist: bool
     item: ItemRef
     can_manage_grants: bool
-    deployment_root: str
+    deployment_root: str = field(repr=False)
 
     @property
     def can_deploy(self) -> bool:

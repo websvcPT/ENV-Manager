@@ -251,7 +251,8 @@ test.describe('superadmin: every owner and the user page', () => {
     ).toBeVisible();
     await expect(page.locator('#tokens-table th[scope="col"]').nth(1)).toHaveText('Owner');
     const listed = row(page, name);
-    await expect(listed.locator('td').first()).toHaveText(owner.user.name);
+    await expect(listed.locator('td').first()).toContainText(owner.user.name);
+    await expect(listed.locator('td').first()).toContainText(owner.user.email);
     await expect(row(page, 'billing-ci')).toHaveCount(1);
     expect(await horizontalOverflow(page)).toBe(0);
 

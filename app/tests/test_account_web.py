@@ -272,7 +272,7 @@ async def test_wrong_current_passwords_count_toward_the_lockout_and_then_lock_th
     async with web_app.state.session_factory() as db:
         rows = (await db.execute(select(LoginCounter))).scalars()
         counters = {row.subject: row.failures for row in rows}
-    assert counters["admin"] == 5
+    assert counters["admin@example.test"] == 5
     actions = [entry.action for entry in await audit(web_app, "")]
     assert "login.lockout" in actions
     results = [

@@ -29,7 +29,9 @@ PLURALS = {
     "environment": "environments",
 }
 ROW = re.compile(r'<tr id="access-row-(\d+)" data-fragment="access-row">(.*?)</tr>', re.DOTALL)
-ROW_NAME = re.compile(r'<th scope="row"[^>]*><span class="font-semibold">([^<]+)</span>')
+ROW_NAME = re.compile(
+    r'<th scope="row"[^>]*><span class="[^"]*"><span class="font-semibold">([^<]+)</span>'
+)
 
 
 @dataclass(frozen=True)

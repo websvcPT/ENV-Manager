@@ -59,7 +59,7 @@ async def test_session_expired_state_on_the_login_page(web_client: httpx.AsyncCl
     assert "Your session expired. Sign in again to continue." in page
 
 
-async def test_invalid_credentials_keep_the_name_and_drop_the_password(
+async def test_invalid_credentials_keep_the_email_and_drop_the_password(
     web_client: httpx.AsyncClient,
 ) -> None:
     """A plain post answers the whole page, with one generic message for every failure."""
@@ -76,7 +76,8 @@ async def test_invalid_credentials_keep_the_name_and_drop_the_password(
     assert wrong.status_code == unknown.status_code == 401
     assert "Invalid credentials" in wrong.text and "Invalid credentials" in unknown.text
     assert 'role="alert" data-fragment="login-message"' in wrong.text
-    assert 'value="root"' in wrong.text
+    assert 'value="root@example.test"' in wrong.text
+    assert 'value="root"' in by_name.text
     assert "nope" not in wrong.text
     assert wrong.text.count("<html") == 1
 

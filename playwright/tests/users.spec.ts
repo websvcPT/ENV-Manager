@@ -193,25 +193,19 @@ test.describe('superadmin: the users list', () => {
     const name = uniqueUserName(test.info().project.name);
     await page.goto('/users');
     const dialog = await openCreate(page);
-    await dialog.locator('#un').fill('has space');
+    await dialog.locator('#un').fill('under_score');
     await dialog.locator('#ue').fill('someone@example.test');
     await dialog.locator('#ug').selectOption('admin');
     await dialog.locator('#grant-deployment-' + scratch.deploymentId).check();
     await dialog.getByRole('button', { name: 'Create user' }).click();
     await expect(dialog.locator('#un-e[role="alert"]')).toContainText(
-      'Use 1 to 100 characters without spaces.',
+      'Use 1 to 100 characters.',
     );
     await expect(dialog.locator('#un')).toHaveAttribute('aria-invalid', 'true');
-    await expect(dialog.locator('#un')).toHaveValue('has space');
+    await expect(dialog.locator('#un')).toHaveValue('under_score');
     await expect(dialog.locator('#ue')).toHaveValue('someone@example.test');
     await expect(dialog.locator('#ug')).toHaveValue('admin');
     await expect(dialog.locator('#grant-deployment-' + scratch.deploymentId)).toBeChecked();
-
-    await dialog.locator('#un').fill('ROOT');
-    await dialog.getByRole('button', { name: 'Create user' }).click();
-    await expect(dialog.locator('#un-e[role="alert"]')).toContainText(
-      'A user named ROOT already exists.',
-    );
 
     await dialog.locator('#un').fill(name);
     await dialog.locator('#ue').fill('Admin@Example.TEST');

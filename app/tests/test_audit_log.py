@@ -368,23 +368,34 @@ async def test_filter_options_offer_only_values_found_in_the_callers_entries(
     superadmin = await options(seed_data.users.superadmin)
     assert [name for _, name in superadmin.projects] == ["billing", "Fancy Proj. Name"]
     assert {option.label for option in superadmin.actors} == {
-        "admin",
-        "root",
+        "admin (admin@example.test)",
+        "root (root@example.test)",
         "cli",
         "system",
         "token billing-ci",
+    }
+    assert {option.value for option in superadmin.actors if option.value.startswith("user:")} == {
+        f"user:{seed_data.users.admin.id}",
+        f"user:{seed_data.users.superadmin.id}",
     }
     assert BULK_ACTION in superadmin.actions
     assert [value for value, _ in superadmin.results] == ["success", "halted", "blocked", "failure"]
 
     admin = await options(seed_data.users.admin)
     assert [name for _, name in admin.projects] == ["billing", "Fancy Proj. Name"]
-    assert {option.label for option in admin.actors} == {"admin", "root", "token billing-ci"}
+    assert {option.label for option in admin.actors} == {
+        "admin (admin@example.test)",
+        "root (root@example.test)",
+        "token billing-ci",
+    }
     assert not {BULK_ACTION, "user.create", "login.failure", "project.delete"} & set(admin.actions)
 
     scoped = await options(seed_data.users.env_scoped_admin)
     assert [name for _, name in scoped.projects] == ["Fancy Proj. Name"]
-    assert {option.label for option in scoped.actors} == {"admin", "root"}
+    assert {option.label for option in scoped.actors} == {
+        "admin (admin@example.test)",
+        "root (root@example.test)",
+    }
     assert scoped.actions == ("environment.save", "file_save")
 
     nobody = await options(seed_data.users.ungranted_admin)

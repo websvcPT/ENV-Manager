@@ -921,7 +921,10 @@ The superadmin edits the settings on the service page: working directory, comman
 run only if changed, a Test command button (`docker compose config --quiet` in the typed working
 directory) and Save settings. The panel header shows the socket status (mounted, daemon
 reachable, compose version); while Docker is not usable the fields are disabled with the reason
-and a save is refused.
+and a save is refused. The status shown on the service page, in its post-deploy panel and in
+the Post-deploy tab comes from a probe at most five seconds old, so it can lag a change of the
+daemon by that long; saving a command, the Test command button, the Post-deploy switch and the
+check right before a command runs always probe the daemon.
 
 - One command per line, split into words and run without a shell: no pipes, redirects or `&&`
   (an unquoted operator is refused), and the first word must be exactly `docker`. Commands run

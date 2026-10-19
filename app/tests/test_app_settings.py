@@ -221,4 +221,5 @@ async def test_a_secret_row_is_not_read_into_a_typed_section(
         await write_secret(db, crypto, SECRET_NAME, "s", actor=AuditActor.cli())
         await db.commit()
         stored = await load_stored_settings(db)
-    assert stored == type(stored)()
+    assert replace(stored, secrets=frozenset()) == type(stored)()
+    assert stored.secrets == {SECRET_NAME}, "only the name is kept, never the sealed value"
