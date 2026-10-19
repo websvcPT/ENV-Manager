@@ -1,0 +1,34 @@
+{#- The result of a connection test, which replaces the live region next to the button and sends the
+    pin line again out of band. A repository that answered is the success badge and a sentence; a
+    refusal is the failed badge and the reason; an ssh server whose host key is not pinned yet
+    shows its fingerprint and the button that pins exactly that key; a server that no longer
+    presents the pinned key is refused with both fingerprints. The last two take a row of their
+    own below the button. Context: check (a ConnectionCheck: state, message, host, key,
+    pinned_fingerprint) and status (a GitStatus, for the pin line). -#}
+{% from "macros/badges.html" import badge %}
+{% from "macros/buttons.html" import button %}
+{% from "macros/feedback.html" import note %}
+{%- set own_row = check.state.value in ("needs_pin", "key_changed") -%}
+<div id="git-test" aria-live="polite"{% if own_row %} class="basis-full"{% endif %}>
+{%- if check.state.value == "ok" -%}
+{{ badge("deployed", "Connected") }}<p class="mt-1.5 max-w-md text-xs text-ink2">{{ check.message }}</p>
+{%- elif check.state.value == "needs_pin" -%}
+<div class="flex max-w-xl flex-col items-start gap-2.5">
+{{ badge("drift", "Host key not trusted yet") }}
+<p class="text-xs text-ink2">{{ check.host }} presents this host key. Compare the fingerprint with the one its owner gives you before you trust it.</p>
+<p class="break-all font-mono text-[13px]"><span class="text-ink2">{{ check.key.key_type }}</span> {{ check.key.fingerprint }}</p>
+{% set pin_vals = {"key_type": check.key.key_type, "fingerprint": check.key.fingerprint} | tojson | forceescape %}
+{{ button("Trust this key and test again", extra_class="max-md:h-11", hx_post="/settings/git/pin", hx_target="#git-test", hx_swap="outerHTML", hx_sync="this:drop", hx_vals=pin_vals) }}
+</div>
+{%- elif check.state.value == "key_changed" -%}
+<div class="flex max-w-xl flex-col items-start gap-2.5">
+{{ badge("failed", "Host key changed") }}
+{{ note(check.host ~ " no longer presents the pinned host key. Nothing was sent. Do not trust the new key until you know why it changed. To trust it, change the repository address and save, which clears the pin, then test again.", tone="error") }}
+<p class="break-all font-mono text-[13px]"><span class="text-ink2">Pinned</span> {{ check.pinned_fingerprint }}</p>
+<p class="break-all font-mono text-[13px]"><span class="text-ink2">Presented</span> {{ check.key.fingerprint }}</p>
+</div>
+{%- else -%}
+{{ badge("failed", "Connection failed") }}<p class="mt-1.5 max-w-md text-xs text-ink2">{{ check.message }}</p>
+{%- endif -%}
+</div>
+{% with oob = true %}{% include "fragments/git_pin_line.html" %}{% endwith %}

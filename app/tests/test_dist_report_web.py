@@ -22,7 +22,13 @@ from app.services.notify_events import FileChange, FileChanged
 from app.tests.conftest import sign_in
 from app.tests.dist_helpers import link_dist, relocate_deployments, write_dist
 from app.tests.notify_helpers import RecordingEvents, file_event_ids
-from app.tests.web_helpers import EnvironmentIds, assert_never_cached, main_of, post
+from app.tests.web_helpers import (
+    EnvironmentIds,
+    assert_never_cached,
+    main_of,
+    post,
+    without_csrf_token,
+)
 
 DIST_DEFAULT_VALUE = "dist-default-Qw83"
 DB_DIST = "environments/.env.db-dist"
@@ -137,7 +143,7 @@ async def test_blocked_report_shows_key_names_lines_and_counts_never_a_value(
     assert summary_counts(body) == [2, 0, 0]
     assert "Dist file <span" in body and DB_DIST in body
     assert "Add missing keys to the editor" in body
-    assert DIST_DEFAULT_VALUE not in page and "3306" not in page
+    assert DIST_DEFAULT_VALUE not in page and "3306" not in without_csrf_token(page)
     assert str(roots["prod"]) not in page
     access_tab = ["AccessSuperadmin"] if role == "root" else []
     assert section_links(body) == ["Edit", "History", "Compare to dist", *access_tab]

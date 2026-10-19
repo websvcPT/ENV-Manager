@@ -25,7 +25,6 @@ from app.tests.fake_docker import FakeDocker
 from app.tests.settings_helpers import (
     NON_SUPERADMINS,
     TABS,
-    UNBUILT,
     browser_as,
     changes_of,
     error_of,
@@ -36,7 +35,7 @@ from app.tests.settings_helpers import (
     toast_of,
     value_of,
 )
-from app.tests.web_helpers import assert_never_cached, main_of, post
+from app.tests.web_helpers import assert_never_cached, post
 
 SECURITY_FORM = {
     "idle_timeout_minutes": "30",
@@ -115,18 +114,6 @@ async def test_every_tab_has_the_header_and_the_eight_tabs(
     current = re.findall(r'<a href="([^"]+)" aria-current="page"', nav.group(0))
     assert current == [f"/settings/{tab}"]
     assert '<a href="/settings" title="Settings" aria-current="page"' in page
-
-
-@pytest.mark.parametrize("tab", UNBUILT)
-async def test_an_unbuilt_tab_shows_a_note_and_no_controls(
-    root: httpx.AsyncClient, tab: str
-) -> None:
-    """The tab of a later feature says what is missing and offers nothing to press or type."""
-    page = main_of((await root.get(f"/settings/{tab}")).text)
-    assert 'role="note"' in page
-    assert not re.search(r"<(input|select|textarea|form)\b", page)
-    assert "<button" not in page
-    assert not re.search(r"\b(item|phase|section)\s+\d|SS\d", page, re.IGNORECASE)
 
 
 async def test_the_security_tab_shows_the_stored_values_and_the_policy_read_only(

@@ -1,13 +1,11 @@
-"""The Settings screens: the tab bar, security, post-deploy, general and the unbuilt tab.
+"""The Settings screens that share this module: the home redirect, security, post-deploy, general.
 
 Superadmin only: every route here holds the settings capability, so any other group gets 403 and
 the sidebar shows no link. Saves are validated on the server, audited with the old and new values
-and effective at once, because every reader loads the stored settings per request. The tab of
-a feature that does not exist yet shows its panel title and says so; it has no controls.
+and effective at once, because every reader loads the stored settings per request.
 """
 
 import os
-from collections.abc import Awaitable, Callable
 from dataclasses import replace
 from typing import Annotated, Any
 
@@ -48,7 +46,6 @@ SECURITY_FRAGMENT = "fragments/settings_security.html"
 POST_DEPLOY_FRAGMENT = "fragments/settings_post_deploy.html"
 GENERAL_FRAGMENT = "fragments/settings_general.html"
 TIME_ZONE_SETTING = "general.time_zone"
-UNBUILT_TABS = ("git",)
 
 Database = Annotated[AsyncSession, Depends(get_db)]
 Stored = Annotated[StoredSettings, Depends(get_stored_settings)]
@@ -285,19 +282,4 @@ async def save_general_route(
         request,
         GENERAL_FRAGMENT,
         _general_context(GeneralForm.from_settings(clean), saved=saved),
-    )
-
-
-def _unbuilt_tab(tab: str) -> Callable[..., Awaitable[Response]]:
-    """The page of a tab whose feature is not built yet: its panel title and a note, no controls."""
-
-    async def page(request: Request, _context: ManageSettings) -> Response:
-        return render(request, "pages/settings_unbuilt.html", tab_context(tab))
-
-    return page
-
-
-for _tab in UNBUILT_TABS:
-    router.add_api_route(
-        f"/settings/{_tab}", _unbuilt_tab(_tab), methods=["GET"], include_in_schema=False
     )

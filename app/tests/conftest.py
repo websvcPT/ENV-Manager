@@ -26,6 +26,8 @@ from app.services.docker_cli import DockerCli
 from app.tests.api_helpers import ApiWorld, build_world
 from app.tests.deploy_helpers import Harness, RecordingNotifier, RecordingRunner, set_deployment
 from app.tests.dist_helpers import relocate_deployments
+from app.tests.git_world import World as GitWorld
+from app.tests.git_world import build_git_world
 from app.tests.template_databases import (
     SeededTemplate,
     build_migrated_template,
@@ -225,3 +227,15 @@ async def api_world(web_app: FastAPI, tmp_path: Path) -> AsyncIterator[ApiWorld]
     """The seeded application on real folders with a fake docker and a client for the API."""
     async with build_world(web_app, tmp_path) as world:
         yield world
+
+
+@pytest.fixture
+def git_world(
+    tmp_path: Path,
+    seeded_database: AsyncEngine,
+    seed_data: SeedData,
+    crypto: CryptoService,
+    database_path: Path,
+) -> GitWorld:
+    """The seeded database, an empty bare repository and git services that record what they run."""
+    return build_git_world(tmp_path, seeded_database, seed_data, crypto, database_path)

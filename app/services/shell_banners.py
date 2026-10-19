@@ -5,7 +5,8 @@ is gone and no request has to clear it. Only pages are given banners, and only f
 superadmin. The backup banner follows the newest backup that a person or the schedule asked for:
 it shows while that backup failed or could not be copied to the extra destination, and goes
 when a later one succeeds. The SMTP banner shows while mail is not set up, and a delivery banner
-for each channel (mail, webhook) that has failed since one last worked.
+for each channel (mail, webhook) that has failed since one last worked. The git banner shows
+while the last scheduled push failed and goes when a push works or the git settings change.
 """
 
 from dataclasses import dataclass
@@ -14,13 +15,21 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.display_time import DisplayTime
-from app.models import Backup, BackupStatus, BackupTrigger, NotificationStatus
+from app.models import (
+    SYNC_STATE_ID,
+    Backup,
+    BackupStatus,
+    BackupTrigger,
+    GitSyncState,
+    NotificationStatus,
+)
 from app.services.app_settings import SmtpSettings, load_stored_settings
 from app.services.notify_status import EMAIL_CHANNEL, WEBHOOK_CHANNEL, load_failures
 
 REQUESTED_TRIGGERS = (BackupTrigger.MANUAL, BackupTrigger.SCHEDULED, BackupTrigger.CLI)
 BACKUP_SETTINGS_HREF = "/settings/backup"
 SMTP_SETTINGS_HREF = "/settings/smtp"
+GIT_SETTINGS_HREF = "/settings/git"
 NOTIFICATION_SETTINGS_HREF = "/settings/notifications"
 
 
@@ -68,6 +77,19 @@ def smtp_banner(smtp: SmtpSettings) -> ShellBanner | None:
     )
 
 
+async def git_banner(db: AsyncSession, display: DisplayTime) -> ShellBanner | None:
+    """The banner for a scheduled push that failed since one last worked, None when none did."""
+    state = await db.get(GitSyncState, SYNC_STATE_ID)
+    if state is None or state.failures < 1 or state.last_attempt_at is None:
+        return None
+    return ShellBanner(
+        f"Git push failing: the last attempt ({display.text(state.last_attempt_at)}) failed. "
+        f"{state.last_error or 'The push did not complete.'}",
+        "Open git settings",
+        GIT_SETTINGS_HREF,
+    )
+
+
 def _mail_banner(row: NotificationStatus, display: DisplayTime) -> ShellBanner:
     """The banner for notification mail that failed since one last worked."""
     noun = "mail" if row.failures == 1 else "mails"
@@ -111,7 +133,11 @@ async def load_shell_banners(
     if smtp is None:
         smtp = (await load_stored_settings(db)).smtp
     banners: list[ShellBanner] = []
-    for banner in (await backup_banner(db, display), smtp_banner(smtp)):
+    for banner in (
+        await backup_banner(db, display),
+        smtp_banner(smtp),
+        await git_banner(db, display),
+    ):
         if banner is not None:
             banners.append(banner)
     return [*banners, *await delivery_banners(db, display)]

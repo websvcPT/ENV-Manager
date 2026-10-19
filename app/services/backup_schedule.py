@@ -1,18 +1,22 @@
-"""The in-process scheduler: the scheduled backup and the housekeeping of pending sign-ins.
+"""The in-process scheduler: the scheduled backup, the hourly git push and the housekeeping of
+pending sign-ins.
 
 APScheduler runs with its default in-memory job store. Nothing about the jobs is persisted by
 APScheduler: the schedule lives in our own settings table and is read again whenever it can have
 changed (at startup, after the Backup or General settings are saved, after a restore), which
-replaces the job. The application runs as one worker process; a second worker would start a
-second scheduler and fire every job twice, which the backup lock turns into a skipped run.
+replaces the job. The git push job runs every hour from a short while after startup and decides
+at each run, from the saved git settings and its own state, whether a push is due, so saving the
+git settings needs no reload. The application runs as one worker process; a second worker would
+start a second scheduler and fire every job twice, which the backup lock turns into a skipped
+run (a second push would fail on the working clone and be counted as a failure).
 
 A run that was due while the application was down is not made up: the next run is the next
 matching time after the start. A command line restore cannot reach the scheduler of a running
 server, so a restored schedule takes effect at the next start or the next save of the settings.
 """
 
-from collections.abc import Callable
-from datetime import UTC, datetime
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime, timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -32,10 +36,13 @@ from app.services.pending_logins import purge_expired_pending_logins
 log = get_logger("scheduler")
 
 BACKUP_JOB = "backup"
+GIT_JOB = "git-push"
 PENDING_LOGINS_JOB = "pending-logins"
 SCHEDULER_ACTOR = "scheduler"
 MISFIRE_GRACE_SECONDS = 3600
 HOUSEKEEPING_HOURS = 1
+GIT_PUSH_HOURS = 1
+GIT_FIRST_RUN_MINUTES = 2
 
 
 def backup_trigger(schedule: str, display: DisplayTime) -> CronTrigger | None:
@@ -58,16 +65,19 @@ class BackupScheduler:
         session_factory: async_sessionmaker[AsyncSession],
         locations: BackupLocations,
         notifier: Callable[[], BackupNotifier],
+        git_push: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         """Hold what the jobs need. ``notifier`` is read each time a job runs, so the
-        application can swap its notifier after startup."""
+        application can swap its notifier after startup. ``git_push`` is the hourly push job;
+        without it no git job is registered."""
         self._session_factory = session_factory
         self._locations = locations
         self._notifier = notifier
+        self._git_push = git_push
         self._scheduler = AsyncIOScheduler(timezone=UTC)
 
     def start(self) -> None:
-        """Start the scheduler on the running event loop and add the housekeeping job."""
+        """Start the scheduler on the running event loop and add the housekeeping and git jobs."""
         self._scheduler.start()
         self._scheduler.add_job(
             self.purge_pending_logins,
@@ -77,6 +87,17 @@ class BackupScheduler:
             coalesce=True,
             max_instances=1,
         )
+        if self._git_push is not None:
+            self._scheduler.add_job(
+                self._git_push,
+                IntervalTrigger(hours=GIT_PUSH_HOURS),
+                id=GIT_JOB,
+                replace_existing=True,
+                coalesce=True,
+                max_instances=1,
+                misfire_grace_time=MISFIRE_GRACE_SECONDS,
+                next_run_time=datetime.now(UTC) + timedelta(minutes=GIT_FIRST_RUN_MINUTES),
+            )
 
     def shutdown(self) -> None:
         """Stop the scheduler without waiting for a running job."""

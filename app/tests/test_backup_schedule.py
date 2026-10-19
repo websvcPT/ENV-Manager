@@ -23,6 +23,7 @@ from app.services.audit import AuditActor
 from app.services.backup_lock import hold_backup_lock
 from app.services.backup_schedule import (
     BACKUP_JOB,
+    GIT_JOB,
     PENDING_LOGINS_JOB,
     BackupScheduler,
     backup_trigger,
@@ -227,9 +228,10 @@ async def test_the_housekeeping_job_removes_expired_pending_sign_ins(
 async def test_the_application_starts_the_scheduler_with_the_stored_schedule(
     web_app: FastAPI,
 ) -> None:
-    """The lifespan registers the backup job from the settings and the housekeeping job."""
+    """The lifespan registers the backup job from the settings, the hourly git push and the
+    housekeeping job."""
     scheduler: BackupScheduler = web_app.state.backup_scheduler
-    assert scheduler.job_ids() == sorted([BACKUP_JOB, PENDING_LOGINS_JOB])
+    assert scheduler.job_ids() == sorted([BACKUP_JOB, GIT_JOB, PENDING_LOGINS_JOB])
     run = scheduler.next_backup()
     assert run is not None and run.hour == 2
 

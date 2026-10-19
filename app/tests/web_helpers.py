@@ -77,3 +77,12 @@ def hx_vals(page: str, path: str) -> dict[str, object]:
     assert found, path
     values: dict[str, object] = json.loads(html.unescape(found.group(1)))
     return values
+
+
+def without_csrf_token(page: str) -> str:
+    """The page without the request token its body carries.
+
+    The token is random hex, so a search of a whole page for a short digit string such as a port
+    would now and then find it there.
+    """
+    return re.sub(r"hx-headers:inherited='[^']*'", "", page)

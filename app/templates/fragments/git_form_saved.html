@@ -1,0 +1,5 @@
+{#- The answer to a stored git save: the form with its toast, and the banner area sent again out of
+    band, because saving clears the git push failing banner. Context: what
+    fragments/settings_git.html needs; the banners are the request's own. -#}
+{% include "fragments/settings_git.html" %}
+{% with oob = true %}{% include "fragments/banner_area.html" %}{% endwith %}

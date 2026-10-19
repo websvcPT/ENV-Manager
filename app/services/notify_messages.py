@@ -304,11 +304,11 @@ def user_content(event: UserChanged, ctx: MessageContext) -> MailContent:
 
 
 def git_content(event: GitPushFailed, ctx: MessageContext) -> MailContent:
-    """The mail about a push that failed after its retries."""
+    """The mail about a push that failed, after as many attempts as the fault allowed."""
     return MailContent(
         subject=_subject("Git push failed"),
         heading="Git push failed",
-        summary="The push to the git repository failed after retrying.",
+        summary="The push to the git repository failed.",
         facts=(
             ("Reason", one_line(event.reason)),
             ("Attempts", str(event.attempts)),

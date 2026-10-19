@@ -13,7 +13,14 @@ from app.seeds import EDITOR_SECRET_VALUES
 from app.services.notify_events import FileChange, FileChanged
 from app.tests.conftest import sign_in
 from app.tests.notify_helpers import RecordingEvents, file_event_ids
-from app.tests.web_helpers import HTMX, EnvironmentIds, assert_never_cached, main_of, post
+from app.tests.web_helpers import (
+    HTMX,
+    EnvironmentIds,
+    assert_never_cached,
+    main_of,
+    post,
+    without_csrf_token,
+)
 
 CERTIFICATE_BODY = "c2VlZA=="
 EDITOR_VALUES = (*EDITOR_SECRET_VALUES, "db.internal.example.com", "TLSv1.2", "AQIEAgAAuTAN")
@@ -78,8 +85,21 @@ async def test_environment_scoped_users_see_their_file_masked(
     for url in (f"/environments/{ids.db}", f"/environments/{ids.db}/panel?mode=raw"):
         response = await web_client.get(url)
         assert response.status_code == 200
-        assert "3306" not in response.text and "DB_HOST" in response.text
+        assert "3306" not in without_csrf_token(response.text) and "DB_HOST" in response.text
         assert_never_cached(response)
+
+
+async def test_the_page_search_helper_removes_only_the_request_token(
+    web_client: httpx.AsyncClient, ids: EnvironmentIds
+) -> None:
+    """The token of a page is random hex that can hold any digits; the helper drops it and
+    nothing else, so a search for a value still looks at all the rest of the page."""
+    await sign_in(web_client, "env_scoped_admin")
+    page = (await web_client.get(f"/environments/{ids.db}")).text
+    assert "hx-headers:inherited=" in page
+    cleaned = without_csrf_token(page)
+    assert "hx-headers:inherited=" not in cleaned and "X-CSRFToken" not in cleaned
+    assert len(cleaned) > len(page) - 200 and "DB_HOST" in cleaned
 
 
 @pytest.mark.parametrize("role", OUT_OF_SCOPE_FOR_EDITOR)

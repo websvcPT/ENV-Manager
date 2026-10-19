@@ -24,6 +24,9 @@ from app.services.backup_run import BackupLocations, adopt_backups
 from app.services.backup_schedule import BackupScheduler
 from app.services.deploy_recovery import recover_interrupted_runs
 from app.services.docker_cli import DockerCli
+from app.services.git_locations import GitLocations
+from app.services.git_push import run_scheduled_push
+from app.services.git_services import GitServices
 from app.services.key_check import ensure_key_check
 from app.services.mailer import FastapiMailTransport
 from app.services.notifier import Notifications
@@ -47,6 +50,7 @@ from app.web.service_detail import router as service_detail_router
 from app.web.service_form import router as service_form_router
 from app.web.settings import router as settings_router
 from app.web.settings_backup import router as settings_backup_router
+from app.web.settings_git import router as settings_git_router
 from app.web.settings_notifications import router as settings_notifications_router
 from app.web.settings_paths import router as settings_paths_router
 from app.web.settings_smtp import router as settings_smtp_router
@@ -112,8 +116,23 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         application.state.backup_locations = locations
         application.state.backup_notifier = notifier
         await adopt_backups(session_factory, locations)
+        git_services = GitServices(
+            crypto,
+            GitLocations.from_settings(settings),
+            settings.database_path,
+            notifier=lambda: application.state.notifier,
+        )
+        application.state.git_services = git_services
+
+        async def push_to_git() -> None:
+            """The hourly job: push the export when it is due."""
+            await run_scheduled_push(session_factory, git_services)
+
         scheduler = BackupScheduler(
-            session_factory, locations, lambda: application.state.backup_notifier
+            session_factory,
+            locations,
+            lambda: application.state.backup_notifier,
+            git_push=push_to_git,
         )
         application.state.backup_scheduler = scheduler
         scheduler.start()
@@ -167,6 +186,7 @@ def create_app() -> FastAPI:
     application.include_router(account_router)
     application.include_router(settings_paths_router)
     application.include_router(settings_backup_router)
+    application.include_router(settings_git_router)
     application.include_router(settings_smtp_router)
     application.include_router(settings_notifications_router)
     application.include_router(settings_router)

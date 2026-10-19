@@ -207,9 +207,9 @@ async def test_only_declared_secret_names_are_accepted(
     """A name that no feature declared as secret can neither be written nor read as one."""
     async with create_session_factory(engine)() as db:
         with pytest.raises(ValueError, match="not a secret setting"):
-            await write_secret(db, crypto, "git.token", "x", actor=AuditActor.cli())
+            await write_secret(db, crypto, "test.undeclared", "x", actor=AuditActor.cli())
         with pytest.raises(ValueError, match="not a secret setting"):
-            await read_secret(db, crypto, "git.token")
+            await read_secret(db, crypto, "test.undeclared")
         assert (await db.execute(select(AppSetting))).first() is None
 
 

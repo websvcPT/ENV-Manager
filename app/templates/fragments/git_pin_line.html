@@ -1,0 +1,11 @@
+{#- The line that says whether the host key of the saved ssh address is pinned. It sits under the
+    test row; a response that changes the pin sends it again with `oob` set, so the line follows
+    without a reload. It is empty (and hidden) for an address that has no host key. Context:
+    status (a GitStatus) and oob. -#}
+<p id="git-pin" class="basis-full text-xs text-ink2{% if not status.ssh %} hidden{% endif %}"{% if oob | default(false) %} hx-swap-oob="true"{% endif %}>
+{%- if status.pinned -%}
+Host key pinned for {{ status.pinned.host }}: {{ status.pinned.key_type }} <span class="break-all font-mono">{{ status.pinned.fingerprint }}</span>. A server that presents another key is refused. Changing the address clears the pin.
+{%- elif status.ssh -%}
+No host key is pinned for this address yet. Test the connection to see its fingerprint and trust it.
+{%- endif -%}
+</p>

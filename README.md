@@ -68,7 +68,7 @@ secret, trusted proxies and allowed sources stay in environment variables.
 | Backup | Schedule, retention, an optional extra destination, the list of backups with Run now, Download and a confirmed Restore (see Backup and restore). |
 | SMTP | The mail server (host, port, TLS mode, username, password, from address) and a Send test mail button (see Notifications). |
 | Notifications | The event matrix: a switch for each event and who receives the events about a project, and the deploy webhook (address, shared secret, switch and Send test event; see Notifications). |
-| Git | Not available yet: it shows its panel and says so. It arrives with the feature it configures. |
+| Git | The private repository the encrypted export is pushed to: address, branch, commit author, export format, deploy key or token, the push switch, and Test connection with the SSH host key (see Git sync). |
 
 - **Allowed paths.** An entry is checked when it is added: absolute and normalized, an existing
   folder inside a host mount, never `/` or the data volume, and not already in the list (compared
@@ -190,6 +190,103 @@ the scheduler of a running server: a restored schedule takes effect at the next 
 save of the Backup settings. To recover onto an empty data volume, start the container with the
 same key, copy a downloaded backup in and run `backup restore`.
 
+## Git sync
+
+The application can push an encrypted export of its data to a private git repository, so a copy
+exists on a host other than the one that runs it. The direction is push only (nothing is ever
+pulled or imported), and nothing readable leaves the application: every file in the repository is
+ciphertext sealed with the master key, under paths that are keyed hashes, and a commit carries the
+message `Encrypted export <time>` and a fixed address (`env-manager@localhost`) with the author name
+of the settings, never the name of a project or a file.
+The repository can therefore sit on any private host. Like a backup, the export is useless without
+the master key, so keep that key apart from the repository (see Backup and restore).
+
+- **Export format** (Settings, Git). *One file per version* (the default) writes, for every version
+  of every file, the ciphertext the database already holds (`versions/<hash>/<number>.enc`, written
+  once and never touched again, so the tree only grows) and one sealed metadata file for each file
+  (`versions/<hash>/meta.enc`: the project, deployment, service and file names, their paths, and for
+  each version its number, author, comment, time and keyed content hash). The `<hash>` is a keyed
+  hash of the file's id, so a name cannot be guessed from it without the key. *Encrypted database
+  snapshot* replaces one file, `snapshot.enc`, at every push: the same consistent snapshot a backup
+  takes, sealed as a whole with the master key, because a plain snapshot holds names, paths and
+  user names in the clear. Both layouts also hold `manifest.enc`, which names the layout and tells,
+  by whether it opens with the current key, whether the tree belongs to this key. After a key or
+  layout change the tree is written again from scratch and the old files are gone from the working
+  tree (the history of the repository keeps what was pushed before, sealed with the old key).
+- **Reading an export.** Every file is a version-tagged AES-256-GCM token, the format of the
+  database itself. The version files are the database ciphertext (no context); `meta.enc`, the
+  manifest and the snapshot are bound to a context (`git-export:meta:<hash>`,
+  `git-export:manifest`, `git-export:snapshot`). With the key, inside the image:
+
+  ```
+  docker compose exec app python -c "
+  from pathlib import Path
+  from app.core.crypto import CryptoService, load_master_key
+  crypto = CryptoService(load_master_key(None, Path('/run/keys/envmanager.key')))
+  print(crypto.decrypt_text(Path('versions/<hash>/000001.enc').read_text().strip()))"
+  ```
+
+  Nothing in the application reads an export back yet; to recover, restore a backup.
+- **Address.** `ssh://git@host:2222/path.git`, `git@host:path.git` or `https://host/path.git`. A
+  password or token in the address is refused (it has its own field), so is `http`, an address that
+  starts with `-` and any other transport (`ext::`, `file://`, a local path), because a typed path
+  would write outside the allowed paths. An address that names a user (`https://ops@host/...`)
+  sends that user name with the token (Bitbucket wants `x-token-auth`); otherwise `x-access-token`.
+- **Credentials.** The deploy key (an unencrypted private key, pasted into the multi-line field)
+  is used for an ssh address and the access token for an https address; both can be stored and
+  both are sealed like the other secrets, never shown back (an empty field keeps what is stored,
+  a checkbox removes it) and never in an audit entry. The application starts the `git` binary with
+  an argument list and no shell (git itself passes the ssh command and the credential helper line
+  to `sh`, so every path in them is made of safe characters and quoted), in a working clone below
+  `/data/git` (mode 0700), with an environment of fixed values only: no variable of the
+  application, no agent, no terminal prompt, no configuration of the system or a user, and only
+  the ssh and https transports. The key and the
+  pinned host key are written to files of mode 0600 in a private folder for the length of one call
+  and removed afterwards; the ssh command allows nothing else (`IdentitiesOnly`, no agent or
+  forwarding, `StrictHostKeyChecking=yes` against only the pinned key, of the pinned type). A token
+  goes to git through its own `store` credential helper pointed at a file of the same kind, so it
+  is never in the address, an argument, an environment or the remote configuration. Every git call
+  has a deadline, and the output of git is read only to choose one of a few fixed sentences.
+- **Test connection** reads from the saved repository (`ls-remote`) and sends nothing, so save a
+  change before testing it; only a push proves that writing works. For an ssh address the test
+  first asks the server for its host key. With nothing pinned it stops and shows the fingerprint,
+  and **Trust this key and test again** pins exactly that key: the server is asked again at that
+  moment and the key is pinned only if its type and fingerprint are the ones shown. From then on
+  every ssh call checks that key and nothing else, and a server that no longer presents it is
+  refused before anything is sent, with both fingerprints shown. Changing the repository address
+  clears the pin (and the working clone, the watermark and the failures), so a new server is
+  trusted afresh; pinning never replaces a key that is already pinned. A push to an ssh address
+  with no pinned key fails with a message that says to test and trust the key.
+- **When it pushes.** A job on the scheduler runs an hour after the last run, the first two
+  minutes after start. A push happens only while the address is saved and the switch is on, at
+  most once an hour, and only when something changed since the last push that worked: a
+  watermark (a keyed hash of the counts, largest ids and newest update times of the versions and
+  of the structure, of the address, branch and layout, and for the snapshot layout of the audit log
+  without the entries that git sync and backups write about themselves) is compared with the one
+  stored. There is no push after a save or a deploy. The working clone is a cache: before each push
+  it is made to match the remote branch (or started empty when the branch does not exist), the
+  export is written on top, and the result is pushed without force, so commits that someone else
+  made stay and a push never rewrites history.
+- **When it fails.** A fault that can pass (the server cannot be reached, a timeout, the
+  repository changed during the push) is tried up to four times with waits of 5, 30 and 120
+  seconds; a refused credential, a changed host key or a refused push stops at once. A run that
+  still fails is recorded with one fixed sentence, audited (`git.push`, the host only, never the
+  address or a secret), announced as a Git push failure notification (see Notifications) and shown
+  as the banner "Git push failing" on every superadmin page until a push works. The next attempt
+  waits an hour after the first failed run, then two, four, up to a day, and a save of changed git
+  settings gives it a fresh start. Each failed run sends the notification, so a repository that
+  stays broken sends about five mails the first day and then one a day.
+- **Audit.** `git.push` (a push that went out or a failed run), `git.test` (each test, with the
+  host and the outcome), `git.host_key_pin` and `git.host_key_clear` (host and fingerprint), and
+  the usual `settings.update` entry for a save, which keeps the scheme and host of the address and
+  only the name of a credential. These entries have no item scope, so only the superadmin sees
+  them.
+- **Cost and limits.** The snapshot layout adds the whole database to the history of the
+  repository at every push, which does not compress; the per-version layout only adds what is new.
+  File sizes, the number of files and the times of the commits are visible to anyone who can read
+  the repository. Proxy settings are not passed to git. The application runs as one worker; a second
+  one would start a second scheduler.
+
 ## Notifications
 
 The application sends mail about what the superadmin and the admins need to know. Nothing is sent
@@ -209,8 +306,8 @@ stored settings each time a mail is sent, never at start-up, so a save applies t
   user has not used before, a lockout (a name, an address, or the API from an address), a failed,
   blocked or halted deploy (a failed post-deploy command included), a user created, disabled, given
   a new password (changed by the user or reset by a superadmin or the command line) or whose
-  two-factor sign-in was reset, a failed or not copied backup, and a failed git push (the event
-  exists; git sync will fire it). Off by default: every successful deploy and every file
+  two-factor sign-in was reset, a failed or not copied backup, and a failed git push (see Git sync).
+  Off by default: every successful deploy and every file
   change (a new version saved, restored, imported from the host, created, or keys added from a dist
   report). Changes to the allowed paths are always announced to the superadmins; there is no
   switch for them.

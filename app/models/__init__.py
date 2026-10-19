@@ -20,6 +20,7 @@ from app.models.deploy import (
     DriftState,
     PostDeployStatus,
 )
+from app.models.git_sync import SYNC_STATE_ID, GitSyncState
 from app.models.notifications import NotificationStatus, UserSeenAddress
 from app.models.operations import AllowedPath, Backup, BackupStatus, BackupTrigger
 from app.models.structure import (
@@ -44,6 +45,7 @@ from app.models.user import (
 )
 
 __all__ = [
+    "SYNC_STATE_ID",
     "AccessGrant",
     "AllowedPath",
     "ApiToken",
@@ -68,6 +70,7 @@ __all__ = [
     "DriftState",
     "Environment",
     "EnvironmentVersion",
+    "GitSyncState",
     "GrantLevel",
     "HookType",
     "LoginCounter",

@@ -1,0 +1,55 @@
+{#- The git settings form. A refused save swaps this again with the reasons next to the fields
+    (422); a stored save swaps it with a toast. The deploy key and the token fields are never
+    filled: an empty field keeps what is stored. Context: form (GitForm), errors (messages by
+    field), saved (none, or tone, title and message of a toast), format_options (value and label
+    pairs), deploy_key_stored and token_stored (a credential is stored) and status (a GitStatus:
+    the last push, the last failure and the pinned host key). -#}
+{% from "macros/badges.html" import badge %}
+{% from "macros/buttons.html" import button %}
+{% from "macros/feedback.html" import note, toast %}
+{% from "macros/forms.html" import checkbox, field, select_field, textarea_field %}
+<form id="git" data-fragment="git" hx-post="/settings/git" hx-target="this" hx-swap="outerHTML" class="flex flex-col gap-4 px-4 pb-5 md:px-5">
+{{ note("Pushes an encrypted export only, never plaintext. Direction is push only.") }}
+{{ field("gu", "Repository URL", name="url", value=form.url, mono=true, hint="An ssh:// or https:// address, or git@host:path. Leave empty to switch git sync off. Put no password or token in it.", error=errors.get("url"), autocomplete="off", spellcheck="false") }}
+<div class="grid gap-4 md:grid-cols-3">
+{{ field("gb", "Branch", name="branch", value=form.branch, mono=true, error=errors.get("branch"), autocomplete="off", spellcheck="false") }}
+{{ field("ga", "Commit author name", name="author_name", value=form.author_name, hint="Commits carry this name and a fixed address.", error=errors.get("author_name"), autocomplete="off", spellcheck="false") }}
+{{ select_field("gf", "Export format", format_options, selected=form.export_format, name="export_format", hint="One file per version only ever adds files. A snapshot puts the whole database into the history at every push.", error=errors.get("export_format")) }}
+</div>
+<div class="grid gap-4 md:grid-cols-2">
+{{ textarea_field("gk", "Deploy key (ssh addresses)", name="deploy_key", rows=5, mono=true, placeholder=("••••••••" if deploy_key_stored else ""), hint=("Stored encrypted. Leave empty to keep it." if deploy_key_stored else "Stored encrypted. Paste the private key, without a passphrase."), error=errors.get("deploy_key"), autocomplete="off", spellcheck="false") }}
+{{ field("gt", "Access token (https addresses)", name="token", type="password", placeholder=("••••••••" if token_stored else ""), hint=("Stored encrypted. Leave empty to keep it." if token_stored else "Stored encrypted. Sent only to the https address above."), error=errors.get("token"), autocomplete="new-password") }}
+</div>
+{%- if deploy_key_stored or token_stored %}
+<div class="flex flex-wrap gap-x-6 gap-y-2.5">
+{%- if deploy_key_stored %}
+{{ checkbox("remove_deploy_key", "Remove the stored deploy key", checked=form.remove_deploy_key, extra_class="max-md:min-h-11 max-md:items-center") }}
+{%- endif %}
+{%- if token_stored %}
+{{ checkbox("remove_token", "Remove the stored token", checked=form.remove_token, extra_class="max-md:min-h-11 max-md:items-center") }}
+{%- endif %}
+</div>
+{%- endif %}
+<fieldset class="flex flex-col gap-2.5"><legend class="mb-1 text-[13px] font-semibold">Push</legend>
+{{ checkbox("push_enabled", "Push hourly when something changed", checked=form.push_enabled, id="gp", extra_class="max-md:min-h-11 max-md:items-center") }}
+<p class="text-xs text-ink2">At most one push an hour, and only when a file or its structure changed since the last push. Nothing is pushed after each save or deploy.</p>
+</fieldset>
+<div class="flex flex-wrap items-center gap-3 border-t border-line pt-4">
+{{ button("Test connection", hx_post="/settings/git/test", hx_target="#git-test", hx_swap="outerHTML", extra_class="max-md:h-11") }}
+<div id="git-test" aria-live="polite">
+{%- if status.failing %}
+{{ badge("failed", "Last push failed " ~ status.last_failure) }}<p class="mt-1.5 max-w-md text-xs text-ink2">{{ status.last_error }}</p>
+{%- elif status.last_push %}
+{{ badge("deployed", "Last push " ~ status.last_push) }}
+{%- elif status.configured %}
+<p class="text-xs text-ink2">Nothing has been pushed yet.</p>
+{%- endif %}
+</div>
+{% include "fragments/git_pin_line.html" %}
+<p class="basis-full text-xs text-ink2">The test reads from the saved repository and sends nothing, so save a change before testing it. Only a push proves that writing works.</p>
+</div>
+<div class="flex flex-wrap items-center gap-3">{{ button("Save settings", kind="primary-sm", type="submit", extra_class="max-md:h-11") }}</div>
+{%- if saved %}
+{{ toast(saved.tone, saved.message, saved.title, floating=true) }}
+{%- endif %}
+</form>

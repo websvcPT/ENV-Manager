@@ -58,6 +58,11 @@ class Settings(BaseSettings):
         """Folder inside the data volume that holds the deploy lock files."""
         return self.data_path / "locks"
 
+    @property
+    def git_path(self) -> Path:
+        """Folder inside the data volume that holds the git sync working clone and scratch files."""
+        return self.data_path / "git"
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def _parse_list(cls, value: object) -> object:

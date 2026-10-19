@@ -175,7 +175,10 @@ async def test_a_system_event_goes_to_the_superadmin_and_a_switch_turns_it_off(
 async def test_a_successful_backup_sends_nothing_and_a_failed_one_does(
     world: Notifications, transport: RecordingTransport
 ) -> None:
-    """Only a failed or incomplete backup is mail, and it is not even queued when it worked."""
+    """Only a failed or incomplete backup is mail, and it is not even queued when it worked.
+
+    Mails go out from background tasks, so the order of the two is not part of the contract.
+    """
 
     def result(status: BackupStatus) -> BackupFinished:
         return BackupFinished(
@@ -193,7 +196,7 @@ async def test_a_successful_backup_sends_nothing_and_a_failed_one_does(
     await world.backup_finished(result(BackupStatus.FAILURE))
     await world.backup_finished(result(BackupStatus.PARTIAL))
     await world.idle()
-    assert [item.mail.subject for item in transport.sent] == [
+    assert sorted(item.mail.subject for item in transport.sent) == [
         "[ENV Manager] Backup failed",
         "[ENV Manager] Backup incomplete",
     ]
@@ -494,7 +497,7 @@ async def test_a_retry_after_mail_was_switched_off_drops_the_mail_without_counti
 async def test_a_git_push_failure_is_sent_to_the_superadmin_until_its_switch_is_off(
     world: Notifications, transport: RecordingTransport, seeded_database: AsyncEngine
 ) -> None:
-    """The event exists before git sync does: announced, it is a system mail with its switch."""
+    """A failed git push is a system mail for the superadmins, with its own switch."""
     await world.notify(GitPushFailed("The repository refused the credentials.", 3))
     await world.idle()
     assert transport.to() == ["root@example.test"]

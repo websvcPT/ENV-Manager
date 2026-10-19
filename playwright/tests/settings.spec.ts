@@ -21,7 +21,6 @@ const TABS = [
   ['notifications', 'Notifications'],
   ['general', 'General'],
 ] as const;
-const UNBUILT = ['git'] as const;
 const DEFAULT_TIMEOUTS = { idle: '30', absolute: '12' };
 
 /*
@@ -107,15 +106,6 @@ test.describe('layout and tabs', () => {
       await expect(currentTab(page)).toHaveText(label);
       await expect(page.locator('main section[aria-labelledby]').first()).toBeVisible();
       expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
-    });
-  }
-
-  for (const slug of UNBUILT) {
-    test(`the ${slug} tab says it is not available yet and has no controls`, async ({ page }) => {
-      await page.goto(`/settings/${slug}`);
-      const main = page.locator('main');
-      await expect(main.locator('[role="note"]')).toContainText('not');
-      await expect(main.locator('input, select, textarea, form, button')).toHaveCount(0);
     });
   }
 

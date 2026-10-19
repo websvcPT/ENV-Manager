@@ -47,7 +47,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PATH=/opt/venv/bin:$PATH \
     ENVMANAGER_DATA_PATH=/data
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git ca-certificates \
+    && apt-get install -y --no-install-recommends git openssh-client ca-certificates \
     && apt-get clean \
     && find /var/lib/apt/lists -type f -delete \
     && groupadd --gid "$APP_GID" app \

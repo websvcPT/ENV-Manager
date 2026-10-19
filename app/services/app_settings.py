@@ -13,6 +13,7 @@ key, base URL, CSRF secret, trusted proxies and allowed sources have no setting 
 """
 
 import json
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field, fields
 from typing import Any
@@ -34,9 +35,13 @@ TARGET_TYPE = "settings"
 
 SMTP_PASSWORD_KEY = "smtp.password"  # noqa: S105
 WEBHOOK_SECRET_KEY = "notifications.webhook_secret"  # noqa: S105
+GIT_DEPLOY_KEY_KEY = "git.deploy_key"
+GIT_TOKEN_KEY = "git.token"  # noqa: S105
 
 # Names of settings whose value is a secret. Each feature that stores one adds its name here.
-SECRET_KEYS: frozenset[str] = frozenset({SMTP_PASSWORD_KEY, WEBHOOK_SECRET_KEY})
+SECRET_KEYS: frozenset[str] = frozenset(
+    {SMTP_PASSWORD_KEY, WEBHOOK_SECRET_KEY, GIT_DEPLOY_KEY_KEY, GIT_TOKEN_KEY}
+)
 
 
 @dataclass(frozen=True)
@@ -138,6 +143,29 @@ class NotificationSettings:
 
 
 @dataclass(frozen=True)
+class GitSettings:
+    """The private git repository the encrypted export is pushed to.
+
+    ``url`` is an ssh or https address; an ssh address uses the stored deploy key and an https
+    address the stored access token (both are secrets kept apart, ``GIT_DEPLOY_KEY_KEY`` and
+    ``GIT_TOKEN_KEY``). ``export_format`` is ``per_version`` (one encrypted file for each
+    version of each file) or ``snapshot`` (the encrypted database). While ``push_enabled`` is on
+    and an address is set, a push happens at most once an hour and only when something changed.
+    """
+
+    url: str = ""
+    branch: str = "main"
+    author_name: str = "ENV Manager"
+    export_format: str = "per_version"
+    push_enabled: bool = True
+
+    @property
+    def configured(self) -> bool:
+        """Whether there is a repository to push to."""
+        return bool(self.url)
+
+
+@dataclass(frozen=True)
 class StoredSettings:
     """Every typed section, as stored now."""
 
@@ -147,16 +175,24 @@ class StoredSettings:
     backup: BackupSettings = field(default_factory=BackupSettings)
     smtp: SmtpSettings = field(default_factory=SmtpSettings)
     notifications: NotificationSettings = field(default_factory=NotificationSettings)
+    git: GitSettings = field(default_factory=GitSettings)
 
 
 # Settings whose value is an address that can carry a token in its path or query.
-URL_SETTINGS: frozenset[str] = frozenset({"notifications.webhook_url"})
+URL_SETTINGS: frozenset[str] = frozenset({"notifications.webhook_url", "git.url"})
+_SCP_LIKE = re.compile(r"^(?:[^@/\s]+@)?(?P<host>\[[0-9a-fA-F:]+\]|[A-Za-z0-9.-]+):(?!//)")
 
 
 def url_origin(value: object) -> str:
-    """The scheme, host and port of an address, without the path, query or anything after them."""
+    """The scheme, host and port of an address, without the path, query or anything after them.
+
+    An scp-like git address (``git@host:path``) reads as an ssh address of that host.
+    """
     if not isinstance(value, str) or not value:
         return ""
+    if "://" not in value:
+        scp = _SCP_LIKE.match(value)
+        return f"ssh://{scp.group('host')}" if scp else ""
     try:
         parts = urlsplit(value)
         host = parts.hostname or ""
@@ -247,6 +283,7 @@ async def load_stored_settings(db: AsyncSession) -> StoredSettings:
         backup=read_section("backup", BackupSettings, stored),
         smtp=read_section("smtp", SmtpSettings, stored),
         notifications=read_section("notifications", NotificationSettings, stored),
+        git=read_section("git", GitSettings, stored),
     )
 
 

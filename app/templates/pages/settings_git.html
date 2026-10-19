@@ -1,0 +1,9 @@
+{#- The Git tab: the repository settings, the credentials, the push switch and the connection
+    test. Context: the settings tab context and what fragments/settings_git.html needs. -#}
+{% extends "layouts/settings.html" %}
+{% from "macros/panels.html" import panel %}
+{% block tab %}
+{% call panel("Private git repository", "git-title", fragment="settings-git") %}
+{% include "fragments/settings_git.html" %}
+{% endcall %}
+{% endblock %}

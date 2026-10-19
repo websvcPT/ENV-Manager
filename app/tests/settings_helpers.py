@@ -15,7 +15,6 @@ from app.services.app_settings import StoredSettings, load_stored_settings
 from app.tests.conftest import sign_in
 
 TABS = ("paths", "smtp", "git", "backup", "security", "post-deploy", "notifications", "general")
-UNBUILT = ("git",)
 SETTINGS_ACTIONS = ("settings.update", "allowed_path.add", "allowed_path.remove")
 NON_SUPERADMINS = (
     "admin",
