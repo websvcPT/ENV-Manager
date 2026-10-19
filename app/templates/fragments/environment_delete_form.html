@@ -1,0 +1,13 @@
+{#- The delete file confirmation inside its dialog: what is lost, and the name to type back. A
+    wrong name, or tokens still restricted to the file, swap this form again with the reason.
+    Context: env (an EditorHeader), form_value and form_error (both optional). -#}
+{% from "macros/dialogs.html" import confirm_footer, confirm_message, dialog_body, dialog_head %}
+{% from "macros/forms.html" import field %}
+<div data-fragment="environment-delete">
+{{ dialog_head("environment-delete", "Delete file " ~ env.name) }}
+<form id="delete-environment-form" data-fragment="delete-environment-form" hx-post="/environments/{{ env.id }}/delete" hx-target="#environment-delete" hx-swap="innerHTML" hx-status:422="swap:innerHTML target:#environment-delete">
+{% call dialog_body() %}{% call confirm_message(ink=false) %}This deletes the file and all its versions. The file already deployed to the host is not touched. Deploy history and audit entries are kept. This cannot be undone.{% endcall %}
+{{ field("den", "Type the file name to confirm", name="confirm_name", value=form_value | default(""), placeholder=env.name, error=form_error | default(none), mono=true, autocomplete="off") }}{% endcall %}
+{{ confirm_footer("Delete file", type="submit") }}
+</form>
+</div>

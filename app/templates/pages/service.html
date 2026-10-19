@@ -1,6 +1,7 @@
 {#- Service detail: header, section links, environments, post-deploy panel, deploy history and
     the explanation of a service. Context: service (a ServiceHeader), environments, pending, history,
-    post_deploy, can_manage_structure, can_manage_grants, is_viewer, can_deploy, added (service or environment, optional) and
+    post_deploy, can_manage_structure, can_manage_grants, is_viewer, can_deploy, added (service or
+    environment, optional), deleted (environment, optional) and
     the settings form values of the post-deploy panel (docker, socket_path, form, errors, saved). -#}
 {% extends "layouts/app.html" %}
 {% from "macros/access.html" import service_tabs %}
@@ -28,7 +29,8 @@
 {% include "fragments/service_history.html" %}
 {% include "fragments/service_explainer.html" %}
 {% if can_deploy %}{{ deploy_shell() }}{% endif %}
-{% if can_manage_structure %}{{ loaded_dialog("service-delete", "Delete service", width="560") }}{% endif %}
+{% if can_manage_structure %}{{ loaded_dialog("service-delete", "Delete service", width="560") }}{{ loaded_dialog("environment-delete", "Delete file", width="560") }}{% endif %}
 {% if renamed | default(false) %}{{ toast("success", "The service is now called " ~ service.name ~ ".", "Service renamed", floating=true) }}{% endif %}
+{% if deleted | default("") == "environment" %}{{ toast("success", "The file and all its versions were deleted.", "File deleted", floating=true) }}{% endif %}
 {% if added == "environment" %}{{ toast("success", "The file was added with its first version.", "Environment added", floating=true) }}{% elif added == "service" %}{{ toast("success", service.name ~ " was added. Add its first environment below.", "Service added", floating=true) }}{% endif %}
 {% endblock %}

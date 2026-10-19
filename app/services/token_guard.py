@@ -24,12 +24,21 @@ from app.services.tokens import is_live
 
 
 def _subtree(
-    project_id: int | None, deployment_id: int | None, service_id: int | None
+    project_id: int | None,
+    deployment_id: int | None,
+    service_id: int | None,
+    environment_id: int | None,
 ) -> tuple[Select[int], Select[int], Select[int]]:
     """The selects of the deployment, service and environment ids of one subtree.
 
     Exactly one of the arguments is given; the select of a level above it is empty.
     """
+    if environment_id is not None:
+        return (
+            select(Deployment.id).where(Deployment.id.is_(None)),
+            select(Service.id).where(Service.id.is_(None)),
+            select(Environment.id).where(Environment.id == environment_id),
+        )
     if project_id is not None:
         deployments = select(Deployment.id).where(Deployment.project_id == project_id)
     elif deployment_id is not None:
@@ -50,14 +59,19 @@ async def restrictions_below(
     project_id: int | None = None,
     deployment_id: int | None = None,
     service_id: int | None = None,
+    environment_id: int | None = None,
 ) -> list[tuple[ApiToken, ApiTokenRestriction]]:
     """The tokens and restriction rows that point at an item or anything below it.
 
-    Name the item by exactly one of ``project_id``, ``deployment_id`` or ``service_id``.
+    Name the item by exactly one of ``project_id``, ``deployment_id``, ``service_id`` or
+    ``environment_id``.
     """
-    if sum(value is not None for value in (project_id, deployment_id, service_id)) != 1:
+    named = (project_id, deployment_id, service_id, environment_id)
+    if sum(value is not None for value in named) != 1:
         raise ValueError("name exactly one item")
-    deployments, services, environments = _subtree(project_id, deployment_id, service_id)
+    deployments, services, environments = _subtree(
+        project_id, deployment_id, service_id, environment_id
+    )
     condition = (
         ApiTokenRestriction.deployment_id.in_(deployments)
         | ApiTokenRestriction.service_id.in_(services)
@@ -86,6 +100,7 @@ async def guard_delete(
     project_id: int,
     deployment_id: int | None = None,
     service_id: int | None = None,
+    environment_id: int | None = None,
 ) -> list[str]:
     """Check the restrictions below an item that is about to be deleted.
 
@@ -107,6 +122,7 @@ async def guard_delete(
             project_id=project_id,
             deployment_id=deployment_id,
             service_id=service_id,
+            environment_id=environment_id,
             details={"reason": "restricted_tokens", "tokens": tokens},
         )
         await db.commit()

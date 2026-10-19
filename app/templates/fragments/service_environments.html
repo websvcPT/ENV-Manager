@@ -11,7 +11,8 @@
   {"key": "edit" if row.can_edit else "view", "label": "Edit" if row.can_edit else "View", "icon": "pencil" if row.can_edit else "eye", "href": "/environments/" ~ row.id, "primary": true},
   {"key": "history", "label": "History", "icon": "clock", "href": "/environments/" ~ row.id ~ "/history"}
 ] + ([{"key": "drift", "label": "Open drift view", "icon": "warning", "href": "/environments/" ~ row.id ~ "/drift"}] if row.status == "halted" else []) + ([{"key": "dist", "label": "Compare to dist", "icon": "diff", "href": "/environments/" ~ row.id ~ "/dist"}] if row.can_check_dist else []) + ([
-  {"key": "settings", "label": "Settings", "icon": "settings", "href": "/environments/" ~ row.id ~ "/settings"}
+  {"key": "settings", "label": "Settings", "icon": "settings", "href": "/environments/" ~ row.id ~ "/settings"},
+  {"key": "delete", "label": "Delete", "icon": "trash", "danger": true, "attrs": {"data_js": "dialog-open", "data_target": "environment-delete", "aria_haspopup": "dialog", "hx_get": "/environments/" ~ row.id ~ "/delete", "hx_target": "#environment-delete", "hx_swap": "innerHTML"}}
 ] if can_manage_structure else [])) }}
 {%- endmacro %}
 {% set retry_url = "/services/" ~ service.id ~ "/environments" %}

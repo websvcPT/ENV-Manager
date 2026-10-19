@@ -57,6 +57,7 @@ from app.web.deployments import router as deployments_router
 from app.web.dist_report import router as dist_report_router
 from app.web.drift import router as drift_router
 from app.web.editor import router as editor_router
+from app.web.environment_delete import router as environment_delete_router
 from app.web.environment_form import router as environment_form_router
 from app.web.environment_settings import router as environment_settings_router
 from app.web.errors import http_error_handler, unhandled_error_handler, validation_error_handler
@@ -230,6 +231,7 @@ def create_app() -> FastAPI:
     application.include_router(service_form_router)
     application.include_router(environment_form_router)
     application.include_router(environment_settings_router)
+    application.include_router(environment_delete_router)
     application.include_router(editor_router)
     application.include_router(history_router)
     application.include_router(drift_router)

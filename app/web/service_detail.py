@@ -173,11 +173,13 @@ async def service_page(
     stored: Stored,
     added: str = "",
     renamed: bool = False,
+    deleted: str = "",
 ) -> Response:
     """The service page: header, explanation, environments, post-deploy panel and history.
 
-    ``added`` (service or environment) shows the toast after the add forms redirect here and
-    ``renamed`` the one after the rename form.
+    ``added`` (service or environment) shows the toast after the add forms redirect here,
+    ``renamed`` the one after the rename form and ``deleted`` (environment) the one after a
+    file was deleted.
     """
     rows = await load_environment_rows(db, access.scope, access.service)
     history = await load_service_history(db, access.service)
@@ -196,6 +198,7 @@ async def service_page(
             "post_deploy": post_deploy,
             "added": added if added in ADDED_TOASTS else "",
             "renamed": renamed,
+            "deleted": "environment" if deleted == "environment" else "",
         },
     )
 
