@@ -313,6 +313,18 @@ async def test_a_backup_taken_before_a_migration_gets_a_record(
         assert await adopt_untracked_backups(db, locations.backup_dir) == 0
 
 
+async def test_a_backup_file_named_for_a_key_rotation_is_adopted_as_one(
+    factory: async_sessionmaker[AsyncSession], locations: BackupLocations
+) -> None:
+    """A rotation backup whose record was lost keeps its meaning from its name."""
+    locations.backup_dir.mkdir(mode=0o700)
+    name = backup_file_name(BackupTrigger.ROTATION.value)
+    (locations.backup_dir / name).write_bytes(b"x" * 10)
+    assert await adopt_backups(factory, locations) == 1
+    (record,) = await backup_records(factory)
+    assert (record.filename, record.trigger) == (name, BackupTrigger.ROTATION)
+
+
 async def test_the_snapshot_is_the_database_as_it_was(
     factory: async_sessionmaker[AsyncSession], locations: BackupLocations
 ) -> None:

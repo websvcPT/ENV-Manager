@@ -283,6 +283,7 @@ async def test_the_lock_survives_a_restart(api_world: ApiWorld) -> None:
     world = api_world
     for _ in range(10):
         await world.http.get("/api/v1/services/1/deployments/last", headers=bearer(UNKNOWN_SECRET))
+    world.app.state.server_lock.release()  # the first process ends before the next starts
     restarted = create_app()
     async with restarted.router.lifespan_context(restarted):
         transport = httpx.ASGITransport(app=restarted, client=CLIENT_ADDRESS)

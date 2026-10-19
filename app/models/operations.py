@@ -12,13 +12,14 @@ from app.models.types import UtcDateTime, enum_values, utc_now
 
 class BackupTrigger(StrEnum):
     """What caused a backup: a person, the schedule, the command line, or the application itself
-    before it changes the database (a migration) or replaces it (a restore)."""
+    before it changes the database (a migration, a key rotation) or replaces it (a restore)."""
 
     MANUAL = "manual"
     SCHEDULED = "scheduled"
     MIGRATION = "migration"
     CLI = "cli"
     RESTORE = "restore"
+    ROTATION = "rotation"
 
 
 class BackupStatus(StrEnum):

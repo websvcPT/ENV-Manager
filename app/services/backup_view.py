@@ -28,6 +28,7 @@ TRIGGER_LABELS = {
     BackupTrigger.CLI: "Command line",
     BackupTrigger.MIGRATION: "Before a migration",
     BackupTrigger.RESTORE: "Before a restore",
+    BackupTrigger.ROTATION: "Before a key rotation",
 }
 BADGES = {
     BackupStatus.SUCCESS: "success",

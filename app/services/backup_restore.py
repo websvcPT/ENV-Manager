@@ -10,6 +10,10 @@ the replaced database is replaced with it. Only then is it switched in, through 
 backup into the live database: that is one write transaction, so the live data is replaced whole
 or not at all, connections of the running application and of other processes stay valid, and a
 failure leaves the current data as it was. The safety backup keeps what the restore replaced.
+
+A backup made before a key rotation is sealed with the older key. When that key is given, the
+backup is checked against it and the working copy is re-keyed to the current key (see
+``key_rotation``) before the switch, so the restored data is the same as any other restore's.
 """
 
 import asyncio
@@ -44,6 +48,7 @@ from app.services.backup_inspect import (
 from app.services.backup_lock import BackupBusyError, hold_backup_lock
 from app.services.backup_records import RecordSnapshot, merge_records, snapshot_records
 from app.services.backup_run import BackupLocations
+from app.services.key_rotation import rekey_database
 
 log = get_logger("backup_restore")
 
@@ -55,6 +60,7 @@ REFUSALS = frozenset(
         RestoreProblem.NOT_A_BACKUP,
         RestoreProblem.DAMAGED,
         RestoreProblem.WRONG_KEY,
+        RestoreProblem.NOT_THE_OLD_KEY,
         RestoreProblem.NEWER,
     }
 )
@@ -118,13 +124,21 @@ async def _prepare(
     actor: AuditActor,
     label: str,
     safety_name: str,
+    keys: tuple[CryptoService, CryptoService] | None,
 ) -> None:
-    """Make the working copy ready to become the live database (see the module description)."""
+    """Make the working copy ready to become the live database (see the module description).
+
+    ``keys`` is the older key the backup was made with and the key in use now, for a backup made
+    before a key rotation: everything the key protects is moved to the current key here, in the
+    working copy, so the switch brings in data the current key opens.
+    """
     engine = create_engine(work)
     try:
         if inspection.needs_upgrade:
             await upgrade_to_head(engine)
         async with create_session_factory(engine)() as session:
+            if keys is not None:
+                await rekey_database(session, *keys)
             await session.execute(delete(UserSession))
             await session.execute(delete(PendingLogin))
             await merge_records(session, current.records, locations.backup_dir)
@@ -142,6 +156,7 @@ async def _prepare(
                     "safety_backup": safety_name,
                     "sessions_ended": current.sessions,
                     "upgraded_from": inspection.revision if inspection.needs_upgrade else None,
+                    "older_key": keys is not None,
                 },
             )
             await session.commit()
@@ -201,17 +216,20 @@ async def restore_backup(
     label: str,
     crypto: CryptoService,
     actor: AuditActor,
+    old_crypto: CryptoService | None = None,
 ) -> RestoreResult:
     """Replace the current data with the backup in ``source`` and end every session.
 
     ``label`` is the backup's file name, which the audit entry records instead of a path.
+    ``old_crypto`` is the key of a backup made before a key rotation: the backup must then open
+    with it, and its values and hashes are moved to ``crypto`` before the switch.
     Raises ``RestoreRefusedError`` with a fixed message when the backup is refused, the safety
     backup cannot be made, another backup or restore is running, or the switch fails; the
     current data is untouched in every one of those cases.
     """
     try:
         with hold_backup_lock(locations.lock_dir):
-            return await _restore_locked(db, locations, source, label, crypto, actor)
+            return await _restore_locked(db, locations, source, label, crypto, actor, old_crypto)
     except BackupBusyError as error:
         raise RestoreRefusedError(RestoreProblem.BUSY) from error
     except BackupSnapshotError as error:
@@ -225,13 +243,19 @@ async def _restore_locked(
     label: str,
     crypto: CryptoService,
     actor: AuditActor,
+    old_crypto: CryptoService | None,
 ) -> RestoreResult:
     """The restore steps, with the backup lock held."""
     work = locations.database_path.with_name(f".restore-{secrets.token_hex(6)}.db")
     problem: RestoreProblem | None = None
     try:
         await asyncio.to_thread(_stage_copy, source, work)
-        inspection = await asyncio.to_thread(inspect_backup, work, crypto)
+        inspection = await asyncio.to_thread(
+            inspect_backup,
+            work,
+            old_crypto or crypto,
+            RestoreProblem.NOT_THE_OLD_KEY if old_crypto else RestoreProblem.WRONG_KEY,
+        )
         current = await _read_current(db)
         try:
             safety = await create_backup(
@@ -247,6 +271,7 @@ async def _restore_locked(
             actor=actor,
             label=label,
             safety_name=safety.name,
+            keys=(old_crypto, crypto) if old_crypto else None,
         )
         await asyncio.to_thread(replace_database, work, locations.database_path)
     except RestoreRefusedError as error:

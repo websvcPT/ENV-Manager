@@ -26,6 +26,7 @@ TRIGGER_BY_REASON = {
     "cli": BackupTrigger.CLI,
     "pre-migration": BackupTrigger.MIGRATION,
     "pre-restore": BackupTrigger.RESTORE,
+    "rotation": BackupTrigger.ROTATION,
 }
 REASON_BY_TRIGGER = {
     BackupTrigger.MANUAL: "manual",
@@ -33,6 +34,7 @@ REASON_BY_TRIGGER = {
     BackupTrigger.CLI: "cli",
     BackupTrigger.MIGRATION: "pre-migration",
     BackupTrigger.RESTORE: "pre-restore",
+    BackupTrigger.ROTATION: "rotation",
 }
 HAS_FILE = (BackupStatus.SUCCESS, BackupStatus.PARTIAL)
 

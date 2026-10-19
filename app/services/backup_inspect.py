@@ -3,9 +3,10 @@
 The check runs on a private copy of the candidate, never on the file the person named, so the
 file cannot change between the check and the restore. A backup is accepted only if it is an
 intact SQLite database that this application made (its migration record names a revision this
-version knows) and whose key check record opens with the master key in use now. A backup sealed
-with another key is refused with a plain message: restoring it would leave every stored value
-unreadable. The copy is opened read-only with an untrusted schema, and only fixed queries run.
+version knows) and whose key check record opens with the master key in use now, or with the older
+key a person names for a backup made before a key rotation. A backup sealed with another key is
+refused with a plain message: restoring it would leave every stored value unreadable. The copy is
+opened read-only with an untrusted schema, and only fixed queries run.
 """
 
 import sqlite3
@@ -31,6 +32,7 @@ class RestoreProblem(StrEnum):
     NOT_A_BACKUP = "not_a_backup"
     DAMAGED = "damaged"
     WRONG_KEY = "wrong_key"
+    NOT_THE_OLD_KEY = "not_the_old_key"
     NEWER = "newer"
     BUSY = "busy"
     SAFETY_FAILED = "safety_failed"
@@ -44,6 +46,9 @@ RESTORE_MESSAGES = {
     RestoreProblem.WRONG_KEY: (
         "This backup was made with a different master key than the one this application "
         "runs with, so its values could not be read after a restore. Nothing was changed."
+    ),
+    RestoreProblem.NOT_THE_OLD_KEY: (
+        "This backup was not made with the key in the given key file. Nothing was changed."
     ),
     RestoreProblem.NEWER: (
         "This backup was made by a newer version of ENV Manager. Update the application first."
@@ -93,8 +98,15 @@ def _check_revision(revision: str) -> bool:
     return revision != script.get_current_head()
 
 
-def inspect_backup(path: Path, crypto: CryptoService) -> BackupInspection:
-    """Check a private copy of a backup and describe it, or raise ``RestoreRefusedError``."""
+def inspect_backup(
+    path: Path, crypto: CryptoService, key_problem: RestoreProblem = RestoreProblem.WRONG_KEY
+) -> BackupInspection:
+    """Check a private copy of a backup and describe it, or raise ``RestoreRefusedError``.
+
+    ``crypto`` holds the key the backup must have been made with: the key in use now, or the
+    older key a person named for a backup made before a rotation. A backup its key check record
+    does not open for is refused with ``key_problem``.
+    """
     try:
         with path.open("rb") as handle:
             header = handle.read(len(SQLITE_HEADER))
@@ -123,7 +135,7 @@ def inspect_backup(path: Path, crypto: CryptoService) -> BackupInspection:
     try:
         crypto.verify_key_check(record[0])
     except KeyMismatchError as error:
-        raise RestoreRefusedError(RestoreProblem.WRONG_KEY) from error
+        raise RestoreRefusedError(key_problem) from error
     except CryptoError as error:
         raise RestoreRefusedError(RestoreProblem.NOT_A_BACKUP) from error
     revision = str(revisions[0][0])

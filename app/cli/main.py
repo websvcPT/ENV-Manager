@@ -1,8 +1,5 @@
-"""Typer commands for bootstrapping and recovering user access, deploying a service and backups."""
+"""Typer commands for bootstrapping and recovering user access, deploying, backups and the key."""
 
-import asyncio
-from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated
@@ -11,11 +8,11 @@ import typer
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.cli.keys import key_app
 from app.cli.notify import cli_notifier
-from app.config import get_settings
-from app.core.crypto import CryptoError, build_crypto_service
-from app.core.db import create_engine, create_session_factory
-from app.core.migrations import migrate_database
+from app.cli.session import run_command
+from app.config import Settings, get_settings
+from app.core.crypto import CryptoError, CryptoService, build_crypto_service, load_master_key
 from app.models import (
     AuditActorType,
     BackupStatus,
@@ -48,7 +45,7 @@ from app.seeds import (
 from app.seeds import seed as seed_data
 from app.services import users as user_service
 from app.services.audit import AuditActor
-from app.services.backup_inspect import RestoreRefusedError
+from app.services.backup_inspect import RestoreProblem, RestoreRefusedError
 from app.services.backup_lock import BackupBusyError
 from app.services.backup_restore import restore_backup
 from app.services.backup_run import BackupLocations, run_backup
@@ -59,6 +56,7 @@ from app.services.deploy_types import DeployOutcome, DeployRequest, DeployReques
 from app.services.docker_cli import DockerCli
 from app.services.hook_runner import DockerHookRunner
 from app.services.key_check import ensure_key_check
+from app.services.key_files import read_key_file, same_key
 from app.services.permissions import cli_scope
 
 app = typer.Typer(help="ENV Manager administration.", no_args_is_help=True, add_completion=False)
@@ -66,37 +64,10 @@ user_app = typer.Typer(help="Manage users.", no_args_is_help=True)
 app.add_typer(user_app, name="user")
 backup_app = typer.Typer(help="Create and restore backups.", no_args_is_help=True)
 app.add_typer(backup_app, name="backup")
+app.add_typer(key_app, name="key")
 dev_app = typer.Typer(help="Development helpers.", no_args_is_help=True)
 app.add_typer(dev_app, name="dev")
 SEED_ENVIRONMENTS = {"development", "testing"}
-
-
-@asynccontextmanager
-async def open_session() -> AsyncIterator[AsyncSession]:
-    """A database session on the application database, migrated to the current schema."""
-    settings = get_settings()
-    settings.data_path.mkdir(parents=True, exist_ok=True)
-    engine = create_engine(settings.database_path)
-    try:
-        await migrate_database(engine, settings.database_path, settings.backup_path)
-        async with create_session_factory(engine)() as db:
-            yield db
-    finally:
-        await engine.dispose()
-
-
-def run_command[T](operation: Callable[[AsyncSession], Awaitable[T]]) -> T:
-    """Run an operation on a fresh session, turning refused operations into exit code 1."""
-
-    async def _run() -> T:
-        async with open_session() as db:
-            return await operation(db)
-
-    try:
-        return asyncio.run(_run())
-    except user_service.UserError as error:
-        typer.echo(f"error: {error}", err=True)
-        raise typer.Exit(code=1) from error
 
 
 def _format_time(moment: datetime | None) -> str:
@@ -345,6 +316,22 @@ def create_backup_command() -> None:
         raise typer.Exit(code=1)
 
 
+def _older_key(settings: Settings, key_file: Path | None) -> CryptoService | None:
+    """The crypto service of the key file named for an older backup, None when none is named.
+
+    A file that holds the key in use now makes the restore an ordinary one, so None again.
+    """
+    if key_file is None:
+        return None
+    try:
+        older = read_key_file(key_file)
+        current = load_master_key(settings.key, settings.key_file)
+    except CryptoError as error:
+        typer.echo(f"error: {error}", err=True)
+        raise typer.Exit(code=1) from error
+    return None if same_key(older, current) else CryptoService(older)
+
+
 def _backup_file(argument: Path, backup_dir: Path) -> Path:
     """The file to restore: a bare name is looked up in the backup folder first."""
     if len(argument.parts) == 1 and (backup_dir / argument).is_file():
@@ -358,15 +345,24 @@ def restore_backup_command(
         Path, typer.Argument(help="Backup file: a path, or a file name in the backup folder.")
     ],
     yes: Annotated[bool, typer.Option("--yes", help="Do not ask for confirmation.")] = False,
+    key_file: Annotated[
+        Path | None,
+        typer.Option(
+            "--key-file",
+            help="Key file of the master key a backup made before a key rotation was sealed with.",
+        ),
+    ] = None,
 ) -> None:
     """Replace all current data with a backup made by this application and end every session.
 
     A safety backup of the current data is taken first. A backup made with another master key,
-    or that is not a backup of this application, is refused and nothing changes. Exits 1 when
-    nothing was restored.
+    or that is not a backup of this application, is refused and nothing changes. A backup made
+    before a key rotation is restored with --key-file naming the key it was made with: its values
+    are moved to the current key as part of the restore. Exits 1 when nothing was restored.
     """
     settings = get_settings()
     locations = BackupLocations.from_settings(settings)
+    older_key = _older_key(settings, key_file)
     source = _backup_file(file, locations.backup_dir)
     if not yes:
         typer.confirm(
@@ -383,6 +379,7 @@ def restore_backup_command(
             label=source.name,
             crypto=build_crypto_service(settings.key, settings.key_file),
             actor=AuditActor.cli(),
+            old_crypto=older_key,
         )
         return result.safety_backup, result.sessions_ended, result.upgraded_from
 
@@ -390,12 +387,20 @@ def restore_backup_command(
         safety, sessions, upgraded = run_command(operation)
     except (RestoreRefusedError, CryptoError) as error:
         typer.echo(f"error: {error}", err=True)
+        if isinstance(error, RestoreRefusedError) and error.problem is RestoreProblem.WRONG_KEY:
+            typer.echo(
+                "If the backup was made before a key rotation, name the key it was made with: "
+                "--key-file <old key file>.",
+                err=True,
+            )
         raise typer.Exit(code=1) from error
     typer.echo(f"restored {source.name}")
     typer.echo(f"safety backup of the replaced data: {locations.backup_dir / safety}")
     typer.echo(f"{sessions} session(s) ended, everyone signs in again")
     if upgraded is not None:
         typer.echo(f"the backup was brought forward from schema revision {upgraded}")
+    if older_key is not None:
+        typer.echo("the backup's values were moved from the older key to the current key")
     typer.echo(
         "A running server reads the restored backup schedule at its next start or the next "
         "save of the Backup settings."

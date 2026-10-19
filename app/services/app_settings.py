@@ -331,7 +331,7 @@ async def save_section[SectionT](
     return changes
 
 
-def _secret_context(key: str) -> bytes:
+def secret_context(key: str) -> bytes:
     """The authenticated context that binds a secret to its name."""
     return f"setting:{key}".encode()
 
@@ -351,7 +351,7 @@ async def write_secret(
     caller commits.
     """
     _require_secret_key(key)
-    await _store(db, key, crypto.encrypt(value, context=_secret_context(key)))
+    await _store(db, key, crypto.encrypt(value, context=secret_context(key)))
     await record_actor_audit(
         db,
         actor,
@@ -373,7 +373,7 @@ async def read_secret(db: AsyncSession, crypto: CryptoService, key: str) -> str 
     row = await db.get(AppSetting, key)
     if row is None:
         return None
-    return crypto.decrypt_text(row.value, context=_secret_context(key))
+    return crypto.decrypt_text(row.value, context=secret_context(key))
 
 
 async def has_secret(db: AsyncSession, key: str) -> bool:

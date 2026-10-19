@@ -113,6 +113,7 @@ async def test_the_app_closes_interrupted_runs_before_it_serves(web_app: FastAPI
         db.add(run)
         await db.commit()
         run_id = run.id
+    web_app.state.server_lock.release()  # the first process ends before the next starts
     restarted = create_app()
     async with restarted.router.lifespan_context(restarted):
         pass

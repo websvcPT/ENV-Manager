@@ -108,7 +108,9 @@ database.
 made with: every value in it is unreadable, and a restore refuses a backup that the key in use
 cannot open. Keep the key (the `ENVMANAGER_KEY` value or the file behind `ENVMANAGER_KEY_FILE`) in a
 password manager or secret store that is not on the same disk or in the same backup destination as
-the backup files. A copy of the key next to the backups defeats the encryption.
+the backup files. A copy of the key next to the backups defeats the encryption. After a key
+rotation, keep each old key apart from the backups too, labelled with the backups it opens (see
+Key rotation).
 
 - **Where.** Backups are files named `envmanager-<time>-<reason>.db` in the backup folder, inside
   the data volume (`/data/backups`). The folder is mode 0700 and every file 0600 (set when the
@@ -116,9 +118,10 @@ the backup files. A copy of the key next to the backups defeats the encryption.
   temporary name and given its final name only when it is complete, and it is switched out of WAL
   mode so it is one self-contained file.
 - **Who and why.** Each backup is recorded with its time, size, why it was taken (manual,
-  scheduled, command line, before a migration, before a restore), its outcome and, for a failure,
-  a fixed reason that never holds a path or a secret, and is audited (`backup.create`). The
-  automatic backup before a migration is recorded the next time the application starts.
+  scheduled, command line, before a migration, before a restore, before a key rotation), its
+  outcome and, for a failure, a fixed reason that never holds a path or a secret, and is audited
+  (`backup.create`). The automatic backup before a migration is recorded the next time the
+  application starts.
 - **Outcome.** Success; Failed (no backup was written); or Not copied (the backup exists and can be
   restored, but the copy to the extra destination failed). A failed or not copied newest backup
   raises the banner every superadmin page shows until a later backup succeeds, and every backup,
@@ -158,9 +161,9 @@ names the backup and says that current data is replaced) and from the command li
 
 1. The file is copied to a private working file and checked there: an intact SQLite database
    that this application made (its migration record names a revision this version knows) whose
-   key check record opens with the master key in use now. A backup made with another key, a foreign
-   or damaged file, and a backup of a newer version are refused with a plain message and nothing
-   changes.
+   key check record opens with the master key in use now (or, with `--key-file`, the older key of a
+   backup made before a key rotation). A backup made with another key, a foreign or damaged file,
+   and a backup of a newer version are refused with a plain message and nothing changes.
 2. A safety backup of the current data is taken (`pre-restore`); if that fails nothing is
    restored.
 3. The working copy is prepared: brought to the current schema when the backup is older, stripped
@@ -185,10 +188,115 @@ docker compose exec app envmanager backup restore /path/to/downloaded.db --yes
 
 `backup restore` takes a path, or a bare file name that is looked up in the backup folder, asks
 for confirmation (`--yes` skips it) and exits 1 when nothing was restored. `backup create` exits 1
-unless the backup is complete, so a cron job notices a failed copy. The command line cannot reach
-the scheduler of a running server: a restored schedule takes effect at the next start or the next
-save of the Backup settings. To recover onto an empty data volume, start the container with the
-same key, copy a downloaded backup in and run `backup restore`.
+unless the backup is complete, so a cron job notices a failed copy.
+
+A backup made before a key rotation is restored with the key it was made with. The container needs
+that key as a file, so run the command as a one-off container with the old key mounted (the
+restore is online, so the server may keep running):
+
+```
+docker compose run --rm -v "$PWD/master.key.old:/run/oldkey/master.key:ro" envmanager \
+  envmanager backup restore <file> --key-file /run/oldkey/master.key
+```
+
+The backup is checked against that key, and its values and hashes are moved to the key in use now
+(the same re-keying as the rotation) in the private working copy before anything is replaced, so
+the restore ends like any other. The Settings screen cannot take an older key; such a backup is
+restored from the command line.
+
+The command line cannot reach the scheduler of a running server: a restored schedule takes effect
+at the next start or the next save of the Backup settings. To recover onto an empty data volume,
+start the container with the same key, copy a downloaded backup in and run `backup restore`.
+
+## Key rotation
+
+The master key seals every environment value, the second factor secrets and the secret settings
+(the SMTP password, the webhook secret, the git deploy key and token), and it keys the hashes that
+drift detection compares. A rotation replaces it with a new key. It is offline: the application
+is stopped, the command rewrites the database in one transaction, and the application is started
+with the new key.
+
+1. Stop the application, so nothing serves the data folder:
+
+   ```
+   docker compose stop envmanager
+   ```
+
+2. Run the rotation as a one-off container from the same image with the same volumes, and a
+   folder for the new key that is writable and outlives the container. With the sample compose
+   file (service `envmanager`, data in `./data`):
+
+   ```
+   mkdir -p newkey
+   docker compose run --rm -v "$PWD/newkey:/run/newkey" envmanager \
+     envmanager key rotate --new-key-file /run/newkey/master.key
+   ```
+
+   The command creates the new key file (mode 0600) when the path does not exist, in a folder that
+   must already exist, so a key is never written to a folder that vanishes with the container; it
+   refuses an existing file that is not a valid key and a key equal to the current one. To use a key
+   you made yourself (`openssl rand -base64 32 > newkey/master.key`), pass that file: an existing
+   valid key file is used as it is and may be mounted read-only. The container user must be able to
+   write to the folder when the file is to be created.
+
+3. Copy the new key into your secret store and keep the old key there too, apart from the backup
+   files and labelled with the backups it opens. The output names the backup that was taken first:
+   it is sealed with the old key.
+
+4. Point `ENVMANAGER_KEY_FILE` at the new key file (for the sample file, change the source of the
+   key mount to `./newkey/master.key`). If the key was given as `ENVMANAGER_KEY`, remove that
+   variable: the application refuses to start when both are set.
+
+5. Start the application:
+
+   ```
+   docker compose up -d
+   ```
+
+   It starts with the new key and refuses to start with the old one.
+
+What the command does, in order:
+
+- It takes the lock of the data folder and refuses to go on while a server holds it (see below).
+- It checks that the current key opens the database (the key check record) and that the new key
+  file is usable. Nothing has changed if either is refused.
+- It takes a backup (reason `rotation`, listed in the Backup tab as "Before a key rotation"). If
+  the backup fails, nothing is changed.
+- In one transaction it seals every value again with the new key and recomputes every keyed hash:
+  the content of every environment version and its hash, the second factor secrets, every secret
+  setting, the hashes of deploy results (the baselines of the drift checks) and the key check
+  record. Every value is opened with the new key before the transaction is committed, and the audit
+  entry `key.rotate` (counts and the name of the backup, never key material) is part of it. Any
+  failure rolls everything back and the database is as it was; the new key file stays and the next
+  run uses it.
+
+What a rotation leaves behind:
+
+- Remembered sign-in addresses are cleared. They are keyed hashes of addresses that are not stored,
+  so they cannot be recomputed; each user's next sign-in is learned silently and not announced.
+- The hash of the file found before a deploy (`target_hash_before` of a deploy result, which
+  nothing reads) is recomputed when that file held a stored version and dropped when it held
+  anything else.
+- Sessions stay valid. A second factor setup that was in progress (its secret is in a cookie sealed
+  with the old key) must be started again.
+- Git sync progress is reset: the next hourly run finds that the sealed manifest in its working
+  clone does not open with the new key, writes the whole export again under new paths and pushes
+  it. The old files leave the working tree but stay in the history of the repository, readable only
+  with the old key, so keep the old key for as long as those commits are kept. A snapshot export
+  pushed before the rotation holds a database sealed with the old key.
+- Backups taken before the rotation are sealed with the old key. Restore one with
+  `backup restore <file> --key-file <old key file>` (see Backup and restore). Keep each old key in
+  your secret store, apart from the backup files and labelled with the backups it opens, and do not
+  delete an old key while a backup or an exported commit that needs it is kept.
+
+**The server lock.** The running server holds an exclusive lock on `server.lock` in the data folder
+for as long as it runs, and the rotation holds the same lock while it works, so a second server
+cannot start on the same data folder and the rotation cannot run under a server (nor can a server
+start in the middle of a rotation). The kernel releases a lock when its process ends, so a crash
+never leaves it held: a file that still holds the line of a holder that did not end cleanly is a
+stale lock, reported in the log and taken over. The lock works between containers that share the
+data folder on a local filesystem (a bind mount or a Docker volume); a network filesystem that does
+not honour locks cannot enforce it.
 
 ## Git sync
 
@@ -329,8 +437,9 @@ stored settings each time a mail is sent, never at start-up, so a save applies t
   keyed hashes (an HMAC under a subkey of the master key), at most the 20 seen most recently. The
   first sign-in of a user, who has no record yet, is learned without a mail, which also means a
   database that had users before this existed does not mail for all of them. A sign-in with no
-  client address is neither recorded nor announced. Key rotation will change the hashes, so after a
-  rotation every address looks new once.
+  client address is neither recorded nor announced. A key rotation clears the records (the hashes
+  cannot be recomputed, the addresses are not stored), so the next sign-in of each user after a
+  rotation is learned without a mail again.
 - **Delivery.** A mail is sent after the change that caused it was committed, in the background:
   the request that causes an event never waits for the mail server and never fails because of it.
   A mail that fails for a reason that can pass (no connection, no answer, a closed connection) is

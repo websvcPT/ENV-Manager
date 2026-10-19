@@ -526,5 +526,13 @@ async def test_the_list_shows_why_each_backup_was_taken(
             )
         await db.commit()
     page = main_of((await root.get("/settings/backup")).text)
-    for label in ("Manual", "Scheduled", "Command line", "Before a migration", "Before a restore"):
+    labels = (
+        "Manual",
+        "Scheduled",
+        "Command line",
+        "Before a migration",
+        "Before a restore",
+        "Before a key rotation",
+    )
+    for label in labels:
         assert label in page

@@ -30,6 +30,12 @@ from app.services.git_services import GitServices
 from app.services.key_check import ensure_key_check
 from app.services.mailer import FastapiMailTransport
 from app.services.notifier import Notifications
+from app.services.server_lock import (
+    ServerLock,
+    ServerLockBusyError,
+    ServerLockUnavailableError,
+    acquire_server_lock,
+)
 from app.services.webhook import HttpxWebhookTransport
 from app.web.access_grid import router as access_grid_router
 from app.web.account import router as account_router
@@ -66,7 +72,8 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     """Check the master key, back up and migrate the database, start the scheduler, then serve.
 
-    A missing, malformed or mismatching master key stops startup before anything is served.
+    A missing, malformed or mismatching master key stops startup before anything is served, and
+    so does a data folder that another process holds (a second server or a key rotation).
     Deploy runs left running by a process that is gone are closed before the first request.
     The scheduler runs inside this process, which is assumed to be the only worker.
     """
@@ -77,6 +84,8 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         log.error("startup refused: %s", error)
         raise
     settings.data_path.mkdir(parents=True, exist_ok=True)
+    server_lock = take_server_lock(settings.server_lock_file)
+    application.state.server_lock = server_lock
     engine = create_engine(settings.database_path)
     scheduler: BackupScheduler | None = None
     notifier: Notifications | None = None
@@ -139,11 +148,29 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         await scheduler.reload()
         yield
     finally:
-        if scheduler is not None:
-            scheduler.shutdown()
-        if notifier is not None:
-            await notifier.close()
-        await engine.dispose()
+        try:
+            if scheduler is not None:
+                scheduler.shutdown()
+            if notifier is not None:
+                await notifier.close()
+            await engine.dispose()
+        finally:
+            server_lock.release()
+
+
+def take_server_lock(path: Path) -> ServerLock:
+    """Take the lock of the data folder, or refuse to start when something else holds it."""
+    try:
+        return acquire_server_lock(path, "server")
+    except ServerLockBusyError as error:
+        log.error(
+            "startup refused: another process holds the data folder (%s)",
+            error.holder or "no holder named",
+        )
+        raise
+    except ServerLockUnavailableError:
+        log.error("startup refused: the server lock file in the data folder cannot be used")
+        raise
 
 
 def create_app() -> FastAPI:

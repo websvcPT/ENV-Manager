@@ -22,9 +22,14 @@ QR_MODULE_SCALE = 4
 QR_QUIET_ZONE = 4
 
 
+def secret_context(user_id: int) -> bytes:
+    """Authenticated context that binds a stored secret to its owner."""
+    return f"user-totp:{user_id}".encode()
+
+
 def _context(user: User) -> bytes:
     """Authenticated context that binds a stored secret to its owner."""
-    return f"user-totp:{user.id}".encode()
+    return secret_context(user.id)
 
 
 def generate_secret() -> str:

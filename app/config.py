@@ -54,6 +54,11 @@ class Settings(BaseSettings):
         return self.data_path / "backups"
 
     @property
+    def server_lock_file(self) -> Path:
+        """File inside the data volume whose lock the running server holds."""
+        return self.data_path / "server.lock"
+
+    @property
     def lock_path(self) -> Path:
         """Folder inside the data volume that holds the deploy lock files."""
         return self.data_path / "locks"
