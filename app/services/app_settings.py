@@ -16,6 +16,7 @@ import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field, fields
 from typing import Any
+from urllib.parse import urlsplit
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,9 +33,10 @@ ACTION_UPDATE = "settings.update"
 TARGET_TYPE = "settings"
 
 SMTP_PASSWORD_KEY = "smtp.password"  # noqa: S105
+WEBHOOK_SECRET_KEY = "notifications.webhook_secret"  # noqa: S105
 
 # Names of settings whose value is a secret. Each feature that stores one adds its name here.
-SECRET_KEYS: frozenset[str] = frozenset({SMTP_PASSWORD_KEY})
+SECRET_KEYS: frozenset[str] = frozenset({SMTP_PASSWORD_KEY, WEBHOOK_SECRET_KEY})
 
 
 @dataclass(frozen=True)
@@ -115,8 +117,13 @@ class NotificationSettings:
     ``_to`` added; events about the whole system always go to the superadmins. Successful
     deploys and file changes are off by default, everything that needs a person's attention is
     on.
+
+    The outbound webhook reports every real deploy to ``webhook_url`` while ``webhook_enabled``
+    is on; its shared secret is kept apart as a secret (``WEBHOOK_SECRET_KEY``).
     """
 
+    webhook_enabled: bool = False
+    webhook_url: str = ""
     login_new_address: bool = True
     lockout: bool = True
     deploy_succeeded: bool = False
@@ -142,6 +149,25 @@ class StoredSettings:
     notifications: NotificationSettings = field(default_factory=NotificationSettings)
 
 
+# Settings whose value is an address that can carry a token in its path or query.
+URL_SETTINGS: frozenset[str] = frozenset({"notifications.webhook_url"})
+
+
+def url_origin(value: object) -> str:
+    """The scheme, host and port of an address, without the path, query or anything after them."""
+    if not isinstance(value, str) or not value:
+        return ""
+    try:
+        parts = urlsplit(value)
+        host = parts.hostname or ""
+        port = f":{parts.port}" if parts.port else ""
+    except ValueError:
+        return ""
+    if ":" in host:
+        host = f"[{host}]"
+    return f"{parts.scheme}://{host}{port}" if host else ""
+
+
 @dataclass(frozen=True)
 class SettingChange:
     """One setting that changed: its name and, except for a secret, the old and new value."""
@@ -152,9 +178,20 @@ class SettingChange:
     secret: bool = False
 
     def audit_detail(self) -> dict[str, object]:
-        """The change as an audit detail: values for plain settings, only the name for secrets."""
+        """The change as an audit detail: values for plain settings, only the name for secrets.
+
+        An address that may carry a token in its path (a webhook URL) is recorded as its scheme,
+        host and port only.
+        """
         if self.secret:
             return {"setting": self.setting, "kind": "secret"}
+        if self.setting in URL_SETTINGS:
+            return {
+                "setting": self.setting,
+                "kind": "url",
+                "old": url_origin(self.old),
+                "new": url_origin(self.new),
+            }
         return {"setting": self.setting, "old": self.old, "new": self.new}
 
 

@@ -16,20 +16,21 @@ from app.schemas.api import EnvironmentResult, PostDeployInfo, RunResult, Servic
 
 
 async def _result_of(
-    db: AsyncSession, run: DeployRun, service_id: int, environment_ids: Collection[int]
+    db: AsyncSession, run: DeployRun, service_id: int, environment_ids: Collection[int] | None
 ) -> RunResult:
-    """The run with the results of the environments in scope, in the order the engine wrote."""
-    rows = (
-        await db.execute(
-            select(DeployResult, EnvironmentVersion.number)
-            .outerjoin(EnvironmentVersion, EnvironmentVersion.id == DeployResult.version_id)
-            .where(
-                DeployResult.run_id == run.id,
-                DeployResult.environment_id.in_(environment_ids),
-            )
-            .order_by(DeployResult.id)
-        )
-    ).all()
+    """The run with the results of the environments in scope, in the order the engine wrote.
+
+    ``environment_ids`` of None lists every file of the run.
+    """
+    query = (
+        select(DeployResult, EnvironmentVersion.number)
+        .outerjoin(EnvironmentVersion, EnvironmentVersion.id == DeployResult.version_id)
+        .where(DeployResult.run_id == run.id)
+        .order_by(DeployResult.id)
+    )
+    if environment_ids is not None:
+        query = query.where(DeployResult.environment_id.in_(environment_ids))
+    rows = (await db.execute(query)).all()
     return RunResult(
         run_id=run.id,
         service=ServiceInfo(id=service_id, name=run.service_name),
@@ -70,6 +71,16 @@ async def load_run_result(
     if run is None:
         return None
     return await _result_of(db, run, service_id, environment_ids)
+
+
+async def load_whole_run_result(db: AsyncSession, run_id: int, service_id: int) -> RunResult | None:
+    """The run with every file it touched, for a report that is not tied to a caller's scope (the
+    webhook). ``service_id`` names the service in the answer, which still reads when the service
+    has been deleted since. None when the run does not exist."""
+    run = (await db.execute(select(DeployRun).where(DeployRun.id == run_id))).scalar_one_or_none()
+    if run is None:
+        return None
+    return await _result_of(db, run, service_id, None)
 
 
 async def load_last_run_result(

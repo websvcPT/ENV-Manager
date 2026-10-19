@@ -1,10 +1,13 @@
-{#- The notification matrix. Each row is an event kind with a switch and, for the kinds about a
-    project, a choice of recipients; the other kinds always go to the superadmins. A refused save
-    swaps this again with the reasons (422); a stored save swaps it with a toast. Context: rows
-    (each with row, enabled and recipients), recipient_choices (value and label pairs), errors
+{#- The notification matrix and the webhook. Each row is an event kind with a switch and, for the
+    kinds about a project, a choice of recipients; the other kinds always go to the superadmins.
+    The webhook has an address, a shared secret that is never filled in, a switch and a test
+    button. A refused save swaps this again with the reasons (422); a stored save swaps it with a
+    toast. Context: rows (each with row, enabled and recipients), form (the webhook fields),
+    secret_stored (a webhook secret is stored), recipient_choices (value and label pairs), errors
     (messages by field name) and saved (none, or tone, title and message of a toast). -#}
 {% from "macros/buttons.html" import button %}
 {% from "macros/feedback.html" import toast %}
+{% from "macros/forms.html" import checkbox, field %}
 {% from "macros/icons.html" import icon %}
 {% from "macros/panels.html" import cell, table %}
 <form id="notifications" data-fragment="notifications" hx-post="/settings/notifications" hx-target="this" hx-swap="outerHTML" class="flex flex-col gap-4 pb-5">
@@ -25,7 +28,22 @@
 </tr>
 {%- endfor %}
 {% endcall %}
-<p class="px-4 text-xs text-ink2 md:px-5">Events about the whole system go to the superadmins. Events about a project go to the admins of that project, and each of them hears only about the files they can reach. Nothing is sent until SMTP is set up.</p>
+<p class="px-4 text-xs text-ink2 md:px-5">Events about the whole system go to the superadmins. Events about a project go to the admins of that project, and each of them hears only about the files they can reach. A project can also name extra addresses on its settings tab. Nothing is sent until SMTP is set up.</p>
+<div class="grid gap-4 px-4 md:grid-cols-2 md:px-5">
+{{ field("wu", "Outbound webhook URL", name="webhook_url", value=form.webhook_url, mono=true, hint="Deploy results. Optional. http or https only, with no user name or password.", error=errors.get("webhook_url"), autocomplete="off", spellcheck="false") }}
+{{ field("ws", "Webhook shared secret", name="webhook_secret", type="password", placeholder=("••••••••" if secret_stored else ""), hint=("Stored encrypted. Leave empty to keep it." if secret_stored else "At least 16 characters. Stored encrypted."), error=errors.get("webhook_secret"), autocomplete="new-password") }}
+</div>
+<div class="flex flex-col gap-3 px-4 md:px-5">
+{%- if secret_stored %}
+{{ checkbox("remove_webhook_secret", "Remove the stored shared secret", checked=form.remove_webhook_secret) }}
+{%- endif %}
+<label class="flex items-start gap-2.5 text-[13px] font-semibold"><input id="we" type="checkbox" name="webhook_enabled"{% if form.webhook_enabled %} checked{% endif %} class="mt-0.5 size-[18px] shrink-0 accent-accent"><span>Send deploy results to the webhook<span class="block font-normal text-ink2">Every real deploy, whatever its result, is posted as signed JSON. Dry runs are never sent.</span></span></label>
+<div class="flex flex-wrap items-center gap-3 border-t border-line pt-4">
+{{ button("Send test event", hx_post="/settings/notifications/webhook/test", hx_target="#webhook-test", extra_class="max-md:h-11") }}
+<div id="webhook-test" aria-live="polite"></div>
+<p class="basis-full text-xs text-ink2">The test event uses the saved settings and works while the webhook is off, so save a change before testing it.</p>
+</div>
+</div>
 <div class="px-4 md:px-5">{{ button("Save settings", kind="primary-sm", type="submit", extra_class="max-md:h-11") }}</div>
 {%- if saved %}
 {{ toast(saved.tone, saved.message, saved.title, floating=true) }}

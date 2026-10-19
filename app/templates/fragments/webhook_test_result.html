@@ -1,0 +1,12 @@
+{#- The result of a test event, swapped into the live region next to the button. A delivered event
+    is the success badge with the time and the HTTP status; a refusal is the failed badge and the
+    reason under it. The banner area is sent again out of band, because a delivered test clears
+    the webhook banner. Context: check (a WebhookCheck: ok and message); the banners are the
+    request's own. -#}
+{% from "macros/badges.html" import badge %}
+{%- if check.ok -%}
+{{ badge("deployed", check.message) }}
+{%- else -%}
+{{ badge("failed", "Test event failed") }}<p class="mt-1.5 max-w-md text-xs text-ink2">{{ check.message }}</p>
+{%- endif -%}
+{% with oob = true %}{% include "fragments/banner_area.html" %}{% endwith %}

@@ -67,7 +67,7 @@ secret, trusted proxies and allowed sources stay in environment variables.
 | General | Time zone and date format, the defaults of a new deployment, and the read-only diagnostics. |
 | Backup | Schedule, retention, an optional extra destination, the list of backups with Run now, Download and a confirmed Restore (see Backup and restore). |
 | SMTP | The mail server (host, port, TLS mode, username, password, from address) and a Send test mail button (see Notifications). |
-| Notifications | The event matrix: a switch for each event and who receives the events about a project (see Notifications). |
+| Notifications | The event matrix: a switch for each event and who receives the events about a project, and the deploy webhook (address, shared secret, switch and Send test event; see Notifications). |
 | Git | Not available yet: it shows its panel and says so. It arrives with the feature it configures. |
 
 - **Allowed paths.** An entry is checked when it is added: absolute and normalized, an existing
@@ -220,6 +220,14 @@ stored settings each time a mail is sent, never at start-up, so a save applies t
   reach at least one file the event is about, and each of them is told only about the files they
   can reach, so a mail never names a file outside a user's access. Every recipient gets a message
   of their own, so addresses are not shared, and an address is written to once.
+- **Extra addresses per project.** The superadmin can name extra addresses on the project's
+  Settings tab (a team mailbox, a pager gateway), one per line, at most 20, each checked as a plain
+  address and kept once whatever its case. They receive every notification about that project that
+  is switched on in the matrix (deploy results and file changes), whatever the recipients choice
+  is, each with every file of the event. An address that is also an account's address is told about
+  every file of the project, because the superadmin chose it. Events about the whole system never
+  go to them. A change is audited as `project.notification_addresses` with the addresses added and
+  removed, and only the superadmin sees that entry.
 - **New address.** Each user has a small record of the addresses they signed in from, kept only as
   keyed hashes (an HMAC under a subkey of the master key), at most the 20 seen most recently. The
   first sign-in of a user, who has no record yet, is learned without a mail, which also means a
@@ -252,6 +260,97 @@ stored settings each time a mail is sent, never at start-up, so a save applies t
   at it (`smtp4dev`, port 25, no TLS, no sign in) when `ENVMANAGER_ENVIRONMENT` is `development`
   and SMTP is not configured yet, so every event of a development session appears there. Its API
   (`/api/messages`) is how the browser specs read mail back.
+
+### Deploy webhook
+
+The Notifications tab can also post every deploy result to a web address, for chat tools and
+automation. It has an address, a shared secret, a switch and a Send test event button. It works
+without SMTP.
+
+- **Which deploys.** Every real deploy that was recorded, whatever its result (success, halted,
+  blocked, failed, post-deploy failed), and from every way to deploy: the web, the API and the
+  command line. Dry runs are never sent, and neither is a deploy that was refused because the
+  deployment folder was locked, since no run was recorded for it.
+- **The request.** A `POST` with `Content-Type: application/json`, a `User-Agent` of
+  `ENV-Manager/<version>` and two headers that let the receiver trust it:
+  `X-EnvManager-Timestamp` (Unix time in seconds) and `X-EnvManager-Signature` (`sha256=` and the
+  hex HMAC-SHA256 of the timestamp, a dot and the body bytes exactly as received, made with the
+  shared secret).
+- **The body.** The fields of the API's deploy answer (see Answer below) for the whole run, every
+  file it touched whoever may see it, plus `event` (`deploy.finished`), `event_id`, `project` and
+  `deployment`. Never a value, a file's content, a host path, a command or a command's output.
+
+  ```json
+  {
+    "run_id": 41,
+    "service": {"id": 7, "name": "api"},
+    "dry_run": false,
+    "status": "success",
+    "started_at": "2026-10-18T12:00:00.123456Z",
+    "finished_at": "2026-10-18T12:00:01.234567Z",
+    "environments": [
+      {"id": 12, "name": ".env.api", "version": 3, "status": "written", "dist": "passed",
+       "drift": "in_sync", "message": null}
+    ],
+    "post_deploy": {"status": "ran", "exit_code": 0, "reason": null},
+    "event": "deploy.finished",
+    "event_id": "5b0f3a52-7d0c-4f6e-9a1f-2c1d9a3e8b44",
+    "project": {"id": 2, "name": "billing"},
+    "deployment": {"id": 5, "name": "main"}
+  }
+  ```
+
+  The test event has the same shape with `event` set to `webhook.test` and a made-up run
+  (`run_id` 0, a project called "Test project"), so a receiver can check how it reads a document.
+  `event_id` is new for every event and stays the same when a delivery is tried again, so a
+  receiver can ignore a repeat.
+- **Checking the signature.** Compute the HMAC over the raw body bytes (not a parsed and
+  re-serialized copy) with the same shared secret, compare in constant time, and refuse a
+  timestamp that is too old so a captured request cannot be replayed:
+
+  ```python
+  import hashlib
+  import hmac
+  import time
+
+  def verify(secret: str, timestamp: str, body: bytes, signature: str, tolerance: int = 300) -> bool:
+      """True when the request came from ENV Manager and is recent."""
+      if abs(time.time() - int(timestamp)) > tolerance:
+          return False
+      expected = "sha256=" + hmac.new(
+          secret.encode(), timestamp.encode() + b"." + body, hashlib.sha256
+      ).hexdigest()
+      return hmac.compare_digest(expected, signature)
+
+  # headers["X-EnvManager-Timestamp"], headers["X-EnvManager-Signature"] and the raw request body
+  ```
+
+- **The settings.** The address must be `http` or `https`, with a host, at most 2048 plain
+  characters and no user name or password (put the trust in the secret). Any host is allowed,
+  private ones included, because the receiver is often inside the same network. The shared secret
+  has at least 16 characters, is encrypted in the settings store like the SMTP password, and is
+  never put back into the page: an empty field keeps the stored one, and a checkbox that appears
+  while one is stored removes it. The switch can only be on while an address and a secret are set.
+  The settings audit entry keeps the scheme, host and port of the address and not its path or
+  query, which often hold a token, and for the secret only that it changed.
+- **Send test event.** Posts the test event once through the saved settings (so save a change
+  before testing it), also while the switch is off, and shows how it went in fixed words that never
+  repeat the address or what the receiver answered: it could not be reached, no answer in time, a
+  TLS certificate that cannot be verified, a redirect (never followed), or the HTTP status. Audited
+  as `webhook.test`.
+- **Delivery.** The post is made in the background after the deploy finished, so a slow receiver
+  never delays or fails a deploy. It waits 10 seconds at most (5 to connect), does not follow
+  redirects and counts any 2xx answer as delivered. A refused connection, a timeout, a 408, a 429
+  and a 5xx answer are tried again after 5, 30 and 120 seconds (four attempts at most) with a fresh
+  timestamp and signature on the same body; any other answer, a redirect and a certificate failure
+  are final. Each retry reads the settings again, so a receiver that was fixed or a webhook that was
+  switched off in the meantime is honoured. Every attempt is audited as `webhook.deliver` (the host
+  only, the event id, the run, the attempt, the HTTP status and a fixed reason, never the secret),
+  and only the superadmin sees those entries. An event that was not delivered after its last attempt
+  is counted once, and the superadmin banner "The deploy webhook is failing" shows how many events
+  failed since one was last delivered and links to the Notifications tab; a delivered event, a
+  delivered test event or saving the webhook settings starts the count again. Events still waiting
+  when the server stops are lost. The command line posts once, without retries, within 30 seconds.
 
 ## Demo deployment
 

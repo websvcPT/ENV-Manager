@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.core.db import create_session_factory
-from app.models import User, UserGroup
+from app.models import Project, User, UserGroup
 from app.seeds import SeedData
 from app.services.notify_catalog import Recipients
 from app.services.notify_recipients import (
@@ -163,9 +163,98 @@ async def test_an_event_about_the_system_goes_to_the_superadmins_whatever_the_ch
             assert addresses(await resolve_recipients(db, choice, None)) == ["root"]
 
 
-def test_an_address_is_used_once_whatever_its_case_and_the_first_recipient_wins() -> None:
-    """Two roles that lead to one address write to it once."""
+def test_an_address_is_used_once_whatever_its_case_and_keeps_the_first_spelling() -> None:
+    """Two roles that lead to one address write to it once, in the place of the first."""
     first = Recipient("Alice@Example.com", frozenset({1}))
-    second = Recipient("alice@example.com", None)
+    second = Recipient("alice@example.com", frozenset({1}))
     other = Recipient("bob@example.com")
     assert unique_by_address([first, second, other]) == [first, other]
+
+
+def test_an_address_of_two_roles_is_told_about_the_widest_set_of_files() -> None:
+    """Every file beats a set of files, and two sets are joined, whichever comes first."""
+    narrow = Recipient("Alice@Example.com", frozenset({1}))
+    other_narrow = Recipient("alice@example.com", frozenset({2}))
+    everything = Recipient("ALICE@example.com", None)
+    assert unique_by_address([narrow, everything]) == [Recipient("Alice@Example.com", None)]
+    assert unique_by_address([everything, narrow]) == [everything]
+    assert unique_by_address([narrow, other_narrow]) == [
+        Recipient("Alice@Example.com", frozenset({1, 2}))
+    ]
+
+
+async def set_extras(engine: AsyncEngine, project_id: int, addresses: list[str]) -> None:
+    """Store the extra notification addresses of a project."""
+    async with create_session_factory(engine)() as db:
+        project = await db.get(Project, project_id)
+        assert project is not None
+        project.extra_addresses = addresses
+        await db.commit()
+
+
+@pytest.mark.parametrize("choice", list(Recipients))
+async def test_the_extra_addresses_of_a_project_are_told_whatever_the_choice(
+    seeded_database: AsyncEngine, seed_data: SeedData, choice: Recipients
+) -> None:
+    """Superadmins, project admins or both, the extras come on top with every file."""
+    await set_extras(
+        seeded_database, seed_data.projects.rentals.id, ["team@example.org", "pager@corp.local"]
+    )
+    async with create_session_factory(seeded_database)() as db:
+        found = await resolve_recipients(db, choice, mysql_item(seed_data, seed_data.envs.db.id))
+    extras = [item for item in found if item.address in ("team@example.org", "pager@corp.local")]
+    assert [item.address for item in extras] == ["team@example.org", "pager@corp.local"]
+    assert all(item.environment_ids is None for item in extras)
+    assert len(found) == len({item.address.lower() for item in found})
+
+
+async def test_an_event_about_the_system_never_goes_to_the_extra_addresses(
+    seeded_database: AsyncEngine, seed_data: SeedData
+) -> None:
+    """With no item there is no project, so no extras."""
+    await set_extras(seeded_database, seed_data.projects.rentals.id, ["team@example.org"])
+    async with create_session_factory(seeded_database)() as db:
+        for choice in Recipients:
+            assert addresses(await resolve_recipients(db, choice, None)) == ["root"]
+
+
+async def test_the_extra_addresses_of_another_project_are_not_used(
+    seeded_database: AsyncEngine, seed_data: SeedData
+) -> None:
+    """Each project has its own list."""
+    await set_extras(seeded_database, seed_data.projects.billing.id, ["bill@example.org"])
+    async with create_session_factory(seeded_database)() as db:
+        found = await resolve_recipients(
+            db, Recipients.PROJECT_ADMINS, mysql_item(seed_data, seed_data.envs.db.id)
+        )
+    assert "bill@example.org" not in [item.address for item in found]
+
+
+async def test_an_extra_address_of_a_scoped_admin_is_told_about_every_file_once(
+    seeded_database: AsyncEngine, seed_data: SeedData
+) -> None:
+    """The widest set wins, whatever the case of the address and the order of the roles."""
+    await set_extras(
+        seeded_database, seed_data.projects.rentals.id, ["Env_Scoped_Admin@example.test"]
+    )
+    item = mysql_item(seed_data, seed_data.envs.db.id, seed_data.envs.db_secrets.id)
+    async with create_session_factory(seeded_database)() as db:
+        found = await resolve_recipients(db, Recipients.PROJECT_ADMINS, item)
+    scoped = [r for r in found if r.address.lower() == "env_scoped_admin@example.test"]
+    assert scoped == [Recipient("env_scoped_admin@example.test", None)]
+
+
+async def test_a_stored_address_that_is_not_a_plain_address_is_left_out(
+    seeded_database: AsyncEngine, seed_data: SeedData
+) -> None:
+    """A list changed by hand cannot send mail to a name with a display part or a space."""
+    await set_extras(
+        seeded_database,
+        seed_data.projects.rentals.id,
+        ["Team <team@example.org>", "bad address@example.org", "good@example.org"],
+    )
+    async with create_session_factory(seeded_database)() as db:
+        found = await resolve_recipients(
+            db, Recipients.SUPERADMINS, mysql_item(seed_data, seed_data.envs.db.id)
+        )
+    assert [item.address for item in found] == ["root@example.test", "good@example.org"]

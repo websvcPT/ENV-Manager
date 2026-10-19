@@ -259,3 +259,137 @@ test.describe('events', () => {
     }
   });
 });
+
+const WEBHOOK_SECRET = 'e2e-webhook-secret-sentinel-7731';
+const REFUSED_URL = 'http://127.0.0.1:9/hooks/e2e-path-token-5520';
+
+/*
+ * The webhook controls. A spec that saves them holds the settings lock and puts the webhook back
+ * to switched off with no address and no secret, which is how the development stack is found. The
+ * webhook is never switched on here: the other specs deploy files, and every deploy would be posted
+ * (and fail) to the address saved below, so the delivery of events is covered by the pytest suite
+ * and the real receiver check, while the browser covers what a person sees and does.
+ */
+function secretField(page: Page): Locator {
+  return page.locator('#ws');
+}
+
+async function resetWebhook(page: Page): Promise<void> {
+  await page.goto('/settings/notifications');
+  await page.locator('#wu').fill('');
+  await page.locator('#we').setChecked(false);
+  const remove = form(page).locator('input[name="remove_webhook_secret"]');
+  if (await remove.count()) {
+    await remove.setChecked(true);
+  }
+  await secretField(page).fill('');
+  await save(page);
+  await expect(toast(form(page))).toBeVisible();
+  await page.goto('/settings/notifications');
+  await expect(page.locator('#wu')).toHaveValue('');
+  await expect(page.locator('#we')).not.toBeChecked();
+  await expect(secretField(page)).toHaveAttribute('placeholder', '');
+}
+
+test.describe('webhook', () => {
+  test('shows the address, the secret, the switch and the test button', async ({ page }) => {
+    await page.goto('/settings/notifications');
+    const panel = form(page);
+    await expect(panel.locator('label[for="wu"]')).toHaveText('Outbound webhook URL');
+    await expect(panel.locator('label[for="ws"]')).toHaveText('Webhook shared secret');
+    await expect(panel.locator('#wu')).toHaveAttribute('name', 'webhook_url');
+    await expect(panel.locator('#ws')).toHaveAttribute('type', 'password');
+    await expect(panel.locator('#ws')).toHaveAttribute('autocomplete', 'new-password');
+    await expect(panel.locator('#we')).toHaveAttribute('name', 'webhook_enabled');
+    await expect(panel.locator('label', { has: page.locator('#we') })).toContainText(
+      'Dry runs are never sent.',
+    );
+    const testButton = panel.getByRole('button', { name: 'Send test event' });
+    await expect(testButton).toHaveAttribute('hx-post', '/settings/notifications/webhook/test');
+    await expect(testButton).toHaveAttribute('type', 'button');
+    expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+    if (!isWide(page)) {
+      expect((await box(testButton)).height).toBeGreaterThanOrEqual(TOUCH_TARGET);
+      expect((await box(page.locator('#wu'))).width).toBeGreaterThan(200);
+    }
+  });
+
+  test('refuses another scheme, credentials, a short secret and a switch with nothing to send to', async ({
+    page,
+    settingsLock: _lock,
+  }) => {
+    await page.goto('/settings/notifications');
+    const alert = (id: string) => page.locator(`#${id}-e[role="alert"]`);
+    await page.locator('#wu').fill('ftp://hooks.example.com/x');
+    await secretField(page).fill(WEBHOOK_SECRET);
+    await save(page);
+    await expect(alert('wu')).toHaveText('Only http and https addresses are accepted.');
+    await expect(page.locator('#wu')).toHaveAttribute('aria-invalid', 'true');
+    await expect(page.locator('#wu')).toHaveValue('ftp://hooks.example.com/x');
+    await expect(secretField(page)).toHaveValue('');
+
+    await page.locator('#wu').fill('https://user:pass@hooks.example.com/x');
+    await secretField(page).fill(WEBHOOK_SECRET);
+    await save(page);
+    await expect(alert('wu')).toContainText('Do not put a user name or password in the address');
+
+    await page.locator('#wu').fill('https://hooks.example.com/x');
+    await secretField(page).fill('short');
+    await save(page);
+    await expect(alert('ws')).toHaveText('Use at least 16 characters.');
+    await expect(secretField(page)).toHaveValue('');
+
+    await page.locator('#wu').fill('');
+    await secretField(page).fill('');
+    await page.locator('#we').setChecked(true);
+    await save(page);
+    await expect(alert('wu')).toHaveText('Enter the address to switch the webhook on.');
+    await expect(alert('ws')).toHaveText('Enter a shared secret to switch the webhook on.');
+    await page.goto('/settings/notifications');
+    await expect(page.locator('#we')).not.toBeChecked();
+  });
+
+  test('stores the secret without ever showing it, says why a test event failed and is audited', async ({
+    page,
+    settingsLock: _lock,
+  }) => {
+    await resetWebhook(page);
+    try {
+      await page.locator('#wu').fill(REFUSED_URL);
+      await secretField(page).fill(WEBHOOK_SECRET);
+      await save(page);
+      await expect(toast(form(page))).toContainText('Notification settings saved');
+      await expect(secretField(page)).toHaveValue('');
+      await expect(secretField(page)).toHaveAttribute('placeholder', '••••••••');
+      await expect(form(page).locator('input[name="remove_webhook_secret"]')).toBeVisible();
+      expect(await page.content()).not.toContain(WEBHOOK_SECRET);
+      await page.reload();
+      await expect(page.locator('#wu')).toHaveValue(REFUSED_URL);
+      await expect(page.locator('#we')).not.toBeChecked();
+      expect(await page.content()).not.toContain(WEBHOOK_SECRET);
+
+      await form(page).getByRole('button', { name: 'Send test event' }).click();
+      const result = page.locator('#webhook-test');
+      await expect(result).toContainText('Test event failed');
+      await expect(result).toContainText('The webhook could not be reached.');
+      await expect(result).not.toContainText('127.0.0.1');
+      await expect(page.locator('#banner-area')).not.toContainText('deploy webhook');
+
+      await page.goto('/audit?action=webhook.test');
+      const entry = page.locator('#audit-results tr[data-fragment="audit-row"]').first();
+      await expect(entry).toContainText('webhook.test');
+      await expect(entry.locator('[data-status="failed"]')).toBeVisible();
+      await expect(entry.locator('xpath=following-sibling::tr[1]')).toContainText(
+        'The webhook could not be reached.',
+      );
+      await page.goto('/audit?action=settings.update');
+      const first = page.locator('#audit-results tr[data-fragment="audit-row"]').first();
+      const detail = first.locator('xpath=following-sibling::tr[1]');
+      await expect(detail).toContainText('notifications.webhook_secret');
+      expect(await page.content()).not.toContain(WEBHOOK_SECRET);
+      expect(await page.content()).not.toContain('e2e-path-token-5520');
+    } finally {
+      await resetWebhook(page);
+    }
+  });
+});

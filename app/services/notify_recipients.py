@@ -4,7 +4,9 @@ System events go to the active superadmins. An event about a project goes to the
 project, and only to those whose grants reach at least one file the event is about; each of them
 is told only about the files they can reach, so a notification never names an item outside a
 user's access. The recipients choice of the event decides whether the superadmins are told as
-well. An address is used once, even when two roles lead to it.
+well. The extra addresses of the project the superadmin has set are told of every event about
+that project whatever the choice is, with every file of the event. An address is used once, even
+when two roles lead to it, and then it is told about the widest set of files any of them has.
 """
 
 from collections.abc import Collection
@@ -13,7 +15,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import User, UserGroup
+from app.models import Project, User, UserGroup
 from app.services.mailer import valid_address
 from app.services.notify_catalog import Recipients
 from app.services.permissions import ItemLevel, ItemRef, load_user_scope
@@ -91,16 +93,40 @@ async def project_admin_recipients(db: AsyncSession, item: ProjectItem) -> list[
     return found
 
 
+def _wider(first: frozenset[int] | None, second: frozenset[int] | None) -> frozenset[int] | None:
+    """The files two roles of one address may be told of together: every file when either may."""
+    if first is None or second is None:
+        return None
+    return first | second
+
+
 def unique_by_address(recipients: Collection[Recipient]) -> list[Recipient]:
-    """The recipients with each address once, the first one winning and the order kept."""
-    seen: set[str] = set()
-    unique: list[Recipient] = []
+    """The recipients with each address once, ignoring case.
+
+    The first spelling and the first position are kept; an address that leads from two roles may
+    be told about the widest set of files either role has.
+    """
+    unique: dict[str, Recipient] = {}
     for recipient in recipients:
         key = recipient.address.lower()
-        if key not in seen:
-            seen.add(key)
-            unique.append(recipient)
-    return unique
+        found = unique.get(key)
+        if found is None:
+            unique[key] = recipient
+        elif _wider(found.environment_ids, recipient.environment_ids) != found.environment_ids:
+            unique[key] = Recipient(
+                found.address, _wider(found.environment_ids, recipient.environment_ids)
+            )
+    return list(unique.values())
+
+
+async def extra_address_recipients(db: AsyncSession, project_id: int) -> list[Recipient]:
+    """The extra addresses set on the project, each told about every file of the event.
+
+    An address that is no longer a plain address (the stored list was changed by hand) is left
+    out.
+    """
+    stored = await db.scalar(select(Project.extra_addresses).where(Project.id == project_id))
+    return [Recipient(address) for address in stored or [] if valid_address(address)]
 
 
 async def resolve_recipients(
@@ -110,7 +136,7 @@ async def resolve_recipients(
 
     Events about the whole system pass no item and are told to the superadmins whatever the
     choice is. For an event about a project the choice picks the superadmins, the project
-    admins or both.
+    admins or both, and the extra addresses of the project are always added.
     """
     if item is None:
         return await superadmin_recipients(db)
@@ -119,4 +145,5 @@ async def resolve_recipients(
         found += await superadmin_recipients(db)
     if choice in (Recipients.PROJECT_ADMINS, Recipients.BOTH):
         found += await project_admin_recipients(db, item)
+    found += await extra_address_recipients(db, item.project_id)
     return unique_by_address(found)

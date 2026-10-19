@@ -46,12 +46,15 @@ def backup(status: BackupStatus) -> BackupFinished:
 
 
 def test_every_switch_and_recipients_choice_is_a_field_of_the_settings() -> None:
-    """The catalog and the stored section describe the same fields, so neither can drift."""
+    """The catalog and the stored section describe the same fields, so neither can drift.
+
+    The webhook switch and address are the only fields that belong to no row of the matrix.
+    """
     names = {item.name for item in fields(NotificationSettings)}
     expected = {row.kind.value for row in EVENT_ROWS} | {
         f"{kind.value}_to" for kind in PROJECT_KINDS
     }
-    assert names == expected
+    assert names == expected | {"webhook_enabled", "webhook_url"}
 
 
 def test_the_defaults_are_the_decided_ones() -> None:

@@ -2,8 +2,9 @@
 
 The command line runs in its own process, so it cannot leave work behind for a background task:
 its loop ends with the command. The notifier here sends inline, once, under one time limit, and
-never changes what a command does or what it exits with. It needs the master key to read the
-SMTP password; a process without a usable key sends nothing, as it would when SMTP is not set up.
+never changes what a command does or what it exits with. A finished deploy is also posted to the
+webhook, once. It needs the master key to read the SMTP password and the webhook secret; a process
+without a usable key sends nothing, as it would when SMTP is not set up.
 """
 
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession

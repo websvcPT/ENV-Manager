@@ -1,0 +1,18 @@
+{#- The extra notification addresses panel of the project settings tab. A refused list swaps this
+    panel again with the reason (422); a stored list swaps it with a toast. Context: project,
+    addresses_text (the list as typed, one per line), addresses_error and addresses_saved (none,
+    or tone, title and message of a toast). -#}
+{% from "macros/buttons.html" import button %}
+{% from "macros/feedback.html" import toast %}
+{% from "macros/forms.html" import field_message %}
+{% from "macros/panels.html" import panel %}
+{% call panel("Notification addresses", "addresses-title", fragment="project-addresses", id="project-addresses") %}
+<form hx-post="/projects/{{ project.id }}/notification-addresses" hx-target="#project-addresses" hx-swap="outerHTML" hx-status:422="swap:outerHTML target:#project-addresses" class="flex flex-col gap-4 px-4 pb-5 md:px-5">
+<p class="max-w-2xl text-ink2">Besides the admins of this project, these addresses receive its notifications that are switched on in Settings, deploy results and file changes, each with every file of the event. Mail is sent only when SMTP is set up.</p>
+<div class="flex max-w-md flex-col gap-1.5"><label for="xa" class="text-[13px] font-semibold">Extra addresses, one per line</label><textarea id="xa" name="addresses" rows="{{ [[(addresses_text | default("")).count("\n") + 2, 3] | max, 8] | min }}" aria-describedby="xa-{{ "e" if addresses_error | default(none) else "h" }}"{% if addresses_error | default(none) %} aria-invalid="true"{% endif %} autocomplete="off" spellcheck="false" class="h-auto w-full rounded-ctl border {{ "border-danger" if addresses_error | default(none) else "border-line-strong" }} bg-surface px-3 py-2.5 text-sm text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ addresses_text | default("") }}</textarea>{{ field_message("xa", "At most 20 addresses. An address typed twice is kept once.", addresses_error | default(none)) }}</div>
+<div>{{ button("Save addresses", kind="primary-sm", type="submit", extra_class="max-md:h-11") }}</div>
+{%- if addresses_saved | default(none) %}
+{{ toast(addresses_saved.tone, addresses_saved.message, addresses_saved.title, floating=true) }}
+{%- endif %}
+</form>
+{% endcall %}

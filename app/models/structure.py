@@ -3,7 +3,7 @@
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import Boolean, Enum, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, Enum, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -45,13 +45,19 @@ def _policy_column[PolicyT: StrEnum](policy: type[PolicyT], length: int) -> Enum
 
 
 class Project(Base):
-    """A group of deployments with its own access."""
+    """A group of deployments with its own access.
+
+    ``extra_addresses`` is the list of email addresses, besides the admins, that receive the
+    notifications about the project's deploys and files. Each is checked and unique ignoring case
+    when it is saved (see ``app.services.project_addresses``).
+    """
 
     __tablename__ = "projects"
     __table_args__ = ({"sqlite_autoincrement": True},)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100), unique=True)
+    extra_addresses: Mapped[list[str]] = mapped_column(JSON, default=list, server_default="[]")
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utc_now, onupdate=utc_now)
 

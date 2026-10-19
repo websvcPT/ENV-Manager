@@ -304,3 +304,49 @@ async def test_the_second_factor_time_column_is_added_and_removed_in_place(
         assert "totp_enabled_at" not in names and index.scalar_one() == 1 and kept == 1
     finally:
         await engine.dispose()
+
+
+async def test_the_extra_addresses_column_is_added_and_removed_in_place_and_keeps_projects(
+    database_path: Path, backup_dir: Path
+) -> None:
+    """Migration 0013 gives a project that existed before it an empty list; going back drops the
+    column, keeps the projects and the autoincrement ids, and going forward starts empty again."""
+    engine = create_engine(database_path)
+    try:
+        await migrate_database(engine, database_path, backup_dir)
+        async with engine.begin() as connection:
+            await connection.run_sync(lambda sync: command.downgrade(build_config(sync), "0012"))
+            await connection.execute(
+                text(
+                    "INSERT INTO projects (id, name, created_at, updated_at)"
+                    " VALUES (7, 'before', '2026-01-01', '2026-01-01')"
+                )
+            )
+            await connection.run_sync(lambda sync: command.upgrade(build_config(sync), "head"))
+            columns = (await connection.execute(text("PRAGMA table_info(projects)"))).all()
+            added = next(row for row in columns if row[1] == "extra_addresses")
+            assert added[3] == 1 and added[4] == "'[]'"
+            stored = await connection.execute(text("SELECT extra_addresses FROM projects"))
+            assert stored.scalar_one() == "[]"
+            await connection.execute(
+                text("UPDATE projects SET extra_addresses = :list WHERE id = 7"),
+                {"list": '["team@example.org"]'},
+            )
+            await connection.run_sync(lambda sync: command.downgrade(build_config(sync), "0012"))
+        async with engine.connect() as connection:
+            info = await connection.execute(text("PRAGMA table_info(projects)"))
+            names = [row[1] for row in info.all()]
+            kept = (await connection.execute(text("SELECT id, name FROM projects"))).all()
+            table_sql = (
+                await connection.execute(
+                    text("SELECT sql FROM sqlite_master WHERE name = 'projects'")
+                )
+            ).scalar_one()
+        assert "extra_addresses" not in names and [tuple(row) for row in kept] == [(7, "before")]
+        assert "AUTOINCREMENT" in table_sql
+        async with engine.begin() as connection:
+            await connection.run_sync(lambda sync: command.upgrade(build_config(sync), "head"))
+            again = await connection.execute(text("SELECT extra_addresses FROM projects"))
+            assert again.scalar_one() == "[]"
+    finally:
+        await engine.dispose()

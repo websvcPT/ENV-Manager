@@ -4,8 +4,8 @@ Each banner is derived from stored state when a page is requested, so it stays u
 is gone and no request has to clear it. Only pages are given banners, and only for the
 superadmin. The backup banner follows the newest backup that a person or the schedule asked for:
 it shows while that backup failed or could not be copied to the extra destination, and goes
-when a later one succeeds. The SMTP banner shows while mail is not set up, and the delivery banner
-while notification mail has failed since one last worked.
+when a later one succeeds. The SMTP banner shows while mail is not set up, and a delivery banner
+for each channel (mail, webhook) that has failed since one last worked.
 """
 
 from dataclasses import dataclass
@@ -14,13 +14,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.display_time import DisplayTime
-from app.models import Backup, BackupStatus, BackupTrigger
+from app.models import Backup, BackupStatus, BackupTrigger, NotificationStatus
 from app.services.app_settings import SmtpSettings, load_stored_settings
-from app.services.notify_status import EMAIL_CHANNEL, load_failures
+from app.services.notify_status import EMAIL_CHANNEL, WEBHOOK_CHANNEL, load_failures
 
 REQUESTED_TRIGGERS = (BackupTrigger.MANUAL, BackupTrigger.SCHEDULED, BackupTrigger.CLI)
 BACKUP_SETTINGS_HREF = "/settings/backup"
 SMTP_SETTINGS_HREF = "/settings/smtp"
+NOTIFICATION_SETTINGS_HREF = "/settings/notifications"
 
 
 @dataclass(frozen=True)
@@ -67,12 +68,8 @@ def smtp_banner(smtp: SmtpSettings) -> ShellBanner | None:
     )
 
 
-async def delivery_banner(db: AsyncSession, display: DisplayTime) -> ShellBanner | None:
-    """The banner for notification mail that failed since one last worked, None when none did."""
-    failing = [row for row in await load_failures(db) if row.channel == EMAIL_CHANNEL]
-    if not failing:
-        return None
-    row = failing[0]
+def _mail_banner(row: NotificationStatus, display: DisplayTime) -> ShellBanner:
+    """The banner for notification mail that failed since one last worked."""
     noun = "mail" if row.failures == 1 else "mails"
     return ShellBanner(
         f"Notification emails are failing: {row.failures} {noun} could not be sent, "
@@ -80,6 +77,28 @@ async def delivery_banner(db: AsyncSession, display: DisplayTime) -> ShellBanner
         "Open SMTP settings",
         SMTP_SETTINGS_HREF,
     )
+
+
+def _webhook_banner(row: NotificationStatus, display: DisplayTime) -> ShellBanner:
+    """The banner for webhook events that failed since one last worked."""
+    noun = "event" if row.failures == 1 else "events"
+    return ShellBanner(
+        f"The deploy webhook is failing: {row.failures} {noun} could not be delivered, "
+        f"the last at {display.text(row.last_failure_at)}. {row.reason}",
+        "Open notification settings",
+        NOTIFICATION_SETTINGS_HREF,
+    )
+
+
+async def delivery_banners(db: AsyncSession, display: DisplayTime) -> list[ShellBanner]:
+    """The banners for mail and webhook deliveries that failed since one last worked, if any."""
+    banners: list[ShellBanner] = []
+    for row in await load_failures(db):
+        if row.channel == EMAIL_CHANNEL:
+            banners.append(_mail_banner(row, display))
+        elif row.channel == WEBHOOK_CHANNEL:
+            banners.append(_webhook_banner(row, display))
+    return banners
 
 
 async def load_shell_banners(
@@ -92,11 +111,7 @@ async def load_shell_banners(
     if smtp is None:
         smtp = (await load_stored_settings(db)).smtp
     banners: list[ShellBanner] = []
-    for banner in (
-        await backup_banner(db, display),
-        smtp_banner(smtp),
-        await delivery_banner(db, display),
-    ):
+    for banner in (await backup_banner(db, display), smtp_banner(smtp)):
         if banner is not None:
             banners.append(banner)
-    return banners
+    return [*banners, *await delivery_banners(db, display)]

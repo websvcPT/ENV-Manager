@@ -188,6 +188,57 @@ test.describe('superadmin', () => {
     await expect(page.locator('#project-rename #rn')).toHaveValue(renamed);
   });
 
+  test('keeps the extra notification addresses, refuses a bad one and keeps each address once', async ({
+    page,
+    scratch,
+  }) => {
+    await page.goto(`/projects/${scratch.id}/settings`);
+    const panel = page.locator('#project-addresses');
+    await expect(panel.locator('h2')).toHaveText('Notification addresses');
+    await expect(panel.locator('label[for="xa"]')).toHaveText('Extra addresses, one per line');
+    await expect(panel.locator('#xa')).toHaveValue('');
+    const titles = await page.locator('main section h2').allTextContents();
+    expect(titles.indexOf('Rename')).toBeLessThan(titles.indexOf('Notification addresses'));
+    expect(titles.indexOf('Notification addresses')).toBeLessThan(titles.indexOf('Delete project'));
+
+    await panel.locator('#xa').fill('ops@example.test\nnot-an-address');
+    await panel.getByRole('button', { name: 'Save addresses' }).click();
+    await expect(panel.locator('#xa-e[role="alert"]')).toHaveText(
+      'not-an-address is not a valid address.',
+    );
+    await expect(panel.locator('#xa')).toHaveAttribute('aria-invalid', 'true');
+    await expect(panel.locator('#xa')).toHaveValue('ops@example.test\nnot-an-address');
+
+    await panel.locator('#xa').fill('Ops@Example.test\n\nops@example.test\nteam@example.test');
+    await panel.getByRole('button', { name: 'Save addresses' }).click();
+    await expect(panel.locator('[data-fragment="toast"]')).toContainText('Addresses saved');
+    await expect(panel.locator('#xa')).toHaveValue('Ops@Example.test\nteam@example.test');
+    await page.reload();
+    await expect(page.locator('#xa')).toHaveValue('Ops@Example.test\nteam@example.test');
+    await page.locator('#project-addresses').getByRole('button', { name: 'Save addresses' }).click();
+    await expect(page.locator('#project-addresses [data-fragment="toast"]')).toContainText(
+      'Nothing to save',
+    );
+
+    await page.goto('/audit?action=project.notification_addresses');
+    const entry = page
+      .locator('#audit-results tr[data-fragment="audit-row"]', { hasText: scratch.name })
+      .first();
+    await expect(entry).toContainText('project.notification_addresses');
+    await expect(entry.locator('xpath=following-sibling::tr[1]')).toContainText(
+      'team@example.test',
+    );
+
+    await page.goto(`/projects/${scratch.id}/settings`);
+    expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+    if (!isWide(page)) {
+      const button = page.locator('#project-addresses').getByRole('button', {
+        name: 'Save addresses',
+      });
+      expect((await button.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+    }
+  });
+
   test('confirms by name before deleting and then leaves for the list', async ({
     page,
     scratch,

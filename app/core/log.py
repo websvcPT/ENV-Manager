@@ -10,8 +10,10 @@ _FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"
 def configure_logging(level: str = "INFO") -> None:
     """Configure the root logger with a stderr handler at the given level name."""
     logging.basicConfig(level=level.upper(), format=_FORMAT, stream=sys.stderr, force=True)
-    # The SQLite driver logs statement parameters at debug level, which would expose values.
-    logging.getLogger("aiosqlite").setLevel(logging.WARNING)
+    # The SQLite driver logs statement parameters at debug level, which would expose values, and
+    # the HTTP client logs the whole address of every request, which can hold a webhook token.
+    for noisy in ("aiosqlite", "httpx", "httpcore"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
 def get_logger(name: str | None = None) -> logging.Logger:

@@ -1,0 +1,5 @@
+{#- The answer to a stored Notifications save: the form with its toast, and the banner area sent
+    again out of band, because saving the webhook can clear its delivery banner. Context: what
+    fragments/settings_notifications.html needs; the banners are the request's own. -#}
+{% include "fragments/settings_notifications.html" %}
+{% with oob = true %}{% include "fragments/banner_area.html" %}{% endwith %}

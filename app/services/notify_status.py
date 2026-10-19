@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import NotificationStatus
 
 EMAIL_CHANNEL = "email"
+WEBHOOK_CHANNEL = "webhook"
 MAX_REASON_LENGTH = 200
 
 

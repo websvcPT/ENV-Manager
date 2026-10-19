@@ -27,6 +27,7 @@ from app.services.docker_cli import DockerCli
 from app.services.key_check import ensure_key_check
 from app.services.mailer import FastapiMailTransport
 from app.services.notifier import Notifications
+from app.services.webhook import HttpxWebhookTransport
 from app.web.access_grid import router as access_grid_router
 from app.web.account import router as account_router
 from app.web.audit import router as audit_router
@@ -91,10 +92,16 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         application.state.crypto = crypto
         application.state.login_ip_max_failures = settings.login_ip_max_failures
         transport = FastapiMailTransport()
+        webhook_transport = HttpxWebhookTransport()
         notifier = Notifications(
-            session_factory, crypto, base_url=settings.base_url, transport=transport
+            session_factory,
+            crypto,
+            base_url=settings.base_url,
+            transport=transport,
+            webhook_transport=webhook_transport,
         )
         application.state.mail_transport = transport
+        application.state.webhook_transport = webhook_transport
         application.state.notifier = notifier
         application.state.settings_notifier = notifier
         application.state.docker_cli = DockerCli(socket_path=settings.docker_socket)

@@ -8,14 +8,18 @@ applies to the next event), finds the recipients, builds one message per recipie
 with a few retries. A failure is logged with a fixed reason and counted in the database for the
 banner. At most ``max_pending`` events wait at once; more are dropped and counted.
 
+A finished deploy is also posted to the outbound webhook (``WebhookDelivery``), in a task of its
+own so a slow receiver never holds up mail and the other way round.
+
 The command line process cannot leave work behind (its loop ends with the command), so there the
 notifier runs inline: it delivers before returning, without retries, under one total time limit.
 """
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -46,6 +50,9 @@ from app.services.notify_messages import (
 from app.services.notify_recipients import ProjectItem, Recipient, resolve_recipients
 from app.services.notify_status import EMAIL_CHANNEL, clear_failures, record_failure
 from app.services.settings_events import SettingsChanged
+from app.services.webhook import WebhookTransport
+from app.services.webhook_body import new_event_id
+from app.services.webhook_delivery import WebhookDelivery, WebhookRetry
 
 log = get_logger("notifier")
 
@@ -79,6 +86,8 @@ class Notifications:
         base_url: str,
         transport: MailTransport | None = None,
         retry: RetryPolicy | None = None,
+        webhook_transport: WebhookTransport | None = None,
+        webhook_retry: WebhookRetry | None = None,
         sleep: Sleep = asyncio.sleep,
         inline: bool = False,
         max_pending: int = MAX_PENDING,
@@ -89,6 +98,13 @@ class Notifications:
         self._base_url = base_url
         self._transport = transport or FastapiMailTransport()
         self._retry = retry or (RetryPolicy(()) if inline else RetryPolicy())
+        self._webhook = WebhookDelivery(
+            session_factory,
+            crypto,
+            transport=webhook_transport,
+            retry=webhook_retry or (WebhookRetry(()) if inline else WebhookRetry()),
+            sleep=sleep,
+        )
         self._sleep = sleep
         self._inline = inline
         self._max_pending = max_pending
@@ -101,17 +117,24 @@ class Notifications:
         """Take an event: inline for the command line, else start its task and return at once."""
         if kind_of(event) is None:
             return
-        now = utc_now()
         if self._inline:
-            await self._run_inline(event, now)
+            await self._run_inline(self._jobs(event))
             return
         if len(self._pending) >= self._max_pending:
             self._dropped += 1
             self._start_recorder()
             return
-        task = asyncio.get_running_loop().create_task(self._run(event, now))
-        self._pending.add(task)
-        task.add_done_callback(self._finished)
+        for job in self._jobs(event):
+            task = asyncio.get_running_loop().create_task(job)
+            self._pending.add(task)
+            task.add_done_callback(self._finished)
+
+    def _jobs(self, event: NotificationEvent) -> list[Coroutine[Any, Any, None]]:
+        """The deliveries an event starts: its mail, and for a finished deploy the webhook."""
+        jobs = [self._run(event, utc_now())]
+        if isinstance(event, DeployFinished):
+            jobs.append(self._webhook.deliver(event, new_event_id()))
+        return jobs
 
     async def deploy_finished(self, event: DeployFinished) -> None:
         """The deploy seam."""
@@ -161,11 +184,11 @@ class Notifications:
         finally:
             self._recorder = None
 
-    async def _run_inline(self, event: NotificationEvent, now: datetime) -> None:
-        """Deliver in the caller's task, bounded in time, never raising."""
+    async def _run_inline(self, jobs: list[Coroutine[Any, Any, None]]) -> None:
+        """Deliver in the caller's task, all deliveries together under one limit, never raising."""
         try:
             async with asyncio.timeout(INLINE_TIMEOUT_SECONDS):
-                await self._run(event, now)
+                await asyncio.gather(*jobs)
         except Exception as error:
             log.error("notification failed: %s", type(error).__name__)
 

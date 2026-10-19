@@ -20,6 +20,7 @@ from app.models import (
     DeployStatus,
     NotificationStatus,
     PostDeployStatus,
+    Project,
 )
 from app.models.types import utc_now
 from app.seeds import SeedData
@@ -28,7 +29,13 @@ from app.services.app_settings import SmtpSettings
 from app.services.backup_events import BackupFinished
 from app.services.deploy_events import DeployFinished, EnvironmentResult
 from app.services.notifier import Notifications, RetryPolicy
-from app.services.notify_events import GitPushFailed, LockoutScope, LockoutStarted
+from app.services.notify_events import (
+    FileChange,
+    FileChanged,
+    GitPushFailed,
+    LockoutScope,
+    LockoutStarted,
+)
 from app.services.notify_status import EMAIL_CHANNEL, record_failure
 from app.services.settings_events import SettingsChanged
 from app.tests.notify_helpers import (
@@ -498,3 +505,111 @@ async def test_a_git_push_failure_is_sent_to_the_superadmin_until_its_switch_is_
     await world.notify(GitPushFailed("again", 1))
     await world.idle()
     assert len(transport.sent) == 1
+
+
+async def set_extra_addresses(engine: AsyncEngine, project_id: int, addresses: list[str]) -> None:
+    """Store the extra notification addresses of a project."""
+    async with create_session_factory(engine)() as db:
+        project = await db.get(Project, project_id)
+        assert project is not None
+        project.extra_addresses = addresses
+        await db.commit()
+
+
+async def test_extra_addresses_hear_of_a_problem_with_every_file_whatever_the_choice(
+    world: Notifications,
+    transport: RecordingTransport,
+    seed_data: SeedData,
+    seeded_database: AsyncEngine,
+) -> None:
+    """They are told even when only the superadmins are chosen, once each, about all the files."""
+    await switch(seeded_database, deploy_problem_to="superadmins")
+    await set_extra_addresses(
+        seeded_database,
+        seed_data.projects.rentals.id,
+        ["Team@Example.org", "team@example.org", "pager@corp.local"],
+    )
+    await world.notify(deploy(seed_data, DeployStatus.BLOCKED))
+    await world.idle()
+    assert sorted(transport.to()) == ["Team@Example.org", "pager@corp.local", "root@example.test"]
+    by_address = {item.mail.to: item.mail for item in transport.sent}
+    for extra in ("Team@Example.org", "pager@corp.local"):
+        text = decoded_text(await mime_of(by_address[extra]))
+        assert ".env.db: written, version 2" in text and ".env.db.secrets: failed" in text
+
+
+async def test_an_extra_address_that_is_also_a_scoped_admin_is_told_about_the_whole_project(
+    world: Notifications,
+    transport: RecordingTransport,
+    seed_data: SeedData,
+    seeded_database: AsyncEngine,
+) -> None:
+    """One mail to the address, and it names every file of the event, as the superadmin chose."""
+    await set_extra_addresses(
+        seeded_database, seed_data.projects.rentals.id, ["ENV_SCOPED_ADMIN@example.test"]
+    )
+    await world.notify(deploy(seed_data))
+    await world.idle()
+    scoped = [item for item in transport.sent if item.mail.to.lower().startswith("env_scoped")]
+    assert len(scoped) == 1
+    assert ".env.db.secrets: failed" in decoded_text(await mime_of(scoped[0].mail))
+
+
+async def test_the_extra_addresses_follow_the_switch_of_the_event(
+    world: Notifications,
+    transport: RecordingTransport,
+    seed_data: SeedData,
+    seeded_database: AsyncEngine,
+) -> None:
+    """A kind that is off sends nothing to anyone, and a success needs its own switch."""
+    await set_extra_addresses(seeded_database, seed_data.projects.rentals.id, ["team@example.org"])
+    await world.notify(deploy(seed_data, DeployStatus.SUCCESS))
+    await world.idle()
+    assert "team@example.org" not in transport.to()
+    await switch(seeded_database, deploy_succeeded=True, deploy_problem=False)
+    await world.notify(deploy(seed_data, DeployStatus.FAILED))
+    await world.idle()
+    assert "team@example.org" not in transport.to()
+    await world.notify(deploy(seed_data, DeployStatus.SUCCESS))
+    await world.idle()
+    assert "team@example.org" in transport.to()
+
+
+async def test_the_extra_addresses_are_told_of_file_changes_of_their_project_only(
+    world: Notifications,
+    transport: RecordingTransport,
+    seed_data: SeedData,
+    seeded_database: AsyncEngine,
+) -> None:
+    """A new version in the project reaches them; one in another project does not."""
+    await switch(seeded_database, file_changed=True, file_changed_to="superadmins")
+    await set_extra_addresses(seeded_database, seed_data.projects.rentals.id, ["team@example.org"])
+    await set_extra_addresses(seeded_database, seed_data.projects.billing.id, ["bill@example.org"])
+    envs = seed_data.envs
+    await world.notify(
+        FileChanged(
+            seed_data.projects.rentals.id,
+            seed_data.deployments.rentals_prod.id,
+            seed_data.services.mysql.id,
+            envs.db.id,
+            ".env.db",
+            3,
+            FileChange.SAVED,
+            "root",
+        )
+    )
+    await world.idle()
+    assert sorted(transport.to()) == ["root@example.test", "team@example.org"]
+
+
+async def test_a_system_event_never_goes_to_the_extra_addresses(
+    world: Notifications,
+    transport: RecordingTransport,
+    seed_data: SeedData,
+    seeded_database: AsyncEngine,
+) -> None:
+    """Lockouts and the like are the superadmins' business."""
+    await set_extra_addresses(seeded_database, seed_data.projects.rentals.id, ["team@example.org"])
+    await world.notify(lockout())
+    await world.idle()
+    assert transport.to() == ["root@example.test"]

@@ -1,4 +1,4 @@
-"""Project detail routes: the four tabs, rename and delete."""
+"""Project detail routes: the four tabs, rename, the extra notification addresses and delete."""
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -14,6 +14,7 @@ from app.models import Project
 from app.services.access_grid import NodeKind
 from app.services.paths import load_allowed_paths
 from app.services.permissions import AccessScope, Capability
+from app.services.project_addresses import AddressesError, save_extra_addresses
 from app.services.project_detail import (
     ProjectDetail,
     list_activity,
@@ -31,6 +32,7 @@ from app.web.dependencies import AuthContext, get_db, get_scope, require_auth
 router = APIRouter()
 
 RENAME_FRAGMENT = "fragments/project_rename.html"
+ADDRESSES_FRAGMENT = "fragments/project_addresses.html"
 DELETE_FRAGMENT = "fragments/project_delete_form.html"
 DELETE_CONFIRM_ERROR = "Type the project name exactly to confirm."
 
@@ -150,14 +152,61 @@ async def members_redirect(
 async def settings_tab(
     request: Request,
     access: Annotated[ProjectContext, Depends(project_access(Capability.MANAGE_STRUCTURE))],
+    db: Annotated[AsyncSession, Depends(get_db)],
     renamed: bool = False,
 ) -> Response:
-    """The Settings tab (superadmin): rename and delete."""
+    """The Settings tab (superadmin): rename, the extra notification addresses and delete."""
+    project = await _project_row(db, access)
     return render(
         request,
         "pages/project_settings.html",
-        _page_context(access, "settings", renamed=renamed),
+        _page_context(
+            access,
+            "settings",
+            renamed=renamed,
+            addresses_text="\n".join(project.extra_addresses or []),
+        ),
     )
+
+
+@router.post("/projects/{project_id:int}/notification-addresses", include_in_schema=False)
+async def addresses_route(
+    request: Request,
+    access: Annotated[ProjectContext, Depends(project_access(Capability.MANAGE_STRUCTURE))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    addresses: Annotated[str, Form()] = "",
+) -> Response:
+    """Save the extra notification addresses. A refused list answers the panel with the reason
+    (422); nothing is stored then."""
+    project = await _project_row(db, access)
+    try:
+        change = await save_extra_addresses(
+            db, project, addresses, actor=access.auth.user, ip_address=client_address(request)
+        )
+    except AddressesError as error:
+        page = _page_context(
+            access, "settings", addresses_text=addresses, addresses_error=str(error)
+        )
+        return render(request, ADDRESSES_FRAGMENT, page, status_code=422)
+    if change.changed:
+        saved = {
+            "tone": "success",
+            "title": "Addresses saved",
+            "message": "They apply to the next notification.",
+        }
+    else:
+        saved = {
+            "tone": "info",
+            "title": "Nothing to save",
+            "message": "The list is unchanged.",
+        }
+    page = _page_context(
+        access,
+        "settings",
+        addresses_text="\n".join(change.addresses),
+        addresses_saved=saved,
+    )
+    return render(request, ADDRESSES_FRAGMENT, page)
 
 
 @router.post("/projects/{project_id:int}/rename", include_in_schema=False)

@@ -1,8 +1,14 @@
-"""The Notifications settings: the event matrix, checking the form and saving it.
+"""The Notifications settings: the event matrix and the webhook, checking the form and saving it.
 
 Each row of the matrix is an event kind with a switch, and the kinds about a project also have a
 recipients choice. A checkbox that is not sent is off, which is how a browser submits a cleared
 box, so the form is the whole state of the matrix.
+
+The webhook has an address, a switch and a shared secret. The secret is never shown back: the
+form carries it only when someone types a new one, an empty field keeps the stored secret, and a
+separate choice removes it. The switch can only be on while an address and a secret are set.
+Saving anything about the webhook starts its delivery health afresh, since a failure counted
+under the old settings says nothing about the new ones.
 """
 
 from collections.abc import Mapping
@@ -10,7 +16,15 @@ from dataclasses import dataclass, replace
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services.app_settings import NotificationSettings, SettingChange, save_section
+from app.core.crypto import CryptoService
+from app.services.app_settings import (
+    WEBHOOK_SECRET_KEY,
+    NotificationSettings,
+    SettingChange,
+    clear_secret,
+    save_section,
+    write_secret,
+)
 from app.services.audit import AuditActor
 from app.services.notify_catalog import (
     EVENT_ROWS,
@@ -21,37 +35,64 @@ from app.services.notify_catalog import (
     is_enabled,
     recipients_of,
 )
+from app.services.notify_status import WEBHOOK_CHANNEL, clear_failures
+from app.services.webhook import secret_problem, url_problem
 
 RECIPIENTS_REFUSED = "Choose one of the listed recipients."
+URL_REQUIRED = "Enter the address to switch the webhook on."
+SECRET_REQUIRED = "Enter a shared secret to switch the webhook on."  # noqa: S105
+SECRET_CONFLICT = "Type a new secret or remove the stored one, not both."  # noqa: S105
+WEBHOOK_FIELDS = frozenset({"webhook_enabled", "webhook_url"})
 
 
 @dataclass(frozen=True)
 class NotificationsForm:
-    """The matrix as submitted: the kinds switched on and the recipients chosen per project kind."""
+    """The tab as submitted: the kinds switched on, the recipients chosen per project kind and
+    the webhook fields. ``webhook_secret`` is empty to keep the stored secret and
+    ``remove_webhook_secret`` asks to delete it."""
 
     enabled: frozenset[EventKind]
     recipients: Mapping[EventKind, str]
+    webhook_enabled: bool = False
+    webhook_url: str = ""
+    webhook_secret: str = ""
+    remove_webhook_secret: bool = False
 
     @classmethod
     def from_settings(cls, settings: NotificationSettings) -> NotificationsForm:
-        """The form showing the stored matrix."""
+        """The form showing the stored settings, with the secret field empty."""
         return cls(
             frozenset(row.kind for row in EVENT_ROWS if is_enabled(settings, row.kind)),
             {kind: recipients_of(settings, kind).value for kind in PROJECT_KINDS},
+            settings.webhook_enabled,
+            settings.webhook_url,
         )
 
     @classmethod
     def from_submission(cls, submitted: Mapping[str, str]) -> NotificationsForm:
-        """The form from the posted fields: ``<kind>`` is present when the box is checked and
-        ``<kind>_to`` holds the recipients of a project kind."""
+        """The form from the posted fields: ``<kind>`` is present when the box is checked,
+        ``<kind>_to`` holds the recipients of a project kind, and the webhook has its own."""
         return cls(
             frozenset(row.kind for row in EVENT_ROWS if row.kind.value in submitted),
             {kind: submitted.get(f"{kind.value}_to", "") for kind in PROJECT_KINDS},
+            "webhook_enabled" in submitted,
+            submitted.get("webhook_url", ""),
+            submitted.get("webhook_secret", ""),
+            "remove_webhook_secret" in submitted,
         )
 
 
+@dataclass(frozen=True)
+class CleanNotifications:
+    """A checked form: the settings to store and what to do with the webhook secret."""
+
+    settings: NotificationSettings
+    secret: str
+    remove_secret: bool
+
+
 class NotificationsFormError(Exception):
-    """The form has refused values; ``errors`` holds one message per kind that has one."""
+    """The form has refused values; ``errors`` holds one message per field name."""
 
     def __init__(self, errors: dict[str, str]) -> None:
         """Hold the messages by the name of the field."""
@@ -64,12 +105,32 @@ def recipient_choices() -> list[tuple[str, str]]:
     return list(RECIPIENT_LABELS.items())
 
 
-def validate_notifications(
-    form: NotificationsForm, *, stored: NotificationSettings
-) -> NotificationSettings:
-    """The settings the form stands for, or ``NotificationsFormError`` naming the bad rows.
+def _webhook_errors(form: NotificationsForm, *, secret_stored: bool) -> dict[str, str]:
+    """The refusals of the webhook fields, by field name."""
+    errors: dict[str, str] = {}
+    url = form.webhook_url.strip()
+    if url and (problem := url_problem(url)):
+        errors["webhook_url"] = problem
+    if form.webhook_secret and (problem := secret_problem(form.webhook_secret)):
+        errors["webhook_secret"] = problem
+    elif form.webhook_secret and form.remove_webhook_secret:
+        errors["webhook_secret"] = SECRET_CONFLICT
+    if form.webhook_enabled:
+        if not url:
+            errors.setdefault("webhook_url", URL_REQUIRED)
+        keeps_secret = secret_stored and not form.remove_webhook_secret
+        if not form.webhook_secret and not keeps_secret:
+            errors.setdefault("webhook_secret", SECRET_REQUIRED)
+    return errors
 
-    Fields the form does not cover keep their stored value.
+
+def validate_notifications(
+    form: NotificationsForm, *, stored: NotificationSettings, secret_stored: bool
+) -> CleanNotifications:
+    """The settings the form stands for, or ``NotificationsFormError`` naming the bad fields.
+
+    Fields the form does not cover keep their stored value. ``secret_stored`` says whether a
+    webhook secret is stored now, which decides whether the webhook can be switched on.
     """
     errors: dict[str, str] = {}
     values: dict[str, object] = {}
@@ -81,15 +142,40 @@ def validate_notifications(
         if choice not in {item.value for item in Recipients}:
             errors[f"{row.kind.value}_to"] = RECIPIENTS_REFUSED
         values[f"{row.kind.value}_to"] = choice
+    errors.update(_webhook_errors(form, secret_stored=secret_stored))
     if errors:
         raise NotificationsFormError(errors)
-    return replace(stored, **values)  # type: ignore[arg-type]
+    values["webhook_enabled"] = form.webhook_enabled
+    values["webhook_url"] = form.webhook_url.strip()
+    return CleanNotifications(
+        replace(stored, **values),  # type: ignore[arg-type]
+        form.webhook_secret,
+        form.remove_webhook_secret,
+    )
 
 
 async def save_notifications(
-    db: AsyncSession, new: NotificationSettings, *, actor: AuditActor
-) -> list[SettingChange]:
-    """Store the changed switches and recipients with one audit entry, and commit."""
-    changes = await save_section(db, "notifications", new, actor=actor)
+    db: AsyncSession, crypto: CryptoService, clean: CleanNotifications, *, actor: AuditActor
+) -> bool:
+    """Store the changed switches, recipients and webhook settings and commit.
+
+    The settings are audited together, the secret change on its own entry (its name only).
+    Returns whether anything changed. Delivery health of the webhook starts afresh when the
+    address, the switch or the secret changed.
+    """
+    changes: list[SettingChange] = await save_section(
+        db, "notifications", clean.settings, actor=actor
+    )
+    secret_changed = False
+    if clean.secret:
+        await write_secret(db, crypto, WEBHOOK_SECRET_KEY, clean.secret, actor=actor)
+        secret_changed = True
+    elif clean.remove_secret:
+        secret_changed = await clear_secret(db, WEBHOOK_SECRET_KEY, actor=actor)
+    webhook_changed = secret_changed or any(
+        change.setting.removeprefix("notifications.") in WEBHOOK_FIELDS for change in changes
+    )
+    if webhook_changed:
+        await clear_failures(db, WEBHOOK_CHANNEL)
     await db.commit()
-    return changes
+    return bool(changes) or secret_changed
