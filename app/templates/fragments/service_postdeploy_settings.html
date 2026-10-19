@@ -7,8 +7,8 @@
     (None, or the HookReviewRequired of the commands to confirm). -#}
 {% from "macros/badges.html" import badge %}
 {% from "macros/buttons.html" import button %}
-{% from "macros/feedback.html" import command_review, note, toast %}
-{% from "macros/forms.html" import checkbox, field, field_message %}
+{% from "macros/feedback.html" import command_review, note %}
+{% from "macros/forms.html" import checkbox, field, field_message, save_button, saved_toast %}
 {% from "macros/icons.html" import icon %}
 {% set off = not docker.available %}
 {% set line_count = form.commands.splitlines() | length %}
@@ -32,9 +32,6 @@
 {%- if errors.get("form") %}
 <p role="alert" class="flex items-center gap-1.5 text-[13px] font-semibold text-danger">{{ icon("warning", "size-3.5", "2.4") }}{{ errors.get("form") }}</p>
 {%- endif %}
-<div class="flex gap-2.5">{{ button("Test command", disabled=off, extra_class="max-md:h-11", hx_post="/services/" ~ service.id ~ "/postdeploy/test", hx_target="#test-result", hx_swap="outerHTML", hx_include="closest form") }}{{ button("Confirm and save" if review else "Save settings", kind="primary-sm", type="submit", disabled=off, extra_class="max-md:h-11") }}</div>
-{% include "fragments/service_test_result.html" %}
-{%- if saved %}
-{{ toast(saved.tone, saved.message, saved.title, floating=true) }}
-{%- endif %}
+<div class="flex gap-2.5">{{ button("Test command", disabled=off, extra_class="max-md:h-11", hx_post="/services/" ~ service.id ~ "/postdeploy/test", hx_target="#test-result", hx_swap="outerHTML", hx_include="closest form") }}{{ save_button("Confirm and save" if review else "Save settings", disabled=off) }}</div>
+{% include "fragments/service_test_result.html" %}{{ saved_toast(saved) }}
 </form>

@@ -3,9 +3,7 @@
     (messages by field), saved (none, or tone, title and message of a toast) and
     address_limit_fixed (the startup override sets the sign-in limit per address, so its field is
     shown and not editable). -#}
-{% from "macros/buttons.html" import button %}
-{% from "macros/feedback.html" import toast %}
-{% from "macros/forms.html" import field, radio_option %}
+{% from "macros/forms.html" import field, form_actions, radio_option %}
 <form id="security" data-fragment="security" hx-post="/settings/security" hx-target="this" hx-swap="outerHTML" class="flex flex-col gap-4 px-4 pb-5 md:px-5">
 <div class="grid gap-4 md:grid-cols-2">
 {{ field("si", "Idle session timeout (minutes)", name="idle_timeout_minutes", value=form.idle_timeout_minutes, mono=true, error=errors.get("idle_timeout_minutes"), inputmode="numeric", autocomplete="off") }}
@@ -21,8 +19,5 @@
 {{ radio_option("tfa", "opt", "Optional", "Users can enable TOTP in their account.", checked=true) }}
 {{ radio_option("tfa", "req", "Required", "Every user must set up TOTP.", disabled=true) }}
 </div><p class="mt-2 text-xs text-ink2">Optional is the decided policy, so Off and Required cannot be chosen.</p></fieldset>
-<div class="flex flex-wrap items-center gap-3">{{ button("Save settings", kind="primary-sm", type="submit", extra_class="max-md:h-11") }}</div>
-{%- if saved %}
-{{ toast(saved.tone, saved.message, saved.title, floating=true) }}
-{%- endif %}
+{{ form_actions(saved) }}
 </form>

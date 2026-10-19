@@ -3,9 +3,7 @@
     form. Context: form (GeneralForm), errors (messages by field), saved (none, or tone, title
     and message of a toast), zones, date_formats, dist_choices, drift_choices and target_choices
     (lists of value and label). -#}
-{% from "macros/buttons.html" import button %}
-{% from "macros/feedback.html" import toast %}
-{% from "macros/forms.html" import field, select_field %}
+{% from "macros/forms.html" import field, form_actions, select_field %}
 <form id="general" data-fragment="general" hx-post="/settings/general" hx-target="this" hx-swap="outerHTML" class="flex flex-col gap-4 px-4 pb-5 md:px-5">
 <div class="grid gap-4 md:grid-cols-2">
 {{ select_field("tz", "Time zone", zones, selected=form.time_zone, name="time_zone", error=errors.get("time_zone")) }}
@@ -21,8 +19,5 @@
 {{ field("d5", "File owner", name="file_owner", value=form.file_owner, mono=true, placeholder="app user", error=errors.get("file_owner"), autocomplete="off", maxlength="64") }}
 {{ field("d6", "File group", name="file_group", value=form.file_group, mono=true, placeholder="app user", error=errors.get("file_group"), autocomplete="off", maxlength="64") }}
 </div>
-<div class="flex flex-wrap items-center gap-3">{{ button("Save settings", kind="primary-sm", type="submit", extra_class="max-md:h-11") }}</div>
-{%- if saved %}
-{{ toast(saved.tone, saved.message, saved.title, floating=true) }}
-{%- endif %}
+{{ form_actions(saved) }}
 </form>

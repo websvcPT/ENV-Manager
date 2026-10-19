@@ -6,8 +6,8 @@
     the last push, the last failure and the pinned host key). -#}
 {% from "macros/badges.html" import badge %}
 {% from "macros/buttons.html" import button %}
-{% from "macros/feedback.html" import note, toast %}
-{% from "macros/forms.html" import checkbox, field, select_field, textarea_field %}
+{% from "macros/feedback.html" import note %}
+{% from "macros/forms.html" import checkbox, field, form_actions, select_field, textarea_field %}
 <form id="git" data-fragment="git" hx-post="/settings/git" hx-target="this" hx-swap="outerHTML" class="flex flex-col gap-4 px-4 pb-5 md:px-5">
 {{ note("Pushes an encrypted export only, never plaintext. Direction is push only.") }}
 {{ field("gu", "Repository URL", name="url", value=form.url, mono=true, hint="An ssh:// or https:// address, or git@host:path. Leave empty to switch git sync off. Put no password or token in it.", error=errors.get("url"), autocomplete="off", spellcheck="false") }}
@@ -48,8 +48,5 @@
 {% include "fragments/git_pin_line.html" %}
 <p class="basis-full text-xs text-ink2">The test reads from the saved repository and sends nothing, so save a change before testing it. Only a push proves that writing works.</p>
 </div>
-<div class="flex flex-wrap items-center gap-3">{{ button("Save settings", kind="primary-sm", type="submit", extra_class="max-md:h-11") }}</div>
-{%- if saved %}
-{{ toast(saved.tone, saved.message, saved.title, floating=true) }}
-{%- endif %}
+{{ form_actions(saved) }}
 </form>

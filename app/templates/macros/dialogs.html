@@ -45,13 +45,38 @@
 <div class="flex flex-wrap items-center justify-end gap-3 rounded-b-dialog border-t border-line bg-surface2 px-5 py-4 md:px-6">{{ caller() }}</div>
 {%- endmacro %}
 
+{#- The message row of a confirm dialog: a round warning icon and the text of the caller, which
+    states the effect. `icon_name` swaps the icon, `role` marks the row as an alert, and
+    `ink=false` leaves the colour of the text to the dialog. -#}
+{% macro confirm_message(icon_name="warning", role=none, ink=true) -%}
+<div{% if role %} role="{{ role }}"{% endif %} class="flex items-start gap-3.5"><span class="flex size-10 shrink-0 items-center justify-center rounded-full bg-danger-soft text-danger">{{ icon(icon_name, "size-5", "2.2") }}</span><p class="text-[15px]{% if ink %} text-ink{% endif %}">{{ caller() }}</p></div>
+{%- endmacro %}
+
+{#- The line that shows while the request of the form it sits in runs; the form carries the
+    `group` class. -#}
+{% macro working_status() -%}
+<span role="status" class="hidden items-center gap-2 text-[13px] font-semibold text-ink2 group-[.htmx-request]:inline-flex">{{ icon("clock", "size-4", "2") }}Working. A post-deploy command can take a while.</span>
+{%- endmacro %}
+
+{#- The footer of a confirm dialog: Cancel first and the danger button last. `type="submit"`
+    makes the button send its form; request attributes for the button (hx_post, hx_target) come
+    in as keyword arguments. `cancel` replaces the attributes of Cancel, which closes the dialog
+    by default. `working` adds the running line before the buttons and dims the danger button
+    while the request of the surrounding form runs. -#}
+{% macro confirm_footer(confirm_label, type="button", cancel=none, working=false) -%}
+{%- set confirm_attrs = kwargs -%}
+{%- set cancel_attrs = cancel if cancel else {"data_js": "dialog-close"} -%}
+{%- set confirm_class = "h-11 text-[15px] group-[.htmx-request]:opacity-60" if working else "h-11 text-[15px]" -%}
+{% call dialog_footer() %}{% if working %}{{ working_status() }}<span class="flex-1"></span>{% endif %}{{ button("Cancel", extra_class="h-11", **cancel_attrs) }}{{ button(confirm_label, kind="danger", type=type, extra_class=confirm_class, **confirm_attrs) }}{% endcall %}
+{%- endmacro %}
+
 {#- Confirmation for a destructive or overriding action: states the effect, Cancel first and
     the danger button last. Request attributes for the confirm button (hx_post, hx_target) come
     in as keyword arguments. -#}
 {% macro confirm_dialog(id, title, message, confirm_label, width="560") -%}
 {%- set confirm_attrs = kwargs -%}
 {% call dialog(id, title, width=width) %}
-{% call dialog_body() %}<div class="flex items-start gap-3.5"><span class="flex size-10 shrink-0 items-center justify-center rounded-full bg-danger-soft text-danger">{{ icon("warning", "size-5", "2.2") }}</span><p class="text-[15px] text-ink">{{ message }}</p></div>{% endcall %}
-{% call dialog_footer() %}{{ button("Cancel", extra_class="h-11", data_js="dialog-close") }}{{ button(confirm_label, kind="danger", extra_class="h-11 text-[15px]", **confirm_attrs) }}{% endcall %}
+{% call dialog_body() %}{% call confirm_message() %}{{ message }}{% endcall %}{% endcall %}
+{{ confirm_footer(confirm_label, **confirm_attrs) }}
 {% endcall %}
 {%- endmacro %}

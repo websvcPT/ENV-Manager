@@ -1,12 +1,10 @@
 {#- The delete confirmation inside its dialog: what is lost, and the name to type back. A wrong
     name, or tokens still restricted to the project, swap this form again with the reason.
     Context: project, form_value and form_error (both optional). -#}
-{% from "macros/buttons.html" import button %}
-{% from "macros/dialogs.html" import dialog_body, dialog_footer %}
+{% from "macros/dialogs.html" import confirm_footer, confirm_message, dialog_body %}
 {% from "macros/forms.html" import field %}
-{% from "macros/icons.html" import icon %}
 <form id="delete-project-form" data-fragment="delete-project-form" hx-post="/projects/{{ project.id }}/delete" hx-target="#delete-project-form" hx-swap="outerHTML" hx-status:422="swap:outerHTML target:#delete-project-form">
-{% call dialog_body() %}<div class="flex items-start gap-3.5"><span class="flex size-10 shrink-0 items-center justify-center rounded-full bg-danger-soft text-danger">{{ icon("warning", "size-5", "2.2") }}</span><p class="text-[15px]">This deletes the project, its {{ project.deployments | length }} {{ "deployment" if project.deployments | length == 1 else "deployments" }}, services, environments and all versions. Files already deployed to hosts are not touched. Audit entries are kept. This cannot be undone.</p></div>
+{% call dialog_body() %}{% call confirm_message(ink=false) %}This deletes the project, its {{ project.deployments | length }} {{ "deployment" if project.deployments | length == 1 else "deployments" }}, services, environments and all versions. Files already deployed to hosts are not touched. Audit entries are kept. This cannot be undone.{% endcall %}
 {{ field("dn", "Type the project name to confirm", name="confirm_name", value=form_value | default(""), placeholder=project.name, error=form_error | default(none), mono=true, autocomplete="off") }}{% endcall %}
-{% call dialog_footer() %}{{ button("Cancel", extra_class="h-11", data_js="dialog-close") }}{{ button("Delete project", kind="danger", extra_class="h-11 text-[15px]", type="submit") }}{% endcall %}
+{{ confirm_footer("Delete project", type="submit") }}
 </form>

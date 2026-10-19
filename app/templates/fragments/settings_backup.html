@@ -3,9 +3,7 @@
     field), saved (none, or tone, title and message of a toast), schedule_options and
     retention_options (value and label pairs), zone (the display time zone name) and
     destination_problem (none, or why the stored extra destination cannot be used now). -#}
-{% from "macros/buttons.html" import button %}
-{% from "macros/feedback.html" import toast %}
-{% from "macros/forms.html" import field, select_field %}
+{% from "macros/forms.html" import field, form_actions, select_field %}
 {% set destination_hint = "Must be inside an allowed path." ~ (" " ~ destination_problem ~ " Backups are not copied there until this is fixed." if destination_problem else "") %}
 <form id="backup" data-fragment="backup" hx-post="/settings/backup" hx-target="this" hx-swap="outerHTML" class="flex flex-col gap-4 px-4 pb-5 md:px-5">
 <div class="grid gap-4 md:grid-cols-3">
@@ -13,8 +11,5 @@
 {{ select_field("br", "Retention", retention_options, selected=form.retention, name="retention", error=errors.get("retention")) }}
 {{ field("bx", "Extra destination (optional)", name="extra_destination", value=form.extra_destination, mono=true, hint=destination_hint, error=errors.get("extra_destination"), autocomplete="off", spellcheck="false") }}
 </div>
-<div class="flex flex-wrap items-center gap-3">{{ button("Save settings", kind="primary-sm", type="submit", extra_class="max-md:h-11") }}</div>
-{%- if saved %}
-{{ toast(saved.tone, saved.message, saved.title, floating=true) }}
-{%- endif %}
+{{ form_actions(saved) }}
 </form>

@@ -5,8 +5,7 @@
     password_stored (a password is stored) and test_to (the address the test mail is offered
     to). -#}
 {% from "macros/buttons.html" import button %}
-{% from "macros/feedback.html" import toast %}
-{% from "macros/forms.html" import checkbox, field, select_field %}
+{% from "macros/forms.html" import checkbox, field, form_actions, select_field %}
 <form id="smtp" data-fragment="smtp" hx-post="/settings/smtp" hx-target="this" hx-swap="outerHTML" class="flex flex-col gap-4 px-4 pb-5 md:px-5">
 <div class="grid gap-4 md:grid-cols-3">
 {{ field("sh", "Server", name="host", value=form.host, mono=true, extra_class="md:col-span-2", hint="Leave empty to switch mail off.", error=errors.get("host"), autocomplete="off", spellcheck="false") }}
@@ -27,8 +26,5 @@
 <div id="smtp-test" aria-live="polite" class="self-end"></div>
 <p class="basis-full text-xs text-ink2">The test mail uses the saved settings, so save a change before testing it.</p>
 </div>
-<div class="flex flex-wrap items-center gap-3">{{ button("Save settings", kind="primary-sm", type="submit", extra_class="max-md:h-11") }}</div>
-{%- if saved %}
-{{ toast(saved.tone, saved.message, saved.title, floating=true) }}
-{%- endif %}
+{{ form_actions(saved) }}
 </form>

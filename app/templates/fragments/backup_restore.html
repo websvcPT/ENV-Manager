@@ -3,9 +3,8 @@
     the restore was refused) says why in place of the buttons. Context: backup_id, when (the
     backup's time as shown), refusal (none, or the reason). -#}
 {% from "macros/buttons.html" import button %}
-{% from "macros/dialogs.html" import dialog_body, dialog_footer, dialog_head %}
+{% from "macros/dialogs.html" import confirm_footer, confirm_message, dialog_body, dialog_footer, dialog_head %}
 {% from "macros/feedback.html" import note %}
-{% from "macros/icons.html" import icon %}
 <div data-fragment="backup-restore">
 {{ dialog_head("backup-restore", "Restore backup " ~ when) }}
 {%- if refusal %}
@@ -13,8 +12,8 @@
 {% call dialog_footer() %}{{ button("Close", extra_class="h-11", data_js="dialog-close") }}{% endcall %}
 {%- else %}
 <form hx-post="/settings/backups/{{ backup_id }}/restore" hx-target="#backup-restore" hx-swap="innerHTML">
-{% call dialog_body() %}<div class="flex items-start gap-3.5"><span class="flex size-10 shrink-0 items-center justify-center rounded-full bg-danger-soft text-danger">{{ icon("warning", "size-5", "2.2") }}</span><p class="text-[15px]">Replaces all current data with this backup. Changes made since {{ when }} are lost. A safety backup of the current data is taken first, and everyone is signed out, including you. The action is written to the audit log.</p></div>{% endcall %}
-{% call dialog_footer() %}{{ button("Cancel", extra_class="h-11", data_js="dialog-close") }}{{ button("Restore backup", kind="danger", type="submit", extra_class="h-11 text-[15px]") }}{% endcall %}
+{% call dialog_body() %}{% call confirm_message(ink=false) %}Replaces all current data with this backup. Changes made since {{ when }} are lost. A safety backup of the current data is taken first, and everyone is signed out, including you. The action is written to the audit log.{% endcall %}{% endcall %}
+{{ confirm_footer("Restore backup", type="submit") }}
 </form>
 {%- endif %}
 </div>

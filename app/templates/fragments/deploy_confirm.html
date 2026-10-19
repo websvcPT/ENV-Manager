@@ -2,18 +2,15 @@
     environments, Cancel back to the pre-flight and the danger button that deploys. Context:
     service (a ServiceHeader), names (the chosen file names), selected_ids, versions and
     deploy_timeout_ms. -#}
-{% from "macros/buttons.html" import button %}
 {% from "macros/deploy.html" import deploy_head, selection_fields %}
-{% from "macros/icons.html" import icon %}
+{% from "macros/dialogs.html" import confirm_footer, confirm_message %}
 <div id="deploy-dialog-content" data-fragment="deploy-dialog">
 {{ deploy_head(service, 1) }}
 <form id="force-form" hx-post="/services/{{ service.id }}/deploy" hx-target="#deploy-dialog" hx-swap="innerHTML" hx-sync="this:drop" hx-config='{{ {"timeout": deploy_timeout_ms}|tojson }}' class="group">
 {{ selection_fields(selected_ids, versions) }}<input type="hidden" name="force" value="on"><input type="hidden" name="confirm_force" value="1">
 <div id="deploy-dialog-body" class="flex flex-col gap-5 p-5 md:p-6">
-<div role="alert" class="flex items-start gap-3.5"><span class="flex size-10 shrink-0 items-center justify-center rounded-full bg-danger-soft text-danger">{{ icon("warning", "size-5", "2.2") }}</span><p class="text-[15px] text-ink">Force overwrite deploys <span class="font-mono">{{ names | join(", ") }}</span> past the block policy for missing dist keys and the halt policy for drift. Target files changed outside the app are replaced; a backup copy of each is kept next to it. The force flag is written to the audit log.</p></div>
+{% call confirm_message(role="alert") %}Force overwrite deploys <span class="font-mono">{{ names | join(", ") }}</span> past the block policy for missing dist keys and the halt policy for drift. Target files changed outside the app are replaced; a backup copy of each is kept next to it. The force flag is written to the audit log.{% endcall %}
 </div>
-<div class="flex flex-wrap items-center justify-end gap-3 rounded-b-dialog border-t border-line bg-surface2 px-5 py-4 md:px-6"><span role="status" class="hidden items-center gap-2 text-[13px] font-semibold text-ink2 group-[.htmx-request]:inline-flex">{{ icon("clock", "size-4", "2") }}Working. A post-deploy command can take a while.</span><span class="flex-1"></span>
-{{ button("Cancel", extra_class="h-11", hx_post="/services/" ~ service.id ~ "/deploy/preflight", hx_target="#deploy-dialog", hx_swap="innerHTML", hx_include="closest form") }}
-{{ button("Force deploy " ~ names | length ~ (" environment" if names | length == 1 else " environments"), kind="danger", type="submit", extra_class="h-11 text-[15px] group-[.htmx-request]:opacity-60") }}</div>
+{{ confirm_footer("Force deploy " ~ names | length ~ (" environment" if names | length == 1 else " environments"), type="submit", working=true, cancel={"hx_post": "/services/" ~ service.id ~ "/deploy/preflight", "hx_target": "#deploy-dialog", "hx_swap": "innerHTML", "hx_include": "closest form"}) }}
 </form>
 </div>

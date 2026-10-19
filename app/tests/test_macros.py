@@ -400,3 +400,102 @@ def test_no_page_template_sets_its_own_title_size() -> None:
         if "mail" not in path.parts and own_size.search(path.read_text())
     ]
     assert offenders == []
+
+
+def test_confirm_message_draws_the_warning_row_around_the_text_of_the_caller() -> None:
+    """The row has the round warning icon and the text; icon, role and colour can change."""
+    imported = "{% from 'macros/dialogs.html' import confirm_message %}"
+    plain = render_snippet(imported + "{% call confirm_message() %}Gone for good.{% endcall %}")
+    assert plain.startswith('<div class="flex items-start gap-3.5"><span class="flex size-10')
+    assert "bg-danger-soft text-danger" in plain and "<svg" in plain
+    assert plain.endswith('<p class="text-[15px] text-ink">Gone for good.</p></div>')
+    quiet = render_snippet(
+        imported + "{% call confirm_message('restore', ink=false) %}Copied.{% endcall %}"
+    )
+    assert quiet.endswith('<p class="text-[15px]">Copied.</p></div>')
+    assert quiet != render_snippet(imported + "{% call confirm_message() %}Copied.{% endcall %}")
+    alert = render_snippet(imported + "{% call confirm_message(role='alert') %}x{% endcall %}")
+    assert alert.startswith('<div role="alert" class="flex items-start gap-3.5">')
+    escaped = render_snippet(
+        imported + "{% call confirm_message() %}{{ text }}{% endcall %}", text="<b>"
+    )
+    assert "&lt;b&gt;" in escaped and "<b>" not in escaped
+
+
+def test_confirm_footer_has_cancel_first_and_the_danger_button_last() -> None:
+    """Cancel closes the dialog by default, the danger button takes its type and attributes."""
+    imported = "{% from 'macros/dialogs.html' import confirm_footer %}"
+    page = render_snippet(imported + "{{ confirm_footer('Delete', type='submit') }}")
+    assert page.count("<button") == 2 and 'data-js="dialog-close"' in page
+    assert page.index(">Cancel<") < page.index(">Delete<")
+    assert '<button type="submit" class="inline-flex h-10' in page.split(">Cancel<")[1]
+    assert "border-danger" in page and "group-[.htmx-request]" not in page
+    assert "Working." not in page
+    request = render_snippet(imported + "{{ confirm_footer('Delete', hx_delete='/x') }}")
+    assert (
+        'hx-delete="/x"' in request
+        and '<button type="button" class="inline-flex h-10' in (request.split(">Cancel<")[1])
+    )
+
+
+def test_confirm_footer_can_carry_the_running_line_and_its_own_cancel() -> None:
+    """A form that waits on a slow request shows the running line and dims the danger button."""
+    page = render_snippet(
+        "{% from 'macros/dialogs.html' import confirm_footer %}"
+        "{{ confirm_footer('Force', type='submit', working=true,"
+        " cancel={'hx_post': '/back', 'hx_target': '#d'}) }}"
+    )
+    assert page.index("Working. A post-deploy command can take a while.") < page.index(">Cancel<")
+    assert 'role="status"' in page and '<span class="flex-1"></span>' in page
+    assert 'hx-post="/back" hx-target="#d"' in page and 'data-js="dialog-close"' not in page
+    assert "group-[.htmx-request]:opacity-60" in page.split(">Cancel<")[1]
+
+
+def test_form_actions_end_a_settings_form_with_save_settings_and_the_toast_of_a_save() -> None:
+    """The footer is the Save settings button in a wrapper, then a toast only for a saved answer."""
+    imported = "{% from 'macros/forms.html' import form_actions %}"
+    plain = render_snippet(imported + "{{ form_actions(none) }}")
+    assert plain.startswith('<div class="flex flex-wrap items-center gap-3"><button type="submit"')
+    assert plain.endswith(">Save settings</button></div>")
+    assert 'data-fragment="toast"' not in plain
+    saved = {"tone": "success", "message": "Stored.", "title": "Saved"}
+    toasted = render_snippet(imported + "{{ form_actions(saved) }}", saved=saved)
+    assert toasted.startswith(plain) and "fixed bottom-4 right-4" in toasted
+    assert "Stored." in toasted and "Saved" in toasted
+    bare = render_snippet(imported + "{{ form_actions(none, wrapper_class=none, disabled=true) }}")
+    assert bare.startswith('<div><button type="submit" disabled')
+    padded = render_snippet(imported + "{{ form_actions(none, wrapper_class='px-4') }}")
+    assert padded.startswith('<div class="px-4"><button')
+
+
+def test_the_settings_footer_pieces_can_be_placed_apart() -> None:
+    """The service panel puts a result between its buttons and the toast, so they come apart."""
+    imported = "{% from 'macros/forms.html' import save_button, saved_toast %}"
+    button = render_snippet(imported + "{{ save_button('Confirm and save', disabled=true) }}")
+    assert button.startswith('<button type="submit" disabled') and "Confirm and save" in button
+    assert render_snippet(imported + "{{ saved_toast(none) }}") == ""
+    saved = {"tone": "error", "message": "Refused.", "title": "Not saved"}
+    toast = render_snippet(imported + "{{ saved_toast(saved) }}", saved=saved)
+    assert toast.startswith('\n<div role="alert"') and "Refused." in toast
+
+
+def test_no_fragment_writes_a_confirm_row_a_confirm_footer_or_a_save_footer_by_hand() -> None:
+    """The confirm row, its footer and the settings footer come from the macros only."""
+    templates = Path(__file__).parents[1] / "templates"
+    by_hand = {
+        "confirm row": re.compile(r"rounded-full bg-danger-soft text-danger"),
+        "confirm footer": re.compile(
+            r'button\("Cancel"[^}]*\}\}\s*\{\{ button\([^}]*kind="danger"'
+        ),
+        "save button": re.compile(r'button\("Save settings"'),
+        "saved toast": re.compile(r"toast\(saved\.tone"),
+    }
+    owners = {"macros/dialogs.html", "macros/forms.html"}
+    offenders = [
+        f"{path.relative_to(templates).as_posix()}: {name}"
+        for path in sorted(templates.rglob("*.html"))
+        if path.relative_to(templates).as_posix() not in owners
+        for name, pattern in by_hand.items()
+        if pattern.search(path.read_text())
+    ]
+    assert offenders == []

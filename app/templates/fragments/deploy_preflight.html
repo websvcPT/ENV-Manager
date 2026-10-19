@@ -4,6 +4,7 @@
 {% from "macros/badges.html" import badge %}
 {% from "macros/buttons.html" import button %}
 {% from "macros/deploy.html" import deploy_head %}
+{% from "macros/dialogs.html" import working_status %}
 {% from "macros/feedback.html" import code_block, note %}
 {% from "macros/forms.html" import dangerous_option %}
 {% from "macros/icons.html" import icon %}
@@ -52,7 +53,7 @@
 </section>
 {{ dangerous_option("force", "Force overwrite", "Overrides the block policy for missing dist keys and the halt policy for drift. Target files changed outside the app are replaced. The force flag is always written to the audit log.", checked=preflight.force, data_js="deploy-stale") }}
 </div>
-<div class="flex flex-wrap items-center gap-3 rounded-b-dialog border-t border-line bg-surface2 px-5 py-4 md:px-6"><span role="status" class="hidden items-center gap-2 text-[13px] font-semibold text-ink2 group-[.htmx-request]:inline-flex">{{ icon("clock", "size-4", "2") }}Working. A post-deploy command can take a while.</span><span class="flex-1"></span>
+<div class="flex flex-wrap items-center gap-3 rounded-b-dialog border-t border-line bg-surface2 px-5 py-4 md:px-6">{{ working_status() }}<span class="flex-1"></span>
 {{ button("Cancel", extra_class="h-11", data_js="dialog-close") }}
 {{ button("Run dry run again", extra_class="h-11", hx_post="/services/" ~ service.id ~ "/deploy/preflight", hx_target="#deploy-dialog", hx_swap="innerHTML", hx_sync="this:replace") }}
 <button type="submit" data-deploy-submit data-label-none="Deploy" data-label-one="Deploy 1 environment" data-label-many="Deploy {count} environments"{% if chosen == 0 %} disabled{% endif %} class="inline-flex h-11 items-center justify-center gap-2 rounded-btn bg-accent px-5 text-base font-bold text-accent-ink hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-60 group-[.htmx-request]:opacity-60">{% if chosen == 0 %}Deploy{% elif chosen == 1 %}Deploy 1 environment{% else %}Deploy {{ chosen }} environments{% endif %}</button></div>

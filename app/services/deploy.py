@@ -29,6 +29,7 @@ returned to the caller or shown.
 import asyncio
 import os
 from dataclasses import dataclass, field, replace
+from datetime import datetime
 from pathlib import Path, PurePosixPath
 from time import monotonic
 
@@ -197,6 +198,65 @@ def _outcome(
         forced=found.forced,
         check=found.check,
     )
+
+
+async def _record_run(
+    db: AsyncSession,
+    context: _Context,
+    actor: AuditActor,
+    request: DeployRequest,
+    started_at: datetime,
+    status: DeployStatus,
+    outcomes: tuple[EnvironmentOutcome, ...],
+    post_deploy: PostDeployResult,
+    checks: list[DistCheck],
+) -> DeployRun:
+    """Add the run, its results and the audited dist checks to the session; the caller commits."""
+    run = await record_run(
+        db,
+        service=context.service,
+        deployment=context.deployment,
+        actor=actor,
+        request=request,
+        started_at=started_at,
+        status=status,
+        outcomes=outcomes,
+        post_deploy=post_deploy,
+    )
+    for check in checks:
+        await record_dist_check(db, check, actor=actor)
+    return run
+
+
+def _settle_run(run: DeployRun, status: DeployStatus, post_deploy: PostDeployResult) -> None:
+    """Give a recorded run its final status, the outcome of the command and its finish time."""
+    run.status = status
+    run.post_deploy_status = post_deploy.status
+    run.post_deploy_exit_code = post_deploy.exit_code
+    run.post_deploy_output = post_deploy.output
+    run.post_deploy_reason = truncate(post_deploy.reason)
+    run.finished_at = utc_now()
+
+
+async def _finish_run(
+    db: AsyncSession,
+    context: _Context,
+    actor: AuditActor,
+    request: DeployRequest,
+    run: DeployRun,
+    outcomes: tuple[EnvironmentOutcome, ...],
+) -> None:
+    """Audit a run in its final state and commit it."""
+    await audit_run(
+        db,
+        service=context.service,
+        deployment=context.deployment,
+        actor=actor,
+        request=request,
+        run=run,
+        outcomes=outcomes,
+    )
+    await db.commit()
 
 
 @dataclass
@@ -538,29 +598,10 @@ class DeployEngine:
         outcomes, checks, _ = await self._examine(db, context, actor, request)
         status = overall_status(outcomes)
         post_deploy = PostDeployResult(PostDeployStatus.NONE)
-        run = await record_run(
-            db,
-            service=context.service,
-            deployment=context.deployment,
-            actor=actor,
-            request=request,
-            started_at=started_at,
-            status=status,
-            outcomes=outcomes,
-            post_deploy=post_deploy,
+        run = await _record_run(
+            db, context, actor, request, started_at, status, outcomes, post_deploy, checks
         )
-        for check in checks:
-            await record_dist_check(db, check, actor=actor)
-        await audit_run(
-            db,
-            service=context.service,
-            deployment=context.deployment,
-            actor=actor,
-            request=request,
-            run=run,
-            outcomes=outcomes,
-        )
-        await db.commit()
+        await _finish_run(db, context, actor, request, run, outcomes)
         return DeployOutcome(run.id, status, True, request.force, outcomes, post_deploy)
 
     async def _deploy_locked(
@@ -587,19 +628,9 @@ class DeployEngine:
             post_deploy = PostDeployResult(PostDeployStatus.RUNNING)
         else:
             post_deploy = PostDeployResult(PostDeployStatus.NONE)
-        run = await record_run(
-            db,
-            service=context.service,
-            deployment=context.deployment,
-            actor=actor,
-            request=request,
-            started_at=started_at,
-            status=status,
-            outcomes=outcomes,
-            post_deploy=post_deploy,
+        run = await _record_run(
+            db, context, actor, request, started_at, status, outcomes, post_deploy, checks
         )
-        for check in checks:
-            await record_dist_check(db, check, actor=actor)
         await db.commit()
 
         if deployed and not switched_off:
@@ -610,22 +641,8 @@ class DeployEngine:
                 raise
             if post_deploy.status is PostDeployStatus.FAILED:
                 status = DeployStatus.POST_DEPLOY_FAILED
-        run.status = status
-        run.post_deploy_status = post_deploy.status
-        run.post_deploy_exit_code = post_deploy.exit_code
-        run.post_deploy_output = post_deploy.output
-        run.post_deploy_reason = truncate(post_deploy.reason)
-        run.finished_at = utc_now()
-        await audit_run(
-            db,
-            service=context.service,
-            deployment=context.deployment,
-            actor=actor,
-            request=request,
-            run=run,
-            outcomes=outcomes,
-        )
-        await db.commit()
+        _settle_run(run, status, post_deploy)
+        await _finish_run(db, context, actor, request, run, outcomes)
         log.info("deploy run %s of service %s: %s", run.id, context.service.id, status.value)
         outcome = DeployOutcome(run.id, status, False, request.force, outcomes, post_deploy)
         return outcome, self._event(context, actor, request, run.id, outcome)
@@ -644,23 +661,13 @@ class DeployEngine:
         The caller re-raises the cancellation. A failure to record is only logged: the next start
         of the app closes the run (``app.services.deploy_recovery``).
         """
-        run.status = DeployStatus.POST_DEPLOY_FAILED
-        run.post_deploy_status = PostDeployStatus.FAILED
-        run.post_deploy_exit_code = None
-        run.post_deploy_output = None
-        run.post_deploy_reason = INTERRUPTED_REASON
-        run.finished_at = utc_now()
+        _settle_run(
+            run,
+            DeployStatus.POST_DEPLOY_FAILED,
+            PostDeployResult(PostDeployStatus.FAILED, reason=INTERRUPTED_REASON),
+        )
         try:
-            await audit_run(
-                db,
-                service=context.service,
-                deployment=context.deployment,
-                actor=actor,
-                request=request,
-                run=run,
-                outcomes=outcomes,
-            )
-            await db.commit()
+            await _finish_run(db, context, actor, request, run, outcomes)
         except Exception as error:
             log.warning("a cancelled deploy could not be recorded: %s", type(error).__name__)
 

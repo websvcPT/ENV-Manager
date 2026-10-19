@@ -2,6 +2,8 @@
     role=alert) is tied to the control with aria-describedby. Monospace is for paths, keys and
     versions. -#}
 {% from "macros/attrs.html" import attrs %}
+{% from "macros/buttons.html" import button %}
+{% from "macros/feedback.html" import toast %}
 {% from "macros/icons.html" import icon %}
 
 {#- Hidden CSRF field for plain (non-htmx) forms; htmx requests carry the header from body. -#}
@@ -44,4 +46,23 @@
     what is overridden. -#}
 {% macro dangerous_option(name, title, description, checked=false) -%}
 <label class="flex cursor-pointer items-start gap-3.5 rounded-panel border-2 border-danger bg-danger-soft p-4"><input type="checkbox" name="{{ name }}"{% if checked %} checked{% endif %}{{ attrs(kwargs) }} class="mt-0.5 size-5 shrink-0 accent-danger"><span><span class="flex items-center gap-2 font-bold text-danger">{{ icon("warning", "size-4", "2") }}{{ title }}</span><span class="mt-1 block text-ink">{{ description }}</span></span></label>
+{%- endmacro %}
+
+{#- The Save settings button of a settings form. -#}
+{% macro save_button(label="Save settings", disabled=false) -%}
+{{ button(label, kind="primary-sm", type="submit", disabled=disabled, extra_class="max-md:h-11") }}
+{%- endmacro %}
+
+{#- The toast of a settings form that was just saved, pinned to the viewport. `saved` carries the
+    tone, message and title of the answer, or is empty when there is nothing to report. -#}
+{% macro saved_toast(saved) -%}
+{%- if saved %}
+{{ toast(saved.tone, saved.message, saved.title, floating=true) }}
+{%- endif %}
+{%- endmacro %}
+
+{#- The footer of a settings form: the Save settings button in a wrapper of the given classes
+    (a bare div when there are none), then the toast of a saved answer. -#}
+{% macro form_actions(saved, wrapper_class="flex flex-wrap items-center gap-3", disabled=false) -%}
+<div{% if wrapper_class %} class="{{ wrapper_class }}"{% endif %}>{{ save_button(disabled=disabled) }}</div>{{ saved_toast(saved) }}
 {%- endmacro %}

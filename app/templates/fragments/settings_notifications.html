@@ -6,8 +6,7 @@
     secret_stored (a webhook secret is stored), recipient_choices (value and label pairs), errors
     (messages by field name) and saved (none, or tone, title and message of a toast). -#}
 {% from "macros/buttons.html" import button %}
-{% from "macros/feedback.html" import toast %}
-{% from "macros/forms.html" import checkbox, field %}
+{% from "macros/forms.html" import checkbox, field, form_actions %}
 {% from "macros/icons.html" import icon %}
 {% from "macros/panels.html" import cell, table %}
 <form id="notifications" data-fragment="notifications" hx-post="/settings/notifications" hx-target="this" hx-swap="outerHTML" class="flex flex-col gap-4 pb-5">
@@ -44,8 +43,5 @@
 <p class="basis-full text-xs text-ink2">The test event uses the saved settings and works while the webhook is off, so save a change before testing it.</p>
 </div>
 </div>
-<div class="px-4 md:px-5">{{ button("Save settings", kind="primary-sm", type="submit", extra_class="max-md:h-11") }}</div>
-{%- if saved %}
-{{ toast(saved.tone, saved.message, saved.title, floating=true) }}
-{%- endif %}
+{{ form_actions(saved, wrapper_class="px-4 md:px-5") }}
 </form>
