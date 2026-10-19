@@ -101,7 +101,7 @@ def _add_view(
 ) -> dict[str, Any]:
     """What the add dialog needs; a refusal also redraws the list out of band."""
     users = [
-        (str(user.id), f"{user.name} ({user.group.value.capitalize()})")
+        (str(user.id), f"{user.name} ({user.email}, {user.group.value.capitalize()})")
         for user in access.candidates
     ]
     return {

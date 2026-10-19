@@ -285,7 +285,9 @@ async def test_creating_a_user_shows_the_password_once_and_stores_it_hashed_with
 
     async with other_client(web_app) as newcomer:
         await newcomer.get("/healthz")
-        login = await post(newcomer, "/login", {"identifier": "new.hire", "password": password})
+        login = await post(
+            newcomer, "/login", {"identifier": "new.hire@example.test", "password": password}
+        )
         assert login.status_code in (200, 204, 303)
         assert (await newcomer.get("/projects")).status_code == 200
 
@@ -294,9 +296,10 @@ async def test_creating_a_user_shows_the_password_once_and_stores_it_hashed_with
     ("overrides", "field", "message"),
     [
         ({"name": ""}, "un", "Enter a name."),
-        ({"name": "has space"}, "un", "Use 1 to 100 characters without spaces."),
-        ({"name": "a@b"}, "un", "The name cannot contain @"),
-        ({"name": "ROOT"}, "un", "A user named ROOT already exists."),
+        ({"name": "a@b"}, "un", "Use 1 to 100 characters."),
+        ({"name": "under_score"}, "un", "Use 1 to 100 characters."),
+        ({"name": "x" * 101}, "un", "Use 1 to 100 characters."),
+        ({"name": "zero\N{ZERO WIDTH SPACE}width"}, "un", "Use 1 to 100 characters."),
         ({"email": ""}, "ue", "Enter an email address."),
         ({"email": "not-an-email"}, "ue", "Enter a valid email address."),
         ({"email": "Admin@EXAMPLE.test"}, "ue", "Another user already has this email address."),
@@ -330,6 +333,23 @@ async def test_a_refused_create_names_the_field_keeps_the_choices_and_creates_no
     assert await web_audit_entries(web_app, "user.create") == []
     async with web_app.state.session_factory() as db:
         assert await db.scalar(select(func.count()).select_from(User)) == SEEDED_USERS
+
+
+async def test_two_users_may_share_a_name_and_the_email_is_the_only_key(
+    web_client: httpx.AsyncClient, web_app: FastAPI
+) -> None:
+    await sign_in(web_client, "root")
+    shared = await create(web_client, name="root", email="other.root@example.test")
+    assert shared.status_code == 200 and "User created" in shared.text
+    page = (await web_client.get("/users", headers=HTMX)).text
+    assert [name for _, name, _ in ROW.findall(page)].count("root") == 2
+    assert "other.root@example.test" in page
+    async with web_app.state.session_factory() as db:
+        names = list((await db.scalars(select(User.name).where(User.name == "root"))).all())
+    assert names == ["root", "root"]
+    again = await create(web_client, name="Someone Else", email="OTHER.ROOT@example.test")
+    assert again.status_code == 422
+    assert "Another user already has this email address." in again.text
 
 
 async def test_the_confirm_dialogs_state_the_effect_of_each_action(
@@ -667,7 +687,7 @@ async def test_the_detail_page_shows_group_status_grants_tokens_and_activity(
     assert body.count(" checked") == 2 and "Save grants" in body
     assert "billing-ci" in body and "Active" in body and "Never" in body
     assert "Recent activity" in body and "Open audit log" in body
-    assert 'href="/audit?actor=user:admin"' in body
+    assert f'href="/audit?actor=user:{admin.id}"' in body
     assert "No activity yet" not in body
     assert 'id="user-action"' in response.text and 'id="token-revoke"' in response.text
     token_id = await seeded_token_id(web_app)

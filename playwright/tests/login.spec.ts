@@ -2,11 +2,13 @@ import { expect, test } from '@playwright/test';
 
 import { horizontalOverflow } from '../viewport';
 import { expectImageLoaded, renderedSize } from './images';
+import { seededEmail } from '../users-api';
 import { submitSignIn } from './sign-in';
 import { totpCode } from './totp';
 
 // Development dataset values (development and testing only).
 const PASSWORD = 'dev-only-password';
+const ROOT = seededEmail('root');
 const TOTP_SECRET = 'JBSWY3DPEHPK3PXP';
 const SESSION_COOKIE = 'envmanager_session';
 const PENDING_COOKIE = 'envmanager_pending_login';
@@ -53,27 +55,35 @@ test.describe('sign in page', () => {
 
   test('signing in lands on the projects page', async ({ page }) => {
     await page.goto('/login');
-    await submitSignIn(page, 'root', PASSWORD);
+    await submitSignIn(page, ROOT, PASSWORD);
     await expect(page).toHaveURL(/\/projects$/);
     await expect(page.locator('[data-fragment="page-header"] h1')).toBeVisible();
     await page.goto('/login');
     await expect(page).toHaveURL(/\/projects$/);
   });
 
-  test('wrong credentials swap in a generic message and keep the name', async ({ page }) => {
+  test('wrong credentials swap in a generic message and keep the email', async ({ page }) => {
     await page.goto('/login');
-    await submitSignIn(page, 'root', 'not-the-password');
+    await expect(page.locator('label[for="user"]')).toHaveText('Email');
+    await submitSignIn(page, ROOT, 'not-the-password');
     const message = page.locator('[data-fragment="login-message"]');
     await expect(message).toHaveAttribute('role', 'alert');
     await expect(page).toHaveURL(/\/login$/);
-    await expect(page.locator('#user')).toHaveValue('root');
+    await expect(page.locator('#user')).toHaveValue(ROOT);
     await expect(page.locator('#pw')).toHaveValue('');
     const wrongPassword = await message.innerText();
 
-    await submitSignIn(page, 'nobody-by-that-name', 'not-the-password');
-    await expect(page.locator('#user')).toHaveValue('nobody-by-that-name');
+    await submitSignIn(page, 'nobody@example.test', 'not-the-password');
+    await expect(page.locator('#user')).toHaveValue('nobody@example.test');
     expect(await page.locator('[data-fragment="login-message"]').innerText()).toBe(wrongPassword);
     await expect(page.locator('[data-fragment="login-card"]')).toHaveCount(1);
+  });
+
+  test('a name does not sign anyone in, even with the right password', async ({ page }) => {
+    await page.goto('/login');
+    await submitSignIn(page, 'root', PASSWORD);
+    await expect(page.locator('[data-fragment="login-message"]')).toHaveAttribute('role', 'alert');
+    await expect(page).toHaveURL(/\/login$/);
   });
 
   test('repeated failures lock the form and show the time left', async ({ page }, testInfo) => {
@@ -105,7 +115,7 @@ test.describe('sign in page', () => {
 // Each project signs in with its own second factor user, so the two projects running in
 // parallel never present the same authenticator code (an accepted code cannot be reused).
 function totpUser(projectName: string): string {
-  return projectName === 'phone' ? 'totp_user_alt' : 'totp_user';
+  return seededEmail(projectName === 'phone' ? 'totp_user_alt' : 'totp_user');
 }
 
 test.describe('second factor step', () => {
@@ -206,7 +216,7 @@ test.describe('session expiry', () => {
     context,
   }) => {
     await page.goto('/login');
-    await submitSignIn(page, 'root', PASSWORD);
+    await submitSignIn(page, ROOT, PASSWORD);
     await expect(page).toHaveURL(/\/projects$/);
 
     await context.clearCookies();
@@ -222,7 +232,7 @@ test.describe('session expiry', () => {
     context,
   }) => {
     await page.goto('/login');
-    await submitSignIn(page, 'root', PASSWORD);
+    await submitSignIn(page, ROOT, PASSWORD);
     await expect(page).toHaveURL(/\/projects$/);
 
     const baseURL = String(test.info().project.use.baseURL);
@@ -242,7 +252,7 @@ test.describe('session expiry', () => {
     context,
   }) => {
     await page.goto('/login');
-    await submitSignIn(page, 'root', PASSWORD);
+    await submitSignIn(page, ROOT, PASSWORD);
     await expect(page).toHaveURL(/\/projects$/);
     const baseURL = String(test.info().project.use.baseURL);
     await context.addCookies([{ name: SESSION_COOKIE, value: 'dead-session', url: baseURL }]);

@@ -9,7 +9,7 @@ import pytest
 from fastapi import FastAPI
 from sqlalchemy import func, select
 
-from app.models import AuditActorType, AuditEntry, AuditResult, Project
+from app.models import AuditActorType, AuditEntry, AuditResult, Project, User
 from app.seeds import BULK_ACTION, EDITOR_SECRET_VALUES, ensure_audit_figures
 from app.services.audit import record_audit
 from app.services.audit_log import PAGE_SIZE
@@ -34,6 +34,13 @@ async def entry_id(web_app: FastAPI, action: str) -> int:
         found: int = (
             await db.execute(select(AuditEntry.id).where(AuditEntry.action == action))
         ).scalar_one()
+    return found
+
+
+async def user_id(web_app: FastAPI, name: str) -> int:
+    """The id of a seeded user."""
+    async with web_app.state.session_factory() as db:
+        found: int = (await db.execute(select(User.id).where(User.name == name))).scalar_one()
     return found
 
 
@@ -119,7 +126,7 @@ async def test_the_superadmin_page_has_the_filters_the_table_and_a_second_page(
 
 @pytest.mark.usefixtures("figures")
 async def test_the_admin_page_is_limited_to_the_scope_and_says_so(
-    web_client: httpx.AsyncClient,
+    web_client: httpx.AsyncClient, web_app: FastAPI
 ) -> None:
     """An admin sees its items' entries only, with the scope note, and no hidden names."""
     await sign_in(web_client, "admin")
@@ -135,7 +142,10 @@ async def test_the_admin_page_is_limited_to_the_scope_and_says_so(
         assert hidden not in body, hidden
     assert 'data-fragment="audit-more"' not in body
     options = re.findall(r'<option value="([^"]*)"', body)
-    assert "user:admin" in options and "api:token billing-ci" in options
+    admin_option = f"user:{await user_id(web_app, 'admin')}"
+    assert admin_option in options and "api:token billing-ci" in options
+    assert "user:admin" not in options
+    assert re.search(rf'<option value="{admin_option}">admin \(admin@example.test\)</option>', body)
     assert "cli:cli" not in options and "system:system" not in options
     assert BULK_ACTION not in options
 
@@ -213,8 +223,10 @@ async def test_filters_combine(web_client: httpx.AsyncClient, web_app: FastAPI) 
     fancy = await project_id(web_app, "Fancy Proj. Name")
     base = f"/audit/table?project={fancy}"
     assert len(row_ids((await get_fragment(web_client, base)).text)) == 7
-    by_user = await get_fragment(web_client, f"{base}&actor=user:admin")
+    by_user = await get_fragment(web_client, f"{base}&actor=user:{await user_id(web_app, 'admin')}")
     assert len(row_ids(by_user.text)) == 2
+    by_name = await get_fragment(web_client, f"{base}&actor=user:admin")
+    assert len(row_ids(by_name.text)) == 7
     by_action = await get_fragment(web_client, f"{base}&action=file_save&result=success")
     assert len(row_ids(by_action.text)) == 1
     by_dates = await get_fragment(web_client, f"{base}&from=2026-10-16&to=2026-10-16")

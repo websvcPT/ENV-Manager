@@ -31,6 +31,7 @@ from app.seeds.dataset import (
     ensure_service_figures,
     ensure_totp_user,
     seed,
+    seed_email,
 )
 from app.seeds.demo import (
     DEMO_DEPLOYMENT_NAME,
@@ -85,4 +86,5 @@ __all__ = [
     "ensure_service_figures",
     "ensure_totp_user",
     "seed",
+    "seed_email",
 ]

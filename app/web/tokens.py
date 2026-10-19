@@ -169,7 +169,9 @@ async def _revoke_view(db: AsyncSession, viewer: User, token: ApiToken) -> dict[
     return {
         "token_id": token.id,
         "token_name": token.name,
-        "owner_name": owner.name if owner is not None and owner.id != viewer.id else None,
+        "owner_label": (
+            f"{owner.name} ({owner.email})" if owner is not None and owner.id != viewer.id else None
+        ),
         "refusal": "revoked" if token.revoked_at is not None else None,
     }
 

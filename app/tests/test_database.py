@@ -9,7 +9,12 @@ from alembic.autogenerate import compare_metadata
 from alembic.runtime.migration import MigrationContext
 from sqlalchemy import Connection, text
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncConnection,
+    AsyncEngine,
+    AsyncSession,
+    create_async_engine,
+)
 
 from app.core.crypto import CryptoService, KeyMismatchError, generate_master_key, parse_master_key
 from app.core.db import create_engine, create_session_factory, sqlite_url
@@ -277,6 +282,130 @@ async def test_the_upgrade_refuses_users_that_share_an_email_and_changes_nothing
         assert any("pre-migration" in backup.name for backup in backup_dir.iterdir())
     finally:
         await engine.dispose()
+
+
+USER_TREE_STATEMENTS = (
+    'INSERT INTO users (id, name, email, password_hash, "group", is_active, totp_enabled,'
+    " created_at, updated_at) VALUES (1, 'ann', 'ann@example.test', 'x', 'admin', 1, 0,"
+    " '2026-01-01', '2026-01-01')",
+    'INSERT INTO users (id, name, email, password_hash, "group", is_active, totp_enabled,'
+    " created_at, updated_at) VALUES (2, 'bob', 'bob@example.test', 'x', 'viewer', 1, 0,"
+    " '2026-01-01', '2026-01-01')",
+    "INSERT INTO user_sessions (id, token_hash, user_id, created_at, last_seen_at, expires_at)"
+    " VALUES (1, 'h', 1, '2026-01-01', '2026-01-01', '2026-01-02')",
+    "INSERT INTO api_tokens (id, owner_id, name, token_hash, prefix, operations, created_at)"
+    " VALUES (1, 1, 't', 'th', 'envm_ab', '[]', '2026-01-01')",
+    "INSERT INTO audit_entries (id, created_at, actor_type, actor_user_id, action, result,"
+    " version_ids, details) VALUES (1, '2026-01-01', 'user', 1, 'login.success', 'success',"
+    " '[]', '{}')",
+)
+
+
+async def _user_tree_state(connection: AsyncConnection) -> dict[str, object]:
+    """What the users migration must keep or change, read from the migrated database."""
+    return {
+        "children": [
+            (await connection.execute(text(f"SELECT count(*) FROM {table}"))).scalar_one()  # noqa: S608
+            for table in ("user_sessions", "api_tokens")
+        ],
+        "audit_actor": (
+            await connection.execute(text("SELECT actor_user_id FROM audit_entries"))
+        ).scalar_one(),
+        "table_sql": (
+            await connection.execute(text("SELECT sql FROM sqlite_master WHERE name = 'users'"))
+        ).scalar_one(),
+        "email_index": (
+            await connection.execute(
+                text("SELECT sql FROM sqlite_master WHERE name = 'uq_users_email_lower'")
+            )
+        ).scalar_one_or_none(),
+        "violations": (await connection.execute(text("PRAGMA foreign_key_check"))).all(),
+        "enforcement": (await connection.execute(text("PRAGMA foreign_keys"))).scalar_one(),
+    }
+
+
+async def test_the_users_migration_keeps_children_lets_names_repeat_and_goes_back(
+    database_path: Path, backup_dir: Path
+) -> None:
+    """Rebuilding users keeps every user and what hangs on it, keeps the email index, drops the
+    unique name and the id reuse, and the way back refuses shared names, then restores both."""
+    engine = create_engine(database_path)
+    try:
+        await _migrate(engine, "0015")
+        async with engine.begin() as connection:
+            for statement in USER_TREE_STATEMENTS:
+                await connection.execute(text(statement))
+        await migrate_database(engine, database_path, backup_dir)
+        async with engine.connect() as connection:
+            after = await _user_tree_state(connection)
+            sequence = (
+                await connection.execute(
+                    text("SELECT seq FROM sqlite_sequence WHERE name = 'users'")
+                )
+            ).scalar_one()
+        assert after["children"] == [1, 1] and after["audit_actor"] == 1
+        assert after["violations"] == [] and after["enforcement"] == 1
+        assert "AUTOINCREMENT" in str(after["table_sql"])
+        assert "uq_users_name" not in str(after["table_sql"])
+        assert "UNIQUE" in str(after["email_index"]) and "lower(email)" in str(after["email_index"])
+        assert sequence == 2
+
+        async with engine.begin() as connection:
+            await connection.execute(
+                text(USER_INSERT), {"name": "bob", "email": "bob.two@example.test"}
+            )
+        with pytest.raises(IntegrityError):
+            async with engine.begin() as connection:
+                await connection.execute(
+                    text(USER_INSERT), {"name": "carl", "email": "BOB@example.TEST"}
+                )
+        await _migrate(engine, "0015", down=True, refused="names are shared: bob")
+        async with engine.begin() as connection:
+            await connection.execute(text("DELETE FROM users WHERE name = 'bob' AND id > 2"))
+            await connection.execute(
+                text(USER_INSERT), {"name": "dee", "email": "dee@example.test"}
+            )
+            newest = (
+                await connection.execute(text("SELECT max(id) FROM users WHERE name = 'dee'"))
+            ).scalar_one()
+        assert newest == 4
+
+        await _migrate(engine, "0015", down=True)
+        async with engine.connect() as connection:
+            before = await _user_tree_state(connection)
+        assert before["children"] == [1, 1] and before["audit_actor"] == 1
+        assert before["violations"] == [] and "UNIQUE" in str(before["email_index"])
+        assert "AUTOINCREMENT" not in str(before["table_sql"])
+        assert "uq_users_name" in str(before["table_sql"])
+        with pytest.raises(IntegrityError):
+            async with engine.begin() as connection:
+                await connection.execute(
+                    text(USER_INSERT), {"name": "ann", "email": "another@example.test"}
+                )
+    finally:
+        await engine.dispose()
+
+
+async def _migrate(
+    engine: AsyncEngine, revision: str, *, down: bool = False, refused: str | None = None
+) -> None:
+    """Move the schema to a revision on a connection with foreign keys off, as the runner does.
+
+    With ``refused`` the move must fail with an error matching it and change nothing.
+    """
+    run = command.downgrade if down else command.upgrade
+    async with engine.connect() as connection:
+        await connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
+        try:
+            if refused is None:
+                await connection.run_sync(lambda sync: run(build_config(sync), revision))
+                await connection.commit()
+            else:
+                with pytest.raises(RuntimeError, match=refused):
+                    await connection.run_sync(lambda sync: run(build_config(sync), revision))
+                await connection.rollback()
+        finally:
+            await connection.exec_driver_sql("PRAGMA foreign_keys=ON")
 
 
 async def test_the_second_factor_time_column_is_added_and_removed_in_place(

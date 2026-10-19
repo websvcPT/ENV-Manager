@@ -94,7 +94,10 @@ def test_creating_a_user_sends_the_standard_notification_without_the_password(
 ) -> None:
     """The superadmin is told, through the SMTP settings in the database, and the one-time
     password reaches the console and never the mail."""
-    result = runner.invoke(app, ["user", "create", "bob", "bob@example.test", "--group", "viewer"])
+    result = runner.invoke(
+        app,
+        ["user", "create", "--email", "bob@example.test", "--name", "bob", "--group", "viewer"],
+    )
     assert result.exit_code == 0, result.output
     password = next(
         line.removeprefix("password: ")
@@ -112,11 +115,11 @@ def test_creating_a_user_sends_the_standard_notification_without_the_password(
 
 def test_the_other_user_commands_send_theirs(cli_world: dict[str, Path]) -> None:
     """Disable, password reset and two-factor reset each send one mail; enable sends none."""
-    assert runner.invoke(app, ["user", "disable", "viewer"]).exit_code == 0
-    assert runner.invoke(app, ["user", "enable", "viewer"]).exit_code == 0
-    reset = runner.invoke(app, ["user", "passwd", "admin"])
+    assert runner.invoke(app, ["user", "disable", "viewer@example.test"]).exit_code == 0
+    assert runner.invoke(app, ["user", "enable", "viewer@example.test"]).exit_code == 0
+    reset = runner.invoke(app, ["user", "passwd", "admin@example.test"])
     assert reset.exit_code == 0, reset.output
-    assert runner.invoke(app, ["user", "reset-2fa", "totp_user"]).exit_code == 0
+    assert runner.invoke(app, ["user", "reset-2fa", "totp_user@example.test"]).exit_code == 0
     assert [subject for _to, subject, _text in mails()] == [
         "[ENV Manager] User disabled: viewer",
         "[ENV Manager] Password reset: admin",
@@ -134,10 +137,12 @@ def test_a_mail_server_that_is_down_never_changes_the_command(cli_world: dict[st
     """The user is created, the password is printed, the exit code is 0 and the failure counts."""
     FakeSMTP.connect_error = ConnectionRefusedError("[Errno 111]")
     result = runner.invoke(
-        app, ["user", "create", "carol", "carol@example.test", "--group", "admin"]
+        app,
+        ["user", "create", "--email", "carol@example.test", "--name", "carol", "--group", "admin"],
     )
     assert result.exit_code == 0, result.output
-    assert "created user carol (admin)" in result.output and "password: " in result.output
+    assert "created user carol@example.test (carol, admin)" in result.output
+    assert "password: " in result.output
 
     async def read(engine):  # type: ignore[no-untyped-def]
         async with create_session_factory(engine)() as db:
@@ -161,7 +166,7 @@ def test_a_disabled_switch_sends_nothing_from_the_command_line(
 ) -> None:
     """The switches of the settings apply to the CLI the same as to the web server."""
     database(lambda engine: switch(engine, user_changed=False))
-    assert runner.invoke(app, ["user", "disable", "viewer"]).exit_code == 0
+    assert runner.invoke(app, ["user", "disable", "viewer@example.test"]).exit_code == 0
     assert FakeSMTP.instances == []
 
 
@@ -170,7 +175,7 @@ def test_nothing_is_sent_when_smtp_is_not_configured(
 ) -> None:
     """With no host the command does what it always did and never opens a connection."""
     database(lambda engine: configure_smtp(engine, crypto, SmtpSettings(), password=None))
-    assert runner.invoke(app, ["user", "disable", "viewer"]).exit_code == 0
+    assert runner.invoke(app, ["user", "disable", "viewer@example.test"]).exit_code == 0
     assert FakeSMTP.instances == []
 
 
@@ -181,7 +186,7 @@ def test_a_command_without_a_usable_key_sends_nothing_and_still_works(
     command that notifies still does its work, as it did before it could notify."""
     monkeypatch.delenv("ENVMANAGER_KEY", raising=False)
     get_settings.cache_clear()
-    result = runner.invoke(app, ["user", "disable", "viewer"])
+    result = runner.invoke(app, ["user", "disable", "viewer@example.test"])
     assert result.exit_code == 0, result.output
     assert "disabled user viewer" in result.output
     assert FakeSMTP.instances == []
@@ -201,7 +206,7 @@ def test_a_key_file_that_does_not_exist_sends_nothing_and_does_not_crash_the_com
     monkeypatch.delenv("ENVMANAGER_KEY", raising=False)
     monkeypatch.setenv("ENVMANAGER_KEY_FILE", str(tmp_path / "missing.key"))
     get_settings.cache_clear()
-    result = runner.invoke(app, ["user", "disable", "viewer"])
+    result = runner.invoke(app, ["user", "disable", "viewer@example.test"])
     assert result.exit_code == 0, result.output
     assert FakeSMTP.instances == []
 
@@ -252,7 +257,7 @@ def test_a_backup_that_could_not_be_copied_is_announced_from_the_command_line(
 
 def test_each_notified_command_still_writes_its_audit_entry(cli_world: dict[str, Path]) -> None:
     """The notification is in addition to the audit entry with actor cli."""
-    assert runner.invoke(app, ["user", "disable", "viewer"]).exit_code == 0
+    assert runner.invoke(app, ["user", "disable", "viewer@example.test"]).exit_code == 0
 
     async def read(engine):  # type: ignore[no-untyped-def]
         async with create_session_factory(engine)() as db:

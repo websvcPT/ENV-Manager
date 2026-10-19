@@ -40,7 +40,7 @@ class FileChange(StrEnum):
 
 
 class LockoutScope(StrEnum):
-    """What a lockout applies to: a sign-in name, a client address, or the API from an address."""
+    """What a lockout applies to: a sign-in email, a client address, or the API from an address."""
 
     USER = "user"
     ADDRESS = "address"

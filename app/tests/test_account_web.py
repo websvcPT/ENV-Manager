@@ -213,7 +213,10 @@ async def test_the_new_password_signs_in_and_the_old_one_does_not(
     transport = httpx.ASGITransport(app=web_app, raise_app_exceptions=False)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as fresh:
         await fresh.get("/healthz")
-        credentials = {"csrf_token": fresh.cookies[CSRF_COOKIE_NAME], "identifier": "viewer"}
+        credentials = {
+            "csrf_token": fresh.cookies[CSRF_COOKIE_NAME],
+            "identifier": "viewer@example.test",
+        }
         old = await fresh.post("/login", data={**credentials, "password": DEV_PASSWORD})
         new = await fresh.post("/login", data={**credentials, "password": NEW_PASSWORD})
     assert (old.status_code, new.status_code) == (401, 303)
@@ -587,7 +590,7 @@ async def test_the_seeded_second_factor_user_sees_the_enabled_state(
 ) -> None:
     await web_client.get("/healthz")
     form = {"csrf_token": web_client.cookies[CSRF_COOKIE_NAME]}
-    credentials = {"identifier": "totp_user", "password": DEV_PASSWORD, **form}
+    credentials = {"identifier": "totp_user@example.test", "password": DEV_PASSWORD, **form}
     await web_client.post("/login", data=credentials, headers=HTMX)
     code = {"code": pyotp.TOTP(DEV_TOTP_SECRET).now(), **form}
     assert (await web_client.post("/login/totp", data=code, headers=HTMX)).status_code == 200

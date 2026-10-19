@@ -327,6 +327,7 @@ test.describe('superadmin: the user detail', () => {
     await page.goto('/users');
     await (await rowAction(row(page, 'admin'), 'edit')).click();
     await expect(page).toHaveURL(/\/users\/\d+$/);
+    const adminId = new URL(page.url()).pathname.split('/').pop();
     const header = page.locator('[data-fragment="page-header"]');
     await expect(header.locator('h1')).toHaveText('admin');
     await expect(header).toContainText('Admin');
@@ -352,7 +353,7 @@ test.describe('superadmin: the user detail', () => {
     const activity = page.locator('[data-fragment="user-activity"]');
     await expect(activity.getByRole('link', { name: 'Open audit log' })).toHaveAttribute(
       'href',
-      '/audit?actor=user:admin',
+      `/audit?actor=user:${adminId}`,
     );
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
   });

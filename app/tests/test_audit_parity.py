@@ -136,7 +136,7 @@ async def run_user_flows(db: AsyncSession, seed_data: SeedData) -> None:
         actor=as_root,
         grants=[GrantTarget(GrantLevel.PROJECT, seed_data.projects.fancy.id)],
     )
-    newhire = await user_service.get_user_by_name(db, "newhire")
+    newhire = await user_service.get_user_by_email(db, "newhire@example.test")
     await user_service.reset_password(db, newhire, actor=as_root)
     await user_service.reset_two_factor(db, users.totp_user, actor=CLI)
     await user_service.set_user_active(db, admin, False, actor=as_root)
@@ -163,15 +163,20 @@ async def run_sign_in_flows(db: AsyncSession, crypto: CryptoService, seed_data: 
     policy = AuthPolicy(user_max_failures=2, ip_max_failures=50)
     for identifier, password in (
         ("nobody", "wrong"),
-        ("viewer", "wrong"),
-        ("viewer", "wrong again"),
-        ("viewer", "wrong a third time"),
+        ("viewer@example.test", "wrong"),
+        ("viewer@example.test", "wrong again"),
+        ("viewer@example.test", "wrong a third time"),
     ):
         await authenticate(
             db, crypto, policy, identifier=identifier, password=password, ip_address=ADDRESS
         )
     await authenticate(
-        db, crypto, policy, identifier="admin", password=DEV_PASSWORD, ip_address=ADDRESS
+        db,
+        crypto,
+        policy,
+        identifier="admin@example.test",
+        password=DEV_PASSWORD,
+        ip_address=ADDRESS,
     )
     admin = seed_data.users.admin
     await create_session(db, admin, policy, ip_address=ADDRESS)

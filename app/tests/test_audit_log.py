@@ -315,7 +315,7 @@ async def test_every_filter_narrows_and_they_combine(db: AsyncSession, seed_data
     assert actions_of(await rows(AuditFilters(result=AuditResult.HALTED))) == ["service.deploy"]
     token = AuditFilters(actor_type=AuditActorType.API, actor_name="token billing-ci")
     assert [row.actor for row in await rows(token)] == ["billing-ci"]
-    admin = AuditFilters(actor_type=AuditActorType.USER, actor_name="admin")
+    admin = AuditFilters(actor_type=AuditActorType.USER, actor_user_id=seed_data.users.admin.id)
     assert len(await rows(admin)) == 3
     assert len(await rows(AuditFilters(action=BULK_ACTION))) == BULK_COUNT
     day = date(2026, 10, 17)

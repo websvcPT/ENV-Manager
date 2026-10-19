@@ -43,6 +43,7 @@ from app.seeds import (
     ensure_project_display_name,
     ensure_service_figures,
     ensure_totp_user,
+    seed_email,
 )
 from app.seeds import seed as seed_data
 from app.services import users as user_service
@@ -81,14 +82,14 @@ def _format_time(moment: datetime | None) -> str:
 
 @user_app.command("create")
 def create_user(
-    name: Annotated[str, typer.Argument(help="Sign-in name.")],
-    email: Annotated[str, typer.Argument(help="Email address.")],
+    email: Annotated[str, typer.Option(help="Email address, the sign-in of the user.")],
+    name: Annotated[str, typer.Option(help='Display name, such as "John Doe".')],
     group: Annotated[UserGroup, typer.Option(help="Permission group.")],
 ) -> None:
     """Create a user with a random 16 character password, printed once."""
 
-    async def operation(db: AsyncSession) -> str:
-        _, password = await user_service.create_user(
+    async def operation(db: AsyncSession) -> tuple[User, str]:
+        return await user_service.create_user(
             db,
             name=name,
             email=email,
@@ -96,10 +97,9 @@ def create_user(
             actor=AuditActor.cli(),
             notifier=cli_notifier(db),
         )
-        return password
 
-    password = run_command(operation)
-    typer.echo(f"created user {name.strip()} ({group.value})")
+    user, password = run_command(operation)
+    typer.echo(f"created user {user.email} ({user.name}, {group.value})")
     typer.echo(f"password: {password}")
     typer.echo("This password is shown once and cannot be recovered.")
 
@@ -111,6 +111,7 @@ def list_users() -> None:
     async def operation(db: AsyncSession) -> list[tuple[str, ...]]:
         return [
             (
+                user.email,
                 user.name,
                 user.group.value,
                 "active" if user.is_active else "disabled",
@@ -120,7 +121,7 @@ def list_users() -> None:
         ]
 
     rows = run_command(operation)
-    header = ("NAME", "GROUP", "STATUS", "LAST LOGIN")
+    header = ("EMAIL", "NAME", "GROUP", "STATUS", "LAST LOGIN")
     widths = [max(len(row[column]) for row in [header, *rows]) for column in range(len(header))]
     for row in [header, *rows]:
         cells = (value.ljust(width) for value, width in zip(row, widths, strict=True))
@@ -128,59 +129,63 @@ def list_users() -> None:
 
 
 @user_app.command("disable")
-def disable_user(name: Annotated[str, typer.Argument(help="Sign-in name.")]) -> None:
+def disable_user(email: Annotated[str, typer.Argument(help="Email address of the user.")]) -> None:
     """Disable a user and end their sessions."""
 
     async def operation(db: AsyncSession) -> int:
-        user = await user_service.get_user_by_name(db, name)
+        user = await user_service.get_user_by_email(db, email)
         return await user_service.set_user_active(
             db, user, False, actor=AuditActor.cli(), notifier=cli_notifier(db)
         )
 
     ended = run_command(operation)
-    typer.echo(f"disabled user {name.strip()}, {ended} session(s) ended")
+    typer.echo(f"disabled user {email.strip()}, {ended} session(s) ended")
 
 
 @user_app.command("enable")
-def enable_user(name: Annotated[str, typer.Argument(help="Sign-in name.")]) -> None:
+def enable_user(email: Annotated[str, typer.Argument(help="Email address of the user.")]) -> None:
     """Enable a disabled user."""
 
     async def operation(db: AsyncSession) -> int:
-        user = await user_service.get_user_by_name(db, name)
+        user = await user_service.get_user_by_email(db, email)
         return await user_service.set_user_active(db, user, True, actor=AuditActor.cli())
 
     run_command(operation)
-    typer.echo(f"enabled user {name.strip()}")
+    typer.echo(f"enabled user {email.strip()}")
 
 
 @user_app.command("passwd")
-def reset_user_password(name: Annotated[str, typer.Argument(help="Sign-in name.")]) -> None:
+def reset_user_password(
+    email: Annotated[str, typer.Argument(help="Email address of the user.")],
+) -> None:
     """Set a new random 16 character password, printed once, and end the user's sessions."""
 
     async def operation(db: AsyncSession) -> str:
-        user = await user_service.get_user_by_name(db, name)
+        user = await user_service.get_user_by_email(db, email)
         return await user_service.reset_password(
             db, user, actor=AuditActor.cli(), notifier=cli_notifier(db)
         )
 
     password = run_command(operation)
-    typer.echo(f"password reset for {name.strip()}")
+    typer.echo(f"password reset for {email.strip()}")
     typer.echo(f"password: {password}")
     typer.echo("This password is shown once and cannot be recovered.")
 
 
 @user_app.command("reset-2fa")
-def reset_user_two_factor(name: Annotated[str, typer.Argument(help="Sign-in name.")]) -> None:
+def reset_user_two_factor(
+    email: Annotated[str, typer.Argument(help="Email address of the user.")],
+) -> None:
     """Turn off a user's two-factor sign-in (a lost authenticator) and end their sessions."""
 
     async def operation(db: AsyncSession) -> int:
-        user = await user_service.get_user_by_name(db, name)
+        user = await user_service.get_user_by_email(db, email)
         return await user_service.reset_two_factor(
             db, user, actor=AuditActor.cli(), notifier=cli_notifier(db)
         )
 
     ended = run_command(operation)
-    typer.echo(f"two-factor sign-in reset for {name.strip()}, {ended} session(s) ended")
+    typer.echo(f"two-factor sign-in reset for {email.strip()}, {ended} session(s) ended")
 
 
 class DeployTargetError(Exception):
@@ -478,7 +483,10 @@ def seed_dataset() -> None:
         typer.echo(f"error: {error}", err=True)
         raise typer.Exit(code=1) from error
     typer.echo("seeded the development dataset")
-    typer.echo(f"every seeded user signs in with the dev-only password {DEV_PASSWORD}")
+    typer.echo(
+        f"every seeded user signs in with the dev-only password {DEV_PASSWORD} and an email "
+        f"such as {seed_email('root')}"
+    )
     demo_root = get_settings().demo_root
     if demo_root is not None:
         typer.echo(f"demo project rooted at {demo_root / DEMO_STACK_FOLDER}")

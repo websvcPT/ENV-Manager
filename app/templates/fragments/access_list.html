@@ -21,7 +21,7 @@
 {%- if access.entries %}
 {% call table("Users with access", ["User", "Group", "Access", "Actions"], right_columns=[3], min_width_class="min-w-[560px]") %}
 {%- for entry in access.entries %}
-<tr id="access-row-{{ entry.user.id }}" data-fragment="access-row"><th scope="row" class="border-t border-line px-4 py-3.5 text-left font-semibold"><span class="font-semibold">{{ entry.user.name }}</span></th>
+<tr id="access-row-{{ entry.user.id }}" data-fragment="access-row"><th scope="row" class="border-t border-line px-4 py-3.5 text-left font-semibold"><span class="inline-flex flex-col items-start gap-0.5"><span class="font-semibold">{{ entry.user.name }}</span><span class="text-xs font-normal text-ink2">{{ entry.user.email }}</span></span></th>
 <td class="border-t border-line px-4 py-3.5">{{ badge(entry.user.group.value) }}</td>
 <td class="border-t border-line px-4 py-3.5">{{ access_cell(entry, node) }}</td>
 <td class="border-t border-line px-4 py-3.5 whitespace-nowrap text-right">{{ access_actions(entry, base) }}</td></tr>

@@ -167,6 +167,7 @@ class TokenRow:
     prefix: str
     owner_id: int
     owner_name: str
+    owner_email: str
     operations: tuple[str, ...]
     restriction: str
     created_at: datetime
@@ -550,6 +551,7 @@ async def list_tokens(
                 prefix=token.prefix,
                 owner_id=owner.id,
                 owner_name=owner.name,
+                owner_email=owner.email,
                 operations=operation_labels(token.operations),
                 restriction=labels[token.id],
                 created_at=token.created_at,

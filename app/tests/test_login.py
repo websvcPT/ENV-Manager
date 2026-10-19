@@ -42,7 +42,7 @@ async def _audit(engine: AsyncEngine) -> list[AuditEntry]:
 async def _login(
     engine: AsyncEngine,
     crypto: CryptoService,
-    identifier: str = "alice",
+    identifier: str = "alice@example.test",
     password: str = PASSWORD,
     ip_address: str | None = None,
     now: datetime | None = None,
@@ -60,15 +60,15 @@ async def _login(
         )
 
 
-async def test_success_by_name_and_by_email_starts_a_session(
+async def test_success_by_email_ignoring_case_starts_a_session(
     engine: AsyncEngine, crypto: CryptoService
 ) -> None:
-    """Both identifiers work, a session is stored, last login is set and the login is audited."""
+    """The email works in any case, a session is stored, last login is set and it is audited."""
     await _seed(engine)
-    by_name = await _login(engine, crypto, "Alice", ip_address=IP)
-    by_email = await _login(engine, crypto, "ALICE@example.test")
-    assert by_name.status is by_email.status is LoginStatus.SUCCESS
-    assert by_name.token and by_name.token != by_email.token
+    exact = await _login(engine, crypto, "alice@example.test", ip_address=IP)
+    shouted = await _login(engine, crypto, " ALICE@example.test ")
+    assert exact.status is shouted.status is LoginStatus.SUCCESS
+    assert exact.token and exact.token != shouted.token
     async with create_session_factory(engine)() as db:
         assert len((await db.execute(select(UserSession))).scalars().all()) == 2
         assert (await db.execute(select(User))).scalar_one().last_login_at is not None
@@ -76,6 +76,37 @@ async def test_success_by_name_and_by_email_starts_a_session(
     assert [entry.action for entry in entries] == ["login.success", "login.success"]
     assert entries[0].actor_name == "alice"
     assert entries[0].ip_address == IP
+
+
+async def test_a_name_never_signs_in_and_fails_like_a_wrong_password(
+    engine: AsyncEngine, crypto: CryptoService
+) -> None:
+    """The name of a user, even with the right password, is no sign-in and records no session."""
+    await _seed(engine)
+    by_name = await _login(engine, crypto, "alice")
+    wrong = await _login(engine, crypto, password="wrong")
+    assert by_name.status is wrong.status is LoginStatus.INVALID
+    assert by_name.token is None and by_name.user is None
+    async with create_session_factory(engine)() as db:
+        assert (await db.execute(select(UserSession))).scalars().all() == []
+    first, _second = await _audit(engine)
+    assert first.actor_name is None and first.actor_user_id is None
+
+
+async def test_users_sharing_a_name_sign_in_by_their_own_email(
+    engine: AsyncEngine, crypto: CryptoService
+) -> None:
+    """Two users with one display name are told apart by the email alone."""
+    await _seed(
+        engine,
+        make_user("john", email="john.doe@example.test"),
+        make_user("john", email="john.roe@example.test"),
+    )
+    first = await _login(engine, crypto, "john.doe@example.test")
+    second = await _login(engine, crypto, "john.roe@example.test")
+    assert first.status is second.status is LoginStatus.SUCCESS
+    assert first.user is not None and second.user is not None
+    assert first.user.id != second.user.id
 
 
 async def test_wrong_password_and_unknown_user_look_the_same(
@@ -139,7 +170,9 @@ async def test_lockout_expires_and_success_resets_the_counter(
     assert (await _login(engine, crypto, now=later)).status is LoginStatus.SUCCESS
     async with create_session_factory(engine)() as db:
         counter = (
-            await db.execute(select(LoginCounter).where(LoginCounter.subject == "alice"))
+            await db.execute(
+                select(LoginCounter).where(LoginCounter.subject == "alice@example.test")
+            )
         ).scalar_one()
     assert (counter.failures, counter.locked_until) == (0, None)
 

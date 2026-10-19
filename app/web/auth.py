@@ -73,7 +73,7 @@ def _signed_in(request: Request, token: str, policy: AuthPolicy) -> Response:
 
 
 def _locked(request: Request, result: LoginResult) -> Response:
-    """The card for a locked name or address, with the time left."""
+    """The card for a locked email or address, with the time left."""
     seconds = max(1, int(result.retry_after.total_seconds())) if result.retry_after else 1
     context = {"state": "locked", "remaining": _format_remaining(seconds)}
     return _card(request, context, 429, {"Retry-After": str(seconds)})
@@ -122,7 +122,7 @@ async def login(
     identifier: Annotated[str, Form()] = "",
     password: Annotated[str, Form()] = "",
 ) -> Response:
-    """Sign in with a name or email and password; a second factor user is asked for a code.
+    """Sign in with an email and password; a second factor user is asked for a code.
 
     Public by design: this route is on the default-deny allow list.
     """

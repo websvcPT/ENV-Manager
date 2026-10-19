@@ -38,7 +38,7 @@ async def exercise(world: ApiWorld) -> tuple[str, ...]:
     signed_in = await world.http.post(
         "/login",
         data={
-            "identifier": "admin",
+            "identifier": "admin@example.test",
             "password": WRONG_PASSWORD,
             "csrf_token": world.http.cookies[CSRF_COOKIE_NAME],
         },

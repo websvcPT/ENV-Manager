@@ -363,12 +363,20 @@ async def test_the_add_dialog_offers_the_users_a_grant_would_give_something_new(
     assert f'hx-post="{base_of(kind, getattr(items, item))}/grants"' in fragment
     choices = options_of(fragment)
     assert choices[0] == "Choose a user…"
-    assert "ungranted_admin (Admin)" in choices
-    assert "root (Superadmin)" not in choices
+    assert "ungranted_admin (ungranted_admin@example.test, Admin)" in choices
+    assert not [choice for choice in choices if choice.startswith("root (")]
     assert "hx-swap-oob" not in fragment
     if kind == "project":
-        assert not {"admin (Admin)", "viewer (Viewer)", "project_admin (Admin)"} & set(choices)
-        assert {"deployment_admin (Admin)", "env_scoped_viewer (Viewer)"} <= set(choices)
+        not_offered = {
+            "admin (admin@example.test, Admin)",
+            "viewer (viewer@example.test, Viewer)",
+            "project_admin (project_admin@example.test, Admin)",
+        }
+        assert not not_offered & set(choices)
+        assert {
+            "deployment_admin (deployment_admin@example.test, Admin)",
+            "env_scoped_viewer (env_scoped_viewer@example.test, Viewer)",
+        } <= set(choices)
 
 
 async def test_the_add_dialog_says_when_everyone_already_has_access(

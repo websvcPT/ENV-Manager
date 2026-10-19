@@ -20,7 +20,7 @@ from app.core.crypto import CryptoService, generate_master_key, parse_master_key
 from app.core.csrf import CSRF_COOKIE_NAME
 from app.core.db import create_engine, create_session_factory
 from app.main import create_app
-from app.seeds import DEV_PASSWORD, SeedData
+from app.seeds import DEV_PASSWORD, SeedData, seed_email
 from app.services.deploy import DeployEngine
 from app.services.docker_cli import DockerCli
 from app.tests.api_helpers import ApiWorld, build_world
@@ -188,12 +188,12 @@ async def web_client(web_app: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
 
 
 async def sign_in(http: httpx.AsyncClient, name: str) -> None:
-    """Sign a seeded user in through the login route, with the CSRF token it requires."""
+    """Sign a seeded user in by email through the login route, with the CSRF token it requires."""
     await http.get("/healthz")
     response = await http.post(
         "/login",
         data={
-            "identifier": name,
+            "identifier": seed_email(name),
             "password": DEV_PASSWORD,
             "csrf_token": http.cookies[CSRF_COOKIE_NAME],
         },

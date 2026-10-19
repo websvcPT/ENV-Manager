@@ -2,10 +2,12 @@
 two-factor resets and enable or disable.
 
 Every web and command line action on an account goes through here, so the same rules and audit
-entries apply to both: unique names and emails, the last active superadmin guard, sessions ended
-on disable.
+entries apply to both: the email as the unique key of a user (the name is a display name and is
+shared freely), the last active superadmin guard, sessions ended on disable.
 """
 
+import re
+import unicodedata
 from collections.abc import Collection
 
 from sqlalchemy import delete, func, select
@@ -41,6 +43,10 @@ from app.services.tokens import REASON_MOVED_TO_VIEWER, REASON_USER_DISABLED, re
 
 MAX_NAME_LENGTH = 100
 MAX_EMAIL_LENGTH = 320
+NAME_RULE = "Letters of any language, digits, spaces and the characters . ' -"
+NAME_MESSAGE = f"Use 1 to {MAX_NAME_LENGTH} characters. {NAME_RULE} are allowed."
+_NAME_PUNCTUATION = ".'-"
+_SPACE_RUN = re.compile(" {2,}")
 
 
 class UserError(Exception):
@@ -59,11 +65,11 @@ class InvalidUserError(UserError):
 
 
 class UserExistsError(UserError):
-    """A user with that name or email address already exists."""
+    """A user with that email address already exists."""
 
 
 class UserNotFoundError(UserError):
-    """No user has that name."""
+    """No user has that email address."""
 
 
 class LastSuperadminError(UserError):
@@ -74,13 +80,6 @@ class TwoFactorNotOnError(UserError):
     """The user has no two-factor sign-in to reset."""
 
 
-async def find_user_by_name(db: AsyncSession, name: str) -> User | None:
-    """The user whose name matches, ignoring case."""
-    return (
-        await db.execute(select(User).where(func.lower(User.name) == name.strip().lower()))
-    ).scalar_one_or_none()
-
-
 async def find_user_by_email(db: AsyncSession, email: str) -> User | None:
     """The user whose email matches, ignoring case the way the unique index does."""
     return (
@@ -88,29 +87,40 @@ async def find_user_by_email(db: AsyncSession, email: str) -> User | None:
     ).scalar_one_or_none()
 
 
-async def get_user_by_name(db: AsyncSession, name: str) -> User:
-    """The user whose name matches, ignoring case, or ``UserNotFoundError``."""
-    user = await find_user_by_name(db, name)
+async def get_user_by_email(db: AsyncSession, email: str) -> User:
+    """The user whose email matches, ignoring case, or ``UserNotFoundError``."""
+    user = await find_user_by_email(db, email)
     if user is None:
-        raise UserNotFoundError(f"no user named {name.strip()!r}")
+        raise UserNotFoundError(f"no user with the email address {email.strip()!r}")
     return user
 
 
 async def list_users(db: AsyncSession) -> list[User]:
-    """Every user ordered by name."""
-    return list((await db.execute(select(User).order_by(func.lower(User.name)))).scalars())
+    """Every user ordered by name, then by id."""
+    return list((await db.execute(select(User).order_by(func.lower(User.name), User.id))).scalars())
+
+
+def _name_character_allowed(char: str) -> bool:
+    """Whether a character may be in a name: a letter or combining mark of any script, a decimal
+    digit, a space, or one of ``. ' -``. Control and format characters are none of these."""
+    category = unicodedata.category(char)
+    return category[0] in "LM" or category == "Nd" or char == " " or char in _NAME_PUNCTUATION
+
+
+def clean_name(name: str) -> str:
+    """The display name trimmed with each run of spaces made one, else ``InvalidUserError``."""
+    cleaned = _SPACE_RUN.sub(" ", name.strip())
+    if not cleaned:
+        raise InvalidUserError("Enter a name.", "name")
+    if len(cleaned) > MAX_NAME_LENGTH or not all(map(_name_character_allowed, cleaned)):
+        raise InvalidUserError(NAME_MESSAGE, "name")
+    return cleaned
 
 
 def validate_identity(name: str, email: str) -> tuple[str, str]:
-    """The trimmed name and email when both are acceptable, else ``InvalidUserError``."""
-    name = name.strip()
+    """The clean name and the trimmed email when both are acceptable, else ``InvalidUserError``."""
+    name = clean_name(name)
     email = email.strip()
-    if not name:
-        raise InvalidUserError("Enter a name.", "name")
-    if len(name) > MAX_NAME_LENGTH or any(char.isspace() for char in name):
-        raise InvalidUserError("Use 1 to 100 characters without spaces.", "name")
-    if "@" in name:
-        raise InvalidUserError("The name cannot contain @, it is used for email sign-in.", "name")
     local, _, domain = email.partition("@")
     if not email:
         raise InvalidUserError("Enter an email address.", "email")
@@ -136,8 +146,6 @@ async def create_user(
     Returns the user and the plaintext password, which exists only in the return value.
     """
     name, email = validate_identity(name, email)
-    if await find_user_by_name(db, name) is not None:
-        raise UserExistsError(f"A user named {name} already exists.", "name")
     if await find_user_by_email(db, email) is not None:
         raise UserExistsError("Another user already has this email address.", "email")
     chosen = [] if group is UserGroup.SUPERADMIN else sorted(set(grants))
@@ -149,9 +157,7 @@ async def create_user(
         await db.flush()
     except IntegrityError as error:
         await db.rollback()
-        raise UserExistsError(
-            "A user with this name or email address already exists.", "email"
-        ) from error
+        raise UserExistsError("Another user already has this email address.", "email") from error
     await record_actor_audit(
         db,
         actor,
@@ -189,7 +195,7 @@ async def reset_password(
     await db.execute(
         delete(LoginCounter).where(
             LoginCounter.kind == LoginCounterKind.USER,
-            LoginCounter.subject.in_([user.name.lower(), user.email.lower()]),
+            LoginCounter.subject == user.email.lower(),
         )
     )
     await record_actor_audit(

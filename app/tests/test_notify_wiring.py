@@ -60,7 +60,7 @@ async def sign_in(
     crypto: CryptoService,
     notifier: RecordingEvents,
     *,
-    name: str = "alice",
+    name: str = "alice@example.test",
     password: str = PASSWORD,
     address: str | None = FIRST,
 ) -> LoginResult:
@@ -151,7 +151,12 @@ async def test_the_second_factor_path_announces_a_new_address_too(
     for address, moment in ((FIRST, utc_now()), (SECOND, utc_now() + timedelta(minutes=2))):
         async with create_session_factory(engine)() as db:
             first = await authenticate(
-                db, crypto, POLICY, identifier="alice", password=PASSWORD, ip_address=address
+                db,
+                crypto,
+                POLICY,
+                identifier="alice@example.test",
+                password=PASSWORD,
+                ip_address=address,
             )
             assert first.status is LoginStatus.TOTP_REQUIRED and first.pending_token
             done = await complete_totp_login(
@@ -220,7 +225,7 @@ async def test_a_name_and_an_address_that_lock_together_are_two_events(
             db,
             crypto,
             tight,
-            identifier="alice",
+            identifier="alice@example.test",
             password="wrong",
             ip_address=FIRST,
             notifier=notifier,

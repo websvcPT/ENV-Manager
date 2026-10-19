@@ -10,7 +10,7 @@
 {{ dialog_head("user-create", "Create user", "Superadmin only") }}
 <form id="user-create-form" hx-post="/users" hx-target="#user-create" hx-swap="innerHTML">
 {% call dialog_body() %}<div class="flex flex-col gap-4">
-<div class="grid gap-4 sm:grid-cols-2">{{ field("un", "Name", name="name", value=values.name, placeholder="e.g. new.hire", error=errors.name, autocomplete="off", maxlength="100", required=true) }}{{ field("ue", "Email", name="email", type="email", value=values.email, placeholder="name@example.com", error=errors.email, autocomplete="off", maxlength="320", required=true) }}</div>
+<div class="grid gap-4 sm:grid-cols-2">{{ field("un", "Name", name="name", value=values.name, placeholder="e.g. John Doe", hint="Shown in lists and the audit log. It does not need to be unique.", error=errors.name, autocomplete="off", maxlength="100", required=true) }}{{ field("ue", "Email", name="email", type="email", value=values.email, placeholder="name@example.com", hint="The user signs in with it.", error=errors.email, autocomplete="off", maxlength="320", required=true) }}</div>
 {{ select_field("ug", "Group", [("viewer", "Viewer"), ("admin", "Admin"), ("superadmin", "Superadmin")], selected=values.group, name="group", hint="The group sets what the user can do. Grants set where. Superadmins reach everything, so their grants are not used.", error=errors.group) }}
 <div><p class="mb-2 text-[13px] font-semibold">Access grants</p>{{ grant_tree(tree, granted) }}{% if errors.grants %}<div class="mt-2">{{ field_message("grants", none, errors.grants) }}</div>{% endif %}</div>
 <p class="text-xs text-ink2">A 16-character password is generated and shown once after creation.</p></div>

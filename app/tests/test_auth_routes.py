@@ -192,7 +192,8 @@ async def test_login_sets_a_hardened_session_cookie(
 ) -> None:
     """Valid credentials redirect and set an HttpOnly, SameSite session cookie."""
     http, _ = client
-    response = await _post(http, "/login", {"identifier": "alice", "password": PASSWORD})
+    credentials = {"identifier": "alice@example.test", "password": PASSWORD}
+    response = await _post(http, "/login", credentials)
     assert response.status_code == 303
     cookie = next(
         value
@@ -207,11 +208,12 @@ async def test_failed_login_is_generic_and_locked_login_reports_time(
 ) -> None:
     """Bad credentials answer 401 with a generic card, then repeated failures answer 429."""
     http, _ = client
-    bad = await _post(http, "/login", {"identifier": "alice", "password": "wrong"})
+    wrong = {"identifier": "alice@example.test", "password": "wrong"}
+    bad = await _post(http, "/login", wrong)
     assert bad.status_code == 401
     assert "Invalid credentials" in bad.text
     for _ in range(4):
-        last = await _post(http, "/login", {"identifier": "alice", "password": "wrong"})
+        last = await _post(http, "/login", wrong)
     assert last.status_code == 429
     assert int(last.headers["retry-after"]) > 0
 
@@ -221,7 +223,8 @@ async def test_login_without_csrf_token_is_refused(
 ) -> None:
     """The login path is always CSRF checked."""
     http, _ = client
-    response = await http.post("/login", data={"identifier": "alice", "password": PASSWORD})
+    credentials = {"identifier": "alice@example.test", "password": PASSWORD}
+    response = await http.post("/login", data=credentials)
     assert response.status_code == 403
 
 
@@ -232,7 +235,7 @@ async def test_logout_requires_a_session_and_ends_it(
     http, application = client
     anonymous = await http.post("/logout")
     assert anonymous.status_code == 401
-    await _post(http, "/login", {"identifier": "alice", "password": PASSWORD})
+    await _post(http, "/login", {"identifier": "alice@example.test", "password": PASSWORD})
     assert SESSION_COOKIE_NAME in http.cookies
     response = await http.post("/logout", headers={"X-CSRFToken": http.cookies[CSRF_COOKIE_NAME]})
     assert response.status_code == 303
@@ -247,7 +250,7 @@ async def test_disabled_user_session_stops_working(
 ) -> None:
     """After a user is disabled, the cookie they held no longer authenticates."""
     http, application = client
-    await _post(http, "/login", {"identifier": "alice", "password": PASSWORD})
+    await _post(http, "/login", {"identifier": "alice@example.test", "password": PASSWORD})
     async with application.state.session_factory() as db:
         user = (await db.execute(select(User))).scalar_one()
         await set_user_active(db, user, False, actor=AuditActor.cli())

@@ -9,7 +9,7 @@
 {% from "macros/panels.html" import h1_class %}
 {% from "macros/shell.html" import brand_lockup %}
 {% set messages = {
-  "invalid": ("alert", "bg-err-bg text-err-fg", "close", "Invalid credentials", "The username or password is incorrect. Try again."),
+  "invalid": ("alert", "bg-err-bg text-err-fg", "close", "Invalid credentials", "The email or password is incorrect. Try again."),
   "locked": ("alert", "bg-warn-bg text-warn-fg", "warning", "Account temporarily locked", "Too many failed attempts. Try again in " ~ (remaining | default("")) ~ "."),
   "expired": ("status", "bg-info-bg text-info-fg", "info", "Session expired", "Your session expired. Sign in again to continue."),
   "pending_invalid": ("status", "bg-info-bg text-info-fg", "info", "Verification expired", "The verification step timed out. Sign in again to continue.")
@@ -24,6 +24,6 @@
 <div role="{{ live_role }}" data-fragment="login-message" class="flex items-start gap-3 rounded-btn px-4 py-3 {{ tone_classes }}">{{ icon(icon_name, "size-5 mt-0.5", "2.2") }}<div><p class="font-bold">{{ title }}</p><p class="text-ink">{{ detail }}</p></div></div>
 {%- endif %}
 {%- set locked = state == "locked" %}
-<form method="post" action="/login" hx-post="/login" hx-target="#login-card" hx-swap="outerHTML" class="flex flex-col gap-4">{{ csrf_field(csrf_token) }}{{ field("user", "Email or username", name="identifier", value=identifier | default(""), disabled=locked, autocomplete="username") }}{{ field("pw", "Password", name="password", type="password", disabled=locked, autocomplete="current-password") }}{{ button("Sign in", kind="primary", type="submit", extra_class="w-full", disabled=locked) }}</form>
+<form method="post" action="/login" hx-post="/login" hx-target="#login-card" hx-swap="outerHTML" class="flex flex-col gap-4">{{ csrf_field(csrf_token) }}{{ field("user", "Email", name="identifier", value=identifier | default(""), disabled=locked, autocomplete="username") }}{{ field("pw", "Password", name="password", type="password", disabled=locked, autocomplete="current-password") }}{{ button("Sign in", kind="primary", type="submit", extra_class="w-full", disabled=locked) }}</form>
 {%- endif %}
 <p class="border-t border-line pt-4 text-center text-[13px] text-ink2">Accounts are created by a superadmin. There is no password recovery.</p></div>

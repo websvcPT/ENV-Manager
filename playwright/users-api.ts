@@ -4,6 +4,11 @@ import { csrfHeaders, idLinks, unescapeHtml } from './http';
 
 const PASSWORD = /id="secret" readonly value="([^"]+)"/;
 
+/** The sign-in of a user: the email, which the seed builds from the name and this domain. */
+export function seededEmail(name: string): string {
+  return `${name}@example.test`;
+}
+
 export interface CreatedUser {
   id: number;
   name: string;
@@ -28,7 +33,7 @@ export async function createUser(
   group: 'superadmin' | 'admin' | 'viewer' = 'viewer',
   grants: string[] = [],
 ): Promise<CreatedUser> {
-  const email = `${name}@example.test`;
+  const email = seededEmail(name);
   const body = new URLSearchParams({ name, email, group });
   for (const grant of grants) {
     body.append('grant', grant);

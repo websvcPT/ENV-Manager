@@ -22,6 +22,7 @@ from app.models import (
     EnvironmentVersion,
     Project,
     Service,
+    User,
 )
 from app.services.audit_details import DetailLine, detail_lines, details_json, without_command_text
 from app.services.audit_filters import AuditFilters, Cursor
@@ -131,15 +132,37 @@ async def load_filter_options(db: AsyncSession, visibility: Visibility) -> Filte
         )
     actor_rows = await db.execute(
         select(AuditEntry.actor_type, AuditEntry.actor_name)
-        .where(clause, AuditEntry.actor_name.is_not(None))
+        .where(
+            clause,
+            AuditEntry.actor_name.is_not(None),
+            AuditEntry.actor_type != AuditActorType.USER,
+        )
         .distinct()
     )
+    acting_users = (
+        select(AuditEntry.actor_user_id)
+        .where(
+            clause,
+            AuditEntry.actor_type == AuditActorType.USER,
+            AuditEntry.actor_user_id.is_not(None),
+        )
+        .distinct()
+    )
+    user_rows = await db.execute(
+        select(User.id, User.name, User.email).where(User.id.in_(acting_users))
+    )
     actors = sorted(
-        (
-            ActorOption(f"{actor_type.value}:{name}", name)
-            for actor_type, name in actor_rows.all()
-            if name
-        ),
+        [
+            *(
+                ActorOption(f"{actor_type.value}:{name}", name)
+                for actor_type, name in actor_rows.all()
+                if name
+            ),
+            *(
+                ActorOption(f"{AuditActorType.USER.value}:{user_id}", f"{name} ({email})")
+                for user_id, name, email in user_rows.all()
+            ),
+        ],
         key=lambda option: (option.label.lower(), option.value),
     )
     actions = (

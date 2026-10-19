@@ -3,6 +3,7 @@ import { request, type FullConfig } from '@playwright/test';
 import { HOST_FOLDER_PREFIX, HOST_ROOT, removeLeftoverHostFolders } from './host-files';
 import { removeProjectsMatching } from './projects-api';
 import { removeAllowedPathsWithPrefix } from './settings-api';
+import { seededEmail } from './users-api';
 
 export const SUPERADMIN_STATE = '.auth/superadmin.json';
 
@@ -22,7 +23,7 @@ export function stateFile(user: keyof typeof SESSION_USERS): string {
 
 async function signInAndStore(
   baseURL: string | undefined,
-  identifier: string,
+  email: string,
   password: string,
   path: string,
 ): Promise<void> {
@@ -34,11 +35,11 @@ async function signInAndStore(
     throw new Error('the application did not issue a CSRF cookie');
   }
   const response = await context.post('/login', {
-    form: { identifier, password, csrf_token: csrfToken },
+    form: { identifier: email, password, csrf_token: csrfToken },
     maxRedirects: 0,
   });
   if (response.status() !== 303) {
-    throw new Error(`login as ${identifier} failed with status ${response.status()}`);
+    throw new Error(`login as ${email} failed with status ${response.status()}`);
   }
   await context.storageState({ path });
   await context.dispose();
@@ -67,9 +68,10 @@ async function removeLeftoverProjects(baseURL: string | undefined): Promise<void
 export default async function globalSetup(config: FullConfig): Promise<void> {
   const baseURL = config.projects[0].use.baseURL;
   const password = process.env.E2E_PASSWORD ?? 'dev-only-password';
-  await signInAndStore(baseURL, process.env.E2E_USER ?? 'root', password, SUPERADMIN_STATE);
+  const superadmin = process.env.E2E_USER ?? seededEmail('root');
+  await signInAndStore(baseURL, superadmin, password, SUPERADMIN_STATE);
   for (const user of Object.keys(SESSION_USERS) as Array<keyof typeof SESSION_USERS>) {
-    await signInAndStore(baseURL, SESSION_USERS[user], password, stateFile(user));
+    await signInAndStore(baseURL, seededEmail(SESSION_USERS[user]), password, stateFile(user));
   }
   await removeLeftoverProjects(baseURL);
   await removeLeftoverAllowedPaths(baseURL);

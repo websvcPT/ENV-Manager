@@ -65,11 +65,24 @@ def _password(output: str) -> str:
     return lines[0].removeprefix(prefix)
 
 
+def _create_args(name: str, group: str, email: str | None = None) -> list[str]:
+    """The arguments of ``user create`` for a user whose email is ``<name>@example.test``."""
+    return [
+        "user",
+        "create",
+        "--email",
+        email or f"{name}@example.test",
+        "--name",
+        name,
+        "--group",
+        group,
+    ]
+
+
 def test_create_prints_a_working_password_once_and_audits_as_cli(cli_data_path: Path) -> None:
-    result = runner.invoke(
-        app, ["user", "create", "root", "root@example.test", "--group", "superadmin"]
-    )
+    result = runner.invoke(app, _create_args("root", "superadmin"))
     assert result.exit_code == 0, result.output
+    assert "created user root@example.test (root, superadmin)" in result.output
     password = _password(result.output)
     assert len(password) == 16
     (user,) = _users(cli_data_path)
@@ -80,73 +93,112 @@ def test_create_prints_a_working_password_once_and_audits_as_cli(cli_data_path: 
     assert password not in repr(entry.details)
 
 
+def test_create_takes_the_email_and_a_display_name_as_options() -> None:
+    old_shape = runner.invoke(
+        app, ["user", "create", "root", "root@example.test", "--group", "admin"]
+    )
+    assert old_shape.exit_code == 2
+    spaced = runner.invoke(
+        app,
+        [
+            "user",
+            "create",
+            "--email",
+            "john@example.test",
+            "--name",
+            "  John   Doe ",
+            "--group",
+            "viewer",
+        ],
+    )
+    assert spaced.exit_code == 0, spaced.output
+    assert "created user john@example.test (John Doe, viewer)" in spaced.output
+    refused = runner.invoke(app, _create_args("under_score", "viewer"))
+    assert refused.exit_code == 1
+    assert "Use 1 to 100 characters." in refused.output
+
+
 def test_create_rejects_a_duplicate_and_a_bad_group() -> None:
-    args = ["user", "create", "root", "root@example.test", "--group", "admin"]
+    args = _create_args("root", "admin")
     assert runner.invoke(app, args).exit_code == 0
     duplicate = runner.invoke(app, args)
     assert duplicate.exit_code == 1
-    assert "already exists" in duplicate.output
-    bad_group = runner.invoke(app, ["user", "create", "x", "x@example.test", "--group", "owner"])
-    assert bad_group.exit_code == 2
+    assert "Another user already has this email address." in duplicate.output
+    assert runner.invoke(app, _create_args("x", "owner")).exit_code == 2
 
 
 def test_create_refuses_an_email_another_user_has_ignoring_case(cli_data_path: Path) -> None:
-    first = ["user", "create", "ann", "Ann@Example.test", "--group", "admin"]
-    assert runner.invoke(app, first).exit_code == 0
-    duplicate = runner.invoke(
-        app, ["user", "create", "ann2", "ann@example.TEST", "--group", "viewer"]
-    )
+    assert runner.invoke(app, _create_args("ann", "admin", "Ann@Example.test")).exit_code == 0
+    duplicate = runner.invoke(app, _create_args("ann2", "viewer", "ann@example.TEST"))
     assert duplicate.exit_code == 1
     assert "Another user already has this email address." in duplicate.output
     assert [user.name for user in _users(cli_data_path)] == ["ann"]
 
 
-def test_list_shows_group_status_and_last_login() -> None:
-    runner.invoke(app, ["user", "create", "root", "root@example.test", "--group", "superadmin"])
-    runner.invoke(app, ["user", "create", "view", "view@example.test", "--group", "viewer"])
-    runner.invoke(app, ["user", "disable", "view"])
+def test_two_users_may_share_a_name_and_each_command_acts_on_the_email_given(
+    cli_data_path: Path,
+) -> None:
+    runner.invoke(app, _create_args("root", "superadmin"))
+    assert runner.invoke(app, _create_args("Pat", "admin", "pat.one@example.test")).exit_code == 0
+    assert runner.invoke(app, _create_args("Pat", "admin", "pat.two@example.test")).exit_code == 0
+    assert runner.invoke(app, ["user", "disable", "PAT.TWO@example.test"]).exit_code == 0
+    active = {user.email: user.is_active for user in _users(cli_data_path)}
+    assert active == {
+        "root@example.test": True,
+        "pat.one@example.test": True,
+        "pat.two@example.test": False,
+    }
+    by_name = runner.invoke(app, ["user", "disable", "Pat"])
+    assert by_name.exit_code == 1
+    assert "no user with the email address 'Pat'" in by_name.output
+
+
+def test_list_shows_email_group_status_and_last_login() -> None:
+    runner.invoke(app, _create_args("root", "superadmin"))
+    runner.invoke(app, _create_args("view", "viewer"))
+    runner.invoke(app, ["user", "disable", "view@example.test"])
     result = runner.invoke(app, ["user", "list"])
     assert result.exit_code == 0
     lines = result.output.splitlines()
-    assert lines[0].split() == ["NAME", "GROUP", "STATUS", "LAST", "LOGIN"]
-    assert lines[1].split() == ["root", "superadmin", "active", "never"]
-    assert lines[2].split() == ["view", "viewer", "disabled", "never"]
+    assert lines[0].split() == ["EMAIL", "NAME", "GROUP", "STATUS", "LAST", "LOGIN"]
+    assert lines[1].split() == ["root@example.test", "root", "superadmin", "active", "never"]
+    assert lines[2].split() == ["view@example.test", "view", "viewer", "disabled", "never"]
 
 
 def test_disable_refuses_the_last_superadmin_then_enable_round_trips(
     cli_data_path: Path,
 ) -> None:
-    runner.invoke(app, ["user", "create", "root", "root@example.test", "--group", "superadmin"])
-    runner.invoke(app, ["user", "create", "adm", "adm@example.test", "--group", "admin"])
-    refused = runner.invoke(app, ["user", "disable", "root"])
+    runner.invoke(app, _create_args("root", "superadmin"))
+    runner.invoke(app, _create_args("adm", "admin"))
+    refused = runner.invoke(app, ["user", "disable", "root@example.test"])
     assert refused.exit_code == 1
     assert "last active superadmin" in refused.output
-    assert runner.invoke(app, ["user", "disable", "adm"]).exit_code == 0
+    assert runner.invoke(app, ["user", "disable", "adm@example.test"]).exit_code == 0
     assert not {user.name: user.is_active for user in _users(cli_data_path)}["adm"]
-    assert runner.invoke(app, ["user", "enable", "ADM"]).exit_code == 0
+    assert runner.invoke(app, ["user", "enable", "ADM@example.test"]).exit_code == 0
     assert {user.name: user.is_active for user in _users(cli_data_path)}["adm"]
 
 
 def test_passwd_sets_a_new_password_and_unknown_user_fails(cli_data_path: Path) -> None:
-    created = runner.invoke(app, ["user", "create", "adm", "adm@example.test", "--group", "admin"])
+    created = runner.invoke(app, _create_args("adm", "admin"))
     first = _password(created.output)
-    result = runner.invoke(app, ["user", "passwd", "adm"])
+    result = runner.invoke(app, ["user", "passwd", "adm@example.test"])
     assert result.exit_code == 0, result.output
     second = _password(result.output)
     assert first != second
     (user,) = _users(cli_data_path)
     assert verify_password(second, user.password_hash)[0]
     assert not verify_password(first, user.password_hash)[0]
-    missing = runner.invoke(app, ["user", "passwd", "ghost"])
+    missing = runner.invoke(app, ["user", "passwd", "ghost@example.test"])
     assert missing.exit_code == 1
-    assert "no user named" in missing.output
+    assert "no user with the email address" in missing.output
 
 
 def test_disable_revokes_the_users_api_tokens_and_enable_does_not_bring_them_back(
     cli_data_path: Path,
 ) -> None:
-    runner.invoke(app, ["user", "create", "root", "root@example.test", "--group", "superadmin"])
-    runner.invoke(app, ["user", "create", "adm", "adm@example.test", "--group", "admin"])
+    runner.invoke(app, _create_args("root", "superadmin"))
+    runner.invoke(app, _create_args("adm", "admin"))
 
     async def make_token() -> None:
         engine = create_engine(cli_data_path / "envmanager.db")
@@ -167,8 +219,8 @@ def test_disable_revokes_the_users_api_tokens_and_enable_does_not_bring_them_bac
             await engine.dispose()
 
     asyncio.run(make_token())
-    assert runner.invoke(app, ["user", "disable", "adm"]).exit_code == 0
-    assert runner.invoke(app, ["user", "enable", "adm"]).exit_code == 0
+    assert runner.invoke(app, ["user", "disable", "adm@example.test"]).exit_code == 0
+    assert runner.invoke(app, ["user", "enable", "adm@example.test"]).exit_code == 0
     (token,) = _read_rows(cli_data_path, ApiToken)
     assert token.revoked_at is not None
     revoked = [entry for entry in _audit(cli_data_path) if entry.action == "token.revoke"]
@@ -180,7 +232,7 @@ def test_reset_2fa_turns_the_factor_off_and_audits_as_cli(
     cli_data_path: Path, crypto: CryptoService
 ) -> None:
     """The superadmin's recovery for a lost authenticator, from the command line."""
-    runner.invoke(app, ["user", "create", "adm", "adm@example.test", "--group", "admin"])
+    runner.invoke(app, _create_args("adm", "admin"))
 
     async def turn_on() -> None:
         engine = create_engine(cli_data_path / "envmanager.db")
@@ -194,20 +246,20 @@ def test_reset_2fa_turns_the_factor_off_and_audits_as_cli(
             await engine.dispose()
 
     asyncio.run(turn_on())
-    result = runner.invoke(app, ["user", "reset-2fa", "ADM"])
+    result = runner.invoke(app, ["user", "reset-2fa", "ADM@example.test"])
     assert result.exit_code == 0, result.output
-    assert "two-factor sign-in reset for ADM, 1 session(s) ended" in result.output
+    assert "two-factor sign-in reset for ADM@example.test, 1 session(s) ended" in result.output
     (user,) = _users(cli_data_path)
     assert (user.totp_enabled, user.totp_secret, user.totp_enabled_at) == (False, None, None)
     (entry,) = [e for e in _audit(cli_data_path) if e.action == "user.totp_reset"]
     assert (entry.actor_type.value, entry.actor_name, entry.target_name) == ("cli", "cli", "adm")
     assert entry.details == {"sessions_ended": 1, "pending_logins_ended": 0}
-    again = runner.invoke(app, ["user", "reset-2fa", "adm"])
+    again = runner.invoke(app, ["user", "reset-2fa", "adm@example.test"])
     assert again.exit_code == 1
     assert "adm has no two-factor sign-in to reset." in again.output
 
 
 def test_reset_2fa_of_an_unknown_user_fails() -> None:
-    missing = runner.invoke(app, ["user", "reset-2fa", "ghost"])
+    missing = runner.invoke(app, ["user", "reset-2fa", "ghost@example.test"])
     assert missing.exit_code == 1
-    assert "no user named" in missing.output
+    assert "no user with the email address" in missing.output

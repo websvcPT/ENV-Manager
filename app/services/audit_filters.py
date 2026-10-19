@@ -46,17 +46,30 @@ def _parse_date(raw: str | None) -> date | None:
     return day if FIRST_DATE <= day <= LAST_DATE else None
 
 
-def _parse_actor(raw: str | None) -> tuple[AuditActorType, str] | None:
-    """An actor filter written as ``type:name`` (for example ``user:admin``), or None."""
+def _parse_actor(raw: str | None) -> tuple[AuditActorType, int | str] | None:
+    """An actor filter, or None.
+
+    A user is written ``user:<id>`` (names are not unique, so the id is the key), a token, the
+    command line or the system ``type:name`` (for example ``api:token billing-ci``).
+    """
     if not raw:
         return None
-    kind, separator, name = raw.partition(":")
-    if not separator or not name or len(name) > MAX_NAME_LENGTH or not name.isprintable():
+    kind, separator, reference = raw.partition(":")
+    if (
+        not separator
+        or not reference
+        or len(reference) > MAX_NAME_LENGTH
+        or not reference.isprintable()
+    ):
         return None
     try:
-        return AuditActorType(kind), name
+        actor_type = AuditActorType(kind)
     except ValueError:
         return None
+    if actor_type is AuditActorType.USER:
+        user_id = parse_number(reference)
+        return (actor_type, user_id) if user_id is not None else None
+    return actor_type, reference
 
 
 def _parse_result(raw: str | None) -> AuditResult | None:
@@ -80,6 +93,7 @@ class AuditFilters:
 
     project_id: int | None = None
     actor_type: AuditActorType | None = None
+    actor_user_id: int | None = None
     actor_name: str | None = None
     action: str | None = None
     result: AuditResult | None = None
@@ -92,11 +106,12 @@ class AuditFilters:
         """Filters from query parameters ``project``, ``actor``, ``action``, ``result``, ``from``
         and ``to``. Whatever does not parse is dropped. ``zone`` is the time zone the dates are
         days of."""
-        actor = _parse_actor(raw.get("actor"))
+        actor_type, reference = _parse_actor(raw.get("actor")) or (None, None)
         return cls(
             project_id=parse_number(raw.get("project")),
-            actor_type=actor[0] if actor else None,
-            actor_name=actor[1] if actor else None,
+            actor_type=actor_type,
+            actor_user_id=reference if isinstance(reference, int) else None,
+            actor_name=reference if isinstance(reference, str) else None,
             action=_parse_action(raw.get("action")),
             result=_parse_result(raw.get("result")),
             date_from=_parse_date(raw.get("from")),
@@ -107,9 +122,10 @@ class AuditFilters:
     @property
     def actor(self) -> str | None:
         """The actor in the form the filter select and the URL use."""
-        if self.actor_type is None or self.actor_name is None:
+        reference = self.actor_user_id if self.actor_user_id is not None else self.actor_name
+        if self.actor_type is None or reference is None:
             return None
-        return f"{self.actor_type.value}:{self.actor_name}"
+        return f"{self.actor_type.value}:{reference}"
 
     def params(self) -> dict[str, str]:
         """The non-empty filters as query parameters, in a fixed order."""
@@ -140,7 +156,14 @@ class AuditFilters:
         found: list[ColumnElement[bool]] = []
         if self.project_id is not None:
             found.append(AuditEntry.project_id == self.project_id)
-        if self.actor_type is not None and self.actor_name is not None:
+        if self.actor_type is not None and self.actor_user_id is not None:
+            found.append(
+                and_(
+                    AuditEntry.actor_type == self.actor_type,
+                    AuditEntry.actor_user_id == self.actor_user_id,
+                )
+            )
+        elif self.actor_type is not None and self.actor_name is not None:
             found.append(
                 and_(
                     AuditEntry.actor_type == self.actor_type,

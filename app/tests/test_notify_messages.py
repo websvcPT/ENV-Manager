@@ -161,7 +161,7 @@ async def test_a_lockout_never_repeats_a_name_that_belongs_to_no_user() -> None:
     """People type passwords into the name field, so only a user's own name is ever written."""
     unknown = LockoutStarted(LockoutScope.USER, None, None, 15)
     content = content_of(unknown)
-    assert "a sign-in name" in content.summary
+    assert "a sign-in email" in content.summary
     assert not any(label == "User" for label, _ in content.facts)
     known = content_of(LockoutStarted(LockoutScope.USER, "alice", None, 15))
     assert ("User", "alice") in known.facts

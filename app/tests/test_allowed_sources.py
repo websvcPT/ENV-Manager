@@ -372,7 +372,7 @@ async def test_a_refused_request_never_opens_a_database_session(
         requests: list[Any] = [
             http.get("/projects"),
             http.get("/login"),
-            http.post("/login", data={"identifier": "root", "password": "wrong"}),
+            http.post("/login", data={"identifier": "root@example.test", "password": "wrong"}),
             http.get("/audit"),
             http.get("/api/v1/services/1/deployments/last", headers=bearer("envm_unknown")),
             http.post("/api/v1/services/1/deploy", headers=bearer("envm_unknown"), json={}),

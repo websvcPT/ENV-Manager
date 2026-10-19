@@ -2,6 +2,7 @@ import type { Browser, Page } from '@playwright/test';
 
 import { stateFile, SUPERADMIN_STATE } from '../global-setup';
 import { listProjects } from '../projects-api';
+import { seededEmail } from '../users-api';
 import { horizontalOverflow, isWide } from '../viewport';
 import { actionControls } from './row-actions';
 import { expect, test } from './scratch-project';
@@ -106,7 +107,9 @@ test.describe('superadmin', () => {
     await expect(list).toContainText('Users with access to project Fancy Proj. Name');
     await expect(list.locator('th[scope="col"]')).toHaveText(['User', 'Group', 'Access', 'Actions']);
     const row = (name: string) =>
-      list.locator('tbody tr').filter({ has: page.getByRole('rowheader', { name, exact: true }) });
+      list.locator('tbody tr').filter({
+        has: page.getByRole('rowheader', { name: `${name} ${seededEmail(name)}`, exact: true }),
+      });
     await expect(row('project_admin')).toContainText('Direct');
     await expect(row('deployment_admin')).toContainText('Inherited');
     await expect(row('deployment_admin')).toContainText('from prod (Deployment)');

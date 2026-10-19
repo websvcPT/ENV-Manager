@@ -126,10 +126,11 @@ class GridProject:
 
 @dataclass(frozen=True)
 class GridUser:
-    """A column of the grid."""
+    """A column of the grid. The email tells apart users that share a name."""
 
     id: int
     name: str
+    email: str
     group: UserGroup
 
 
@@ -302,12 +303,12 @@ async def load_grid_users(
     """The active users of the groups, by name: the accounts that can hold grants."""
     rows = (
         await db.execute(
-            select(User.id, User.name, User.group)
+            select(User.id, User.name, User.email, User.group)
             .where(User.is_active.is_(True), User.group.in_(groups))
             .order_by(func.lower(User.name), User.id)
         )
     ).all()
-    return tuple(GridUser(user_id, name, group) for user_id, name, group in rows)
+    return tuple(GridUser(user_id, name, email, group) for user_id, name, email, group in rows)
 
 
 def _grant_in_project(project_id: int) -> ColumnElement[bool]:
@@ -467,7 +468,7 @@ async def toggle_cell(
     answers the user's whole column of the project as stored now, since the page that sent the
     request is out of date.
     """
-    grid_user = GridUser(user.id, user.name, user.group)
+    grid_user = GridUser(user.id, user.name, user.email, user.group)
     clicked = node_dom_id(target)
     located = next(
         (

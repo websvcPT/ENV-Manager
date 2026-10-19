@@ -35,13 +35,37 @@ async def test_user_defaults_and_group_stored_as_value(engine: AsyncEngine) -> N
     assert stored.created_at.tzinfo is not None
 
 
-async def test_user_names_are_unique(engine: AsyncEngine) -> None:
-    """Two users cannot share a name."""
+async def test_users_can_share_a_name_but_not_an_email(engine: AsyncEngine) -> None:
+    """The email is the key of a user: a name is shared freely, an address is not."""
     factory = create_session_factory(engine)
     async with factory() as session:
-        session.add_all([_user("bob"), _user("bob")])
+        twin = _user("bob")
+        twin.email = "bob.two@example.test"
+        session.add_all([_user("bob"), twin])
+        await session.commit()
+    async with factory() as session:
+        same_address = _user("robert")
+        same_address.email = "BOB@example.test"
+        session.add(same_address)
         with pytest.raises(IntegrityError):
             await session.commit()
+
+
+async def test_user_ids_are_never_handed_out_again(engine: AsyncEngine) -> None:
+    """The users table has a monotonic id sequence, so a removed user's id stays retired."""
+    factory = create_session_factory(engine)
+    async with factory() as session:
+        first, second = _user("ann"), _user("ben")
+        session.add_all([first, second])
+        await session.commit()
+        removed_id = second.id
+        await session.delete(second)
+        await session.commit()
+        late = _user("cy")
+        session.add(late)
+        await session.commit()
+        assert late.id > removed_id
+        assert first.id < removed_id
 
 
 async def test_datetimes_round_trip_as_aware_utc(engine: AsyncEngine) -> None:

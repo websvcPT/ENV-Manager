@@ -4,6 +4,7 @@ import { expect, test, type Browser, type Locator, type Page } from '@playwright
 
 import { auditEntryIds } from '../audit-api';
 import { stateFile, SUPERADMIN_STATE } from '../global-setup';
+import { listUsers } from '../users-api';
 import { horizontalOverflow, isWide } from '../viewport';
 
 /*
@@ -47,6 +48,20 @@ async function idsAsSuperadmin(browser: Browser, query: string): Promise<number[
   const context = await browser.newContext({ storageState: SUPERADMIN_STATE });
   try {
     return await auditEntryIds(context.request, query);
+  } finally {
+    await context.close();
+  }
+}
+
+/** The id of a seeded user by name, looked up as the superadmin. */
+async function seededUserId(browser: Browser, name: string): Promise<number> {
+  const context = await browser.newContext({ storageState: SUPERADMIN_STATE });
+  try {
+    const found = (await listUsers(context.request)).find(([, listed]) => listed === name);
+    if (!found) {
+      throw new Error(`seeded user ${name} is missing`);
+    }
+    return found[0];
   } finally {
     await context.close();
   }
@@ -404,7 +419,11 @@ test.describe('scoped admin', () => {
     await expect(detailsOf(page, ownId)).toBeVisible();
     await expect(detailsOf(page, ownId)).toContainText(`Entry #${ownId}`);
 
-    const [rootSignIn] = await idsAsSuperadmin(browser, 'action=login.success&actor=user%3Aroot');
+    const rootId = await seededUserId(browser, 'root');
+    const [rootSignIn] = await idsAsSuperadmin(
+      browser,
+      `action=login.success&actor=user%3A${rootId}`,
+    );
     expect(rootSignIn).toBeGreaterThan(0);
     const hidden = await page.goto(`/audit?entry=${rootSignIn}`);
     expect(hidden?.status()).toBe(404);

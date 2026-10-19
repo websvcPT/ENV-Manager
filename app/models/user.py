@@ -42,16 +42,20 @@ class LoginCounterKind(StrEnum):
 class User(Base):
     """A person or service account that can sign in. Disabled users are kept for audit.
 
-    Email addresses are unique ignoring case through the functional index below, so the same
-    address in another case is refused by the database too. Names are unique ignoring case by
-    the user service.
+    The email address is the key of a user and is unique ignoring case through the functional
+    index below, so the same address in another case is refused by the database too. The name is
+    a display name and is not unique. Ids come from a monotonic sequence, so the id of a removed
+    user is never handed out again.
     """
 
     __tablename__ = "users"
-    __table_args__ = (Index("uq_users_email_lower", text("lower(email)"), unique=True),)
+    __table_args__ = (
+        Index("uq_users_email_lower", text("lower(email)"), unique=True),
+        {"sqlite_autoincrement": True},
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(100), unique=True)
+    name: Mapped[str] = mapped_column(String(100))
     email: Mapped[str] = mapped_column(String(320))
     password_hash: Mapped[str] = mapped_column(String(255))
     group: Mapped[UserGroup] = mapped_column(

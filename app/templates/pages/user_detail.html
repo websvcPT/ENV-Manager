@@ -30,7 +30,7 @@
 {% include "fragments/user_grants.html" %}
 </div>
 {% include "fragments/user_tokens.html" %}
-{% set activity_link %}{{ text_link("Open audit log", "/audit?actor=user:" ~ (user.name | urlencode)) }}{% endset %}
+{% set activity_link %}{{ text_link("Open audit log", "/audit?actor=user:" ~ user.id) }}{% endset %}
 {% call panel("Recent activity", "p-activity", fragment="user-activity", actions=activity_link) %}
 {%- if user.activity %}
 {% call table("Recent activity of " ~ user.name, ["Time", "Action", "Object", "Result"], min_width_class="min-w-[560px]") %}

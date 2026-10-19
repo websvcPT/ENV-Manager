@@ -719,6 +719,32 @@ the managed version changed since the page was opened). Overwriting the target i
 of that one file after a confirmation: the file it replaces is copied next to it first (mode 0600),
 whatever the drift policy says, and the post-deploy command of the service runs as for any deploy.
 
+## Users
+
+The email address is the unique key of a user (unique ignoring case) and the only thing that
+signs a person in: the sign-in field reads Email, and a name typed there never matches a user,
+whatever the password, and fails like any wrong password. The name is a display name such as
+`John Doe`: trimmed, runs of spaces made one, 1 to 100 characters, letters of any language,
+digits, spaces and the characters `.`, `'` and `-`, no control or format characters. Names are
+not unique, so wherever users are listed or picked (the users list, the user page, the access
+grid, the Access tabs and their add dialog, the token owner column and the audit log filter) the
+email shows next to the name, and filters and pickers key on the user id.
+
+The first superadmin and every account made from the command line use the email, which the
+other user commands take as their argument too:
+
+```
+docker compose exec app envmanager user create --email jane@example.com --name "Jane Doe" --group superadmin
+docker compose exec app envmanager user list
+docker compose exec app envmanager user disable jane@example.com
+docker compose exec app envmanager user enable jane@example.com
+docker compose exec app envmanager user passwd jane@example.com
+docker compose exec app envmanager user reset-2fa jane@example.com
+```
+
+The development dataset (`envmanager dev seed`, `make seed`) gives every seeded user the address
+`<name>@example.test`, so the superadmin signs in as `root@example.test`.
+
 ## Account
 
 Every signed-in user, in any group, has an Account page (`/account`, from the account menu) with
@@ -739,7 +765,7 @@ Sign out other sessions. The theme preference (light, dark or match the system, 
 default) is kept in the browser and shared with the theme buttons.
 
 A user who lost their authenticator is recovered by a superadmin: Reset two-factor on the user
-detail page (after a confirm dialog) or `docker compose exec app envmanager user reset-2fa <name>`
+detail page (after a confirm dialog) or `docker compose exec app envmanager user reset-2fa <email>`
 turns the second factor off, ends that user's sessions and sign ins waiting for a code, and is
 audited as `user.totp_reset` (counts only). The web action refuses a superadmin's own account,
 which has the Remove button on its Account page.

@@ -239,7 +239,8 @@ async def test_the_lockout_threshold_applies_to_the_next_sign_in(
         statuses = []
         for _ in range(2):
             attempt = await stranger.post(
-                "/login", data={"identifier": "viewer", "password": "wrong", "csrf_token": csrf}
+                "/login",
+                data={"identifier": "viewer@example.test", "password": "wrong", "csrf_token": csrf},
             )
             statuses.append(attempt.status_code)
     assert statuses == [401, 429]

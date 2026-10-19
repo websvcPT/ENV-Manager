@@ -4,6 +4,7 @@ import { deploymentId } from '../deployments-api';
 import { seededEnvironmentId } from '../environments-api';
 import { listProjects } from '../projects-api';
 import { serviceId } from '../services-api';
+import { seededEmail } from '../users-api';
 import { horizontalOverflow, isWide } from '../viewport';
 import { expectImageLoaded, renderedSize } from './images';
 import { submitSignIn } from './sign-in';
@@ -273,7 +274,7 @@ test.describe('log out', () => {
 
   test('ends the session and returns to sign in', async ({ page }) => {
     await page.goto('/login');
-    await submitSignIn(page, 'viewer', 'dev-only-password');
+    await submitSignIn(page, seededEmail('viewer'), 'dev-only-password');
     await expect(page).toHaveURL(/\/projects$/);
 
     await page.locator('header [data-target="account-menu"]').click();

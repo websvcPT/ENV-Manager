@@ -326,7 +326,7 @@ async def test_sign_in_failures_and_lockouts_are_counted_without_a_name_or_addre
                 db,
                 crypto,
                 POLICY,
-                identifier="alice",
+                identifier="alice@example.test",
                 password=f"{PASSWORD}-wrong-{attempt}",
                 ip_address="203.0.113.7",
             )

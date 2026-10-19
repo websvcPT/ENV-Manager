@@ -62,18 +62,11 @@ class LoginResult:
     pending_token: str | None = None
 
 
-async def _find_user(db: AsyncSession, identifier: str) -> User | None:
-    """The user whose name matches, else the one whose email matches when it is unambiguous."""
-    lowered = identifier.lower()
-    by_name = (
-        await db.execute(select(User).where(func.lower(User.name) == lowered))
+async def _find_user(db: AsyncSession, email: str) -> User | None:
+    """The user whose email matches, ignoring case; a name never signs anyone in."""
+    return (
+        await db.execute(select(User).where(func.lower(User.email) == email.lower()))
     ).scalar_one_or_none()
-    if by_name is not None:
-        return by_name
-    matches = (
-        (await db.execute(select(User).where(func.lower(User.email) == lowered))).scalars().all()
-    )
-    return matches[0] if len(matches) == 1 else None
 
 
 async def _locked_out(
@@ -110,11 +103,11 @@ async def authenticate(
     notifier: EventNotifier = NO_EVENT_NOTIFIER,
     now: datetime | None = None,
 ) -> LoginResult:
-    """Check the name and password and start a session on success.
+    """Check the email and password and start a session on success.
 
-    Failures and lockouts are audited and counted per submitted name and per client address.
-    The submitted name is only recorded when it belongs to a user, because people sometimes type
-    a password into the name field. A user with a second factor gets a pending login instead of
+    Failures and lockouts are audited and counted per submitted email and per client address.
+    The submitted text is only recorded when it belongs to a user, because people sometimes type
+    a password into the email field. A user with a second factor gets a pending login instead of
     a session, and finishes with `complete_totp_login`; that request is not a failure.
     """
     moment = now or utc_now()
@@ -175,7 +168,7 @@ async def complete_totp_login(
     if user is None or not user.is_active:
         return LoginResult(LoginStatus.PENDING_INVALID)
 
-    subject = user.name.lower()
+    subject = user.email.lower()
     user_counter = await get_counter(db, LoginCounterKind.USER, subject)
     ip_counter = await get_counter(db, LoginCounterKind.IP, ip_address) if ip_address else None
     locked = await _locked_out(db, [user_counter, ip_counter], user, ip_address, moment)

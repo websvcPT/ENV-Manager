@@ -10,7 +10,7 @@
 {{ empty_state("No users to show", "Active admin and viewer accounts appear here as columns. Create a user or change the group filter.", "users") }}
 {%- else %}
 <div class="relative overflow-x-auto"><table class="w-full border-separate border-spacing-0 text-left md:min-w-[900px]"><caption class="sr-only">Access grid: rows are projects, deployments, services and environments; columns are users</caption><thead><tr><th scope="col" class="bg-head px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-head-ink sticky left-0 z-10 min-w-[260px]">Item</th>
-{%- for user in grid.users %}<th scope="col" id="grid-user-{{ user.id }}" class="bg-head px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-head-ink min-w-[150px]">{{ user.name }}<span class="mt-1 block normal-case tracking-normal">{{ badge(user.group.value) }}</span></th>{% endfor -%}
+{%- for user in grid.users %}<th scope="col" id="grid-user-{{ user.id }}" class="bg-head px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-head-ink min-w-[150px]">{{ user.name }}<span class="mt-0.5 block break-all text-xs font-normal normal-case tracking-normal">{{ user.email }}</span><span class="mt-1 block normal-case tracking-normal">{{ badge(user.group.value) }}</span></th>{% endfor -%}
 </tr></thead><tbody>
 {%- for project in grid.projects %}
 {%- for node in project.nodes %}

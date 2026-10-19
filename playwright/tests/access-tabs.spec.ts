@@ -167,7 +167,7 @@ test.describe('superadmin: project Access tab', () => {
     await expect(list(page)).toContainText(`Users with access to project ${scratch.projectName}`);
     await expect(list(page)).toContainText('A project grant includes the deployments');
     await expect(list(page)).toContainText('Superadmins reach everything, so they are not listed.');
-    await expect(list(page).getByRole('rowheader', { name: 'root', exact: true })).toHaveCount(0);
+    await expect(list(page).getByRole('rowheader', { name: /^root /i })).toHaveCount(0);
 
     await expect(row(page, direct)).toContainText('Direct');
     await expect(row(page, direct)).toContainText('Includes future items');
@@ -218,7 +218,7 @@ test.describe('superadmin: project Access tab', () => {
     await expect(dialog.getByRole('heading', { name: 'Add access' })).toBeVisible();
     await expect(dialog).toContainText(`project ${scratch.projectName}`);
     await expect(dialog.locator(`select option[value="${viewer.id}"]`)).toHaveText(
-      `${viewer.name} (Viewer)`,
+      `${viewer.name} (${viewer.email}, Viewer)`,
     );
     await expect(dialog.locator('select option', { hasText: '(Superadmin)' })).toHaveCount(0);
     await expect(dialog.getByRole('note')).toContainText(

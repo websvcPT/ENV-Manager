@@ -1,7 +1,7 @@
 """A signed-in user's own account: password change and the second factor.
 
 Checks that prove a credential (the current password, also when turning the second factor on, and
-an authenticator code when removing it) count their failures on the same name and address
+an authenticator code when removing it) count their failures on the same email and address
 counters as sign in, and are refused while either is locked. Every outcome is audited with counts
 and reasons only: no password, code or secret is ever recorded.
 """
@@ -51,7 +51,7 @@ class AccountError(Exception):
 
 
 class AccountLockedError(AccountError):
-    """The name or client address is locked after too many failed attempts."""
+    """The email or client address is locked after too many failed attempts."""
 
     def __init__(self, retry_after: timedelta) -> None:
         super().__init__("Too many failed attempts.")
@@ -86,8 +86,8 @@ async def _refuse_when_locked(
     ip_address: str | None,
     now: datetime,
 ) -> None:
-    """Audit and refuse an attempt made while the name or address is locked."""
-    wait = await current_lock(db, subject=user.name.lower(), ip_address=ip_address, now=now)
+    """Audit and refuse an attempt made while the email or address is locked."""
+    wait = await current_lock(db, subject=user.email.lower(), ip_address=ip_address, now=now)
     if wait is None:
         return
     await _audit(db, user, action, AuditResult.BLOCKED, ip_address, {"reason": "locked"})
@@ -110,10 +110,10 @@ async def _refuse_credential(
 ) -> AccountError:
     """Count and audit a wrong credential, then return the error to raise.
 
-    Reaching the limit locks the name or the address, which is raised as a lockout instead.
+    Reaching the limit locks the email or the address, which is raised as a lockout instead.
     """
     locked = await register_attempt_failure(
-        db, policy, subject=user.name.lower(), ip_address=ip_address, now=now
+        db, policy, subject=user.email.lower(), ip_address=ip_address, now=now
     )
     await _audit(db, user, action, AuditResult.FAILURE, ip_address, {"reason": reason})
     await record_lockouts(db, policy, user=user, ip_address=ip_address, locked=locked)
@@ -177,7 +177,7 @@ async def change_password(
     user.password_hash = hash_password(new_password)
     ended = await revoke_user_sessions(db, user.id, keep_session_id=session.id)
     await discard_user_pending_logins(db, user.id)
-    counter = await get_counter(db, LoginCounterKind.USER, user.name.lower())
+    counter = await get_counter(db, LoginCounterKind.USER, user.email.lower())
     if counter is not None:
         counter.failures = 0
         counter.locked_until = None
@@ -207,7 +207,7 @@ async def enable_totp(
 
     The current password is checked first (a session that was taken over cannot enrol another
     authenticator without it): a wrong one counts toward the lockout and the attempt is refused
-    while the name or address is locked. The code then proves the secret was scanned; its time
+    while the email or address is locked. The code then proves the secret was scanned; its time
     step counts as used. A wrong code is only refused, not counted: nothing is being guessed,
     since the secret is the one just shown to the user.
     """

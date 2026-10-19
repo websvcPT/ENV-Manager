@@ -63,8 +63,16 @@ async def test_invalid_credentials_keep_the_name_and_drop_the_password(
     web_client: httpx.AsyncClient,
 ) -> None:
     """A plain post answers the whole page, with one generic message for every failure."""
-    wrong = await post_form(web_client, "/login", {"identifier": "root", "password": "nope"})
-    unknown = await post_form(web_client, "/login", {"identifier": "nobody", "password": "nope"})
+    wrong = await post_form(
+        web_client, "/login", {"identifier": "root@example.test", "password": "nope"}
+    )
+    unknown = await post_form(
+        web_client, "/login", {"identifier": "nobody@example.test", "password": "nope"}
+    )
+    by_name = await post_form(
+        web_client, "/login", {"identifier": "root", "password": DEV_PASSWORD}
+    )
+    assert by_name.status_code == 401 and "Invalid credentials" in by_name.text
     assert wrong.status_code == unknown.status_code == 401
     assert "Invalid credentials" in wrong.text and "Invalid credentials" in unknown.text
     assert 'role="alert" data-fragment="login-message"' in wrong.text
@@ -75,7 +83,7 @@ async def test_invalid_credentials_keep_the_name_and_drop_the_password(
 
 async def test_htmx_failure_answers_only_the_card(web_client: httpx.AsyncClient) -> None:
     response = await post_form(
-        web_client, "/login", {"identifier": "root", "password": "nope"}, htmx=True
+        web_client, "/login", {"identifier": "root@example.test", "password": "nope"}, htmx=True
     )
     assert response.status_code == 401
     assert response.text.lstrip().startswith('<div id="login-card"')
@@ -88,7 +96,10 @@ async def test_lockout_shows_the_time_left_and_disables_the_form(
 ) -> None:
     for _ in range(5):
         response = await post_form(
-            web_client, "/login", {"identifier": "viewer", "password": "nope"}, htmx=True
+            web_client,
+            "/login",
+            {"identifier": "viewer@example.test", "password": "nope"},
+            htmx=True,
         )
     assert response.status_code == 429
     assert 0 < int(response.headers["retry-after"]) <= 900
@@ -96,14 +107,17 @@ async def test_lockout_shows_the_time_left_and_disables_the_form(
     assert "Try again in 15:00." in response.text
     assert len(re.findall(r"\sdisabled[\s>]", response.text)) == 3
     refused = await post_form(
-        web_client, "/login", {"identifier": "viewer", "password": DEV_PASSWORD}, htmx=True
+        web_client,
+        "/login",
+        {"identifier": "viewer@example.test", "password": DEV_PASSWORD},
+        htmx=True,
     )
     assert refused.status_code == 429
 
 
 async def test_successful_login_redirects(web_client: httpx.AsyncClient) -> None:
     """Plain posts get a 303, htmx gets HX-Redirect; both set a hardened session cookie."""
-    form = {"identifier": "root", "password": DEV_PASSWORD}
+    form = {"identifier": "root@example.test", "password": DEV_PASSWORD}
     plain = await post_form(web_client, "/login", form)
     assert (plain.status_code, plain.headers["location"]) == (303, "/")
     web_client.cookies.delete(SESSION_COOKIE_NAME)
@@ -114,7 +128,7 @@ async def test_successful_login_redirects(web_client: httpx.AsyncClient) -> None
     assert (await web_client.get("/projects")).status_code == 200
 
 
-CREDENTIALS = {"identifier": "totp_user", "password": DEV_PASSWORD}
+CREDENTIALS = {"identifier": "totp_user@example.test", "password": DEV_PASSWORD}
 
 
 async def ask_for_code(http: httpx.AsyncClient) -> httpx.Response:
@@ -283,7 +297,7 @@ async def test_failed_sign_ins_count_under_the_forwarded_address_whatever_a_clie
     response = await web_client.post(
         "/login",
         data={
-            "identifier": "viewer",
+            "identifier": "viewer@example.test",
             "password": "wrong password",
             "csrf_token": web_client.cookies[CSRF_COOKIE_NAME],
         },

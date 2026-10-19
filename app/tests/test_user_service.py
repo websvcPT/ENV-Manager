@@ -40,8 +40,9 @@ from app.services.users import (
     TwoFactorNotOnError,
     UserExistsError,
     UserNotFoundError,
+    clean_name,
     create_user,
-    get_user_by_name,
+    get_user_by_email,
     list_users,
     reset_password,
     reset_two_factor,
@@ -51,6 +52,11 @@ from app.services.users import (
 from app.tests.auth_helpers import make_user
 
 CLI = AuditActorType.CLI
+
+
+async def get_user_by_name(db: AsyncSession, name: str) -> User:
+    """The one user with the name, for tests that give every user a name of their own."""
+    return (await db.execute(select(User).where(User.name == name))).scalar_one()
 
 
 def test_generated_passwords_are_sixteen_mixed_characters() -> None:
@@ -77,7 +83,7 @@ async def test_create_user_stores_a_hash_and_audits_without_the_password(
             actor=AuditActor.cli(),
         )
     async with factory() as db:
-        stored = await get_user_by_name(db, "BOB")
+        stored = await get_user_by_email(db, "BOB@example.test")
         assert stored.id == user.id
         assert stored.name == "Bob"
         assert stored.is_active
@@ -99,8 +105,9 @@ async def test_create_user_stores_a_hash_and_audits_without_the_password(
     ("name", "email"),
     [
         ("", "a@example.test"),
-        ("has space", "a@example.test"),
+        ("   ", "a@example.test"),
         ("a@b", "a@example.test"),
+        ("under_score", "a@example.test"),
         ("x" * 101, "a@example.test"),
         ("carol", "not-an-email"),
         ("carol", "@example.test"),
@@ -118,28 +125,93 @@ async def test_create_user_refuses_invalid_input(
         assert await list_users(db) == []
 
 
-async def test_create_user_refuses_a_duplicate_name_ignoring_case(engine: AsyncEngine) -> None:
+@pytest.mark.parametrize(
+    ("typed", "kept"),
+    [
+        ("John Doe", "John Doe"),
+        ("  John   Doe  ", "John Doe"),
+        ("Zoë Müller-Åberg", "Zoë Müller-Åberg"),
+        ("O'Brien Jr.", "O'Brien Jr."),
+        ("María José", "María José"),
+        ("田中 太郎", "田中 太郎"),
+        ("हिन्दी नाम", "हिन्दी नाम"),
+        ("Anna 2", "Anna 2"),
+        ("x" * 100, "x" * 100),
+        ("7", "7"),
+    ],
+)
+def test_the_name_rule_keeps_letters_of_any_language_digits_spaces_and_three_marks(
+    typed: str, kept: str
+) -> None:
+    assert clean_name(typed) == kept
+
+
+@pytest.mark.parametrize(
+    "typed",
+    [
+        "",
+        "   ",
+        "x" * 101,
+        "a@b",
+        "under_score",
+        "slash/name",
+        "semi;colon",
+        "tab\tname",
+        "line\nbreak",
+        "zero\N{ZERO WIDTH SPACE}width",
+        "bidi\N{RIGHT-TO-LEFT OVERRIDE}flip",
+        "non\N{NO-BREAK SPACE}breaking",
+        "bell\x07",
+        "emoji \U0001f600",
+        "\N{EM DASH}dash",
+        "curly\N{RIGHT SINGLE QUOTATION MARK}quote",
+    ],
+)
+def test_the_name_rule_refuses_control_format_and_other_characters(typed: str) -> None:
+    with pytest.raises(InvalidUserError) as refused:
+        clean_name(typed)
+    assert refused.value.field == "name"
+
+
+async def test_users_may_share_a_name_and_the_email_is_the_only_key(engine: AsyncEngine) -> None:
     factory = create_session_factory(engine)
     async with factory() as db:
-        await create_user(
-            db, name="dave", email="d@example.test", group=UserGroup.ADMIN, actor=AuditActor.cli()
+        first, _ = await create_user(
+            db,
+            name="Dave",
+            email="d@example.test",
+            group=UserGroup.ADMIN,
+            actor=AuditActor.cli(),
         )
-    async with factory() as db:
-        with pytest.raises(UserExistsError):
+        second, _ = await create_user(
+            db,
+            name="DAVE",
+            email="e@example.test",
+            group=UserGroup.VIEWER,
+            actor=AuditActor.cli(),
+        )
+        assert first.id != second.id
+        with pytest.raises(UserExistsError) as refused:
             await create_user(
                 db,
-                name="DAVE",
-                email="e@example.test",
+                name="Someone Else",
+                email="E@Example.TEST",
                 group=UserGroup.ADMIN,
                 actor=AuditActor.cli(),
             )
-        assert len(await list_users(db)) == 1
+        assert refused.value.field == "email"
+        assert [(user.name, user.email) for user in await list_users(db)] == [
+            ("Dave", "d@example.test"),
+            ("DAVE", "e@example.test"),
+        ]
+        found = await get_user_by_email(db, " e@EXAMPLE.test ")
+        assert found.id == second.id
 
 
 async def test_unknown_user_is_reported(engine: AsyncEngine) -> None:
     async with create_session_factory(engine)() as db:
         with pytest.raises(UserNotFoundError):
-            await get_user_by_name(db, "nobody")
+            await get_user_by_email(db, "nobody@example.test")
 
 
 async def test_list_users_is_ordered_by_name(engine: AsyncEngine) -> None:
@@ -164,7 +236,7 @@ async def test_reset_password_replaces_hash_ends_sessions_and_clears_lockout(
         db.add(
             LoginCounter(
                 kind=LoginCounterKind.USER,
-                subject="erin",
+                subject="erin@example.test",
                 failures=9,
                 locked_until=utc_now() + timedelta(minutes=10),
             )

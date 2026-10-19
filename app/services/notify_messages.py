@@ -263,9 +263,9 @@ def sign_in_content(event: SignInFromNewAddress, ctx: MessageContext) -> MailCon
 
 
 def lockout_content(event: LockoutStarted, ctx: MessageContext) -> MailContent:
-    """The mail about a lockout. A name that belongs to no user is never repeated."""
+    """The mail about a lockout. An email that belongs to no user is never repeated."""
     if event.scope is LockoutScope.USER:
-        who = f"the user {one_line(event.user_name)}" if event.user_name else "a sign-in name"
+        who = f"the user {one_line(event.user_name)}" if event.user_name else "a sign-in email"
     elif event.scope is LockoutScope.API_ADDRESS:
         who = "API requests from an address"
     else:

@@ -112,6 +112,12 @@ DEV_TOTP_SECRET = "JBSWY3DPEHPK3PXP"  # noqa: S105
 TOTP_USER_NAME = "totp_user"
 TOTP_ALT_USER_NAME = "totp_user_alt"
 
+
+def seed_email(name: str) -> str:
+    """The email address, and so the sign-in, of the seeded user with the given name."""
+    return f"{name}@example.test"
+
+
 # The seeded project with a display name (capitals, a dot and spaces), and the plain name a
 # database seeded before project names became display names still holds it under.
 FANCY_PROJECT_NAME = "Fancy Proj. Name"
@@ -267,7 +273,7 @@ def _user(name: str, group: UserGroup) -> User:
     """A seeded user with the dev password."""
     return User(
         name=name,
-        email=f"{name}@example.test",
+        email=seed_email(name),
         password_hash=_dev_password_hash(),
         group=group,
     )

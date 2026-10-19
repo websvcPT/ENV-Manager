@@ -42,8 +42,8 @@ services:
     environment:
       HOME: /tmp
       E2E_BASE_URL: http://envmanager:8080
-      # Development dataset login, development and testing only.
-      E2E_USER: root
+      # Development dataset login (the email), development and testing only.
+      E2E_USER: root@example.test
       E2E_PASSWORD: dev-only-password
     # PLAYWRIGHT_ARGS (the ARGS of make e2e) narrows the run, for example
     # "--project=desktop tests/users.spec.ts"; quotes in it are read as typed.
@@ -66,7 +66,7 @@ services:
     environment:
       HOME: /tmp
       E2E_BASE_URL: http://envmanager:8080
-      E2E_USER: root
+      E2E_USER: root@example.test
       E2E_PASSWORD: dev-only-password
       E2E_DEMO_ROOT: ${DEMO_ROOT:-}
     command: sh -c "npm ci --prefix / --no-audit --no-fund && /node_modules/.bin/playwright test -c playwright.docker.config.ts"

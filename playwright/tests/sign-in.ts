@@ -3,8 +3,8 @@ import { expect, type Browser, type Page } from '@playwright/test';
 import type { CreatedUser } from '../users-api';
 
 /** Fill the sign-in card of the page that shows it and submit it. */
-export async function submitSignIn(page: Page, name: string, password: string): Promise<void> {
-  await page.locator('#user').fill(name);
+export async function submitSignIn(page: Page, email: string, password: string): Promise<void> {
+  await page.locator('#user').fill(email);
   await page.locator('#pw').fill(password);
   await page.locator('#login-card button[type="submit"]').click();
 }
@@ -23,7 +23,7 @@ export async function signedInAs(
   const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
   const page = await context.newPage();
   await page.goto('/login');
-  await submitSignIn(page, user.name, options.password ?? user.password);
+  await submitSignIn(page, user.email, options.password ?? user.password);
   if (options.code !== undefined) {
     await page.locator('#code').fill(options.code);
     await page.locator('#login-card button[type="submit"]').click();

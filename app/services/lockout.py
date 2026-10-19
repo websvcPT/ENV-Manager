@@ -1,7 +1,7 @@
 """Failure counters with a lockout, persisted so a restart does not clear them.
 
 Sign-in and the account screens (password change, removing the second factor) count failures per
-user name and per client address; the API counts failed bearer token attempts per client address
+email address and per client address; the API counts failed bearer token attempts per client address
 under a kind of its own, so the two never lock each other out. Counting is one atomic statement,
 so concurrent failures from one subject are never lost.
 """
@@ -97,7 +97,7 @@ async def register_attempt_failure(
     ip_address: str | None,
     now: datetime,
 ) -> list[str]:
-    """Count one failed credential check against the name and the client address.
+    """Count one failed credential check against the email and the client address.
 
     Returns which of the two ("user", "ip") reached their limit and are now locked. Sign in and
     the account screens share these counters, so a guess costs the same wherever it is made. The
@@ -138,7 +138,7 @@ async def record_lockouts(
 async def current_lock(
     db: AsyncSession, *, subject: str, ip_address: str | None, now: datetime
 ) -> timedelta | None:
-    """How long the name or the client address stays locked, or None when neither is."""
+    """How long the email or the client address stays locked, or None when neither is."""
     counters = [
         await get_counter(db, LoginCounterKind.USER, subject),
         await get_counter(db, LoginCounterKind.IP, ip_address) if ip_address else None,
@@ -149,9 +149,9 @@ async def current_lock(
 def lockout_events(
     policy: AuthPolicy, *, user: User | None, ip_address: str | None, locked: list[str]
 ) -> list[LockoutStarted]:
-    """The events for the lockouts a failed attempt started, one per name or address locked.
+    """The events for the lockouts a failed attempt started, one per email or address locked.
 
-    The user is named only for a lock on the name, and only when the name is a user's own.
+    The user is named only for a lock on the email, and only when the email is a user's own.
     """
     minutes = int(policy.lockout_duration.total_seconds() // 60)
     events: list[LockoutStarted] = []
