@@ -39,8 +39,6 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-install-project
 
 FROM python:3.14-slim AS runtime
-ARG APP_UID=1000
-ARG APP_GID=1000
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app \
@@ -50,10 +48,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends git openssh-client ca-certificates \
     && apt-get clean \
     && find /var/lib/apt/lists -type f -delete \
-    && groupadd --gid "$APP_GID" app \
-    && useradd --uid "$APP_UID" --gid "$APP_GID" --no-create-home --shell /usr/sbin/nologin app \
-    && mkdir -p /app /data \
-    && chown app:app /data
+    && mkdir -p /app /data
 COPY --from=docker:29.9.1-cli /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=docker:29.9.1-cli /usr/local/libexec/docker/cli-plugins/docker-compose \
     /usr/local/libexec/docker/cli-plugins/docker-compose
@@ -64,7 +59,6 @@ WORKDIR /app
 COPY app ./app
 COPY start.sh alembic.ini ./
 COPY --from=assets /build/app/static/style.css ./app/static/style.css
-USER app
 VOLUME /data
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
@@ -72,9 +66,16 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
 CMD ["sh", "start.sh"]
 
 FROM runtime AS test
-USER root
+ARG APP_UID=1000
+ARG APP_GID=1000
 COPY --from=deps-dev /opt/venv /opt/venv
 COPY pyproject.toml ./
 COPY scripts ./scripts
 COPY demo ./demo
+COPY deploy ./deploy
+COPY README.md ./
+# The suite runs as an ordinary user: permission checks mean nothing to root.
+RUN groupadd --gid "$APP_GID" app \
+    && useradd --uid "$APP_UID" --gid "$APP_GID" --no-create-home --shell /usr/sbin/nologin app \
+    && chown app:app /data
 USER app

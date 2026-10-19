@@ -4,9 +4,11 @@ Each banner is derived from stored state when a page is requested, so it stays u
 is gone and no request has to clear it. Only pages are given banners, and only for the
 superadmin. The backup banner follows the newest backup that a person or the schedule asked for:
 it shows while that backup failed or could not be copied to the extra destination, and goes
-when a later one succeeds. The SMTP banner shows while mail is not set up, and a delivery banner
-for each channel (mail, webhook) that has failed since one last worked. The git banner shows
-while the last scheduled push failed and goes when a push works or the git settings change.
+when a later one succeeds. The allowed paths banner shows while the list is empty, because
+nothing can be deployed before the superadmin adds a folder. The SMTP banner shows while mail is
+not set up, and a delivery banner for each channel (mail, webhook) that has failed since one last
+worked. The git banner shows while the last scheduled push failed and goes when a push works or
+the git settings change.
 """
 
 from dataclasses import dataclass
@@ -16,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.display_time import DisplayTime
 from app.models import (
+    AllowedPath,
     Backup,
     BackupStatus,
     BackupTrigger,
@@ -29,6 +32,7 @@ REQUESTED_TRIGGERS = (BackupTrigger.MANUAL, BackupTrigger.SCHEDULED, BackupTrigg
 BACKUP_SETTINGS_HREF = "/settings/backup"
 SMTP_SETTINGS_HREF = "/settings/smtp"
 GIT_SETTINGS_HREF = "/settings/git"
+PATHS_SETTINGS_HREF = "/settings/paths"
 NOTIFICATION_SETTINGS_HREF = "/settings/notifications"
 
 
@@ -39,6 +43,17 @@ class ShellBanner:
     message: str
     action_label: str
     action_href: str
+
+
+async def allowed_paths_banner(db: AsyncSession) -> ShellBanner | None:
+    """The first-run banner while the allowed path list is empty, None once it has an entry."""
+    if await db.scalar(select(AllowedPath.id).limit(1)) is not None:
+        return None
+    return ShellBanner(
+        "No allowed paths yet, add one in Settings: deployments can only use folders on the list.",
+        "Open allowed paths",
+        PATHS_SETTINGS_HREF,
+    )
 
 
 async def backup_banner(db: AsyncSession, display: DisplayTime) -> ShellBanner | None:
@@ -133,6 +148,7 @@ async def load_shell_banners(
         smtp = (await load_stored_settings(db)).smtp
     banners: list[ShellBanner] = []
     for banner in (
+        await allowed_paths_banner(db),
         await backup_banner(db, display),
         smtp_banner(smtp),
         await git_banner(db, display),

@@ -13,7 +13,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app import VERSION
 from app.api.errors import refusal_handler
 from app.api.v1 import router as api_router
-from app.config import get_settings
+from app.config import TUNING_ENVIRONMENTS, get_settings
 from app.core.crypto import CryptoError, build_crypto_service
 from app.core.db import create_engine, create_session_factory
 from app.core.log import configure_logging, get_logger
@@ -93,6 +93,13 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     except CryptoError as error:
         log.error("startup refused: %s", error)
         raise
+    if settings.environment not in TUNING_ENVIRONMENTS and not settings.base_url.startswith(
+        "https://"
+    ):
+        log.warning(
+            "ENVMANAGER_BASE_URL is not an https address: the session cookie is sent without "
+            "the Secure flag. Set an https base URL when the application is reached over https."
+        )
     settings.data_path.mkdir(parents=True, exist_ok=True)
     server_lock = take_server_lock(settings.server_lock_file)
     application.state.server_lock = server_lock

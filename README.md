@@ -6,6 +6,72 @@ them to host paths with version history, audit log, dist comparison and drift pr
 Developer conventions are in `AGENTS.md`; live work state is in `PROGRESS.md`. Run everything
 through `make` (see `make help`); nothing runs on the host directly.
 
+## Deployment
+
+The application is one image. `deploy/compose.yaml` is the example to copy: one service
+(`envmanager`) with the image, the key file, the base URL, the data volume, the host folders the
+deployments live in and the port on the loopback address.
+
+1. Build or pull the image. From a checkout, `docker build -t envmanager:1 .` builds the
+   production image (the last stage of the `Dockerfile` is the runtime image); put the name you
+   used into `image:`.
+2. Make the master key and keep it apart from the data volume and from every backup:
+
+   ```
+   openssl rand -base64 32 > master.key
+   chmod 600 master.key
+   ```
+
+   The sample mounts it read-only at `/run/keys/master.key` and points `ENVMANAGER_KEY_FILE` at
+   it. The key is not inside `./data`, so a copy of the data folder or of a backup never carries
+   it. Store another copy in a password manager or secret store. Without it the data cannot be
+   read (see Backup and restore and Key rotation).
+3. Set `ENVMANAGER_BASE_URL` to the address people open, and mount the host folders that hold the
+   deployments (`/var/www/vhosts` and `/opt` in the sample) at the same path as on the host.
+   Mounts are read-write; the allowed path list in Settings decides which of them the application
+   may use.
+4. Start it with `docker compose up -d`, create the first superadmin with `docker compose exec
+   envmanager envmanager user create --email you@example.com --name "Your Name" --group
+   superadmin` (see Users), and sign in at the base URL. Until the superadmin adds an allowed path
+   in Settings a banner says so and nothing can be deployed.
+
+**Why the container runs as root.** A deploy writes files into the deployment folders and gives
+them the mode, owner and group of their deployment. Changing the owner of a file, and replacing a
+file that belongs to another user, needs root, and the Docker socket (post-deploy commands) is
+root equivalent on the host anyway, so a non-root user would add little protection and break the
+owner and group fields. The image does not create another user. Root also reads the socket
+without any group, so `group_add` in the sample is needed only if you override the user of the
+container; then give it the group id of the host's `docker` group.
+
+**Owner, group and mode of what a deploy writes.** A file a deploy creates is mode 0600 and owned
+by root unless the deployment or the environment names an owner and a group (a user name or a
+numeric id, and a group name or id). A container that Compose starts as another user cannot read
+a root owned 0600 file. Set the owner and group of the deployment to the account that container
+runs as, or give the file a wider mode, so the file is readable where it is used. The numeric ids
+must match the ones inside that container, because names are looked up in this container.
+
+**Base URL and cookies.** The session cookie is sent with the `Secure` flag only when
+`ENVMANAGER_BASE_URL` starts with `https://`. Behind a reverse proxy that ends https, set an
+https base URL and list the proxy in `ENVMANAGER_TRUSTED_PROXIES` (see Network configuration),
+so the scheme is read from `X-Forwarded-Proto`. With an `http://` base URL outside development
+the application logs a warning at startup, because the cookie then has no `Secure` flag.
+
+**Docker socket.** Mounting `/var/run/docker.sock` turns post-deploy commands on; without it the
+feature is off. The socket gives root on the host to whoever can reach the application with a
+deploy right, so mount it only when you need the commands.
+
+**Upgrades and the automatic backup.** Pull or build the new image and run `docker compose up -d`.
+When the new version changes the database, the application takes a backup into `/data/backups`
+before it migrates (see Backup and restore for the restore steps). Take a manual backup before an
+upgrade you care about.
+
+**One process.** The scheduler and the deploy locks live in the process, so run exactly one
+container per data folder and one worker. A second server on the same folder is refused at
+start.
+
+**Limits.** Post-deploy output is scrubbed of the managed values, but values shorter than 4
+characters are not scrubbed (the output would turn unreadable); keep secrets longer than that.
+
 ## Network configuration
 
 Startup configuration comes from environment variables only. Every value is checked when the
@@ -320,8 +386,8 @@ with the new key.
    must already exist, so a key is never written to a folder that vanishes with the container; it
    refuses an existing file that is not a valid key and a key equal to the current one. To use a key
    you made yourself (`openssl rand -base64 32 > newkey/master.key`), pass that file: an existing
-   valid key file is used as it is and may be mounted read-only. The container user must be able to
-   write to the folder when the file is to be created.
+   valid key file is used as it is and may be mounted read-only. The folder must be writable by the
+   container (it runs as root) when the file is to be created.
 
 3. Copy the new key into your secret store and keep the old key there too, apart from the backup
    files and labelled with the backups it opens. The output names the backup that was taken first:

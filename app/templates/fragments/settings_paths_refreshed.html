@@ -1,0 +1,5 @@
+{#- The answer to a table refresh: the panel, and the banner area sent again out of band, because
+    adding the first entry or removing the last one sets or clears the allowed paths banner.
+    Context: rows; the banners are the request's own. -#}
+{% include "fragments/settings_paths_table.html" %}
+{% with oob = true %}{% include "fragments/banner_area.html" %}{% endwith %}

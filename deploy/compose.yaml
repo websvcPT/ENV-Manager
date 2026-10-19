@@ -1,0 +1,23 @@
+# ENV Manager production example. Replace the image with the one you build or pull, create
+# master.key (a base64 encoded 32 byte key) outside the data folder, and set the base URL to the
+# address people open.
+services:
+  envmanager:
+    image: registry.example.com/envmanager:1
+    restart: unless-stopped
+    environment:
+      ENVMANAGER_KEY_FILE: /run/keys/master.key
+      ENVMANAGER_BASE_URL: https://env.example.com
+      # Peers whose X-Forwarded-For and X-Forwarded-Proto headers are believed (the reverse
+      # proxy in front of the application):
+      # ENVMANAGER_TRUSTED_PROXIES: 172.18.0.0/16
+    volumes:
+      - ./data:/data
+      - ./master.key:/run/keys/master.key:ro
+      - /var/www/vhosts:/var/www/vhosts
+      - /opt:/opt
+      # optional: enables post-deploy commands (root-equivalent on the host)
+      # - /var/run/docker.sock:/var/run/docker.sock
+    # group_add: ["<docker group id>"]
+    ports:
+      - 127.0.0.1:8080:8080

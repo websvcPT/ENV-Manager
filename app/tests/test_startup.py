@@ -1,5 +1,6 @@
 """Tests that the application lifespan enforces the master key."""
 
+import logging
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -81,6 +82,44 @@ async def test_the_docker_cli_is_built_from_the_configured_socket(
         assert cli.socket_path == configured / "elsewhere.sock"
         assert cli.environment()["DOCKER_HOST"] == f"unix://{configured / 'elsewhere.sock'}"
         assert (await cli.status()).mounted is False
+
+
+@pytest.mark.parametrize(
+    ("environment", "base_url", "warns"),
+    [
+        ("production", "http://envmanager.example:8080", True),
+        ("staging", "http://envmanager.example", True),
+        ("production", "https://envmanager.example", False),
+        ("development", "http://localhost:8080", False),
+        ("testing", "http://localhost:8080", False),
+    ],
+)
+async def test_an_http_base_url_outside_development_warns_once_at_startup(
+    configured: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    environment: str,
+    base_url: str,
+    warns: bool,
+) -> None:
+    """The session cookie is only Secure under an https base URL, so startup says so."""
+    monkeypatch.setenv("ENVMANAGER_ENVIRONMENT", environment)
+    monkeypatch.setenv("ENVMANAGER_BASE_URL", base_url)
+    monkeypatch.setenv("ENVMANAGER_CSRF_SECRET", "x" * 40)
+    get_settings.cache_clear()
+    caplog.set_level(logging.WARNING, logger="envmanager.main")
+    application = create_app()
+    async with application.router.lifespan_context(application):
+        pass
+    messages = [
+        record.getMessage() for record in caplog.records if record.name == "envmanager.main"
+    ]
+    if warns:
+        assert len(messages) == 1
+        assert "ENVMANAGER_BASE_URL" in messages[0] and "Secure" in messages[0]
+        assert base_url not in messages[0]
+    else:
+        assert messages == []
 
 
 async def test_the_seeded_application_starts_on_a_database_already_at_head(

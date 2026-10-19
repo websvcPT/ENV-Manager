@@ -1,6 +1,6 @@
 .PHONY: up up-app upforce up-bg wait-app stop destroy logs app app-logs lint format tests \
 	tests-docker migrate revision seed dev-cleanup dev-reset check-pins e2e e2e-lock e2e-demo demo-up \
-	demo-down demo-reset frontend-build tailwind-download tailwind-build tailwind-watch \
+	demo-down demo-reset demo-root-scenarios frontend-build tailwind-download tailwind-build tailwind-watch \
 	static-fetch help
 
 # Extra arguments for `make tests` (pytest) and `make e2e` (playwright test); empty runs everything.
@@ -141,11 +141,18 @@ demo-reset: ## Restore the demo target files to the baseline (drift, identical, 
 # playwright/docker-tests run against the same stack, whose app reaches the host Docker daemon.
 # The demo override is always taken down again, and the target files left at the baseline,
 # whether or not they pass.
+demo-root-scenarios: ## Run the owner and group scenarios as root in a throwaway container of the demo stack
+	DOCKER_GID=$$(stat -c %g $(DOCKER_SOCKET)) $(DEMO_COMPOSE) run --rm -T --no-deps --user 0 app \
+		sh -c 'sh /app/scripts/test.sh -n 0 app/real_scenarios/test_demo_owner_root.py; \
+		status=$$?; chown -R $(APP_UID):$(APP_GID) "$$ENVMANAGER_DEMO_ROOT"; exit $$status'
+
 e2e-demo: ## Bring the demo override up, run the real-scenario tests and the Docker browser specs, take it down
 	@status=0; \
 	{ $(MAKE) --no-print-directory demo-up \
 		&& $(MAKE) --no-print-directory demo-reset \
 		&& docker compose exec -T app sh /app/scripts/test.sh -n 0 app/real_scenarios \
+			--ignore=app/real_scenarios/test_demo_owner_root.py \
+		&& $(MAKE) --no-print-directory demo-root-scenarios \
 		&& sh scripts/e2e-seed.sh \
 		&& docker compose -f docker-compose-e2e.yml run --rm playwright-demo; } || status=$$?; \
 	$(MAKE) --no-print-directory demo-reset || status=$$?; \

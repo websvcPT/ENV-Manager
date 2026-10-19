@@ -12,6 +12,7 @@ from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.core.display_time import display_of
 from app.core.templating import render
 from app.services.allowed_paths import (
     AllowedPathError,
@@ -24,13 +25,14 @@ from app.services.allowed_paths import (
     uncovered_deployments,
 )
 from app.services.settings_events import SettingsNotifier
+from app.services.shell_banners import load_shell_banners
 from app.web.dependencies import audit_actor, get_db, get_settings_notifier
 from app.web.htmx import events_response, hx_events
 from app.web.settings_tabs import ManageSettings, tab_context
 
 router = APIRouter()
 
-TABLE_FRAGMENT = "fragments/settings_paths_table.html"
+REFRESHED_FRAGMENT = "fragments/settings_paths_refreshed.html"
 ADD_FRAGMENT = "fragments/settings_path_add.html"
 CHECKS_FRAGMENT = "fragments/settings_path_checks.html"
 REMOVE_FRAGMENT = "fragments/settings_path_remove.html"
@@ -58,8 +60,9 @@ async def paths_page(request: Request, db: Database, _context: ManageSettings) -
 
 @router.get("/settings/paths/table", include_in_schema=False)
 async def paths_table(request: Request, db: Database, _context: ManageSettings) -> Response:
-    """The table fragment, refreshed after an entry is added or removed."""
-    return render(request, TABLE_FRAGMENT, await _table_context(db))
+    """The table fragment, refreshed after an entry is added or removed, with the banners."""
+    request.state.banners = await load_shell_banners(db, display_of(request))
+    return render(request, REFRESHED_FRAGMENT, await _table_context(db))
 
 
 @router.get("/settings/paths/new", include_in_schema=False)

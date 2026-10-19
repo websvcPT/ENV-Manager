@@ -281,3 +281,49 @@ async def test_removing_an_entry_twice_answers_that_it_is_gone(
     assert (await root.get(f"/settings/paths/{fancy}/remove", headers=HTMX)).status_code == 404
     removed = [e for e in await settings_entries(web_app) if e.action == "allowed_path.remove"]
     assert len(removed) == 1
+
+
+FIRST_RUN_BANNER = "No allowed paths yet, add one in Settings"
+
+
+def banner_area(page: str) -> str:
+    """The markup of the banner area in a response."""
+    found = re.search(r'<div id="banner-area".*?</div>', page, re.DOTALL)
+    assert found is not None
+    return found.group(0)
+
+
+async def test_the_banner_asks_the_superadmin_for_a_first_path_until_one_exists(
+    root: httpx.AsyncClient, web_app: FastAPI
+) -> None:
+    """Shown on every page while the list is empty, refreshed with the table, then gone."""
+    assert FIRST_RUN_BANNER not in (await root.get("/settings/paths")).text
+    async with web_app.state.session_factory() as db:
+        await db.execute(delete(AllowedPath))
+        await db.commit()
+    page = (await root.get("/settings/security")).text
+    assert FIRST_RUN_BANNER in banner_area(page)
+    assert 'href="/settings/paths"' in banner_area(page)
+    refreshed = (await root.get("/settings/paths/table", headers=HTMX)).text
+    assert FIRST_RUN_BANNER in banner_area(refreshed)
+    assert 'hx-swap-oob="true"' in banner_area(refreshed)
+    async with web_app.state.session_factory() as db:
+        db.add(AllowedPath(path="/opt"))
+        await db.commit()
+    refreshed = (await root.get("/settings/paths/table", headers=HTMX)).text
+    assert FIRST_RUN_BANNER not in refreshed
+    assert 'hx-swap-oob="true"' in banner_area(refreshed)
+    assert FIRST_RUN_BANNER not in (await root.get("/settings/security")).text
+
+
+async def test_no_other_group_is_asked_for_a_first_path(
+    web_client: httpx.AsyncClient, web_app: FastAPI
+) -> None:
+    """Admins and viewers never get the banner, even with an empty list."""
+    async with web_app.state.session_factory() as db:
+        await db.execute(delete(AllowedPath))
+        await db.commit()
+    await sign_in(web_client, "admin")
+    page = await web_client.get("/projects")
+    assert page.status_code == 200
+    assert FIRST_RUN_BANNER not in page.text

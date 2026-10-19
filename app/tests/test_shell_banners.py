@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.core.db import create_session_factory
 from app.core.display_time import DisplayTime
-from app.models import Backup, BackupStatus, BackupTrigger
+from app.models import AllowedPath, Backup, BackupStatus, BackupTrigger
 from app.services.app_settings import SmtpSettings
 from app.services.backup import backup_file_name
 from app.services.notify_status import EMAIL_CHANNEL, clear_failures, record_failure
@@ -17,6 +17,14 @@ from app.services.shell_banners import ShellBanner, load_shell_banners
 
 NOW = datetime(2026, 10, 17, 2, 0, tzinfo=UTC)
 CONFIGURED = SmtpSettings("smtp.test", 25, "none", "", "env-manager@example.com")
+
+
+@pytest.fixture(autouse=True)
+async def one_allowed_path(engine: AsyncEngine) -> None:
+    """The first-run banner is not under test here: give the database one allowed path."""
+    async with create_session_factory(engine)() as db:
+        db.add(AllowedPath(path="/srv/deployments"))
+        await db.commit()
 
 
 def record(trigger: BackupTrigger, status: BackupStatus, minutes: int) -> Backup:
@@ -39,6 +47,34 @@ async def banners_after(
         db.add_all(records)
         await db.commit()
         return await load_shell_banners(db, display or DisplayTime(), CONFIGURED)
+
+
+async def test_an_empty_allowed_path_list_raises_the_first_run_banner_until_one_is_added(
+    engine: AsyncEngine,
+) -> None:
+    """The banner leads the list, names Settings and links to the Allowed paths tab."""
+    async with create_session_factory(engine)() as db:
+        await db.execute(delete(AllowedPath))
+        await db.commit()
+        banners = await load_shell_banners(db, DisplayTime(), CONFIGURED)
+        (banner,) = banners
+        assert banner.message.startswith("No allowed paths yet, add one in Settings")
+        assert (banner.action_label, banner.action_href) == (
+            "Open allowed paths",
+            "/settings/paths",
+        )
+        db.add(AllowedPath(path="/opt"))
+        await db.commit()
+        assert await load_shell_banners(db, DisplayTime(), CONFIGURED) == []
+
+
+async def test_the_first_run_banner_comes_before_the_others(engine: AsyncEngine) -> None:
+    """With nothing set up, the allowed paths prompt is the first one shown."""
+    async with create_session_factory(engine)() as db:
+        await db.execute(delete(AllowedPath))
+        await db.commit()
+        banners = await load_shell_banners(db, DisplayTime())
+        assert [banner.action_href for banner in banners] == ["/settings/paths", "/settings/smtp"]
 
 
 async def test_no_backup_and_a_good_backup_raise_no_banner(engine: AsyncEngine) -> None:
