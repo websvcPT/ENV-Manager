@@ -121,7 +121,7 @@ async def test_every_tab_has_the_header_and_the_eight_tabs(
 async def test_an_unbuilt_tab_shows_a_note_and_no_controls(
     root: httpx.AsyncClient, tab: str
 ) -> None:
-    """The tabs of later features say what is missing and offer nothing to press or type."""
+    """The tab of a later feature says what is missing and offers nothing to press or type."""
     page = main_of((await root.get(f"/settings/{tab}")).text)
     assert 'role="note"' in page
     assert not re.search(r"<(input|select|textarea|form)\b", page)

@@ -40,7 +40,14 @@ from app.services.account_sessions import (
 )
 from app.services.auth_policy import AuthPolicy
 from app.services.totp_setup import SETUP_LIFETIME, PendingSetup, begin_setup, read_setup
-from app.web.dependencies import AuthContext, get_auth_policy, get_crypto, get_db, require_auth
+from app.web.dependencies import (
+    AuthContext,
+    get_auth_policy,
+    get_crypto,
+    get_db,
+    get_notifier,
+    require_auth,
+)
 
 router = APIRouter()
 
@@ -209,6 +216,7 @@ async def password_route(
             new_password=new_password,
             confirm_password=confirm_password,
             ip_address=client_address(request),
+            notifier=get_notifier(request),
         )
     except AccountLockedError as error:
         page = _password_context(policy, notice="locked", wait=_wait_text(error.retry_after))
@@ -291,6 +299,7 @@ async def totp_enable(
             password=current_password,
             code=code,
             ip_address=client_address(request),
+            notifier=get_notifier(request),
         )
     except AccountLockedError as error:
         page = _totp_context(
@@ -335,6 +344,7 @@ async def totp_remove(
             password=current_password,
             code=code,
             ip_address=client_address(request),
+            notifier=get_notifier(request),
         )
     except AccountLockedError as error:
         page = _remove_context("locked", wait=_wait_text(error.retry_after))

@@ -23,7 +23,7 @@ from app.services.grants import (
 )
 from app.services.permissions import Capability
 from app.services.user_detail import list_user_rows, load_user_detail
-from app.web.dependencies import AuthContext, get_db, require_capability
+from app.web.dependencies import AuthContext, get_db, get_notifier, require_capability
 
 router = APIRouter()
 
@@ -140,6 +140,7 @@ async def create_user_route(
                 actor_user=context.user,
                 ip_address=client_address(request),
                 grants=targets,
+                notifier=get_notifier(request),
             )
         except (user_service.UserError, GrantError) as error:
             errors[error.field or "name"] = str(error)
@@ -377,6 +378,7 @@ async def _apply_action(
                 actor_type=AuditActorType.USER,
                 actor_user=actor,
                 ip_address=ip_address,
+                notifier=get_notifier(request),
             )
             updated = "two-factor-reset"
         else:
@@ -389,6 +391,7 @@ async def _apply_action(
                     actor_type=AuditActorType.USER,
                     actor_user=actor,
                     ip_address=ip_address,
+                    notifier=get_notifier(request),
                 )
             updated = "enabled" if active else "disabled"
     except user_service.LastSuperadminError, user_service.TwoFactorNotOnError:

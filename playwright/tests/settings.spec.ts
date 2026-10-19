@@ -21,7 +21,7 @@ const TABS = [
   ['notifications', 'Notifications'],
   ['general', 'General'],
 ] as const;
-const UNBUILT = ['smtp', 'git', 'notifications'] as const;
+const UNBUILT = ['git'] as const;
 const DEFAULT_TIMEOUTS = { idle: '30', absolute: '12' };
 
 /*

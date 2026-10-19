@@ -24,6 +24,13 @@ from app.services.api_errors import ApiRefusal, RefusalKind
 from app.services.audit import AuditActor, record_actor_audit, record_audit
 from app.services.auth_policy import AuthPolicy
 from app.services.lockout import get_counter, register_failure, remaining_lock
+from app.services.notify_events import (
+    NO_EVENT_NOTIFIER,
+    EventNotifier,
+    LockoutScope,
+    LockoutStarted,
+    announce_event,
+)
 from app.services.permissions import AccessScope, load_token_scope
 from app.services.tokens import (
     MAX_SECRET_LENGTH,
@@ -135,6 +142,7 @@ async def authenticate_token(
     ip_address: str | None,
     policy: AuthPolicy,
     *,
+    notifier: EventNotifier = NO_EVENT_NOTIFIER,
     now: datetime | None = None,
 ) -> ApiCaller:
     """The caller a bearer token stands for, or an ``ApiRefusal``: 401, or 429 for a locked address.
@@ -202,6 +210,10 @@ async def authenticate_token(
         )
     await db.commit()
     if locked:
+        minutes = int(policy.lockout_duration.total_seconds() // 60)
+        await announce_event(
+            notifier, LockoutStarted(LockoutScope.API_ADDRESS, None, ip_address, minutes)
+        )
         raise ApiRefusal(
             RefusalKind.RATE_LIMITED,
             RATE_LIMITED_MESSAGE,

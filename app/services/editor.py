@@ -30,6 +30,13 @@ from app.services.audit import record_audit
 from app.services.content import content_problem, normalize_newlines
 from app.services.env_parser import parse_env
 from app.services.env_text import VARIABLE_NAME, EnvEditError, VariableChanges, apply_changes
+from app.services.notify_events import (
+    NO_EVENT_NOTIFIER,
+    EventNotifier,
+    FileChange,
+    FileChanged,
+    announce_event,
+)
 from app.services.permissions import (
     AccessScope,
     Capability,
@@ -373,6 +380,20 @@ def _key_value_text(current: str, submission: KeyValueSubmission) -> tuple[str, 
     return text, sorted(set(values) | removed)
 
 
+def file_changed(header: EditorHeader, number: int, change: FileChange, actor: User) -> FileChanged:
+    """The event for a new version of the file, saved by the user."""
+    return FileChanged(
+        header.project_id,
+        header.deployment_id,
+        header.service_id,
+        header.id,
+        header.name,
+        number,
+        change,
+        actor.name,
+    )
+
+
 async def save_version(
     db: AsyncSession,
     crypto: CryptoService,
@@ -384,6 +405,7 @@ async def save_version(
     comment: str,
     raw_content: str | None = None,
     key_values: KeyValueSubmission | None = None,
+    notifier: EventNotifier = NO_EVENT_NOTIFIER,
 ) -> EnvironmentVersion:
     """Save the edit as the next version.
 
@@ -439,4 +461,5 @@ async def save_version(
     except IntegrityError as error:
         await db.rollback()
         raise EditorError(STALE_MESSAGE) from error
+    await announce_event(notifier, file_changed(header, version.number, FileChange.SAVED, actor))
     return version

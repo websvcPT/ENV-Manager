@@ -1,9 +1,9 @@
-"""The Settings screens: the tab bar, security, post-deploy, general and the unbuilt tabs.
+"""The Settings screens: the tab bar, security, post-deploy, general and the unbuilt tab.
 
 Superadmin only: every route here holds the settings capability, so any other group gets 403 and
 the sidebar shows no link. Saves are validated on the server, audited with the old and new values
-and effective at once, because every reader loads the stored settings per request. The tabs of
-features that do not exist yet show their panel title and say so; they have no controls.
+and effective at once, because every reader loads the stored settings per request. The tab of
+a feature that does not exist yet shows its panel title and says so; it has no controls.
 """
 
 import os
@@ -48,7 +48,7 @@ SECURITY_FRAGMENT = "fragments/settings_security.html"
 POST_DEPLOY_FRAGMENT = "fragments/settings_post_deploy.html"
 GENERAL_FRAGMENT = "fragments/settings_general.html"
 TIME_ZONE_SETTING = "general.time_zone"
-UNBUILT_TABS = ("smtp", "git", "notifications")
+UNBUILT_TABS = ("git",)
 
 Database = Annotated[AsyncSession, Depends(get_db)]
 Stored = Annotated[StoredSettings, Depends(get_stored_settings)]

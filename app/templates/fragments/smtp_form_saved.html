@@ -1,0 +1,5 @@
+{#- The answer to a stored SMTP save: the form with its toast, and the banner area sent again out
+    of band, because saving can set or clear the SMTP not configured banner. Context: what
+    fragments/settings_smtp.html needs; the banners are the request's own. -#}
+{% include "fragments/settings_smtp.html" %}
+{% with oob = true %}{% include "fragments/banner_area.html" %}{% endwith %}

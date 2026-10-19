@@ -20,13 +20,13 @@ from app.core.middleware import install_middleware
 from app.core.migrations import migrate_database
 from app.core.observability import configure_otel, init_sentry
 from app.services.api_errors import ApiRefusal
-from app.services.backup_events import NoBackupNotifier
 from app.services.backup_run import BackupLocations, adopt_backups
 from app.services.backup_schedule import BackupScheduler
 from app.services.deploy_recovery import recover_interrupted_runs
 from app.services.docker_cli import DockerCli
 from app.services.key_check import ensure_key_check
-from app.services.settings_events import NoSettingsNotifier
+from app.services.mailer import FastapiMailTransport
+from app.services.notifier import Notifications
 from app.web.access_grid import router as access_grid_router
 from app.web.account import router as account_router
 from app.web.audit import router as audit_router
@@ -46,7 +46,9 @@ from app.web.service_detail import router as service_detail_router
 from app.web.service_form import router as service_form_router
 from app.web.settings import router as settings_router
 from app.web.settings_backup import router as settings_backup_router
+from app.web.settings_notifications import router as settings_notifications_router
 from app.web.settings_paths import router as settings_paths_router
+from app.web.settings_smtp import router as settings_smtp_router
 from app.web.tokens import router as tokens_router
 from app.web.users import router as users_router
 
@@ -72,6 +74,7 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     settings.data_path.mkdir(parents=True, exist_ok=True)
     engine = create_engine(settings.database_path)
     scheduler: BackupScheduler | None = None
+    notifier: Notifications | None = None
     try:
         await migrate_database(engine, settings.database_path, settings.backup_path)
         session_factory = create_session_factory(engine)
@@ -87,14 +90,20 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
             await recover_interrupted_runs(session, settings.lock_path)
         application.state.crypto = crypto
         application.state.login_ip_max_failures = settings.login_ip_max_failures
-        application.state.settings_notifier = NoSettingsNotifier()
+        transport = FastapiMailTransport()
+        notifier = Notifications(
+            session_factory, crypto, base_url=settings.base_url, transport=transport
+        )
+        application.state.mail_transport = transport
+        application.state.notifier = notifier
+        application.state.settings_notifier = notifier
         application.state.docker_cli = DockerCli(socket_path=settings.docker_socket)
         application.state.lock_dir = settings.lock_path
         application.state.engine = engine
         application.state.session_factory = session_factory
         locations = BackupLocations.from_settings(settings)
         application.state.backup_locations = locations
-        application.state.backup_notifier = NoBackupNotifier()
+        application.state.backup_notifier = notifier
         await adopt_backups(session_factory, locations)
         scheduler = BackupScheduler(
             session_factory, locations, lambda: application.state.backup_notifier
@@ -106,6 +115,8 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     finally:
         if scheduler is not None:
             scheduler.shutdown()
+        if notifier is not None:
+            await notifier.close()
         await engine.dispose()
 
 
@@ -149,6 +160,8 @@ def create_app() -> FastAPI:
     application.include_router(account_router)
     application.include_router(settings_paths_router)
     application.include_router(settings_backup_router)
+    application.include_router(settings_smtp_router)
+    application.include_router(settings_notifications_router)
     application.include_router(settings_router)
     application.include_router(api_router)
 

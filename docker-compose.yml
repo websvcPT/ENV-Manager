@@ -41,6 +41,14 @@ services:
       - ./dev/deployments:/srv/deployments
     command: sh -c "uv sync --frozen && sh /app/start.sh"
 
+  # Development mail catcher. The dev dataset points the SMTP settings at smtp4dev:25 and the
+  # messages the app sends are read in its web UI at http://localhost:5080.
+  smtp4dev:
+    image: rnwood/smtp4dev:3.15.0
+    hostname: smtp4dev
+    ports:
+      - "5080:80"
+
 volumes:
   venv:
   uv-cache:

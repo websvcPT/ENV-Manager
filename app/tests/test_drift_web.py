@@ -24,9 +24,11 @@ from app.models import (
     EnvironmentVersion,
 )
 from app.seeds import EDITOR_SECRET_VALUES
+from app.services.notify_events import FileChange, FileChanged
 from app.services.versions import create_version
 from app.tests.conftest import sign_in
 from app.tests.dist_helpers import relocate_deployments
+from app.tests.notify_helpers import RecordingEvents, file_event_ids
 from app.tests.web_helpers import (
     HTMX,
     EnvironmentIds,
@@ -536,3 +538,31 @@ async def test_the_halted_result_link_opens_the_view(
     opened = await web_client.get(f"/environments/{world.environment}/drift")
     assert opened.status_code == 200 and "Never deployed" in opened.text
     assert world.target.read_text(encoding="utf-8") == "DISK_ONLY=1\n"
+
+
+async def test_importing_the_target_announces_the_file_change_to_the_notifier(
+    web_app: FastAPI, web_client: httpx.AsyncClient, world: World
+) -> None:
+    """The import route hands its notifier to the service."""
+    await deployed_then_drifted(web_app, web_client, world)
+    recorder = RecordingEvents()
+    web_app.state.notifier = recorder
+    await sign_in(web_client, "admin")
+    before = await newest_number(web_app, world.environment)
+    values = await page_vals(web_client, world.environment, "import")
+    assert (
+        await post(web_client, f"/environments/{world.environment}/import", values)
+    ).status_code == 200
+    project, deployment, service, name = await file_event_ids(web_app, world.environment)
+    assert recorder.events == [
+        FileChanged(
+            project,
+            deployment,
+            service,
+            world.environment,
+            name,
+            before + 1,
+            FileChange.IMPORTED,
+            "admin",
+        )
+    ]

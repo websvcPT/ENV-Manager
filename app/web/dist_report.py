@@ -22,7 +22,7 @@ from app.services.dist_check import (
 )
 from app.services.editor import EditorError
 from app.services.permissions import CAPABILITY_GROUPS, Capability
-from app.web.dependencies import get_crypto, get_db
+from app.web.dependencies import get_crypto, get_db, get_notifier
 from app.web.deployments import DeploymentContext, deployment_access
 from app.web.editor import EnvironmentContext, environment_access
 
@@ -125,6 +125,7 @@ async def add_missing(
             actor=access.auth.user,
             ip_address=client_address(request),
             base_number=int(_plain_number(base) or 0),
+            notifier=get_notifier(request),
         )
     except EditorError as error:
         check = await _check(db, request, access)

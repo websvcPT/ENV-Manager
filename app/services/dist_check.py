@@ -43,6 +43,7 @@ from app.services.editor import (
     stored_version,
 )
 from app.services.env_parser import parse_env
+from app.services.notify_events import NO_EVENT_NOTIFIER, EventNotifier
 from app.services.paths import load_allowed_paths
 from app.services.permissions import AccessScope, Capability, ItemLevel, load_items
 
@@ -326,6 +327,7 @@ async def add_missing_keys(
     actor: User,
     ip_address: str | None,
     base_number: int,
+    notifier: EventNotifier = NO_EVENT_NOTIFIER,
 ) -> AddedKeys:
     """Save the keys the dist file defines and the environment lacks, with empty values.
 
@@ -353,5 +355,6 @@ async def add_missing_keys(
         base_number=base_number,
         comment=ADDED_COMMENT,
         key_values=KeyValueSubmission(added=[(key, "") for key in keys]),
+        notifier=notifier,
     )
     return AddedKeys(version=version, keys=keys)

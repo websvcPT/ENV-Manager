@@ -20,6 +20,7 @@ from app.models.deploy import (
     DriftState,
     PostDeployStatus,
 )
+from app.models.notifications import NotificationStatus, UserSeenAddress
 from app.models.operations import AllowedPath, Backup, BackupStatus, BackupTrigger
 from app.models.structure import (
     Deployment,
@@ -72,6 +73,7 @@ __all__ = [
     "LoginCounter",
     "LoginCounterKind",
     "MissingTargetPolicy",
+    "NotificationStatus",
     "PendingLogin",
     "PostDeployStatus",
     "Project",
@@ -80,5 +82,6 @@ __all__ = [
     "ServiceHook",
     "User",
     "UserGroup",
+    "UserSeenAddress",
     "UserSession",
 ]

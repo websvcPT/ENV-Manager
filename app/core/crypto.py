@@ -143,6 +143,15 @@ class CryptoService:
         data = content.encode("utf-8") if isinstance(content, str) else content
         return hmac.new(self._hash_key, data, hashlib.sha256).hexdigest()
 
+    def keyed_hash(self, domain: str, value: str) -> str:
+        """Return a keyed hash of a value for one purpose, so hashes never match across purposes.
+
+        The subkey is derived from the hashing key and the domain name, which keeps, for
+        example, a hash of a client address from equalling a content hash of the same text.
+        """
+        subkey = hmac.new(self._hash_key, f"domain:{domain}".encode(), hashlib.sha256).digest()
+        return hmac.new(subkey, value.encode("utf-8"), hashlib.sha256).hexdigest()
+
     def make_key_check(self) -> str:
         """Create the record stored in the database to detect a wrong key at startup."""
         return self.encrypt(KEY_CHECK_PLAINTEXT, KEY_CHECK_CONTEXT)

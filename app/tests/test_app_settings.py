@@ -204,12 +204,12 @@ async def test_a_secret_cannot_be_moved_to_another_setting_name(
 async def test_only_declared_secret_names_are_accepted(
     engine: AsyncEngine, crypto: CryptoService
 ) -> None:
-    """With no declared secret, nothing can be written or read as one."""
+    """A name that no feature declared as secret can neither be written nor read as one."""
     async with create_session_factory(engine)() as db:
         with pytest.raises(ValueError, match="not a secret setting"):
-            await write_secret(db, crypto, "smtp.password", "x", actor=AuditActor.cli())
+            await write_secret(db, crypto, "git.token", "x", actor=AuditActor.cli())
         with pytest.raises(ValueError, match="not a secret setting"):
-            await read_secret(db, crypto, "smtp.password")
+            await read_secret(db, crypto, "git.token")
         assert (await db.execute(select(AppSetting))).first() is None
 
 

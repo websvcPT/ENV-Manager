@@ -39,6 +39,7 @@ from app.seeds.demo import (
     SeedDemo,
     ensure_demo_project,
 )
+from app.seeds.dev_smtp import DEV_SMTP, ensure_dev_smtp
 
 __all__ = [
     "BULK_ACTION",
@@ -53,6 +54,7 @@ __all__ = [
     "DEMO_STACK_FOLDER",
     "DEV_ALLOWED_ROOT",
     "DEV_PASSWORD",
+    "DEV_SMTP",
     "DEV_TOTP_SECRET",
     "EDITOR_ENVIRONMENT_NAME",
     "EDITOR_SECRET_VALUES",
@@ -70,6 +72,7 @@ __all__ = [
     "ensure_demo_project",
     "ensure_deployment_history",
     "ensure_dev_host_paths",
+    "ensure_dev_smtp",
     "ensure_editor_figures",
     "ensure_service_figures",
     "ensure_totp_user",

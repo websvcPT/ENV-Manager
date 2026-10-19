@@ -181,7 +181,7 @@ test.describe('backups', () => {
       /^\/settings\/backups\/\d+\/download$/,
     );
     await expect(first.getByRole('button', { name: /Restore/ })).toBeVisible();
-    await expect(page.locator('[data-fragment="banner-area"]')).toBeEmpty();
+    await expect(page.locator('[data-fragment="banner-area"]')).not.toContainText('Backup');
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
   });
 
@@ -274,9 +274,9 @@ test.describe('backups', () => {
     }
     await runNow(page);
     await expect(toast(page.locator('#backups'))).toContainText('Backup created');
-    await expect(page.locator('[data-fragment="banner-area"]')).toBeEmpty();
+    await expect(page.locator('[data-fragment="banner-area"]')).not.toContainText('Backup');
     await page.goto('/projects');
-    await expect(page.locator('[data-fragment="banner-area"]')).toBeEmpty();
+    await expect(page.locator('[data-fragment="banner-area"]')).not.toContainText('Backup');
   });
 
   test('the restore dialog names the backup, warns, and Cancel restores nothing', async ({

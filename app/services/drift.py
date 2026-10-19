@@ -39,8 +39,20 @@ from app.services.deploy import DeployEngine
 from app.services.deploy_baseline import Baseline, load_baselines
 from app.services.deploy_policy import drift_state
 from app.services.deploy_types import DeployOutcome, DeployRequest
-from app.services.editor import STALE_MESSAGE, EditorHeader, audit_reveal, stored_version
+from app.services.editor import (
+    STALE_MESSAGE,
+    EditorHeader,
+    audit_reveal,
+    file_changed,
+    stored_version,
+)
 from app.services.env_parser import parse_env
+from app.services.notify_events import (
+    NO_EVENT_NOTIFIER,
+    EventNotifier,
+    FileChange,
+    announce_event,
+)
 from app.services.paths import load_allowed_paths
 from app.services.permissions import AccessScope
 from app.services.target_files import (
@@ -576,6 +588,7 @@ async def import_target(
     ip_address: str | None,
     base_number: int,
     target_hash: str,
+    notifier: EventNotifier = NO_EVENT_NOTIFIER,
 ) -> EnvironmentVersion:
     """Save the target as read now, byte for byte, as the next version of the file.
 
@@ -631,6 +644,7 @@ async def import_target(
     except IntegrityError as error:
         await db.rollback()
         raise DriftError(STALE_MESSAGE) from error
+    await announce_event(notifier, file_changed(header, version.number, FileChange.IMPORTED, actor))
     return version
 
 

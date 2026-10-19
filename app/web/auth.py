@@ -21,6 +21,7 @@ from app.web.dependencies import (
     get_auth_policy,
     get_crypto,
     get_db,
+    get_notifier,
     require_auth,
     resolve_optional_auth,
 )
@@ -133,6 +134,7 @@ async def login(
         password=password,
         ip_address=client_address(request),
         user_agent=request.headers.get("user-agent"),
+        notifier=get_notifier(request),
     )
     if result.status is LoginStatus.SUCCESS and result.token:
         return _clear_pending(_signed_in(request, result.token, policy))
@@ -186,6 +188,7 @@ async def login_totp(
         code=code,
         ip_address=client_address(request),
         user_agent=request.headers.get("user-agent"),
+        notifier=get_notifier(request),
     )
     if result.status is LoginStatus.SUCCESS and result.token:
         return _clear_pending(_signed_in(request, result.token, policy))

@@ -19,8 +19,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.crypto import CryptoService
 from app.models import AuditActorType, AuditResult, EnvironmentVersion, User
 from app.services.audit import record_audit
-from app.services.editor import STALE_MESSAGE, EditorHeader, audit_reveal, stored_version
+from app.services.editor import (
+    STALE_MESSAGE,
+    EditorHeader,
+    audit_reveal,
+    file_changed,
+    stored_version,
+)
 from app.services.env_parser import parse_env
+from app.services.notify_events import (
+    NO_EVENT_NOTIFIER,
+    EventNotifier,
+    FileChange,
+    announce_event,
+)
 from app.services.versions import create_version
 
 SHORT_HASH_LENGTH = 7
@@ -243,6 +255,7 @@ async def restore_version(
     base_number: int,
     actor: User,
     ip_address: str | None,
+    notifier: EventNotifier = NO_EVENT_NOTIFIER,
 ) -> EnvironmentVersion:
     """Save the content of version ``number`` exactly as it is as the next version.
 
@@ -286,4 +299,5 @@ async def restore_version(
     except IntegrityError as error:
         await db.rollback()
         raise RestoreError(STALE_MESSAGE) from error
+    await announce_event(notifier, file_changed(header, version.number, FileChange.RESTORED, actor))
     return version

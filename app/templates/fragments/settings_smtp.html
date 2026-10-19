@@ -1,0 +1,34 @@
+{#- The SMTP settings form. A refused save swaps this again with the reasons next to the fields
+    (422); a stored save swaps it with a toast. The password field is never filled: an empty
+    field keeps the stored password. Context: form (SmtpForm), errors (messages by field), saved
+    (none, or tone, title and message of a toast), tls_options (value and label pairs),
+    password_stored (a password is stored) and test_to (the address the test mail is offered
+    to). -#}
+{% from "macros/buttons.html" import button %}
+{% from "macros/feedback.html" import toast %}
+{% from "macros/forms.html" import checkbox, field, select_field %}
+<form id="smtp" data-fragment="smtp" hx-post="/settings/smtp" hx-target="this" hx-swap="outerHTML" class="flex flex-col gap-4 px-4 pb-5 md:px-5">
+<div class="grid gap-4 md:grid-cols-3">
+{{ field("sh", "Server", name="host", value=form.host, mono=true, extra_class="md:col-span-2", hint="Leave empty to switch mail off.", error=errors.get("host"), autocomplete="off", spellcheck="false") }}
+{{ field("sp", "Port", name="port", value=form.port, mono=true, error=errors.get("port"), inputmode="numeric", autocomplete="off") }}
+</div>
+<div class="grid gap-4 md:grid-cols-3">
+{{ select_field("tls", "TLS mode", tls_options, selected=form.tls_mode, name="tls_mode", error=errors.get("tls_mode")) }}
+{{ field("su", "Username", name="username", value=form.username, hint="Leave empty if the server takes mail without signing in.", error=errors.get("username"), autocomplete="off", spellcheck="false") }}
+{{ field("spw", "Password", name="password", type="password", placeholder=("••••••••" if password_stored else ""), hint=("Stored encrypted. Leave empty to keep it." if password_stored else "Stored encrypted."), error=errors.get("password"), autocomplete="new-password") }}
+</div>
+{%- if password_stored %}
+{{ checkbox("remove_password", "Remove the stored password", checked=form.remove_password) }}
+{%- endif %}
+{{ field("sf", "From address", name="from_address", value=form.from_address, extra_class="max-w-md", error=errors.get("from_address"), autocomplete="off", spellcheck="false") }}
+<div class="flex flex-wrap items-center gap-3 border-t border-line pt-4">
+{{ field("st", "Send test mail to", name="test_to", value=test_to, extra_class="w-72 max-w-full", autocomplete="off", spellcheck="false") }}
+{{ button("Send test mail", hx_post="/settings/smtp/test", hx_include="#st", hx_target="#smtp-test", extra_class="self-end max-md:h-11") }}
+<div id="smtp-test" aria-live="polite" class="self-end"></div>
+<p class="basis-full text-xs text-ink2">The test mail uses the saved settings, so save a change before testing it.</p>
+</div>
+<div class="flex flex-wrap items-center gap-3">{{ button("Save settings", kind="primary-sm", type="submit", extra_class="max-md:h-11") }}</div>
+{%- if saved %}
+{{ toast(saved.tone, saved.message, saved.title, floating=true) }}
+{%- endif %}
+</form>

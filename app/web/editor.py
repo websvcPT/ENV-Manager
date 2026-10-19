@@ -32,7 +32,14 @@ from app.services.editor import (
 )
 from app.services.permissions import CAPABILITY_GROUPS, AccessScope, Capability
 from app.web.access_tabs import AccessSubject, mount_access_routes
-from app.web.dependencies import AuthContext, get_crypto, get_db, get_scope, require_auth
+from app.web.dependencies import (
+    AuthContext,
+    get_crypto,
+    get_db,
+    get_notifier,
+    get_scope,
+    require_auth,
+)
 
 router = APIRouter()
 
@@ -337,6 +344,7 @@ async def save_environment(
             comment=comment if isinstance(comment, str) else "",
             raw_content=(content if isinstance(content, str) else None) if raw else None,
             key_values=None if raw else _submission(form),
+            notifier=get_notifier(request),
         )
     except EditorError as error:
         return _save_error(request, access, form, str(error))

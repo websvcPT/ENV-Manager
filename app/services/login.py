@@ -21,12 +21,20 @@ from app.services import totp
 from app.services.audit import record_audit
 from app.services.auth_policy import AuthPolicy
 from app.services.lockout import (
+    announce_lockouts,
     get_counter,
     record_lockouts,
     register_attempt_failure,
     remaining_lock,
 )
+from app.services.notify_events import (
+    NO_EVENT_NOTIFIER,
+    EventNotifier,
+    SignInFromNewAddress,
+    announce_event,
+)
 from app.services.pending_logins import consume_pending_login, create_pending_login
+from app.services.seen_addresses import note_sign_in_address
 from app.services.sessions import create_session
 
 
@@ -102,6 +110,7 @@ async def authenticate(
     password: str,
     ip_address: str | None = None,
     user_agent: str | None = None,
+    notifier: EventNotifier = NO_EVENT_NOTIFIER,
     now: datetime | None = None,
 ) -> LoginResult:
     """Check the name and password and start a session on success.
@@ -135,11 +144,13 @@ async def authenticate(
             pending_token = await create_pending_login(db, user, policy, now=moment)
             await db.commit()
             return LoginResult(LoginStatus.TOTP_REQUIRED, pending_token=pending_token)
-        return await _succeed(db, policy, user, ip_address, user_agent, subject, moment)
+        return await _succeed(
+            db, crypto, policy, user, ip_address, user_agent, subject, moment, notifier
+        )
     if user is not None and matched:
         reason = "user_disabled"
 
-    return await _fail(db, policy, user, reason, subject, ip_address, moment)
+    return await _fail(db, policy, user, reason, subject, ip_address, moment, notifier)
 
 
 async def complete_totp_login(
@@ -151,6 +162,7 @@ async def complete_totp_login(
     code: str,
     ip_address: str | None = None,
     user_agent: str | None = None,
+    notifier: EventNotifier = NO_EVENT_NOTIFIER,
     now: datetime | None = None,
 ) -> LoginResult:
     """Finish a login with the authenticator code and the pending login from the password step.
@@ -182,10 +194,12 @@ async def complete_totp_login(
     step = totp.matching_step(user, code, crypto, now=moment)
     if step is not None:
         if await totp.claim_step(db, user, step):
-            return await _succeed(db, policy, user, ip_address, user_agent, subject, moment)
+            return await _succeed(
+                db, crypto, policy, user, ip_address, user_agent, subject, moment, notifier
+            )
         reason = "reused_totp_code"
 
-    failed = await _fail(db, policy, user, reason, subject, ip_address, moment)
+    failed = await _fail(db, policy, user, reason, subject, ip_address, moment, notifier)
     if failed.status is LoginStatus.INVALID:
         pending = await create_pending_login(db, user, policy, now=moment)
         await db.commit()
@@ -201,6 +215,7 @@ async def _fail(
     subject: str,
     ip_address: str | None,
     now: datetime,
+    notifier: EventNotifier,
 ) -> LoginResult:
     """Count and audit a failed attempt, locking the name or address at the limit."""
     locked_subjects = await register_attempt_failure(
@@ -217,6 +232,9 @@ async def _fail(
     )
     await record_lockouts(db, policy, user=user, ip_address=ip_address, locked=locked_subjects)
     await db.commit()
+    await announce_lockouts(
+        notifier, policy, user=user, ip_address=ip_address, locked=locked_subjects
+    )
     if locked_subjects:
         return LoginResult(LoginStatus.LOCKED, retry_after=policy.lockout_duration)
     return LoginResult(LoginStatus.INVALID)
@@ -224,14 +242,19 @@ async def _fail(
 
 async def _succeed(
     db: AsyncSession,
+    crypto: CryptoService,
     policy: AuthPolicy,
     user: User,
     ip_address: str | None,
     user_agent: str | None,
     subject: str,
     now: datetime,
+    notifier: EventNotifier,
 ) -> LoginResult:
-    """Reset the name counter, start the session and audit the login."""
+    """Reset the name counter, start the session and audit the login.
+
+    A sign-in from an address the user has not used before is announced after the commit.
+    """
     counter = await get_counter(db, LoginCounterKind.USER, subject)
     if counter is not None:
         counter.failures = 0
@@ -249,5 +272,8 @@ async def _succeed(
         actor_user=user,
         ip_address=ip_address,
     )
+    new_address = await note_sign_in_address(db, crypto, user.id, ip_address, now)
     await db.commit()
+    if new_address and ip_address:
+        await announce_event(notifier, SignInFromNewAddress(user.name, ip_address))
     return LoginResult(LoginStatus.SUCCESS, token=token, user=user)

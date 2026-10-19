@@ -30,7 +30,7 @@ from app.services.drift import (
     reveal_drift,
 )
 from app.services.permissions import Capability
-from app.web.dependencies import get_crypto, get_db, get_deploy_engine
+from app.web.dependencies import get_crypto, get_db, get_deploy_engine, get_notifier
 from app.web.deploy_dialog import DEPLOY_TIMEOUT_MS
 from app.web.editor import EnvironmentContext, environment_access
 
@@ -182,6 +182,7 @@ async def import_file(
             ip_address=client_address(request),
             base_number=_plain_number(form.get("base_version")) or 0,
             target_hash=_text(form, "target_hash"),
+            notifier=get_notifier(request),
         )
     except DriftError as error:
         return render(request, NOTICE, {"error": str(error)}, status_code=422)

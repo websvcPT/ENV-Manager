@@ -26,7 +26,7 @@ from app.services.environments import (
 )
 from app.services.paths import load_allowed_paths
 from app.services.permissions import Capability
-from app.web.dependencies import get_crypto, get_db
+from app.web.dependencies import get_crypto, get_db, get_notifier
 from app.web.service_detail import ServiceContext, service_access
 
 router = APIRouter()
@@ -169,6 +169,7 @@ async def create_environment_route(
             clean,
             actor=access.auth.user,
             ip_address=client_address(request),
+            notifier=get_notifier(request),
         )
     except EnvironmentFormError as error:
         return render(

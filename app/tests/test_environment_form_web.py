@@ -19,7 +19,9 @@ from app.models import (
     EnvironmentVersion,
     Service,
 )
+from app.services.notify_events import FileChange, FileChanged
 from app.tests.conftest import sign_in
+from app.tests.notify_helpers import RecordingEvents
 
 HTMX = {"HX-Request": "true"}
 
@@ -471,3 +473,39 @@ async def test_new_service_refusals_swap_the_form(
     )
     assert response.status_code == 422 and message in response.text
     assert response.text.lstrip().startswith("<form") and 'aria-invalid="true"' in response.text
+
+
+async def test_adding_an_environment_announces_the_file_to_the_notifier(
+    web_client: httpx.AsyncClient, layout: Layout, web_app: FastAPI
+) -> None:
+    """The add environment route hands its notifier to the service: version 1 is a new file."""
+    recorder = RecordingEvents()
+    web_app.state.notifier = recorder
+    await sign_in(web_client, "root")
+    response = await post(
+        web_client, f"/services/{layout.mysql}/environments/new", env_data(layout)
+    )
+    assert response.status_code == 200
+    async with web_app.state.session_factory() as db:
+        created = (
+            await db.execute(select(Environment).where(Environment.name == ".env.cache"))
+        ).scalar_one()
+        project = (await db.get(Deployment, layout.deployment)).project_id
+    assert recorder.events == [
+        FileChanged(
+            project,
+            layout.deployment,
+            layout.mysql,
+            created.id,
+            ".env.cache",
+            1,
+            FileChange.CREATED,
+            "root",
+        )
+    ]
+    bad = await post(
+        web_client,
+        f"/services/{layout.mysql}/environments/new",
+        env_data(layout, name=".env.cache", target_path="environments/.env.cache2"),
+    )
+    assert bad.status_code == 422 and len(recorder.events) == 1

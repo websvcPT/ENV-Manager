@@ -33,6 +33,13 @@ from app.services.confined_read import (
 )
 from app.services.content import MAX_CONTENT_BYTES, content_problem, normalize_newlines
 from app.services.deployments import FILE_MODE_PATTERN, parse_account
+from app.services.notify_events import (
+    NO_EVENT_NOTIFIER,
+    EventNotifier,
+    FileChange,
+    FileChanged,
+    announce_event,
+)
 from app.services.paths import AllowedPaths
 from app.services.services import ServiceNameError, add_service, validate_service_name
 from app.services.versions import create_version
@@ -314,6 +321,7 @@ async def create_environment(
     *,
     actor: User,
     ip_address: str | None = None,
+    notifier: EventNotifier = NO_EVENT_NOTIFIER,
 ) -> Environment:
     """Create the environment, its optional new service and version 1 in one transaction.
 
@@ -379,4 +387,17 @@ async def create_environment(
         raise EnvironmentFormError(
             {"name": f"This service already has a file named {clean.name}."}
         ) from error
+    await announce_event(
+        notifier,
+        FileChanged(
+            deployment.project_id,
+            deployment.id,
+            environment.service_id,
+            environment.id,
+            environment.name,
+            version.number,
+            FileChange.CREATED,
+            actor.name,
+        ),
+    )
     return environment

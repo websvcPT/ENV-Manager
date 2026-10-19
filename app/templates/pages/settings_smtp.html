@@ -1,0 +1,9 @@
+{#- The SMTP tab: the mail server settings and the test mail. Context: the settings tab context
+    and what fragments/settings_smtp.html needs. -#}
+{% extends "layouts/settings.html" %}
+{% from "macros/panels.html" import panel %}
+{% block tab %}
+{% call panel("SMTP", "smtp-title", fragment="settings-smtp") %}
+{% include "fragments/settings_smtp.html" %}
+{% endcall %}
+{% endblock %}

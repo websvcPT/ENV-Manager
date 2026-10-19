@@ -31,8 +31,10 @@ log = get_logger("app_settings")
 ACTION_UPDATE = "settings.update"
 TARGET_TYPE = "settings"
 
+SMTP_PASSWORD_KEY = "smtp.password"  # noqa: S105
+
 # Names of settings whose value is a secret. Each feature that stores one adds its name here.
-SECRET_KEYS: frozenset[str] = frozenset()
+SECRET_KEYS: frozenset[str] = frozenset({SMTP_PASSWORD_KEY})
 
 
 @dataclass(frozen=True)
@@ -84,6 +86,51 @@ class BackupSettings:
 
 
 @dataclass(frozen=True)
+class SmtpSettings:
+    """The mail server notifications go through. The password is a secret kept apart.
+
+    ``tls_mode`` is ``none``, ``starttls`` or ``tls`` (implicit TLS). An empty username means
+    the server takes mail without signing in. Mail is not sent until a host and a from address
+    are set.
+    """
+
+    host: str = ""
+    port: int = 587
+    tls_mode: str = "starttls"
+    username: str = ""
+    from_address: str = ""
+
+    @property
+    def configured(self) -> bool:
+        """Whether there is enough to send mail: a host and a from address."""
+        return bool(self.host and self.from_address)
+
+
+@dataclass(frozen=True)
+class NotificationSettings:
+    """Which events send mail and, for events about a project, who receives them.
+
+    Each event has a switch named after it. An event about a project also has a recipients
+    choice (``superadmins``, ``project_admins`` or ``both``) in the field of the same name with
+    ``_to`` added; events about the whole system always go to the superadmins. Successful
+    deploys and file changes are off by default, everything that needs a person's attention is
+    on.
+    """
+
+    login_new_address: bool = True
+    lockout: bool = True
+    deploy_succeeded: bool = False
+    deploy_succeeded_to: str = "project_admins"
+    deploy_problem: bool = True
+    deploy_problem_to: str = "project_admins"
+    file_changed: bool = False
+    file_changed_to: str = "project_admins"
+    user_changed: bool = True
+    backup_failed: bool = True
+    git_push_failed: bool = True
+
+
+@dataclass(frozen=True)
 class StoredSettings:
     """Every typed section, as stored now."""
 
@@ -91,6 +138,8 @@ class StoredSettings:
     post_deploy: PostDeploySettings = field(default_factory=PostDeploySettings)
     general: GeneralSettings = field(default_factory=GeneralSettings)
     backup: BackupSettings = field(default_factory=BackupSettings)
+    smtp: SmtpSettings = field(default_factory=SmtpSettings)
+    notifications: NotificationSettings = field(default_factory=NotificationSettings)
 
 
 @dataclass(frozen=True)
@@ -159,6 +208,8 @@ async def load_stored_settings(db: AsyncSession) -> StoredSettings:
         post_deploy=read_section("post_deploy", PostDeploySettings, stored),
         general=read_section("general", GeneralSettings, stored),
         backup=read_section("backup", BackupSettings, stored),
+        smtp=read_section("smtp", SmtpSettings, stored),
+        notifications=read_section("notifications", NotificationSettings, stored),
     )
 
 
@@ -249,3 +300,36 @@ async def read_secret(db: AsyncSession, crypto: CryptoService, key: str) -> str 
     if row is None:
         return None
     return crypto.decrypt_text(row.value, context=_secret_context(key))
+
+
+async def has_secret(db: AsyncSession, key: str) -> bool:
+    """Whether a secret is stored, without decrypting it."""
+    _require_secret_key(key)
+    return await db.get(AppSetting, key) is not None
+
+
+async def clear_secret(db: AsyncSession, key: str, *, actor: AuditActor) -> bool:
+    """Remove a stored secret and audit that it was removed. Returns whether one was stored.
+
+    The caller commits.
+    """
+    _require_secret_key(key)
+    row = await db.get(AppSetting, key)
+    if row is None:
+        return False
+    await db.delete(row)
+    section = key.partition(".")[0]
+    await record_actor_audit(
+        db,
+        actor,
+        action=ACTION_UPDATE,
+        result=AuditResult.SUCCESS,
+        target_type=TARGET_TYPE,
+        target_name=section,
+        details={
+            "section": section,
+            "changes": [{"setting": key, "kind": "secret", "removed": True}],
+        },
+    )
+    await db.flush()
+    return True

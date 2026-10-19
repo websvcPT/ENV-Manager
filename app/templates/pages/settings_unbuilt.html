@@ -4,9 +4,7 @@
 {% from "macros/feedback.html" import note %}
 {% from "macros/panels.html" import panel %}
 {% set unbuilt = {
-  "smtp": ("SMTP", "The mail server, credentials, from address and test mail are not set up yet. They arrive with notifications, and the app sends no mail until then."),
-  "git": ("Private git repository", "Git sync is not available yet. The repository, credentials, branch and push triggers arrive with it, and nothing is pushed until then."),
-  "notifications": ("Notification events", "Notification events, recipients and the webhook are not available yet. They arrive with notifications, and nothing is sent until then.")
+  "git": ("Private git repository", "Git sync is not available yet. The repository, credentials, branch and push triggers arrive with it, and nothing is pushed until then.")
 } %}
 {% block tab %}
 {% call panel(unbuilt[settings_tab][0], "unbuilt-title", fragment="settings-" ~ settings_tab) %}

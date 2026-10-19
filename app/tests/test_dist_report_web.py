@@ -18,8 +18,10 @@ from app.models import (
     Project,
 )
 from app.seeds import EDITOR_SECRET_VALUES
+from app.services.notify_events import FileChange, FileChanged
 from app.tests.conftest import sign_in
 from app.tests.dist_helpers import link_dist, relocate_deployments, write_dist
+from app.tests.notify_helpers import RecordingEvents, file_event_ids
 from app.tests.web_helpers import EnvironmentIds, assert_never_cached, main_of, post
 
 DIST_DEFAULT_VALUE = "dist-default-Qw83"
@@ -525,3 +527,19 @@ async def test_deployment_overview_says_so_when_there_is_no_file_to_check(
     assert "No files to check" in body and 'data-fragment="dist-row"' not in body
     assert "outside the allowed paths" not in body
     assert await entries(web_app, "environment.dist_check") == []
+
+
+async def test_adding_the_missing_keys_announces_the_file_change_to_the_notifier(
+    web_client: httpx.AsyncClient, web_app: FastAPI, ids: EnvironmentIds, roots: dict[str, Path]
+) -> None:
+    """The keys go through the editor save, which tells the notifier after its commit."""
+    write_dist(roots["prod"], DB_DIST, "DB_HOST=\nDB_PORT=\nDB_NAME=x\nDB_USER=\n")
+    recorder = RecordingEvents()
+    web_app.state.notifier = recorder
+    await sign_in(web_client, "admin")
+    response = await post(web_client, f"/environments/{ids.db}/add-missing?base=2")
+    assert response.status_code == 200
+    project, deployment, service, name = await file_event_ids(web_app, ids.db)
+    assert recorder.events == [
+        FileChanged(project, deployment, service, ids.db, name, 3, FileChange.SAVED, "admin")
+    ]

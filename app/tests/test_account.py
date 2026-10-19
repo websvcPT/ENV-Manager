@@ -3,6 +3,7 @@
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import pyotp
 import pytest
@@ -90,7 +91,7 @@ async def counters(db: AsyncSession) -> dict[LoginCounterKind, int]:
 
 async def change(account: Account, **overrides: str) -> int:
     """Change the password with valid fields unless overridden."""
-    fields = {
+    fields: dict[str, Any] = {
         "current_password": PASSWORD,
         "new_password": NEW_PASSWORD,
         "confirm_password": NEW_PASSWORD,

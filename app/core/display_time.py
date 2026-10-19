@@ -74,6 +74,11 @@ class DisplayTime:
         local = self.local(moment)
         return f"{local.strftime(day)} {_clock(local, clock)}"
 
+    def clock(self, moment: datetime) -> str:
+        """The time of day in the display zone and format, without the date."""
+        _label, _day, clock = DATE_FORMATS.get(self.date_format, DATE_FORMATS[DEFAULT_DATE_FORMAT])
+        return _clock(self.local(moment), clock)
+
 
 def _clock(moment: datetime, pattern: str) -> str:
     """The time of day, with no leading zero on a twelve hour clock."""

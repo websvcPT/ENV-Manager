@@ -10,7 +10,9 @@ from sqlalchemy import select
 
 from app.models import AuditEntry, EnvironmentVersion
 from app.seeds import EDITOR_SECRET_VALUES
+from app.services.notify_events import FileChange, FileChanged
 from app.tests.conftest import sign_in
+from app.tests.notify_helpers import RecordingEvents, file_event_ids
 from app.tests.web_helpers import HTMX, EnvironmentIds, assert_never_cached, main_of, post
 
 CERTIFICATE_BODY = "c2VlZA=="
@@ -358,3 +360,28 @@ async def test_save_needs_a_csrf_token_and_a_length(
         {"mode": "raw", "base_version": "3", "content": "A" * 1_100_000},
     )
     assert too_large.status_code == 422 and "larger than 1024 KiB" in too_large.text
+
+
+async def test_saving_a_version_announces_the_file_change_to_the_notifier(
+    web_client: httpx.AsyncClient, ids: EnvironmentIds, web_app: FastAPI
+) -> None:
+    """The save route hands its notifier to the service, which tells it after the commit."""
+    recorder = RecordingEvents()
+    web_app.state.notifier = recorder
+    await sign_in(web_client, "admin")
+    response = await post(
+        web_client,
+        f"/environments/{ids.editor}/versions",
+        {"mode": "raw", "base_version": "3", "content": "A=1\n", "comment": "one"},
+    )
+    assert response.status_code == 200
+    project, deployment, service, name = await file_event_ids(web_app, ids.editor)
+    assert recorder.events == [
+        FileChanged(project, deployment, service, ids.editor, name, 4, FileChange.SAVED, "admin")
+    ]
+    refused = await post(
+        web_client,
+        f"/environments/{ids.editor}/versions",
+        {"mode": "raw", "base_version": "3", "content": "B=2\n", "comment": ""},
+    )
+    assert refused.status_code == 422 and len(recorder.events) == 1

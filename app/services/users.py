@@ -29,6 +29,13 @@ from app.services.grants import (
     record_grant_change,
     require_existing,
 )
+from app.services.notify_events import (
+    NO_EVENT_NOTIFIER,
+    EventNotifier,
+    UserChange,
+    UserChanged,
+    announce_event,
+)
 from app.services.pending_logins import discard_user_pending_logins
 from app.services.sessions import revoke_user_sessions
 from app.services.tokens import REASON_MOVED_TO_VIEWER, REASON_USER_DISABLED, revoke_user_tokens
@@ -128,6 +135,7 @@ async def create_user(
     actor_user: User | None = None,
     ip_address: str | None = None,
     grants: Collection[GrantTarget] = (),
+    notifier: EventNotifier = NO_EVENT_NOTIFIER,
 ) -> tuple[User, str]:
     """Create an active user with a generated password and initial grants, and audit it all.
 
@@ -170,6 +178,9 @@ async def create_user(
         add_grant_row(db, user, target)
         await record_grant_change(db, actor, user, "grant.add", target, labels[target])
     await db.commit()
+    await announce_event(
+        notifier, UserChanged(UserChange.CREATED, user.name, actor.label, group.value)
+    )
     return user, password
 
 
@@ -180,6 +191,7 @@ async def reset_password(
     actor_type: AuditActorType,
     actor_user: User | None = None,
     ip_address: str | None = None,
+    notifier: EventNotifier = NO_EVENT_NOTIFIER,
 ) -> str:
     """Give the user a new generated password, end their sessions and clear their lockout.
 
@@ -208,6 +220,12 @@ async def reset_password(
         details={"sessions_ended": ended},
     )
     await db.commit()
+    await announce_event(
+        notifier,
+        UserChanged(
+            UserChange.PASSWORD_RESET, user.name, AuditActor(actor_type, user=actor_user).label
+        ),
+    )
     return password
 
 
@@ -218,6 +236,7 @@ async def reset_two_factor(
     actor_type: AuditActorType,
     actor_user: User | None = None,
     ip_address: str | None = None,
+    notifier: EventNotifier = NO_EVENT_NOTIFIER,
 ) -> int:
     """Turn off a user's two-factor sign-in without their code, for a lost authenticator.
 
@@ -244,6 +263,12 @@ async def reset_two_factor(
         details={"sessions_ended": ended, "pending_logins_ended": waiting},
     )
     await db.commit()
+    await announce_event(
+        notifier,
+        UserChanged(
+            UserChange.TWO_FACTOR_RESET, user.name, AuditActor(actor_type, user=actor_user).label
+        ),
+    )
     return ended
 
 
@@ -308,6 +333,7 @@ async def set_user_active(
     actor_type: AuditActorType,
     actor_user: User | None = None,
     ip_address: str | None = None,
+    notifier: EventNotifier = NO_EVENT_NOTIFIER,
 ) -> int:
     """Enable or disable a user, audit it, and end the sessions of a disabled user.
 
@@ -349,6 +375,13 @@ async def set_user_active(
         details={"sessions_ended": ended, **details},
     )
     await db.commit()
+    if not active:
+        await announce_event(
+            notifier,
+            UserChanged(
+                UserChange.DISABLED, user.name, AuditActor(actor_type, user=actor_user).label
+            ),
+        )
     return ended
 
 

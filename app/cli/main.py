@@ -11,6 +11,7 @@ import typer
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.cli.notify import cli_notifier
 from app.config import get_settings
 from app.core.crypto import CryptoError, build_crypto_service
 from app.core.db import create_engine, create_session_factory
@@ -39,6 +40,7 @@ from app.seeds import (
     ensure_demo_project,
     ensure_deployment_history,
     ensure_dev_host_paths,
+    ensure_dev_smtp,
     ensure_editor_figures,
     ensure_service_figures,
     ensure_totp_user,
@@ -46,7 +48,6 @@ from app.seeds import (
 from app.seeds import seed as seed_data
 from app.services import users as user_service
 from app.services.audit import AuditActor
-from app.services.backup_events import NoBackupNotifier
 from app.services.backup_inspect import RestoreRefusedError
 from app.services.backup_lock import BackupBusyError
 from app.services.backup_restore import restore_backup
@@ -113,7 +114,12 @@ def create_user(
 
     async def operation(db: AsyncSession) -> str:
         _, password = await user_service.create_user(
-            db, name=name, email=email, group=group, actor_type=AuditActorType.CLI
+            db,
+            name=name,
+            email=email,
+            group=group,
+            actor_type=AuditActorType.CLI,
+            notifier=cli_notifier(db),
         )
         return password
 
@@ -152,7 +158,9 @@ def disable_user(name: Annotated[str, typer.Argument(help="Sign-in name.")]) -> 
 
     async def operation(db: AsyncSession) -> int:
         user = await user_service.get_user_by_name(db, name)
-        return await user_service.set_user_active(db, user, False, actor_type=AuditActorType.CLI)
+        return await user_service.set_user_active(
+            db, user, False, actor_type=AuditActorType.CLI, notifier=cli_notifier(db)
+        )
 
     ended = run_command(operation)
     typer.echo(f"disabled user {name.strip()}, {ended} session(s) ended")
@@ -176,7 +184,9 @@ def reset_user_password(name: Annotated[str, typer.Argument(help="Sign-in name."
 
     async def operation(db: AsyncSession) -> str:
         user = await user_service.get_user_by_name(db, name)
-        return await user_service.reset_password(db, user, actor_type=AuditActorType.CLI)
+        return await user_service.reset_password(
+            db, user, actor_type=AuditActorType.CLI, notifier=cli_notifier(db)
+        )
 
     password = run_command(operation)
     typer.echo(f"password reset for {name.strip()}")
@@ -190,7 +200,9 @@ def reset_user_two_factor(name: Annotated[str, typer.Argument(help="Sign-in name
 
     async def operation(db: AsyncSession) -> int:
         user = await user_service.get_user_by_name(db, name)
-        return await user_service.reset_two_factor(db, user, actor_type=AuditActorType.CLI)
+        return await user_service.reset_two_factor(
+            db, user, actor_type=AuditActorType.CLI, notifier=cli_notifier(db)
+        )
 
     ended = run_command(operation)
     typer.echo(f"two-factor sign-in reset for {name.strip()}, {ended} session(s) ended")
@@ -278,6 +290,7 @@ def deploy_service(
             crypto=build_crypto_service(settings.key, settings.key_file),
             lock_dir=settings.lock_path,
             hook_runner=DockerHookRunner(DockerCli(socket_path=settings.docker_socket)),
+            notifier=cli_notifier(db),
         )
         await recover_interrupted_runs(db, settings.lock_path)
         request = await _find_deploy_request(db, target, env or [], dry_run, force)
@@ -310,7 +323,7 @@ def create_backup_command() -> None:
             locations,
             trigger=BackupTrigger.CLI,
             actor=AuditActor.cli(),
-            notifier=NoBackupNotifier(),
+            notifier=cli_notifier(db),
         )
         record = run.record
         return record.filename, record.status, record.size_bytes, record.error
@@ -401,6 +414,12 @@ def _require_development_environment(action: str) -> None:
         raise typer.Exit(code=1)
 
 
+async def _ensure_dev_mail(db: AsyncSession) -> None:
+    """Point the SMTP settings at the development mail catcher, in development only."""
+    if get_settings().environment == "development":
+        await ensure_dev_smtp(db)
+
+
 @dev_app.command("seed")
 def seed_dataset() -> None:
     """Create the development dataset with its fixed dev-only passwords.
@@ -411,7 +430,9 @@ def seed_dataset() -> None:
     and scope, and a second page of entries), which the plain dataset leaves out so tests that
     read the audit log find only what they wrote.
     When ENVMANAGER_DEMO_ROOT is set the demo project rooted below it is created or completed too,
-    on a new and on an already seeded database.
+    on a new and on an already seeded database. In the development environment, and only while
+    SMTP is not configured, the SMTP settings are pointed at the smtp4dev service of the
+    development compose file.
     """
     _require_development_environment("seeding")
 
@@ -422,6 +443,7 @@ def seed_dataset() -> None:
             await seed_data(db, crypto, demo_root=settings.demo_root)
             await ensure_audit_figures(db)
             await ensure_dev_host_paths(db)
+            await _ensure_dev_mail(db)
             await db.commit()
         except SeedError:
             for name in (TOTP_USER_NAME, TOTP_ALT_USER_NAME):
@@ -434,6 +456,7 @@ def seed_dataset() -> None:
             if settings.demo_root is not None:
                 await ensure_demo_project(db, crypto, settings.demo_root)
             await ensure_dev_host_paths(db)
+            await _ensure_dev_mail(db)
             await db.commit()
             raise
 

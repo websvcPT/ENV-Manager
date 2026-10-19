@@ -1,0 +1,21 @@
+{#- The plain text part of every notification. Context: heading, summary, facts (label and value
+    pairs), items_title and items (an optional list), link and link_label (optional). The caller
+    undoes the escaping, because this part is not markup. -#}
+{{ heading }}
+
+{{ summary }}
+
+{% for label, value in facts -%}
+{{ label }}: {{ value }}
+{% endfor -%}
+{%- if items %}
+{{ items_title }}:
+{% for item in items -%}
+- {{ item }}
+{% endfor -%}
+{%- endif -%}
+{%- if link %}
+{{ link_label }}: {{ link }}
+{% endif %}
+--
+Sent by ENV Manager.

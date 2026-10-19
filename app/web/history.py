@@ -27,7 +27,7 @@ from app.services.version_history import (
     restore_version,
     reveal_diff,
 )
-from app.web.dependencies import get_crypto, get_db
+from app.web.dependencies import get_crypto, get_db, get_notifier
 from app.web.editor import EnvironmentContext, environment_access
 
 router = APIRouter()
@@ -168,6 +168,7 @@ async def restore_environment(
             base_number=base_number,
             actor=access.auth.user,
             ip_address=client_address(request),
+            notifier=get_notifier(request),
         )
     except VersionNotFoundError as error:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "version not found") from error

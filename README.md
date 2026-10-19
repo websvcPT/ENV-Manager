@@ -66,7 +66,9 @@ secret, trusted proxies and allowed sources stay in environment variables.
 | Post-deploy | The Docker socket status and the switch for post-deploy commands. |
 | General | Time zone and date format, the defaults of a new deployment, and the read-only diagnostics. |
 | Backup | Schedule, retention, an optional extra destination, the list of backups with Run now, Download and a confirmed Restore (see Backup and restore). |
-| SMTP, Git, Notifications | Not available yet: each shows its panel and says so. They arrive with the features they configure. |
+| SMTP | The mail server (host, port, TLS mode, username, password, from address) and a Send test mail button (see Notifications). |
+| Notifications | The event matrix: a switch for each event and who receives the events about a project (see Notifications). |
+| Git | Not available yet: it shows its panel and says so. It arrives with the feature it configures. |
 
 - **Allowed paths.** An entry is checked when it is added: absolute and normalized, an existing
   folder inside a host mount, never `/` or the data volume, and not already in the list (compared
@@ -75,8 +77,7 @@ secret, trusted proxies and allowed sources stay in environment variables.
   reads Missing, one that now resolves elsewhere reads Moved and is ignored until it is added
   again. Removing an entry deletes nothing on disk; the confirm dialog counts the deployments no
   other entry covers, which are flagged as outside the allowed paths. Every add and remove is
-  audited and announced through the settings notification seam, which delivers nothing until
-  notifications exist.
+  audited and announced to the superadmins as a system notification (see Notifications).
 - **Security.** Idle and absolute timeouts, lockout limits and the password length apply to the
   next request; a changed absolute timeout also recomputes the expiry of the sessions that are
   already open. The failure window (15 minutes) is not a setting. The sign-in limit per address
@@ -122,7 +123,8 @@ the backup files. A copy of the key next to the backups defeats the encryption.
   restored, but the copy to the extra destination failed). A failed or not copied newest backup
   raises the banner every superadmin page shows until a later backup succeeds, and every backup,
   whatever its outcome, is announced through the backup notifier (`app.state.backup_notifier`,
-  `app/services/backup_events.py`), which delivers nothing until notifications exist.
+  `app/services/backup_events.py`); a failed or not copied backup is a notification (see
+  Notifications).
 - **Schedule and retention** (Settings, Backup). The schedule is Off, Daily at 02:00, Every 6 hours
   or Weekly (Sunday at 02:00), in the display time zone of the General settings, so changing the
   zone moves the run. Retention is a number of backups or a number of days; the stored settings keep
@@ -187,6 +189,69 @@ unless the backup is complete, so a cron job notices a failed copy. The command 
 the scheduler of a running server: a restored schedule takes effect at the next start or the next
 save of the Backup settings. To recover onto an empty data volume, start the container with the
 same key, copy a downloaded backup in and run `backup restore`.
+
+## Notifications
+
+The application sends mail about what the superadmin and the admins need to know. Nothing is sent
+until the SMTP tab has a server and a from address, and until then every superadmin page shows the
+banner "SMTP is not configured". Mail goes through fastapi-mail, which is configured from the
+stored settings each time a mail is sent, never at start-up, so a save applies to the next mail.
+
+- **SMTP tab.** Server, port, TLS mode (None, STARTTLS or SSL/TLS), username, password and from
+  address. Emptying the server and the from address switches mail off. The password is encrypted in
+  the settings store and never put back into the page: an empty field keeps the stored password,
+  and a checkbox that appears while one is stored removes it. Send test mail goes through the
+  saved settings (so a working test means notifications work), shows how it went in words that
+  never repeat what the server said (cannot connect, no answer in time, refused login, refused
+  address, TLS failure) and is audited as `smtp.test`. Addresses are checked as plain addresses,
+  so names on private networks such as `ops@corp.local` work.
+- **Events (Notifications tab).** Each has a switch. On by default: a sign-in from an address that
+  user has not used before, a lockout (a name, an address, or the API from an address), a failed,
+  blocked or halted deploy (a failed post-deploy command included), a user created, disabled, given
+  a new password (changed by the user or reset by a superadmin or the command line) or whose
+  two-factor sign-in was reset, a failed or not copied backup, and a failed git push (the event
+  exists; git sync will fire it). Off by default: every successful deploy and every file
+  change (a new version saved, restored, imported from the host, created, or keys added from a dist
+  report). Changes to the allowed paths are always announced to the superadmins; there is no
+  switch for them.
+- **Recipients.** Events about the whole system go to the active superadmins. Events about a
+  project (deploy results and file changes) go to the project admins by default, or to the
+  superadmins, or to both, as chosen per event: a project admin is an active admin whose grants
+  reach at least one file the event is about, and each of them is told only about the files they
+  can reach, so a mail never names a file outside a user's access. Every recipient gets a message
+  of their own, so addresses are not shared, and an address is written to once.
+- **New address.** Each user has a small record of the addresses they signed in from, kept only as
+  keyed hashes (an HMAC under a subkey of the master key), at most the 20 seen most recently. The
+  first sign-in of a user, who has no record yet, is learned without a mail, which also means a
+  database that had users before this existed does not mail for all of them. A sign-in with no
+  client address is neither recorded nor announced. Key rotation will change the hashes, so after a
+  rotation every address looks new once.
+- **Delivery.** A mail is sent after the change that caused it was committed, in the background:
+  the request that causes an event never waits for the mail server and never fails because of it.
+  A mail that fails for a reason that can pass (no connection, no answer, a closed connection) is
+  tried again after 5 and 30 seconds, and each retry reads the settings again, so a server that was
+  fixed in the meantime is used; a refusal that cannot pass (login, address) is tried once. Up to
+  500 events wait at once; more are dropped and counted. A failure is logged with a fixed reason
+  and counted in the database, and the superadmin banner "Notification emails are failing" shows
+  how many mails could not be sent since one last worked (a save of the SMTP settings or a working
+  test mail starts the count again). Events still waiting when the server stops are lost.
+- **Command line.** The commands send the same notifications when SMTP is configured: `user
+  create`, `disable`, `passwd` and `reset-2fa`, `deploy` (a blocked, halted or failed result) and
+  `backup create` (a failed or not copied backup). The command process cannot leave work behind, so
+  it sends before it ends, once and without retries, within 30 seconds, and a mail that cannot be
+  sent never changes the output or the exit code of the command. It needs the master key to read the
+  SMTP password; without it nothing is sent.
+- **What a mail holds.** Names, ids, results and fixed sentences, in a plain text part and a simple
+  HTML part made from Jinja templates with autoescape on, with times in the time zone and date
+  format of the General settings. Never a value, a file's content, a password, a token or a command's
+  output. A name typed into the sign-in field that belongs to no user is never repeated in a lockout
+  mail. The password of a new or reset user is shown once on screen or in the command output and is
+  not in the mail.
+- **Development.** The development stack has a mail catcher, smtp4dev (`rnwood/smtp4dev:3.15.0`),
+  with its web interface at <http://localhost:5080>. `envmanager dev seed` points the SMTP settings
+  at it (`smtp4dev`, port 25, no TLS, no sign in) when `ENVMANAGER_ENVIRONMENT` is `development`
+  and SMTP is not configured yet, so every event of a development session appears there. Its API
+  (`/api/messages`) is how the browser specs read mail back.
 
 ## Demo deployment
 

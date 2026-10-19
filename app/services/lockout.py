@@ -16,6 +16,7 @@ from app.models import AuditActorType, AuditResult, LoginCounter, LoginCounterKi
 from app.models.types import UtcDateTime
 from app.services.audit import record_audit
 from app.services.auth_policy import AuthPolicy
+from app.services.notify_events import EventNotifier, LockoutScope, LockoutStarted, announce_event
 
 
 async def get_counter(
@@ -139,3 +140,35 @@ async def current_lock(
         await get_counter(db, LoginCounterKind.IP, ip_address) if ip_address else None,
     ]
     return remaining_lock(counters, now)
+
+
+def lockout_events(
+    policy: AuthPolicy, *, user: User | None, ip_address: str | None, locked: list[str]
+) -> list[LockoutStarted]:
+    """The events for the lockouts a failed attempt started, one per name or address locked.
+
+    The user is named only for a lock on the name, and only when the name is a user's own.
+    """
+    minutes = int(policy.lockout_duration.total_seconds() // 60)
+    events: list[LockoutStarted] = []
+    for scope in locked:
+        if scope == "user":
+            events.append(
+                LockoutStarted(LockoutScope.USER, user.name if user else None, None, minutes)
+            )
+        else:
+            events.append(LockoutStarted(LockoutScope.ADDRESS, None, ip_address, minutes))
+    return events
+
+
+async def announce_lockouts(
+    notifier: EventNotifier,
+    policy: AuthPolicy,
+    *,
+    user: User | None,
+    ip_address: str | None,
+    locked: list[str],
+) -> None:
+    """Announce each lockout a failed attempt started. Call it after the commit."""
+    for event in lockout_events(policy, user=user, ip_address=ip_address, locked=locked):
+        await announce_event(notifier, event)

@@ -1,0 +1,9 @@
+{#- The Notifications tab: the event matrix. Context: the settings tab context and what
+    fragments/settings_notifications.html needs. -#}
+{% extends "layouts/settings.html" %}
+{% from "macros/panels.html" import panel %}
+{% block tab %}
+{% call panel("Notification events", "notifications-title", fragment="settings-notifications") %}
+{% include "fragments/settings_notifications.html" %}
+{% endcall %}
+{% endblock %}

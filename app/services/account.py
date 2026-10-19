@@ -18,10 +18,18 @@ from app.services import totp
 from app.services.audit import record_audit
 from app.services.auth_policy import AuthPolicy
 from app.services.lockout import (
+    announce_lockouts,
     current_lock,
     get_counter,
     record_lockouts,
     register_attempt_failure,
+)
+from app.services.notify_events import (
+    NO_EVENT_NOTIFIER,
+    EventNotifier,
+    UserChange,
+    UserChanged,
+    announce_event,
 )
 from app.services.pending_logins import discard_user_pending_logins
 from app.services.sessions import revoke_user_sessions
@@ -100,6 +108,7 @@ async def _refuse_credential(
     field: str,
     ip_address: str | None,
     now: datetime,
+    notifier: EventNotifier,
 ) -> AccountError:
     """Count and audit a wrong credential, then return the error to raise.
 
@@ -111,6 +120,7 @@ async def _refuse_credential(
     await _audit(db, user, action, AuditResult.FAILURE, ip_address, {"reason": reason})
     await record_lockouts(db, policy, user=user, ip_address=ip_address, locked=locked)
     await db.commit()
+    await announce_lockouts(notifier, policy, user=user, ip_address=ip_address, locked=locked)
     if locked:
         return AccountLockedError(policy.lockout_duration)
     return AccountError(message, field)
@@ -126,6 +136,7 @@ async def change_password(
     new_password: str,
     confirm_password: str,
     ip_address: str | None = None,
+    notifier: EventNotifier = NO_EVENT_NOTIFIER,
     now: datetime | None = None,
 ) -> int:
     """Replace the user's password and end their other sessions. Returns how many ended.
@@ -151,6 +162,7 @@ async def change_password(
             field="current_password",
             ip_address=ip_address,
             now=moment,
+            notifier=notifier,
         )
     if not new_password:
         raise AccountError("Enter a new password.", "new_password")
@@ -176,6 +188,7 @@ async def change_password(
         db, user, CREDENTIAL_CHANGE, AuditResult.SUCCESS, ip_address, {"sessions_ended": ended}
     )
     await db.commit()
+    await announce_event(notifier, UserChanged(UserChange.PASSWORD_CHANGED, user.name, user.name))
     return ended
 
 
@@ -189,6 +202,7 @@ async def enable_totp(
     password: str,
     code: str,
     ip_address: str | None = None,
+    notifier: EventNotifier = NO_EVENT_NOTIFIER,
     now: datetime | None = None,
 ) -> None:
     """Turn the second factor on with the secret of a setup, after the password and a valid code.
@@ -219,6 +233,7 @@ async def enable_totp(
             field="current_password",
             ip_address=ip_address,
             now=moment,
+            notifier=notifier,
         )
     step = totp.step_for_secret(secret, code, now=moment)
     if step is None:
@@ -237,6 +252,7 @@ async def disable_totp(
     password: str,
     code: str,
     ip_address: str | None = None,
+    notifier: EventNotifier = NO_EVENT_NOTIFIER,
     now: datetime | None = None,
 ) -> None:
     """Turn the second factor off. Needs the current password and a valid, unused code.
@@ -263,6 +279,7 @@ async def disable_totp(
             field="current_password",
             ip_address=ip_address,
             now=moment,
+            notifier=notifier,
         )
     step = totp.matching_step(user, code, crypto, now=moment)
     reason = "invalid_code"
@@ -283,4 +300,5 @@ async def disable_totp(
         field="code",
         ip_address=ip_address,
         now=moment,
+        notifier=notifier,
     )

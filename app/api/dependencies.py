@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.client_address import client_address
 from app.services.api_auth import ApiCaller, authenticate_token
 from app.services.auth_policy import AuthPolicy
-from app.web.dependencies import get_auth_policy, get_db
+from app.web.dependencies import get_auth_policy, get_db, get_notifier
 
 
 async def require_api_token(
@@ -27,5 +27,9 @@ async def require_api_token(
     stopped. A success records the token's last used time and address.
     """
     return await authenticate_token(
-        db, request.headers.get("authorization"), client_address(request), policy
+        db,
+        request.headers.get("authorization"),
+        client_address(request),
+        policy,
+        notifier=get_notifier(request),
     )

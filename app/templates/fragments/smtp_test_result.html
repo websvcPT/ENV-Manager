@@ -1,0 +1,9 @@
+{#- The result of a test mail, swapped into the live region next to the button. A sent mail is
+    the success badge with the time; a refusal is the failed badge and the reason under it.
+    Context: check (a MailCheck: ok and message). -#}
+{% from "macros/badges.html" import badge %}
+{%- if check.ok -%}
+{{ badge("deployed", check.message) }}
+{%- else -%}
+{{ badge("failed", "Test mail failed") }}<p class="mt-1.5 max-w-md text-xs text-ink2">{{ check.message }}</p>
+{%- endif -%}

@@ -9,8 +9,10 @@ from sqlalchemy import select
 
 from app.models import AuditEntry, EnvironmentVersion
 from app.seeds import EDITOR_SECRET_VALUES
+from app.services.notify_events import FileChange, FileChanged
 from app.services.versions import create_version
 from app.tests.conftest import sign_in
+from app.tests.notify_helpers import RecordingEvents, file_event_ids
 from app.tests.web_helpers import HTMX, EnvironmentIds, assert_never_cached, main_of, post
 
 EDITOR_VALUES = (*EDITOR_SECRET_VALUES, "db.internal.example.com", "TLSv1.2", "AQIEAgAAuTAN")
@@ -405,3 +407,20 @@ async def test_restore_needs_the_csrf_token(
     response = await web_client.post(f"/environments/{ids.editor}/restore/1?base=3", headers=HTMX)
     assert response.status_code == 403
     assert await version_numbers(web_app, ids.editor) == [1, 2, 3]
+
+
+async def test_restoring_a_version_announces_the_file_change_to_the_notifier(
+    web_client: httpx.AsyncClient, ids: EnvironmentIds, web_app: FastAPI
+) -> None:
+    """The restore route hands its notifier to the service."""
+    recorder = RecordingEvents()
+    web_app.state.notifier = recorder
+    await sign_in(web_client, "admin")
+    response = await post(web_client, f"/environments/{ids.db}/restore/1?base=2")
+    assert response.status_code == 200
+    project, deployment, service, name = await file_event_ids(web_app, ids.db)
+    assert recorder.events == [
+        FileChanged(project, deployment, service, ids.db, name, 3, FileChange.RESTORED, "admin")
+    ]
+    stale = await post(web_client, f"/environments/{ids.db}/restore/1?base=2")
+    assert stale.status_code == 422 and len(recorder.events) == 1

@@ -16,6 +16,7 @@ from app.services.auth_policy import AuthPolicy, policy_from_settings
 from app.services.deploy import DeployEngine
 from app.services.docker_cli import DockerCli
 from app.services.hook_runner import DockerHookRunner
+from app.services.notify_events import FullNotifier
 from app.services.permissions import AccessScope, Capability, load_user_scope
 from app.services.sessions import resolve_session
 from app.services.shell_banners import load_shell_banners
@@ -48,14 +49,23 @@ def get_docker_cli(request: Request) -> DockerCli:
 
 
 def get_deploy_engine(request: Request) -> DeployEngine:
-    """A deploy engine on the app's key, lock folder and current docker CLI.
+    """A deploy engine on the app's key, lock folder, current docker CLI and notifier.
 
-    Built per request so it uses the docker CLI the app holds at that moment.
+    Built per request so it uses the docker CLI and the notifier the app holds at that moment.
     """
     state = request.app.state
     return DeployEngine(
-        state.crypto, state.lock_dir, hook_runner=DockerHookRunner(state.docker_cli)
+        state.crypto,
+        state.lock_dir,
+        hook_runner=DockerHookRunner(state.docker_cli),
+        notifier=state.notifier,
     )
+
+
+def get_notifier(request: Request) -> FullNotifier:
+    """The application's notifier, which every service announces its events to."""
+    notifier: FullNotifier = request.app.state.notifier
+    return notifier
 
 
 async def get_stored_settings(
@@ -89,6 +99,7 @@ async def require_auth(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     policy: Annotated[AuthPolicy, Depends(get_auth_policy)],
+    stored: Annotated[StoredSettings, Depends(get_stored_settings)],
 ) -> AuthContext:
     """Resolve the session cookie to a signed-in user, or answer 401.
 
@@ -102,7 +113,7 @@ async def require_auth(
     context = AuthContext(user=resolved[1], session=resolved[0])
     request.state.auth = context
     if context.user.group is UserGroup.SUPERADMIN and _is_page_request(request):
-        request.state.banners = await load_shell_banners(db, display_of(request))
+        request.state.banners = await load_shell_banners(db, display_of(request), stored.smtp)
     return context
 
 
