@@ -39,7 +39,7 @@ test.describe('delete an environment', () => {
     await createEnvironment(request, service, '.env.kept', 'B=1\n');
     await page.goto(`/services/${service}`);
 
-    const row = page.locator('#environments tr[data-fragment="env-row"]', {
+    const row = page.locator('#environments [data-fragment="env-row"]:visible', {
       hasText: '.env.doomed',
     });
     const remove = await rowAction(row, 'delete');

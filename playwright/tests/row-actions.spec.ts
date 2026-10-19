@@ -193,8 +193,8 @@ test.describe('3-dot menu below md', { tag: '@narrow' }, () => {
     await expect(menu).toHaveAttribute('aria-label', 'Actions for .env.web.tuning');
     await expect(menu.locator('[data-row-menu-title]')).toHaveText('.env.web.tuning');
     const items = menu.locator('[data-row-menu-item]');
-    await expect(items).toHaveCount(3);
-    await expect(items).toHaveText(['Edit', 'History', 'Compare to dist']);
+    await expect(items).toHaveCount(5);
+    await expect(items).toHaveText(['Edit', 'History', 'Compare to dist', 'Settings', 'Delete']);
     for (const item of await items.all()) {
       await expect(item.locator('svg')).toHaveCount(1);
       expect((await item.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(TOUCH_TARGET);
@@ -213,7 +213,7 @@ test.describe('3-dot menu below md', { tag: '@narrow' }, () => {
     const pem = environmentRow(page, 'web-ca.pem').locator('[data-row-menu-button]');
     await tuning.click();
     await expect(menu.locator('[data-row-menu-title]')).toHaveText('.env.web.tuning');
-    await expect(menu.locator('[data-row-menu-item]')).toHaveCount(3);
+    await expect(menu.locator('[data-row-menu-item]')).toHaveCount(5);
     await page.keyboard.press('Escape');
     await pem.click();
     await expect(menu.locator('[data-row-menu-title]')).toHaveText('web-ca.pem');

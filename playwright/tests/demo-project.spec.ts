@@ -33,7 +33,7 @@ test.describe('superadmin', () => {
   test('shows the stack deployment with its api and db services', async ({ page, browser }) => {
     const id = await deploymentId(browser, 'demo', 'stack');
     await page.goto(`/deployments/${id}`);
-    await expect(page.locator('[data-fragment="page-header"] h1')).toHaveText('stack');
+    await expect(page.locator('[data-fragment="page-header"] h1')).toHaveText('Deployment: stack');
     await expect(page.locator('[data-fragment="page-header"] p')).toContainText('Project demo');
     const services = page.locator('#services [data-fragment="service-row"]');
     await expect(services.locator('th a')).toHaveText(['api', 'db']);
@@ -44,7 +44,7 @@ test.describe('superadmin', () => {
 
   test('shows the files and the stored command of each service', async ({ page, browser }) => {
     await page.goto(`/services/${await demoService(browser, 'api')}`);
-    await expect(page.locator('[data-fragment="page-header"] h1')).toHaveText('api');
+    await expect(page.locator('[data-fragment="page-header"] h1')).toHaveText('Service: api');
     await expect(fileRows(page)).toHaveCount(2);
     await expect(fileNames(page)).toHaveText(['.env.api', 'demo-ca.pem']);
     await expect(page.locator('#postdeploy')).toContainText(
@@ -52,7 +52,7 @@ test.describe('superadmin', () => {
     );
 
     await page.goto(`/services/${await demoService(browser, 'db')}`);
-    await expect(page.locator('[data-fragment="page-header"] h1')).toHaveText('db');
+    await expect(page.locator('[data-fragment="page-header"] h1')).toHaveText('Service: db');
     await expect(fileRows(page)).toHaveCount(2);
     await expect(fileNames(page)).toHaveText(['.env.db', '.env.db.secrets']);
     await expect(page.locator('#postdeploy')).toContainText(

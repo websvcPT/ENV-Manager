@@ -39,7 +39,7 @@ test.describe('environment settings', () => {
     const environment = await createEnvironment(request, service, '.env.app', 'A=1\n');
 
     await page.goto(`/services/${service}`);
-    const row = page.locator('#environments tr[data-fragment="env-row"]', { hasText: '.env.app' });
+    const row = page.locator('#environments [data-fragment="env-row"]:visible', { hasText: '.env.app' });
     const settings = await rowAction(row, 'settings');
     await expect(settings).toHaveAttribute('href', `/environments/${environment}/settings`);
 
