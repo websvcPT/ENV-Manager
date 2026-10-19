@@ -1,0 +1,34 @@
+name: Checks
+
+# Runs on every pull request and is reused by the release workflow, so a version is only tagged
+# after the same gates pass: pinned tool versions agree, lint and type checks are clean and the
+# whole pytest suite passes in the test image. Browser specs are not part of CI.
+on:
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Pins, lint and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check that tool pins agree
+        run: make check-pins
+
+      - name: Lint and type-check in the test image
+        run: >-
+          docker compose -f docker-compose-testing.yml run --rm --build
+          -e MYPY_CACHE_DIR=/tmp/mypy_cache -e RUFF_CACHE_DIR=/tmp/ruff_cache
+          app sh scripts/lint.sh
+
+      - name: Run the full test suite in the test image
+        run: make tests-docker

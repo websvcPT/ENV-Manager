@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import VERSION
 from app.models import (
     AuditActorType,
     AuditEntry,
@@ -544,6 +545,6 @@ async def test_the_diagnostics_show_startup_values_without_secrets(
     pattern = r'id="diag-client"[^>]*><span class="font-mono">([^<]+)</span>'
     client = re.search(pattern, diagnostics)
     assert client is not None and client.group(1) == "127.0.0.1"
-    assert "v0.1.0" in diagnostics
+    assert f"v{VERSION}" in diagnostics
     for secret in ("pa55word", "abc123", "user:", "/v1/traces", "4318"):
         assert secret not in page

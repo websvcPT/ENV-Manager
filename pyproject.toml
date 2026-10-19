@@ -3,6 +3,7 @@ name = "env-manager"
 version = "0.1.0"
 description = "Self-hosted manager for Docker Compose environment files"
 readme = "README.md"
+license = "Apache-2.0"
 requires-python = ">=3.14,<3.15"
 dependencies = [
     "fastapi[opentelemetry]==0.143.3",
@@ -38,6 +39,36 @@ dev = [
 
 [tool.uv]
 package = false
+
+# Releases are cut by python-semantic-release 10.7.0 (installed by the release workflow only,
+# never an application dependency). The version is written to pyproject.toml and to the constant
+# the application reports; the build command keeps the root package version of uv.lock in step.
+[tool.semantic_release]
+version_toml = ["pyproject.toml:project.version"]
+version_variables = ["app/__init__.py:VERSION"]
+tag_format = "v{version}"
+allow_zero_version = false
+commit_parser = "conventional"
+commit_message = "chore(release): {version}"
+assets = ["uv.lock"]
+build_command = """
+    pip install uv==0.13.1
+    uv lock --upgrade-package "$PACKAGE_NAME"
+"""
+
+[tool.semantic_release.branches.release]
+match = "(main|master)"
+prerelease = false
+
+[tool.semantic_release.remote]
+type = "github"
+
+[tool.semantic_release.changelog]
+mode = "init"
+
+[tool.semantic_release.changelog.default_templates]
+changelog_file = "CHANGELOG.md"
+output_format = "md"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

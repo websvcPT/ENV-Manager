@@ -90,3 +90,51 @@ make demo-down
 ```
 
 The Docker socket is root-equivalent on the host; keep the demo override for local runs only.
+
+## Continuous integration
+
+`.github/workflows/checks.yml` runs on every pull request and as the first job of the release
+workflow: `make check-pins`, the lint and type checks in the test image
+(`scripts/lint.sh` through `docker-compose-testing.yml`) and the full pytest suite
+(`make tests-docker`). Browser specs and the demo scenarios are not run in CI.
+
+## Releases
+
+Versions are computed by [python-semantic-release](https://python-semantic-release.readthedocs.io/)
+from the commit messages, which follow [Conventional Commits](https://www.conventionalcommits.org/):
+`<type>(<optional scope>): <summary>`.
+
+| Commit | Release |
+| --- | --- |
+| `feat` | minor (1.2.0 to 1.3.0) |
+| `fix`, `perf` | patch (1.2.0 to 1.2.1) |
+| any type with `!` after it (`feat!: ...`) or a `BREAKING CHANGE:` footer | major (1.2.0 to 2.0.0) |
+| `refactor`, `docs`, `test`, `build`, `ci`, `chore` | no release |
+
+A push to `main` or `master` (the local branch is `master`, either name works) runs
+`.github/workflows/release.yml`: the checks, then the release job, then the image job when a
+version was released. The release job updates the version in `pyproject.toml` and in
+`app/__init__.py` (the number the sidebar shows), refreshes the root package version in
+`uv.lock` (`uv sync --locked` refuses a lock file whose root package version differs), writes `CHANGELOG.md`, pushes the release commit and the `v<version>` tag and creates the
+GitHub release. The image job builds the Dockerfile's `runtime` target for `linux/amd64` from that
+tag and pushes `websvcpt/env-manager` with the tags `<version>`, `<major>.<minor>`, `<major>` and
+`latest`. The release commit is pushed with the workflow token, and a push made with that token
+does not start another workflow run.
+
+The first release is 1.0.0. Cut it with a manual run of the release workflow (Actions, Release,
+Run workflow) with `force` set to `major`; the same input forces an exceptional `patch`, `minor` or
+`major` bump later.
+
+Setup on GitHub and Docker Hub:
+
+- Repository secrets `DOCKERHUB_USERNAME` (the Docker Hub account) and `DOCKERHUB_TOKEN` (an
+  access token of that account with read and write permission on `websvcpt/env-manager`).
+- Settings, Actions, General, Workflow permissions: allow the workflows to run. The release job
+  asks for `contents: write` itself.
+- If the release branch is protected, the workflow token must be allowed to push the release
+  commit and the tag directly (a ruleset bypass for GitHub Actions), or the workflow must use a
+  token that can: a personal access token or an app token stored as a secret, passed to
+  `actions/checkout` as `token` and to the release step as `github_token`. A required pull
+  request or status check rule without a bypass makes the release job fail at the push.
+- The Docker Hub repository `websvcpt/env-manager` must exist or the account must be allowed to
+  create it on push.
