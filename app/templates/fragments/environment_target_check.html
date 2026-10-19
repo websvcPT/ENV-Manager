@@ -1,0 +1,19 @@
+{#- The line under the target path field of the environment settings form, with the notice that
+    follows a changed target path. Context: check (hint, error, moved, new_path, environment,
+    deployed, acknowledged, ack_error). -#}
+{% from "macros/feedback.html" import note %}
+{% from "macros/forms.html" import checkbox %}
+{% from "macros/icons.html" import icon %}
+{% set hint = check.hint %}
+{% if check.error or not hint.ok %}<p id="tp-e" role="alert" class="flex items-center gap-1.5 text-[13px] font-semibold text-danger">{{ icon("warning", "size-3.5", "2.4") }}{{ check.error or hint.text }}</p>{% else %}<p id="tp-h" class="text-xs text-ink2 break-all">{{ hint.text }}</p>{% endif %}
+{% if check.moved %}
+<div data-fragment="target-move" class="mt-2 flex flex-col gap-2.5">
+{% if check.deployed %}
+{{ note("The app last wrote " ~ ("version " ~ check.deployed.version if check.deployed.version is not none else "this file") ~ " to " ~ check.environment.target_path ~ ". That file stays on the host, untouched and no longer managed. At the new path the file counts as not deployed: the next deploy writes the newest version there, creating the file when it does not exist, and applies the drift policy when a file with other content is already there.", tone="warn") }}
+{{ checkbox("acknowledge_move", "The file counts as not deployed at the new path", checked=check.acknowledged, id="ack-move", value="1") }}
+{% if check.ack_error %}<p id="ack-move-e" role="alert" class="flex items-center gap-1.5 text-[13px] font-semibold text-danger">{{ icon("warning", "size-3.5", "2.4") }}{{ check.ack_error }}</p>{% endif %}
+{% else %}
+{{ note("This file was never deployed to " ~ check.environment.target_path ~ ", so nothing is left behind. The next deploy writes it to the new path.") }}
+{% endif %}
+</div>
+{% endif %}

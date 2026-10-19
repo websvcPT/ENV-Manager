@@ -229,8 +229,10 @@ async def load_environment_rows(
         await db.execute(
             select(DeployResult.environment_id, DeployResult.status, EnvironmentVersion.number)
             .join(DeployRun, DeployRun.id == DeployResult.run_id)
+            .join(Environment, Environment.id == DeployResult.environment_id)
             .outerjoin(EnvironmentVersion, EnvironmentVersion.id == DeployResult.version_id)
             .where(
+                DeployResult.target_path == Environment.target_path,
                 DeployResult.environment_id.in_(ids),
                 DeployRun.dry_run.is_(False),
                 DeployResult.status != DeployResultStatus.WOULD_WRITE,

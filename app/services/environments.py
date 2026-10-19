@@ -103,7 +103,7 @@ class CleanEnvironment:
     content: str
 
 
-def _relative_path(
+def relative_path(
     allowed: AllowedPaths, root: str, raw: str, label: str
 ) -> tuple[str | None, Path | None, str | None]:
     """The normalized relative path, its real path and None, or None, None and the message.
@@ -142,7 +142,7 @@ def target_hint(allowed: AllowedPaths, root: str, raw: str) -> TargetHint:
     """Where a typed target path resolves, or the reason it cannot be used."""
     if not raw.strip():
         return TargetHint(f"Resolves to {root.rstrip('/')}/", True)
-    _, real_path, problem = _relative_path(allowed, root, raw, "Target")
+    _, real_path, problem = relative_path(allowed, root, raw, "Target")
     if problem or real_path is None:
         return TargetHint(problem or OUTSIDE_MESSAGE, False)
     return TargetHint(f"Resolves to {real_path}", True)
@@ -178,13 +178,21 @@ def _imported_text(allowed: AllowedPaths, root: str, target_path: str) -> tuple[
     return text, content_problem(text)
 
 
-async def _target_in_use(db: AsyncSession, deployment_id: int, target_path: str) -> bool:
-    """Whether an environment of the deployment already has this normalized target path."""
-    rows = await db.execute(
+async def target_in_use(
+    db: AsyncSession, deployment_id: int, target_path: str, *, ignore_id: int | None = None
+) -> bool:
+    """Whether an environment of the deployment already has this normalized target path.
+
+    ``ignore_id`` leaves one environment out, the one being edited.
+    """
+    stmt = (
         select(Environment.target_path)
         .join(Service, Service.id == Environment.service_id)
         .where(Service.deployment_id == deployment_id)
     )
+    if ignore_id is not None:
+        stmt = stmt.where(Environment.id != ignore_id)
+    rows = await db.execute(stmt)
     return any(str(PurePosixPath(existing)) == target_path for existing in rows.scalars())
 
 
@@ -242,20 +250,18 @@ async def validate_environment(
     if not form.target_path.strip():
         errors["target_path"] = "Enter a target path."
     else:
-        target_path, _, problem = _relative_path(
+        target_path, _, problem = relative_path(
             allowed, deployment.root_path, form.target_path, "Target"
         )
         if problem:
             errors["target_path"] = problem
-        elif target_path and await _target_in_use(db, deployment.id, target_path):
+        elif target_path and await target_in_use(db, deployment.id, target_path):
             target_path = None
             errors["target_path"] = "Another file of this deployment already uses this target path."
 
     dist_path: str | None = None
     if form.dist_path.strip():
-        dist_path, _, problem = _relative_path(
-            allowed, deployment.root_path, form.dist_path, "Dist"
-        )
+        dist_path, _, problem = relative_path(allowed, deployment.root_path, form.dist_path, "Dist")
         if problem:
             errors["dist_path"] = problem
         elif dist_path is not None and dist_path == target_path:

@@ -4,6 +4,7 @@
     (edit, history, dist or access) and is_viewer. -#}
 {% extends "layouts/app.html" %}
 {% from "macros/badges.html" import badge %}
+{% from "macros/buttons.html" import button %}
 {% from "macros/panels.html" import environment_chain, item_header, tabs %}
 {% set active_nav = "projects" %}
 {% set breadcrumbs = [("Projects", "/projects"), (env.project_name, "/projects/" ~ env.project_id), (env.deployment_name, "/deployments/" ~ env.deployment_id), (env.service_name, "/services/" ~ env.service_id), (env.name, none)] %}
@@ -11,7 +12,8 @@
 {% block content %}
 {% block header %}
 {% set details %}{% if env.current is not none %}Version {{ env.current }} saved, {% if env.deployed is not none %}version {{ env.deployed }} deployed{% else %}never deployed{% endif %}{% else %}No version saved{% endif %}{% if env.current_author %} · last edited by {{ env.current_author }}{% endif %}{% endset %}
-{{ item_header("environment", env.name, environment_chain(env), details=details, badges=badge(env.status)) }}
+{% set header_actions %}{% if env.can_manage_structure %}{{ button("Settings", href="/environments/" ~ env.id ~ "/settings", icon_name="settings", icon_stroke="2", id="environment-settings-open") }}{% endif %}{% endset %}
+{{ item_header("environment", env.name, environment_chain(env), details=details, badges=badge(env.status), actions=header_actions) }}
 {% endblock %}
 {% set section_links = [{"label": "View" if is_viewer else "Edit", "href": "/environments/" ~ env.id}, {"label": "History", "href": "/environments/" ~ env.id ~ "/history"}] %}
 {% if env.can_check_dist %}{% set section_links = section_links + [{"label": "Compare to dist", "href": "/environments/" ~ env.id ~ "/dist"}] %}{% endif %}

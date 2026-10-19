@@ -1,10 +1,11 @@
 {#- File editor: the editor panel under the shared environment frame. Context: env (an
-    EditorHeader), content, mode, version, is_viewer and saved (the saved version number,
-    optional). -#}
+    EditorHeader), content, mode, version, is_viewer, saved (the saved version number,
+    optional) and updated (the settings were saved, optional). -#}
 {% extends "layouts/environment.html" %}
 {% from "macros/feedback.html" import note, toast %}
 {% block tab %}
 {% if is_viewer %}{{ note("Read-only view. Values stay masked and cannot be revealed or edited for the Viewer group.") }}{% endif %}
 {% include "fragments/editor_panel.html" %}
+{% if updated | default(false) %}{{ toast("success", "The settings of " ~ env.name ~ " are saved.", "Settings saved", floating=true) }}{% endif %}
 {% if saved %}{{ toast("success", "Saved as version " ~ saved ~ ". Pending deploy.", floating=true) }}{% endif %}
 {% endblock %}

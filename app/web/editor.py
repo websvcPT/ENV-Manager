@@ -130,10 +130,12 @@ async def editor_page(
     db: Annotated[AsyncSession, Depends(get_db)],
     mode: str = "kv",
     saved: str = "",
+    updated: bool = False,
 ) -> Response:
     """The editor for one environment: masked variables or raw text, and the details panel.
 
-    ``saved`` (a version number) shows the toast after a save redirects here.
+    ``saved`` (a version number) shows the toast after a save redirects here and ``updated``
+    the one after the settings form saved.
     """
     content = await _content(db, request, access)
     return render(
@@ -144,6 +146,7 @@ async def editor_page(
             "tab": "edit",
             "is_viewer": access.scope.group not in CAPABILITY_GROUPS[Capability.EDIT_VALUES],
             "saved": plain_number_text(saved),
+            "updated": updated,
         },
     )
 

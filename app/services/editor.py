@@ -68,7 +68,8 @@ class EditorHeader:
     successful write, None when nothing was written yet. ``status`` is a badge key.
     File mode, owner and group are the effective values (the environment's own or the
     deployment default); an empty owner or group means the application user.
-    ``can_manage_grants`` is True for the superadmin, who gets the Access tab. ``deployment_root``
+    ``can_manage_grants`` is True for the superadmin, who gets the Access tab, and so is
+    ``can_manage_structure``, which shows the settings and delete controls. ``deployment_root``
     is the folder of the deployment for the code that reads the host; no page shows it.
     """
 
@@ -96,6 +97,7 @@ class EditorHeader:
     can_check_dist: bool
     item: ItemRef
     can_manage_grants: bool
+    can_manage_structure: bool
     deployment_root: str = field(repr=False)
 
     @property
@@ -190,6 +192,7 @@ async def load_editor_header(
             .join(DeployRun, DeployRun.id == DeployResult.run_id)
             .where(
                 DeployResult.environment_id == environment_id,
+                DeployResult.target_path == environment.target_path,
                 DeployRun.dry_run.is_(False),
                 DeployResult.status.in_(_WRITTEN),
             )
@@ -228,6 +231,7 @@ async def load_editor_header(
         can_check_dist=row.can_check_dist,
         item=item,
         can_manage_grants=scope.can(Capability.MANAGE_GRANTS),
+        can_manage_structure=scope.can(Capability.MANAGE_STRUCTURE),
         deployment_root=deployment.root_path,
     )
 

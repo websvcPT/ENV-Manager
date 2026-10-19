@@ -1,7 +1,9 @@
 """The content this app last wrote to a target, which drift is measured against.
 
 The deploy engine and the drift view both read it here, so they cannot disagree about what a
-target held after the last deploy. Dry runs and failed attempts never set it.
+target held after the last deploy. Dry runs and failed attempts never set it. Only results
+written to the target path the environment has now count: after the target path changes, the
+file at the new path counts as never deployed.
 """
 
 from collections.abc import Sequence
@@ -11,7 +13,7 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import DeployResult, DeployResultStatus, DeployRun
+from app.models import DeployResult, DeployResultStatus, DeployRun, Environment
 
 _DEPLOYED = (DeployResultStatus.WRITTEN, DeployResultStatus.UNCHANGED)
 
@@ -39,7 +41,9 @@ async def load_baselines(db: AsyncSession, environment_ids: Sequence[int]) -> di
             DeployRun.started_at,
         )
         .join(DeployRun, DeployRun.id == DeployResult.run_id)
+        .join(Environment, Environment.id == DeployResult.environment_id)
         .where(
+            DeployResult.target_path == Environment.target_path,
             DeployResult.environment_id.in_(environment_ids),
             DeployRun.dry_run.is_(False),
             DeployResult.status.in_(_DEPLOYED),
