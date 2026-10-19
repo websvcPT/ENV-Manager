@@ -12,9 +12,9 @@ The application is one image. `deploy/compose.yaml` is the example to copy: one 
 (`envmanager`) with the image, the key file, the base URL, the data volume, the host folders the
 deployments live in and the port on the loopback address.
 
-1. Build or pull the image. From a checkout, `docker build -t envmanager:1 .` builds the
-   production image (the last stage of the `Dockerfile` is the runtime image); put the name you
-   used into `image:`.
+1. Build or pull the image. From a checkout, `docker build --target runtime -t envmanager:1 .`
+   builds the production image (the `runtime` stage of the `Dockerfile`; the last stage, `test`,
+   is only for the test run); put the name you used into `image:`.
 2. Make the master key and keep it apart from the data volume and from every backup:
 
    ```
@@ -29,7 +29,8 @@ deployments live in and the port on the loopback address.
 3. Set `ENVMANAGER_BASE_URL` to the address people open, and mount the host folders that hold the
    deployments (`/var/www/vhosts` and `/opt` in the sample) at the same path as on the host.
    Mounts are read-write; the allowed path list in Settings decides which of them the application
-   may use.
+   may use. The sample publishes the port on the loopback address only (`127.0.0.1:8080:8080`):
+   put the reverse proxy that ends https on the same host, or change the binding on purpose.
 4. Start it with `docker compose up -d`, create the first superadmin with `docker compose exec
    envmanager envmanager user create --email you@example.com --name "Your Name" --group
    superadmin` (see Users), and sign in at the base URL. Until the superadmin adds an allowed path

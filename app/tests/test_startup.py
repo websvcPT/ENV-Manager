@@ -97,7 +97,6 @@ async def test_the_docker_cli_is_built_from_the_configured_socket(
 async def test_an_http_base_url_outside_development_warns_once_at_startup(
     configured: Path,
     monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
     environment: str,
     base_url: str,
     warns: bool,
@@ -107,13 +106,26 @@ async def test_an_http_base_url_outside_development_warns_once_at_startup(
     monkeypatch.setenv("ENVMANAGER_BASE_URL", base_url)
     monkeypatch.setenv("ENVMANAGER_CSRF_SECRET", "x" * 40)
     get_settings.cache_clear()
-    caplog.set_level(logging.WARNING, logger="envmanager.main")
     application = create_app()
-    async with application.router.lifespan_context(application):
-        pass
-    messages = [
-        record.getMessage() for record in caplog.records if record.name == "envmanager.main"
-    ]
+    # create_app replaces the root handlers, caplog's included, so listen on the logger itself.
+    records: list[logging.LogRecord] = []
+
+    class Listener(logging.Handler):
+        """Keeps the records it is given."""
+
+        def emit(self, record: logging.LogRecord) -> None:
+            """Remember the record."""
+            records.append(record)
+
+    listener = Listener(logging.WARNING)
+    logger = logging.getLogger("envmanager.main")
+    logger.addHandler(listener)
+    try:
+        async with application.router.lifespan_context(application):
+            pass
+    finally:
+        logger.removeHandler(listener)
+    messages = [record.getMessage() for record in records]
     if warns:
         assert len(messages) == 1
         assert "ENVMANAGER_BASE_URL" in messages[0] and "Secure" in messages[0]

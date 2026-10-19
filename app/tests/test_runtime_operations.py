@@ -97,19 +97,21 @@ async def ids(web_app: FastAPI, tmp_path: Path) -> Ids:
     return await seeded_ids(web_app)
 
 
+# Every limit counts the one statement that asks whether the allowed path list is empty, for the
+# first-run banner of a superadmin page.
 PAGE_LIMITS = (
-    ("deployment page", "/deployments/{deployment}", 17),
-    ("deployment edit form", "/deployments/{deployment}/edit", 19),
-    ("project page", "/projects/{project}", 19),
-    ("project activity", "/projects/{project}/activity", 20),
-    ("project settings", "/projects/{project}/settings", 19),
-    ("service page", "/services/{service}", 19),
-    ("editor page", "/environments/{environment}", 18),
-    ("drift page", "/environments/{environment}/drift", 20),
-    ("dist report", "/environments/{environment}/dist", 20),
-    ("smtp tab", "/settings/smtp", 5),
-    ("git tab", "/settings/git", 5),
-    ("notifications tab", "/settings/notifications", 5),
+    ("deployment page", "/deployments/{deployment}", 18),
+    ("deployment edit form", "/deployments/{deployment}/edit", 20),
+    ("project page", "/projects/{project}", 20),
+    ("project activity", "/projects/{project}/activity", 21),
+    ("project settings", "/projects/{project}/settings", 20),
+    ("service page", "/services/{service}", 20),
+    ("editor page", "/environments/{environment}", 19),
+    ("drift page", "/environments/{environment}/drift", 21),
+    ("dist report", "/environments/{environment}/dist", 21),
+    ("smtp tab", "/settings/smtp", 6),
+    ("git tab", "/settings/git", 6),
+    ("notifications tab", "/settings/notifications", 6),
 )
 
 
@@ -271,7 +273,7 @@ async def test_the_dist_overview_costs_the_same_statements_for_any_number_of_fil
         await db.commit()
     large, large_entries = await overview()
 
-    assert len(small) == len(large) <= 22
+    assert len(small) == len(large) <= 23
     assert large_entries - small_entries == 6, "one entry per file, as before"
     assert len([s for s in large if s.startswith("INSERT INTO audit_entries")]) == 1
 
