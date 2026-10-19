@@ -1,6 +1,8 @@
 """Rendering tests for the component macros."""
 
 import re
+from pathlib import Path
+from typing import Any
 
 import pytest
 from jinja2 import UndefinedError
@@ -304,3 +306,97 @@ def test_brand_lockup_is_the_vertical_solid_drawing_with_the_caller_size() -> No
     )
     assert lockup.startswith('<img src="/static/brand/env-vertical-solid.svg" alt="" ')
     assert 'class="h-24 w-auto shrink-0"' in lockup and 'width="108" height="116"' in lockup
+
+
+ROW_ACTIONS = (
+    "{% from 'macros/row_actions.html' import row_actions %}"
+    "{{ row_actions('env-1', '.env.db', actions) }}"
+)
+LINKS: list[dict[str, Any]] = [
+    {"key": "edit", "label": "Edit", "icon": "pencil", "href": "/environments/1", "primary": True},
+    {"key": "history", "label": "History", "icon": "clock", "href": "/environments/1/history"},
+    {
+        "key": "remove",
+        "label": "Remove",
+        "icon": "trash",
+        "danger": True,
+        "attrs": {"data_js": "dialog-open", "data_target": "confirm", "hx_get": "/x?a=1&b=2"},
+    },
+]
+
+
+def test_row_actions_draw_icon_buttons_with_a_tooltip_from_md_and_a_menu_button_below() -> None:
+    """Several actions: tooltips are the accessible names, a primary text link, a 3-dot button."""
+    page = render_snippet(ROW_ACTIONS, actions=LINKS)
+    desktop, phone = page.split('<button type="button" id="env-1-more"')
+    assert page.count("data-row-actions") == 1 and "<dialog" not in page
+    controls = {
+        match.group(1): match.group(0)
+        for match in re.finditer(r'<(?:a|button) [^>]*id="env-1-([a-z]+)"[^>]*>', desktop)
+    }
+    assert list(controls) == ["edit", "history", "remove"]
+    edit = controls["edit"]
+    assert "aria-label" not in edit and "after:" not in edit
+    edit_link = re.search(r'<a [^>]*id="env-1-edit".*?</a>', desktop, re.DOTALL)
+    assert edit_link is not None and "<svg" not in edit_link.group(0)
+    assert 'data-icon="M12 20h9' in edit and ">Edit</a>" in desktop
+    for label in ("history", "remove"):
+        classes = controls[label]
+        assert f'aria-label="{label.capitalize()}"' in classes
+        assert "after:content-[attr(aria-label)]" in classes and "after:hidden" in classes
+        assert "hover:after:block" in classes and "focus-visible:after:block" in classes
+        assert "after:bottom-full" in classes and "after:pointer-events-none" in classes
+    assert "after:left-1/2 after:-translate-x-1/2" in controls["history"]
+    assert "after:right-0" in controls["remove"] and "after:left-1/2" not in controls["remove"]
+    assert 'hx-get="/x?a=1&amp;b=2"' in desktop and 'data-js="dialog-open"' in desktop
+    assert 'data-row-menu-button data-js="row-menu" data-subject=".env.db"' in phone
+    assert 'aria-label="More actions for .env.db"' in phone and "md:hidden" in phone
+    assert 'data-tone="danger"' in desktop.split('id="env-1-remove"')[1].split(">")[0]
+    assert re.findall(r'data-row-action="([a-z]+)"', desktop) == ["edit", "history", "remove"]
+
+
+def test_the_shared_row_menu_is_one_empty_dialog_for_the_shell() -> None:
+    """The menu is filled by the page script, so the page holds it once and no row repeats it."""
+    menu = render_snippet("{% from 'macros/row_actions.html' import row_menu %}{{ row_menu() }}")
+    assert menu.startswith('<dialog id="row-menu" data-row-menu aria-label="Actions"')
+    assert "data-row-menu-title" in menu and "data-row-menu-items" in menu
+    assert "data-row-menu-item=" not in menu and "md:hidden" in menu
+
+
+def test_a_single_row_action_is_one_control_with_its_text_on_a_phone() -> None:
+    """One action is one element at every width: text on a phone, an icon with a tooltip above."""
+    only = [{**LINKS[2], "key": "revoke", "label": "Revoke"}]
+    page = render_snippet(ROW_ACTIONS, actions=only)
+    assert page.count("data-row-action=") == 1 and "<dialog" not in page
+    assert 'aria-label="Revoke"' in page and '<span class="md:sr-only">Revoke</span>' in page
+    assert "md:hover:after:block" in page and "md:focus-visible:after:block" in page
+    assert "after:content-[attr(aria-label)]" in page and "after:right-0" in page
+    primary = render_snippet(ROW_ACTIONS, actions=[LINKS[0]])
+    assert primary.count("<svg") == 0 and ">Edit</a>" in primary and "aria-label" not in primary
+    assert render_snippet(ROW_ACTIONS, actions=[]) == ""
+
+
+def test_row_actions_use_no_inline_style_script_or_handler() -> None:
+    """Strict CSP: nothing but classes and data attributes."""
+    page = render_snippet(ROW_ACTIONS, actions=LINKS)
+    assert not re.search(r"\sstyle=|\sonclick=|<script|javascript:|\stitle=", page)
+
+
+def test_every_page_title_shares_one_size() -> None:
+    """The page header, sign-in card and error page take the title classes from one macro."""
+    plain = render_snippet("{% from 'macros/panels.html' import h1_class %}{{ h1_class() }}")
+    assert plain == "text-[26px] font-bold leading-tight md:text-3xl"
+    mono = render_snippet("{% from 'macros/panels.html' import h1_class %}{{ h1_class(true) }}")
+    assert mono == "font-mono " + plain
+
+
+def test_no_page_template_sets_its_own_title_size() -> None:
+    """A page title always takes its classes from `h1_class`; mail templates are not pages."""
+    templates = Path(__file__).parents[1] / "templates"
+    own_size = re.compile(r"<h1[ >](?!(?:class=\"\{\{ h1_class\())")
+    offenders = [
+        path.relative_to(templates).as_posix()
+        for path in templates.rglob("*.html")
+        if "mail" not in path.parts and own_size.search(path.read_text())
+    ]
+    assert offenders == []

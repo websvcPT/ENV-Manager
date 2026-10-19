@@ -2,10 +2,10 @@
     can_manage_structure. -#}
 {% from "macros/badges.html" import badge, deploy_status_badge, post_deploy_badge %}
 {% from "macros/buttons.html" import button %}
-{% from "macros/deploy.html" import deploy_link %}
 {% from "macros/feedback.html" import empty_state %}
 {% from "macros/icons.html" import icon %}
-{% from "macros/panels.html" import panel, table, text_link %}
+{% from "macros/panels.html" import panel, table %}
+{% from "macros/row_actions.html" import row_actions %}
 {% set add_service %}{% if can_manage_structure %}{{ button("Add service", href="/deployments/" ~ deployment.id ~ "/services/new", icon_name="plus", icon_stroke="2.2") }}{% endif %}{% endset %}
 {% call panel("Services", "services-title", fragment="services-table", actions=add_service, id="services", hx_get="/deployments/" ~ deployment.id ~ "/services", hx_trigger="deploy-finished from:body", hx_swap="outerHTML") %}
 {%- if deployment.services -%}
@@ -16,7 +16,7 @@
 <td class="border-t border-line px-4 py-3.5">{% if row.last_deploy %}{{ deploy_status_badge(row.last_deploy.status.value) }}<span class="mt-1 block text-xs text-ink2">{{ row.last_deploy.started_at.strftime("%Y-%m-%d %H:%M") }}{% if row.last_deploy.actor %} · {{ row.last_deploy.actor }}{% endif %}</span>{% else %}{{ badge("never", "No deploys yet") }}{% endif %}</td>
 <td class="border-t border-line px-4 py-3.5">{% if row.post_deploy %}{{ post_deploy_badge(row.post_deploy.value) }}{% else %}<span class="text-ink3">None</span>{% endif %}</td>
 <td class="border-t border-line px-4 py-3.5">{% if row.flags %}<span class="flex flex-wrap gap-1.5">{% for flag in row.flags %}{{ deploy_status_badge(flag.value) }}{% endfor %}</span>{% else %}<span class="inline-flex items-center gap-1.5 text-[13px] text-ink2">{{ icon("check", "size-3.5", "2.4") }}No flags</span>{% endif %}</td>
-<td class="border-t border-line px-4 py-3.5 whitespace-nowrap text-right"><span class="inline-flex gap-4">{{ text_link("Open", "/services/" ~ row.id) }}{% if row.can_deploy and not deployment.outside_allowed %}{{ deploy_link(row.id) }}{% endif %}</span></td></tr>
+<td class="border-t border-line px-4 py-3.5 whitespace-nowrap text-right">{{ row_actions("service-" ~ row.id, row.name, [{"key": "open", "label": "Open", "icon": "open", "href": "/services/" ~ row.id, "primary": true}] + ([{"key": "deploy", "label": "Deploy", "icon": "arrow-up", "attrs": {"data_js": "dialog-open", "data_target": "deploy-dialog", "aria_haspopup": "dialog", "hx_post": "/services/" ~ row.id ~ "/deploy/preflight", "hx_target": "#deploy-dialog", "hx_swap": "innerHTML"}}] if row.can_deploy and not deployment.outside_allowed else [])) }}</td></tr>
 {%- endfor %}
 {% endcall %}
 {%- elif can_manage_structure -%}

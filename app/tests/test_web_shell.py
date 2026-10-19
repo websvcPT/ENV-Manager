@@ -133,15 +133,25 @@ async def test_shell_marks_follow_the_surface_they_sit_on(web_client: httpx.Asyn
 async def test_lockup_appears_only_on_pages_without_the_shell(
     web_client: httpx.AsyncClient,
 ) -> None:
-    """Sign in, session expired and the anonymous error page carry the lockup, the shell not."""
+    """Sign in and the anonymous error page carry the lockup, the shell not."""
     lockup = f'src="{BRAND}/env-vertical-solid.svg" alt=""'
-    for path in ("/login", "/session-expired", "/does-not-exist"):
+    for path in ("/login", "/does-not-exist"):
         assert lockup in (await web_client.get(path)).text, path
     login = region((await web_client.get("/login")).text, r'<div id="login-card".*?</h1>')
     assert login.index(lockup) < login.index("ENV Manager")
     await sign_in(web_client, "viewer")
     for path in ("/projects", "/does-not-exist"):
         assert lockup not in (await web_client.get(path)).text, path
+
+
+async def test_the_shell_holds_the_shared_row_menu_once_and_bare_pages_not_at_all(
+    web_client: httpx.AsyncClient,
+) -> None:
+    """Row actions open one dialog of the shell, filled by the page script."""
+    assert 'id="row-menu"' not in (await web_client.get("/login")).text
+    await sign_in(web_client, "viewer")
+    for path in ("/projects", "/does-not-exist"):
+        assert (await web_client.get(path)).text.count('id="row-menu"') == 1, path
 
 
 async def test_every_page_head_links_the_favicons(web_client: httpx.AsyncClient) -> None:

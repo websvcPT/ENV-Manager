@@ -2,6 +2,7 @@ import type { Browser, Page } from '@playwright/test';
 
 import { stateFile, SUPERADMIN_STATE } from '../global-setup';
 import { listProjects } from '../projects-api';
+import { actionControls } from './row-actions';
 import { expect, test } from './scratch-project';
 
 const WIDE_BREAKPOINT = 768;
@@ -73,7 +74,7 @@ test.describe('superadmin', () => {
     await expect(deploymentNames(page)).toHaveText(['prod', 'staging']);
     const prod = page.locator('[data-fragment="deployment-row"]', { hasText: 'prod' });
     await expect(prod).toContainText('/opt/rentals/prod');
-    await expect(prod.getByRole('link', { name: 'Open' })).toHaveAttribute(
+    await expect(actionControls(prod, 'open').first()).toHaveAttribute(
       'href',
       /^\/deployments\/\d+$/,
     );
@@ -120,7 +121,7 @@ test.describe('superadmin', () => {
     await expect(row('project_admin')).toContainText('Direct');
     await expect(row('deployment_admin')).toContainText('Inherited');
     await expect(row('deployment_admin')).toContainText('from prod (Deployment)');
-    await expect(row('env_scoped_admin')).toContainText('from .env.db (Environment)');
+    await expect(row('env_scoped_admin')).toContainText('from mysql/.env.db (Environment)');
     await expect(row('root')).toHaveCount(0);
     await expect(page.locator('[data-fragment="page-header"] p')).toHaveText(
       /^2 deployments · \d+ members$/,

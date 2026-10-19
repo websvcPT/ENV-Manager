@@ -6,6 +6,7 @@
 {% from "macros/badges.html" import role_badge %}
 {% from "macros/icons.html" import icon %}
 {% from "macros/panels.html" import breadcrumb %}
+{% from "macros/row_actions.html" import row_menu %}
 {% from "macros/shell.html" import account_menu, logo_mark, nav_link %}
 {% set active_nav = active_nav | default("") %}
 {% set crumbs = breadcrumbs | default([]) %}
@@ -24,7 +25,6 @@
   <button type="button" data-js="menu-open" aria-label="Open menu" aria-haspopup="dialog" class="inline-flex size-11 items-center justify-center rounded-btn text-ink hover:bg-surface2 md:hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ icon("menu", "size-6", "2") }}</button>
   <div class="flex min-w-0 flex-1 items-center gap-2 md:hidden">{{ logo_mark("size-7") }}<span class="min-w-0 truncate font-bold">ENV Manager</span></div>
   {% if crumbs %}{{ breadcrumb(crumbs) }}{% else %}<div class="hidden min-w-0 flex-1 md:block"></div>{% endif %}
-  <form role="search" action="/projects" method="get" class="relative hidden w-72 lg:block"><label class="sr-only" for="q">Search projects, deployments, files</label>{{ icon("search", "pointer-events-none absolute left-3 top-3 size-4 text-ink3", "2") }}<input id="q" name="q" type="search" placeholder="Search projects, deployments, files" class="h-10 w-full rounded-full border border-line-strong bg-surface2 pl-9 pr-3 text-sm text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"></form>
   {{ role_badge(current_user.group) }}
   <button type="button" data-js="theme-toggle" aria-label="Switch to dark theme" class="inline-flex size-10 shrink-0 items-center justify-center rounded-full border border-line-strong text-ink hover:bg-surface2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ icon("moon", "size-[18px]", "2") }}</button>
   <button type="button" data-js="dialog-open" data-target="account-menu" aria-haspopup="dialog" aria-label="Account menu, {{ current_user.name }}" class="inline-flex h-10 items-center gap-2 rounded-full border border-line-strong py-0 pl-1 pr-2.5 text-ink hover:bg-surface2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"><span class="flex size-8 items-center justify-center rounded-full bg-nav text-xs font-bold text-white">{{ user_initials }}</span>{{ icon("chevron-down", "size-3.5", "2.2") }}</button>
@@ -36,6 +36,7 @@
 </div>
 </div>
 {{ account_menu(current_user, csrf_token) }}
+{{ row_menu() }}
 <dialog id="mobile-menu" aria-label="Navigation" class="m-0 h-full max-h-none w-72 max-w-none bg-nav p-3 text-nav-ink backdrop:bg-scrim md:hidden">
   <div class="mb-3 flex h-11 items-center gap-3 px-1">{{ logo_mark("size-9", true) }}<span class="flex-1 text-base font-bold text-white">ENV Manager</span><button type="button" data-js="dialog-close" aria-label="Close menu" class="inline-flex size-11 items-center justify-center rounded-btn text-nav-ink hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ icon("close", "size-5", "2") }}</button></div>
   <ul class="flex list-none flex-col gap-1.5" data-collapsed="false">{% for item in nav_items %}{{ nav_link(item, active_nav) }}{% endfor %}</ul></dialog>

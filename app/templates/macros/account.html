@@ -1,8 +1,11 @@
 {#- Pieces of the account screens. -#}
+{% from "macros/row_actions.html" import row_actions %}
 
-{#- The Revoke control of a session row: opens the confirm dialog, loaded for that session. -#}
-{% macro revoke_session_button(session_id, device) -%}
-<button type="button" data-js="dialog-open" data-target="session-revoke" aria-haspopup="dialog" hx-get="/account/sessions/{{ session_id }}/revoke" hx-target="#session-revoke" hx-swap="innerHTML" class="inline-flex min-h-11 items-center font-semibold text-danger hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus text-sm md:min-h-0">Revoke<span class="sr-only"> session on {{ device }}</span></button>
+{#- The actions of a session row: Revoke, which opens the confirm dialog loaded for that session. -#}
+{% macro session_actions(session_id, device) -%}
+{{ row_actions("session-" ~ session_id, device, [
+  {"key": "revoke", "label": "Revoke", "icon": "ban", "danger": true, "attrs": {"data_js": "dialog-open", "data_target": "session-revoke", "aria_haspopup": "dialog", "hx_get": "/account/sessions/" ~ session_id ~ "/revoke", "hx_target": "#session-revoke", "hx_swap": "innerHTML"}}
+]) }}
 {%- endmacro %}
 
 {#- A time in UTC as the account tables show it: date and minutes, the full stamp in markup. -#}

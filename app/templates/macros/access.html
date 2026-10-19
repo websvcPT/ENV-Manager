@@ -4,6 +4,7 @@
 {% from "macros/badges.html" import badge %}
 {% from "macros/dialogs.html" import loaded_dialog %}
 {% from "macros/panels.html" import tabs %}
+{% from "macros/row_actions.html" import row_actions %}
 
 {#- Section links of the deployment page; on the Access tab the sections are links to the page. -#}
 {% macro deployment_tabs(deployment, can_manage_grants, on_access=false) -%}
@@ -51,11 +52,15 @@
 {%- endmacro %}
 
 {#- The Actions cell: Remove (opens the confirm dialog) for a direct grant, a link to where an
-    inherited access is edited otherwise. Both are 44 px high on a phone. -#}
+    inherited access is edited otherwise. -#}
 {% macro access_actions(entry, base) -%}
 {%- if entry.direct -%}
-<button type="button" data-js="dialog-open" data-target="access-remove" aria-haspopup="dialog" hx-get="{{ base }}/remove/{{ entry.user.id }}" hx-target="#access-remove" hx-swap="innerHTML" class="font-semibold text-danger hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus text-sm max-md:inline-flex max-md:min-h-11 max-md:items-center">Remove<span class="sr-only"> access for {{ entry.user.name }}</span></button>
+{{ row_actions("access-row-" ~ entry.user.id, entry.user.name, [
+  {"key": "remove", "label": "Remove", "icon": "trash", "danger": true, "attrs": {"data_js": "dialog-open", "data_target": "access-remove", "aria_haspopup": "dialog", "hx_get": base ~ "/remove/" ~ entry.user.id, "hx_target": "#access-remove", "hx_swap": "innerHTML"}}
+]) }}
 {%- else -%}
-<a href="{{ entry.edit_href }}" class="font-semibold text-link hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus text-sm max-md:inline-flex max-md:min-h-11 max-md:items-center">{{ entry.edit_label }}<span class="sr-only"> for {{ entry.user.name }}</span></a>
+{{ row_actions("access-row-" ~ entry.user.id, entry.user.name, [
+  {"key": "edit", "label": entry.edit_label, "icon": "pencil", "href": entry.edit_href}
+]) }}
 {%- endif -%}
 {%- endmacro %}

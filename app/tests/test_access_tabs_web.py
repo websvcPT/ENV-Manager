@@ -118,6 +118,16 @@ def plain(markup: str) -> str:
     return " ".join(html.unescape(re.sub(r"<[^>]+>", " ", markup)).split())
 
 
+def row_actions(page: str) -> dict[str, list[str]]:
+    """The keys of the row actions of every row of the access list by user name."""
+    rows: dict[str, list[str]] = {}
+    for _user_id, markup in ROW.findall(page):
+        name = ROW_NAME.search(markup)
+        assert name is not None
+        rows[name.group(1)] = re.findall(r'data-row-action="([a-z-]+)"', markup)
+    return rows
+
+
 def listed(page: str) -> dict[str, str]:
     """The text of every row of the access list by user name."""
     rows: dict[str, str] = {}
@@ -199,9 +209,10 @@ async def test_the_project_tab_lists_users_with_how_they_reach_the_project(
         "env_scoped_viewer",
     }
     assert "Direct Includes future items" in rows["viewer"]
-    assert "Remove access for viewer" in rows["viewer"]
-    assert "Inherited from prod (Deployment) Edit at source" in rows["deployment_admin"]
-    assert "from .env.db (Environment)" in rows["env_scoped_admin"]
+    actions = row_actions(body)
+    assert actions["viewer"] == ["remove"] and actions["deployment_admin"] == ["edit"]
+    assert "Inherited from prod (Deployment)" in rows["deployment_admin"]
+    assert "from mysql/.env.db (Environment)" in rows["env_scoped_admin"]
     assert "2 deployments · 6 members" in body
     assert (
         '<strong class="text-ink">project Fancy Proj. Name</strong>, direct or inherited.' in body
@@ -234,8 +245,9 @@ async def test_the_deployment_tab_has_the_handoff_header_and_links_back_to_the_p
     assert f'href="/deployments/{items.prod}/edit"' not in body
     rows = listed(body)
     assert "Direct Includes future items" in rows["deployment_admin"]
-    assert "Inherited from Fancy Proj. Name (Project) Edit at source" in rows["admin"]
-    assert "from .env.db (Environment)" in rows["env_scoped_viewer"]
+    assert "Inherited from Fancy Proj. Name (Project)" in rows["admin"]
+    assert row_actions(body)["admin"] == ["edit"]
+    assert "from mysql/.env.db (Environment)" in rows["env_scoped_viewer"]
     assert "A deployment grant includes the services and environments added later." in body
     assert 'id="grant-dialog"' in body
 
@@ -257,9 +269,10 @@ async def test_the_service_tab_has_no_grant_controls_and_links_to_the_grant_leve
     assert f'href="/projects/{items.fancy}/access"' in body
     assert f'href="/deployments/{items.prod}/access"' in body
     rows = listed(body)
-    assert "from Fancy Proj. Name (Project) Edit at source" in rows["admin"]
-    assert "from prod (Deployment) Edit at source" in rows["deployment_admin"]
-    assert "from .env.db (Environment), sees 1 of 3 Edit at source" in rows["env_scoped_admin"]
+    assert "from Fancy Proj. Name (Project)" in rows["admin"]
+    assert "from prod (Deployment)" in rows["deployment_admin"]
+    assert "from mysql/.env.db (Environment), sees 1 of 3" in rows["env_scoped_admin"]
+    assert set(map(tuple, row_actions(body).values())) == {("edit",)}
     assert f'href="/environments/{items.db_env}/access"' in body
 
 
@@ -275,7 +288,9 @@ async def test_the_environment_tab_lists_direct_and_inherited_access(
     assert f'href="/environments/{items.db_env}/access" aria-current="page"' in body
     assert "<h1" in body and ">.env.db</h1>" in body
     rows = listed(body)
-    assert "Direct Remove access for env_scoped_admin" in rows["env_scoped_admin"]
+    assert "Direct" in rows["env_scoped_admin"]
+    assert row_actions(body)["env_scoped_admin"] == ["remove"]
+    assert "environment mysql/.env.db" in plain(body)
     assert "Includes future items" not in rows["env_scoped_admin"]
     assert "from prod (Deployment)" in rows["deployment_admin"]
     assert "from Fancy Proj. Name (Project)" in rows["viewer"]

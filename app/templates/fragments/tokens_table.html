@@ -4,7 +4,7 @@
 {% from "macros/buttons.html" import button %}
 {% from "macros/feedback.html" import empty_state %}
 {% from "macros/panels.html" import table %}
-{% from "macros/tokens.html" import revoke_button, token_status_badge %}
+{% from "macros/tokens.html" import token_actions, token_status_badge %}
 {% set columns = ["Name", "Owner", "Scope", "Project", "Created", "Last used", "Expiry", "Status", "Actions"] if show_owner else ["Name", "Scope", "Project", "Created", "Last used", "Expiry", "Status", "Actions"] %}
 <section data-fragment="tokens-table" id="tokens-table" aria-label="Tokens" hx-get="/tokens/table" hx-trigger="token-changed from:body" hx-swap="outerHTML" class="rounded-panel border border-line bg-surface shadow-panel overflow-hidden">
 {%- if rows %}
@@ -20,7 +20,7 @@
 <td class="border-t border-line px-4 py-3.5 whitespace-nowrap">{% if row.last_used_at %}<span class="inline-flex flex-col items-start gap-0.5"><time datetime="{{ row.last_used_at.strftime('%Y-%m-%dT%H:%M:%SZ') }}" title="UTC">{{ row.last_used_at.strftime("%Y-%m-%d %H:%M") }}</time>{% if row.last_used_ip %}<span class="font-mono text-xs text-ink3">{{ row.last_used_ip }}</span>{% endif %}</span>{% else %}Never{% endif %}</td>
 <td class="border-t border-line px-4 py-3.5 whitespace-nowrap">{% if row.expires_at %}<time datetime="{{ row.expires_at.strftime('%Y-%m-%dT%H:%M:%SZ') }}" title="UTC, through the end of the day">{{ row.expires_at.strftime("%Y-%m-%d") }}</time>{% else %}Never{% endif %}</td>
 <td class="border-t border-line px-4 py-3.5">{{ token_status_badge(row.status.value, row.reason) }}</td>
-<td class="border-t border-line px-4 py-3.5 whitespace-nowrap text-right">{% if row.revocable %}{{ revoke_button(row.id, row.name) }}{% endif %}</td></tr>
+<td class="border-t border-line px-4 py-3.5 whitespace-nowrap text-right">{% if row.revocable %}{{ token_actions(row.id, row.name) }}{% endif %}</td></tr>
 {%- endfor %}
 {% endcall %}
 {%- else %}

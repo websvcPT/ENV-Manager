@@ -37,12 +37,9 @@ test.describe('sign in page', () => {
   });
 
   test('draws the brand lockup above the product name', async ({ page }) => {
-    for (const [path, fragment] of [
-      ['/login', 'login-card'],
-      ['/session-expired', 'session-expired'],
-    ]) {
+    for (const path of ['/login', '/login?expired=1']) {
       await page.goto(path);
-      const card = page.locator(`[data-fragment="${fragment}"]`);
+      const card = page.locator('[data-fragment="login-card"]');
       const lockup = card.locator('img');
       await expectImageLoaded(lockup);
       await expect(lockup).toHaveAttribute('src', '/static/brand/env-vertical-solid.svg');
@@ -58,7 +55,7 @@ test.describe('sign in page', () => {
 
   test('has no horizontal overflow at 360px in every state', async ({ page }) => {
     await page.setViewportSize({ width: 360, height: 800 });
-    for (const path of ['/login', '/login?expired=1', '/session-expired']) {
+    for (const path of ['/login', '/login?expired=1']) {
       await page.goto(path);
       expect(await horizontalOverflow(page), path).toBeLessThanOrEqual(0);
     }
@@ -212,29 +209,59 @@ test.describe('session expiry', () => {
     await expect(page.locator('[data-fragment="login-message"][role="status"]')).toBeVisible();
   });
 
-  test('an htmx request from an open page is redirected', async ({ page, context }) => {
+  // The request is started without awaiting it: the redirect navigates the page away, which
+  // would destroy the context of an awaited evaluate.
+  test('an htmx request from an open page without a session goes to sign in', async ({
+    page,
+    context,
+  }) => {
     await page.goto('/login');
     await signIn(page, 'root', PASSWORD);
     await expect(page).toHaveURL(/\/projects$/);
 
     await context.clearCookies();
-    await page.evaluate(() => window.htmx.ajax('GET', '/projects', '#projects-table'));
+    await page.evaluate(() => {
+      void window.htmx.ajax('GET', '/projects', '#projects-table');
+    });
     await expect(page).toHaveURL(/\/login$/);
+    await expect(page.locator('[data-fragment="login-message"]')).toHaveCount(0);
   });
 
-  test('an htmx request with a dead session goes to the expired page', async ({ page, context }) => {
+  test('an htmx request with a dead session goes to sign in in the expired state', async ({
+    page,
+    context,
+  }) => {
     await page.goto('/login');
     await signIn(page, 'root', PASSWORD);
     await expect(page).toHaveURL(/\/projects$/);
 
     const baseURL = String(test.info().project.use.baseURL);
     await context.addCookies([{ name: SESSION_COOKIE, value: 'dead-session', url: baseURL }]);
-    await page.evaluate(() => window.htmx.ajax('GET', '/projects', '#projects-table'));
-    await expect(page).toHaveURL(/\/session-expired$/);
-    const state = page.locator('[data-fragment="session-expired"]');
-    await expect(state.locator('h1')).toBeVisible();
-    await state.locator('a[href="/login"]').click();
-    await expect(page.locator('#user')).toBeVisible();
+    await page.evaluate(() => {
+      void window.htmx.ajax('GET', '/projects', '#projects-table');
+    });
+    await expect(page).toHaveURL(/\/login\?expired=1$/);
+    const message = page.locator('[data-fragment="login-message"]');
+    await expect(message).toHaveAttribute('role', 'status');
+    await expect(message).toContainText('Session expired');
+    await expect(page.locator('#user')).toBeEnabled();
+  });
+
+  test('a dead session found by the filter of an open page ends the same way', async ({
+    page,
+    context,
+  }) => {
+    await page.goto('/login');
+    await signIn(page, 'root', PASSWORD);
+    await expect(page).toHaveURL(/\/projects$/);
+    const baseURL = String(test.info().project.use.baseURL);
+    await context.addCookies([{ name: SESSION_COOKIE, value: 'dead-session', url: baseURL }]);
+    await page.locator('#ps').fill('fancy');
+    await expect(page).toHaveURL(/\/login\?expired=1$/);
+  });
+
+  test('there is no standalone session expired page', async ({ page }) => {
+    expect((await page.request.get('/session-expired')).status()).toBe(404);
   });
 });
 
@@ -246,15 +273,13 @@ test.describe('security policy', () => {
         window.cspViolations?.push(`${event.violatedDirective} ${event.blockedURI}`);
       });
     });
-    for (const path of ['/login', '/login?expired=1', '/session-expired']) {
+    for (const path of ['/login', '/login?expired=1']) {
       const response = await page.goto(path);
       expect(response?.headers()['content-security-policy']).toContain("default-src 'self'");
       const toggle = page.locator('[data-js="theme-toggle"]');
-      await expect(toggle).toHaveCount(path === '/session-expired' ? 0 : 1);
-      if (path !== '/session-expired') {
-        await toggle.click();
-        await toggle.click();
-      }
+      await expect(toggle).toHaveCount(1);
+      await toggle.click();
+      await toggle.click();
       expect(await page.evaluate(() => window.cspViolations), path).toEqual([]);
     }
   });

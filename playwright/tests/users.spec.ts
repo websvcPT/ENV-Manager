@@ -1,4 +1,10 @@
-import { expect, test as base, type Browser, type Locator, type Page } from '@playwright/test';
+import {
+  expect as baseExpect,
+  test as base,
+  type Browser,
+  type Locator,
+  type Page,
+} from '@playwright/test';
 
 import { createDeployment } from '../deployments-api';
 import { createEnvironment } from '../environments-api';
@@ -13,7 +19,15 @@ import {
   type CreatedUser,
 } from '../users-api';
 import { createProject, deleteProjectIfPresent } from '../projects-api';
+import { actionControls, rowAction, rowMenu } from './row-actions';
 import { totpCode } from './totp';
+
+// The users list is not paged and accounts cannot be deleted, so on the development stack it holds
+// every scratch user of every earlier run (thousands of rows). Its table is rendered and swapped
+// slowly and the single server process answers the other specs meanwhile, so the specs of this
+// file wait up to 15 s for what they assert instead of 5 s, and the list specs get the longer
+// test timeout.
+const expect = baseExpect.configure({ timeout: 15_000 });
 
 const WIDE_BREAKPOINT = 768;
 const SAMPLE_A = '/srv/deployments/sample-a';
@@ -88,10 +102,15 @@ async function horizontalOverflow(page: Page): Promise<number> {
   );
 }
 
+/**
+ * The row of a user by name. The list holds every account ever made on the development stack,
+ * so the row is found from its name link and climbed to, which is one pass over the links, not
+ * a search inside every row.
+ */
 function row(page: Page, name: string) {
-  return page.locator('[data-fragment="user-row"]', {
-    has: page.locator('th[scope="row"] a', { hasText: new RegExp(`^${name}$`) }),
-  });
+  return page
+    .locator('#users-table th[scope="row"] a', { hasText: new RegExp(`^${name}$`) })
+    .locator('xpath=ancestor::tr[@data-fragment="user-row"]');
 }
 
 function rowNames(page: Page) {
@@ -130,6 +149,8 @@ async function signedInAs(browser: Browser, user: CreatedUser): Promise<Page> {
 }
 
 test.describe('superadmin: the users list', () => {
+  test.slow();
+
   test('lists every account with its group, status, last login and reach', async ({ page }) => {
     await page.goto('/users');
     await expect(page.locator('[data-fragment="page-header"] h1')).toHaveText('Users');
@@ -153,7 +174,7 @@ test.describe('superadmin: the users list', () => {
     await expect(root.locator('td').nth(1)).toHaveText('Superadmin');
     await expect(root.locator('td').nth(2)).toHaveText('Active');
     await expect(root.locator('td').nth(4)).toHaveText('All');
-    await expect(root.getByRole('link', { name: 'Edit' })).toHaveAttribute('href', /^\/users\/\d+$/);
+    await expect(actionControls(root, 'edit').first()).toHaveAttribute('href', /^\/users\/\d+$/);
     const admin = row(page, 'admin');
     await expect(admin.locator('td').nth(0)).toHaveText('admin@example.test');
     await expect(admin.locator('td').nth(1)).toHaveText('Admin');
@@ -281,7 +302,7 @@ test.describe('superadmin: the users list', () => {
       await expect(person.locator('#projects-table')).toContainText(scratch.projectName);
       await expect(person.locator('nav[aria-label="Primary"] a[href="/users"]')).toHaveCount(0);
 
-      await row(page, name).getByRole('button', { name: `Disable ${name}` }).click();
+      await (await rowAction(row(page, name), 'disable')).click();
       await page.locator('#user-action[open]').getByRole('button', { name: 'Disable user' }).click();
       await expect(page.locator('#user-action[open]')).toHaveCount(0);
       await expect(row(page, name).locator('td').nth(2)).toHaveText('Disabled');
@@ -297,7 +318,7 @@ test.describe('superadmin: the users list', () => {
     const user = await makeUser();
     await page.goto('/users');
     const current = row(page, user.name);
-    await current.getByRole('button', { name: `Disable ${user.name}` }).click();
+    await (await rowAction(current, 'disable')).click();
     const dialog = page.locator('#user-action[open]');
     await expect(dialog.getByRole('heading', { name: `Disable ${user.name}` })).toBeVisible();
     await expect(dialog.getByText('active sessions end now')).toBeVisible();
@@ -306,13 +327,14 @@ test.describe('superadmin: the users list', () => {
     await expect(page.locator('#user-action[open]')).toHaveCount(0);
     await expect(current.locator('td').nth(2)).toHaveText('Active');
 
-    await current.getByRole('button', { name: `Disable ${user.name}` }).click();
+    await (await rowAction(current, 'disable')).click();
     await dialog.getByRole('button', { name: 'Disable user' }).click();
     await expect(page.locator('#user-action[open]')).toHaveCount(0);
     await expect(current.locator('td').nth(2)).toHaveText('Disabled');
-    await expect(current.getByRole('button', { name: `Enable ${user.name}` })).toBeVisible();
+    await expect(actionControls(current, 'enable').first()).toBeAttached();
+    await expect(actionControls(current, 'disable')).toHaveCount(0);
 
-    await current.getByRole('button', { name: `Enable ${user.name}` }).click();
+    await (await rowAction(current, 'enable')).click();
     await expect(dialog.getByRole('heading', { name: `Enable ${user.name}` })).toBeVisible();
     await expect(dialog.getByText('Their old API tokens stay revoked')).toBeVisible();
     await dialog.getByRole('button', { name: 'Enable user' }).click();
@@ -330,7 +352,7 @@ test.describe('superadmin: the users list', () => {
 test.describe('superadmin: the user detail', () => {
   test('shows the account, its grants, tokens and activity', async ({ page }) => {
     await page.goto('/users');
-    await row(page, 'admin').getByRole('link', { name: 'Edit' }).click();
+    await (await rowAction(row(page, 'admin'), 'edit')).click();
     await expect(page).toHaveURL(/\/users\/\d+$/);
     const header = page.locator('[data-fragment="page-header"]');
     await expect(header.locator('h1')).toHaveText('admin');
@@ -353,7 +375,7 @@ test.describe('superadmin: the user detail', () => {
     ]);
     const token = tokens.locator('[data-fragment="token-row"]', { hasText: 'billing-ci' });
     await expect(token).toContainText('Active');
-    await expect(token.getByRole('button', { name: /^Revoke/ })).toHaveCount(1);
+    await expect(token.locator('[data-row-action="revoke"]')).toHaveCount(1);
     const activity = page.locator('[data-fragment="user-activity"]');
     await expect(activity.getByRole('link', { name: 'Open audit log' })).toHaveAttribute(
       'href',
@@ -545,7 +567,7 @@ test.describe('superadmin: the user detail', () => {
 
   test('says superadmins hold no grants', async ({ page }) => {
     await page.goto('/users');
-    await row(page, 'root').getByRole('link', { name: 'Edit' }).click();
+    await (await rowAction(row(page, 'root'), 'edit')).click();
     await expect(page.locator('#user-grants')).toContainText(
       'Superadmins reach every project, so grants do not apply to this account.',
     );
@@ -561,8 +583,13 @@ test.describe('superadmin: the user detail', () => {
     }
     if (!isWide(page)) {
       await page.goto('/users');
-      const edit = row(page, user.name).getByRole('link', { name: 'Edit' });
-      expect((await edit.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+      const current = row(page, user.name);
+      const more = current.locator('[data-row-menu-button]');
+      expect((await more.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+      await more.click();
+      for (const item of await rowMenu(page).locator('[data-row-menu-item]').all()) {
+        expect((await item.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+      }
     }
   });
 });

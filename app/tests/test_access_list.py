@@ -93,8 +93,8 @@ async def test_the_project_tab_lists_direct_grants_and_the_items_inside_that_car
         assert listed[name].direct and listed[name].also is None and not listed[name].sources
     assert not listed["deployment_admin"].direct
     assert sources_of(listed["deployment_admin"]) == [("prod", "Deployment")]
-    assert sources_of(listed["env_scoped_admin"]) == [(".env.db", "Environment")]
-    assert sources_of(listed["env_scoped_viewer"]) == [(".env.db", "Environment")]
+    assert sources_of(listed["env_scoped_admin"]) == [("mysql/.env.db", "Environment")]
+    assert sources_of(listed["env_scoped_viewer"]) == [("mysql/.env.db", "Environment")]
     assert listed["deployment_admin"].below and listed["deployment_admin"].source_count == 1
     assert listed["deployment_admin"].edit_label == "Edit at source"
     assert listed["deployment_admin"].edit_href == (
@@ -137,7 +137,7 @@ async def test_the_deployment_tab_names_the_project_above_and_the_environments_b
     for name in ("admin", "viewer", "project_admin"):
         assert sources_of(listed[name]) == [("Fancy Proj. Name", "Project")]
         assert listed[name].edit_href == f"/projects/{prod.project_id}/access"
-    assert sources_of(listed["env_scoped_admin"]) == [(".env.db", "Environment")]
+    assert sources_of(listed["env_scoped_admin"]) == [("mysql/.env.db", "Environment")]
     assert listed["env_scoped_admin"].below
     assert access.node.future_items and access.grantable
     assert [(p.name, p.level_label) for p in access.parents] == [("Fancy Proj. Name", "Project")]
@@ -150,7 +150,7 @@ async def test_the_billing_deployment_lists_who_reaches_it_through_the_project_o
     listed = by_name(await tab(db, main.project_id, f"deployment-{main.id}"))
     assert set(listed) == {"admin", "env_scoped_viewer"}
     assert sources_of(listed["admin"]) == [("billing", "Project")]
-    assert sources_of(listed["env_scoped_viewer"]) == [(".env.api", "Environment")]
+    assert sources_of(listed["env_scoped_viewer"]) == [("api/.env.api", "Environment")]
 
 
 async def test_the_service_tab_shows_the_result_and_links_the_items_that_grant_it(
@@ -164,7 +164,7 @@ async def test_the_service_tab_shows_the_result_and_links_the_items_that_grant_i
     assert sources_of(listed["admin"]) == [("Fancy Proj. Name", "Project")]
     assert sources_of(listed["deployment_admin"]) == [("prod", "Deployment")]
     assert listed["admin"].sees is None and listed["deployment_admin"].sees is None
-    assert sources_of(listed["env_scoped_admin"]) == [(".env.db", "Environment")]
+    assert sources_of(listed["env_scoped_admin"]) == [("mysql/.env.db", "Environment")]
     assert listed["env_scoped_admin"].sees == (1, 3)
     assert [(p.name, p.level_label) for p in access.parents] == [
         ("Fancy Proj. Name", "Project"),
@@ -178,6 +178,7 @@ async def test_the_environment_tab_shows_direct_and_inherited_access_without_fut
 ) -> None:
     fancy = seed_data.projects.fancy.id
     access = await tab(db, fancy, f"environment-{seed_data.envs.db.id}")
+    assert access.subtitle == "environment mysql/.env.db"
     listed = by_name(access)
     assert {name for name, entry in listed.items() if entry.direct} == {
         "env_scoped_admin",

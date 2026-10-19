@@ -5,6 +5,7 @@ import { createEnvironment, saveRaw, seededEnvironmentId } from '../environments
 import { stateFile } from '../global-setup';
 import { csrfHeaders } from '../projects-api';
 import { createService } from '../services-api';
+import { rowAction } from './row-actions';
 import { expect, test } from './scratch-project';
 
 const SAMPLE_A = '/srv/deployments/sample-a';
@@ -115,7 +116,8 @@ test.describe('superadmin report', () => {
       BLOCKED_DIST,
     );
     await page.goto(`/services/${service}`);
-    await page.locator(`a[href="/environments/${environment}/dist"]:visible`).first().click();
+    const row = page.locator('[data-fragment="env-row"]:visible', { hasText: '.env.blocked' });
+    await (await rowAction(row, 'dist')).click();
     await expect(page).toHaveURL(new RegExp(`/environments/${environment}/dist$`));
     await expect(header(page).locator('h1')).toHaveText('.env.blocked');
     await expect(header(page).locator('[data-status="blocked"]')).toHaveText('Blocked');
@@ -365,7 +367,8 @@ test.describe('deployment overview', () => {
     await createEnvironment(request, service, '.env.gone', 'A=1\n', 'environments/e2e-nonexistent-dist');
 
     await page.goto(`/projects/${scratch.id}`);
-    await page.locator(`a[href="/deployments/${deployment}/dist"]`).click();
+    const deploymentRow = page.locator('[data-fragment="deployment-row"]');
+    await (await rowAction(deploymentRow, 'dist')).click();
     await expect(page).toHaveURL(new RegExp(`/deployments/${deployment}/dist$`));
     await expect(header(page).locator('h1')).toHaveText('Dist check');
     const rows = fileRows(page);

@@ -239,9 +239,17 @@ async def test_htmx_request_without_a_session_gets_hx_redirect(
 ) -> None:
     anonymous = await web_client.get("/projects", headers=HTMX)
     assert (anonymous.status_code, anonymous.headers["hx-redirect"]) == (401, "/login")
+    assert SESSION_COOKIE_NAME not in anonymous.headers.get("set-cookie", "")
+
+
+async def test_htmx_request_with_a_stale_session_goes_to_the_expired_state(
+    web_client: httpx.AsyncClient,
+) -> None:
+    """An open screen whose session ended is sent where a page request is: sign-in, expired."""
     web_client.cookies.set(SESSION_COOKIE_NAME, "not-a-live-session")
     stale = await web_client.get("/projects", headers=HTMX)
-    assert (stale.status_code, stale.headers["hx-redirect"]) == (401, "/session-expired")
+    assert (stale.status_code, stale.headers["hx-redirect"]) == (401, "/login?expired=1")
+    assert f'{SESSION_COOKIE_NAME}=""' in stale.headers["set-cookie"]
 
 
 async def test_non_browser_clients_keep_the_json_401(web_app: FastAPI) -> None:
@@ -252,12 +260,8 @@ async def test_non_browser_clients_keep_the_json_401(web_app: FastAPI) -> None:
         assert response.json() == {"detail": "authentication required"}
 
 
-async def test_session_expired_page_is_public(web_client: httpx.AsyncClient) -> None:
-    response = await web_client.get("/session-expired")
-    assert response.status_code == 200
-    assert 'data-fragment="session-expired"' in response.text
-    assert 'href="/login"' in response.text
-    assert 'data-js="theme-toggle"' not in response.text
+async def test_there_is_no_standalone_session_expired_page(web_client: httpx.AsyncClient) -> None:
+    assert (await web_client.get("/session-expired")).status_code == 404
 
 
 @pytest.fixture

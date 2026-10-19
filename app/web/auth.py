@@ -156,15 +156,6 @@ async def login_page(request: Request, expired: bool = False) -> Response:
     return render(request, LOGIN_PAGE, {"state": "expired" if expired else None})
 
 
-@router.get("/session-expired", include_in_schema=False)
-async def session_expired_page(request: Request) -> Response:
-    """The page an open screen is sent to when one of its requests finds the session ended.
-
-    Public by design: this route is on the default-deny allow list.
-    """
-    return render(request, "pages/session_expired.html")
-
-
 @router.post("/login/totp", include_in_schema=False)
 async def login_totp(
     request: Request,

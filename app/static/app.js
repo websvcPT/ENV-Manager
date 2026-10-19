@@ -1,9 +1,10 @@
 /* ENV Manager page behaviour. Vanilla JS in an external file (strict CSP, no inline scripts).
    Handlers are delegated from the document so content swapped in by htmx works without rebinding.
    Behaviours: theme toggle and preference (light, dark or follow the system), dialogs (one that
-   held a one-time secret is emptied when it closes), sidebar collapse, reveal hide and timer,
-   removing a new variable row, row toggle, tree toggle, copy, dismiss, history back, picking a path into a
-   field, limiting the version comparison to two versions, closing dialogs when the server asks,
+   held a one-time secret is emptied when it closes), the row menu below md (filled from the
+   action controls of the row), sidebar collapse, reveal hide and timer, removing a new variable
+   row, row toggle, tree toggle, copy, dismiss, history back, picking a path into a field,
+   limiting the version comparison to two versions, closing dialogs when the server asks,
    the deploy dialog (loading content, chosen environments, closing when the load fails), and a
    toast when an htmx request fails (an access grid checkbox goes back to the stored state). */
 (function () {
@@ -188,7 +189,71 @@
     }
   }, true);
 
+  /* The row menu (below md): one dialog in the page, filled when a row's 3-dot button opens it
+     with an item for each action control of that row. The controls stay in the markup (hidden
+     below md), so a row carries its actions once; an item forwards its click to its control. */
+  var MENU_ITEM = 'flex h-11 w-full items-center gap-3 rounded-btn px-3 text-left text-sm font-semibold hover:bg-surface2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus';
+
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+
+  /* An icon control carries its drawing; a text control (the primary action) names the path of
+     its icon in data-icon, which is drawn here, so the row holds no hidden drawing. */
+  function menuIcon(control) {
+    var existing = control.querySelector('svg');
+    var svg = existing ? existing.cloneNode(true) : document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('class', 'size-4 shrink-0');
+    if (!existing) {
+      var attributes = {
+        viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2',
+        'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true'
+      };
+      Object.keys(attributes).forEach(function (name) { svg.setAttribute(name, attributes[name]); });
+      var shape = document.createElementNS(SVG_NS, 'path');
+      shape.setAttribute('d', control.getAttribute('data-icon') || '');
+      svg.appendChild(shape);
+    }
+    return svg;
+  }
+
+  function menuItem(control) {
+    var isLink = control.tagName === 'A';
+    var item = document.createElement(isLink ? 'a' : 'button');
+    if (isLink) { item.setAttribute('href', control.getAttribute('href')); } else { item.type = 'button'; }
+    item.className = MENU_ITEM + (control.getAttribute('data-tone') === 'danger' ? ' text-danger' : ' text-ink');
+    item.setAttribute('data-js', 'row-menu-item');
+    item.setAttribute('data-row-menu-item', control.getAttribute('data-row-action'));
+    item.setAttribute('data-source', control.id);
+    item.appendChild(menuIcon(control));
+    var text = document.createElement('span');
+    text.textContent = control.getAttribute('aria-label') || control.textContent.trim();
+    item.appendChild(text);
+    return item;
+  }
+
   var clickActions = {
+    'row-menu': function (button) {
+      var dialog = document.getElementById('row-menu');
+      var group = button.parentElement && button.parentElement.querySelector(':scope > [data-row-actions]');
+      if (!dialog || !group) { return; }
+      var subject = button.getAttribute('data-subject') || '';
+      var items = Array.prototype.map.call(group.querySelectorAll('[data-row-action]'), menuItem);
+      dialog.setAttribute('aria-label', 'Actions for ' + subject);
+      dialog.querySelector('[data-row-menu-title]').textContent = subject;
+      var list = dialog.querySelector('[data-row-menu-items]');
+      list.replaceChildren.apply(list, items);
+      dialog.showModal();
+    },
+    'row-menu-item': function (item, event) {
+      var dialog = item.closest('dialog');
+      var source = document.getElementById(item.getAttribute('data-source'));
+      if (item.tagName !== 'A') {
+        event.preventDefault();
+      }
+      /* Closing first puts focus back on the 3-dot button, so a confirm dialog that the action
+         opens returns focus there when it closes. */
+      if (dialog) { dialog.close(); }
+      if (item.tagName !== 'A' && source) { source.click(); }
+    },
     'theme-toggle': function () {
       var dark = root.classList.toggle('dark');
       writeStored(THEME_KEY, dark ? 'dark' : 'light');

@@ -6,6 +6,7 @@ import { stateFile } from '../global-setup';
 import { createHostFolder, type HostFolder } from '../host-files';
 import { csrfHeaders } from '../projects-api';
 import { createService, serviceId } from '../services-api';
+import { rowAction } from './row-actions';
 import { expect, test as scratchTest } from './scratch-project';
 
 /*
@@ -277,7 +278,7 @@ test.describe('pre-flight', () => {
     const { service, deployment } = await world(request, scratch.id, host);
     await createEnvironment(request, service, '.env.one', 'ONE=1\n');
     await page.goto(`/deployments/${deployment}`);
-    await page.locator('#services').getByRole('button', { name: 'Deploy' }).click();
+    await (await rowAction(page.locator('#services [data-fragment="service-row"]'), 'deploy')).click();
     await expect(dialog(page).locator('[data-fragment="preflight-table"]')).toBeVisible();
     await expect(dialog(page).locator('#dd-title')).toHaveText('Deploy web');
     await expect(row(page, '.env.one')).toBeVisible();

@@ -3,6 +3,7 @@
     confirm dialog of the page. Context: rows (UserRow list). -#}
 {% from "macros/badges.html" import badge %}
 {% from "macros/panels.html" import table %}
+{% from "macros/row_actions.html" import row_actions %}
 <section data-fragment="users-table" id="users-table" aria-label="Users" hx-get="/users/table" hx-trigger="user-changed from:body" hx-swap="outerHTML" class="rounded-panel border border-line bg-surface shadow-panel overflow-hidden">
 {% call table("Users", ["Name", "Email", "Group", "Status", "Last login", "Projects", "Actions"], right_columns=[6], min_width_class="min-w-[900px]") %}
 {%- for row in rows %}
@@ -12,7 +13,10 @@
 <td class="border-t border-line px-4 py-3.5">{% if row.is_active %}{{ badge("deployed", "Active") }}{% else %}{{ badge("never", "Disabled") }}{% endif %}</td>
 <td class="border-t border-line px-4 py-3.5 whitespace-nowrap">{% if row.last_login_at %}<time datetime="{{ row.last_login_at.strftime('%Y-%m-%dT%H:%M:%SZ') }}" title="UTC">{{ row.last_login_at.strftime("%Y-%m-%d %H:%M") }}</time>{% else %}Never{% endif %}</td>
 <td class="border-t border-line px-4 py-3.5">{{ "All" if row.projects is none else row.projects }}</td>
-<td class="border-t border-line px-4 py-3.5 whitespace-nowrap text-right"><span class="inline-flex gap-4"><a href="/users/{{ row.id }}" class="inline-flex min-h-11 items-center font-semibold text-link hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus text-sm md:min-h-0">Edit</a><button type="button" data-js="dialog-open" data-target="user-action" aria-haspopup="dialog" hx-get="/users/{{ row.id }}/confirm/{{ 'disable' if row.is_active else 'enable' }}?from=list" hx-target="#user-action" hx-swap="innerHTML" class="inline-flex min-h-11 items-center font-semibold text-link hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus text-sm md:min-h-0{% if row.is_active %} text-danger{% endif %}">{{ "Disable" if row.is_active else "Enable" }}<span class="sr-only"> {{ row.name }}</span></button></span></td></tr>
+<td class="border-t border-line px-4 py-3.5 whitespace-nowrap text-right">{{ row_actions("user-" ~ row.id, row.name, [
+  {"key": "edit", "label": "Edit", "icon": "pencil", "href": "/users/" ~ row.id, "primary": true},
+  {"key": "disable" if row.is_active else "enable", "label": "Disable" if row.is_active else "Enable", "icon": "circle-minus" if row.is_active else "check", "danger": row.is_active, "attrs": {"data_js": "dialog-open", "data_target": "user-action", "aria_haspopup": "dialog", "hx_get": "/users/" ~ row.id ~ "/confirm/" ~ ("disable" if row.is_active else "enable") ~ "?from=list", "hx_target": "#user-action", "hx_swap": "innerHTML"}}
+]) }}</td></tr>
 {%- endfor %}
 {% endcall %}
 </section>

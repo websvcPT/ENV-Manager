@@ -2,9 +2,14 @@
 {% from "macros/attrs.html" import attrs %}
 {% from "macros/icons.html" import icon %}
 
+{#- The classes of the page title, the same on every page: 26 px on a phone, 30 px from `md`. -#}
+{% macro h1_class(mono=false) -%}
+{% if mono %}font-mono {% endif %}text-[26px] font-bold leading-tight md:text-3xl
+{%- endmacro %}
+
 {#- `badges` and `actions` are optional pre-rendered blocks (`{% set x %}...{% endset %}`). -#}
 {% macro page_header(title, subtitle=none, mono=false, badges=none, actions=none) -%}
-<section data-fragment="page-header" class="flex flex-col gap-3 md:flex-row md:items-start md:gap-6"><div class="min-w-0 flex-1"><div class="flex flex-wrap items-center gap-3"><h1 class="{% if mono %}font-mono {% endif %}text-[26px] font-bold leading-tight md:text-3xl">{{ title }}</h1>{% if badges %}{{ badges }}{% endif %}</div>{% if subtitle %}<p class="mt-1.5 text-ink2">{{ subtitle }}</p>{% endif %}</div>{% if actions %}<div class="flex flex-wrap items-center gap-2.5">{{ actions }}</div>{% endif %}</section>
+<section data-fragment="page-header" class="flex flex-col gap-3 md:flex-row md:items-start md:gap-6"><div class="min-w-0 flex-1"><div class="flex flex-wrap items-center gap-3"><h1 class="{{ h1_class(mono) }}">{{ title }}</h1>{% if badges %}{{ badges }}{% endif %}</div>{% if subtitle %}<p class="mt-1.5 text-ink2">{{ subtitle }}</p>{% endif %}</div>{% if actions %}<div class="flex flex-wrap items-center gap-2.5">{{ actions }}</div>{% endif %}</section>
 {%- endmacro %}
 
 {#- A titled panel; the call block is the body. `fragment` names the swappable unit, and

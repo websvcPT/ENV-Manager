@@ -2,6 +2,7 @@ import type { Browser, Page } from '@playwright/test';
 
 import { deploymentId } from '../deployments-api';
 import { stateFile } from '../global-setup';
+import { actionControls, rowAction } from './row-actions';
 import { expect, test } from './scratch-project';
 
 const WIDE_BREAKPOINT = 768;
@@ -92,11 +93,11 @@ test.describe('superadmin', () => {
     const mysql = serviceRows(page).filter({ hasText: 'mysql' });
     await expect(mysql.locator('td').first()).toHaveText('3');
     await expect(mysql.locator('[data-status="failed"]').first()).toBeVisible();
-    await expect(mysql.getByRole('link', { name: 'Open' })).toHaveAttribute(
+    await expect(actionControls(mysql, 'open').first()).toHaveAttribute(
       'href',
       /^\/services\/\d+$/,
     );
-    await expect(mysql.getByRole('button', { name: 'Deploy' })).toBeVisible();
+    await expect(actionControls(mysql, 'deploy').first()).toBeAttached();
     await expect(serviceRows(page).filter({ hasText: 'web' })).toContainText('No flags');
     await expect(page.getByRole('link', { name: 'Add service' })).toHaveAttribute(
       'href',
@@ -160,10 +161,8 @@ test.describe('superadmin', () => {
     const id = await prod(browser);
     await page.goto('/projects');
     await page.locator('[data-fragment="project-row"] th a', { hasText: /^Fancy Proj\. Name$/ }).click();
-    await page
-      .locator('[data-fragment="deployment-row"]', { hasText: '/opt/rentals/prod' })
-      .getByRole('link', { name: 'Open' })
-      .click();
+    const row = page.locator('[data-fragment="deployment-row"]', { hasText: '/opt/rentals/prod' });
+    await (await rowAction(row, 'open')).click();
     await expect(page).toHaveURL(new RegExp(`/deployments/${id}$`));
     const breadcrumb = page.locator('nav[aria-label="Breadcrumb"]');
     if (isWide(page)) {
@@ -230,7 +229,7 @@ test.describe('admin', () => {
     await expect(page.getByRole('link', { name: 'Edit policies' })).toHaveCount(0);
     await expect(page.locator('[data-fragment="policies-panel"]')).toContainText('Read-only');
     await expect(sections(page)).toHaveText(['Services', 'Deploy history']);
-    await expect(serviceRows(page).getByRole('button', { name: 'Deploy' })).toHaveCount(2);
+    await expect(serviceRows(page).locator('[data-row-action="deploy"]')).toHaveCount(2);
     await expect(page.locator('#hist')).toContainText('Post-deploy exit code');
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
   });
@@ -246,7 +245,7 @@ test.describe('viewer', () => {
     await expect(header(page).getByRole('link')).toHaveCount(0);
     await expect(header(page).getByRole('button')).toHaveCount(0);
     await expect(serviceRows(page).locator('th a')).toHaveText(['mysql', 'web']);
-    await expect(serviceRows(page).getByRole('button', { name: 'Deploy' })).toHaveCount(0);
+    await expect(actionControls(serviceRows(page), 'deploy')).toHaveCount(0);
     await expect(page.getByRole('link', { name: 'Add service' })).toHaveCount(0);
     await expect(page.locator('#hist')).not.toContainText('exit code');
     await expect(page.locator('[data-fragment="policies-panel"]')).toContainText('Read-only');
@@ -311,7 +310,7 @@ test.describe('scoped users', () => {
       await page.goto(`/deployments/${await prod(browser)}`);
       await expect(serviceRows(page).locator('th a')).toHaveText(['mysql']);
       await expect(header(page).getByRole('link')).toHaveCount(0);
-      await expect(serviceRows(page).getByRole('button', { name: 'Deploy' })).toHaveCount(0);
+      await expect(actionControls(serviceRows(page), 'deploy')).toHaveCount(0);
     });
   });
 });

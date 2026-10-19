@@ -186,7 +186,7 @@ test.describe('allowed paths', () => {
 
   test('the remove dialog counts the deployments that would be left outside', async ({ page }) => {
     await page.goto('/settings/paths');
-    await pathRow(page, '/opt/rentals').getByRole('button', { name: /^Remove/ }).click();
+    await pathRow(page, '/opt/rentals').locator('[data-row-action="remove"]').click();
     const dialog = page.locator('#path-remove');
     await expect(dialog.locator('h2')).toHaveText('Remove /opt/rentals');
     await expect(dialog).toContainText(
@@ -278,7 +278,7 @@ test.describe('allowed paths', () => {
     await page.goto('/settings/paths');
     const row = pathRow(page, folder.root);
     await expect(row).toBeVisible();
-    const remove = row.getByRole('button', { name: /^Remove/ });
+    const remove = row.locator('[data-row-action="remove"]');
     if (!isWide(page)) {
       expect(await height(remove)).toBeGreaterThanOrEqual(TOUCH_TARGET);
     }
@@ -302,7 +302,7 @@ test.describe('allowed paths', () => {
     await addAllowedPath(page.request, folder.root);
     await page.goto('/settings/paths');
     const row = pathRow(page, folder.root);
-    await row.getByRole('button', { name: /^Remove/ }).click();
+    await row.locator('[data-row-action="remove"]').click();
     const dialog = page.locator('#path-remove');
     await expect(dialog.getByRole('button', { name: 'Remove path' })).toBeVisible();
     await removeScratchEntry(page);

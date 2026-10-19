@@ -14,6 +14,7 @@ import { createProject, csrfHeaders, deleteProjectIfPresent } from '../projects-
 import { createService } from '../services-api';
 import { createToken } from '../tokens-api';
 import { createUser, disableUser, uniqueUserName, type CreatedUser } from '../users-api';
+import { rowAction } from './row-actions';
 
 /*
  * API tokens. Tokens cannot be deleted and a superadmin cannot create one for someone else, so
@@ -122,7 +123,7 @@ async function openCreate(page: Page): Promise<Locator> {
 }
 
 async function openRevoke(page: Page, name: string): Promise<Locator> {
-  await row(page, name).getByRole('button', { name: /^Revoke/ }).click();
+  await (await rowAction(row(page, name), 'revoke')).click();
   const dialog = page.locator('#token-revoke[open]');
   await expect(dialog.getByRole('heading', { name: `Revoke token ${name}` })).toBeVisible();
   return dialog;
@@ -230,7 +231,7 @@ test.describe('admin: creating and revoking tokens', () => {
     await expect(created.locator('td').nth(3)).toHaveText('Never');
     await expect(created.locator('td').nth(4)).toHaveText(expires);
     await expect(created.locator('td').nth(5)).toContainText('Active');
-    await expect(created.getByRole('button', { name: /^Revoke/ })).toBeVisible();
+    await expect(created.locator('[data-row-action="revoke"]')).toBeVisible();
 
     await page.reload();
     expect(await page.content()).not.toContain(secret);
@@ -258,7 +259,7 @@ test.describe('admin: creating and revoking tokens', () => {
     await page.locator('#token-revoke button[type="submit"]').click();
     await expect(page.locator('#token-revoke[open]')).toHaveCount(0);
     await expect(row(page, name).locator('td').nth(5)).toContainText('Revoked');
-    await expect(row(page, name).getByRole('button', { name: /^Revoke/ })).toHaveCount(0);
+    await expect(row(page, name).locator('[data-row-action="revoke"]')).toHaveCount(0);
 
     await page.goto('/audit?action=token.revoke');
     const entry = page.locator('[data-fragment="audit-row"]', { hasText: name });
@@ -277,7 +278,7 @@ test.describe('admin: creating and revoking tokens', () => {
     await createToken(page.context().request, name);
     await page.goto('/tokens');
     expect(await horizontalOverflow(page)).toBe(0);
-    const revoke = row(page, name).getByRole('button', { name: /^Revoke/ });
+    const revoke = row(page, name).locator('[data-row-action="revoke"]');
     if (!isWide(page)) {
       const box = await revoke.boundingBox();
       expect(box?.height ?? 0).toBeGreaterThanOrEqual(TOUCH_TARGET);
@@ -334,13 +335,13 @@ test.describe('superadmin: every owner and the user page', () => {
       panel.locator('[data-fragment="token-row"]', { hasText: name });
     await expect(panelRow(first).getByText('Active')).toBeVisible();
 
-    await panelRow(first).getByRole('button', { name: /^Revoke/ }).click();
+    await (await rowAction(panelRow(first), 'revoke')).click();
     const dialog = page.locator('#token-revoke[open]');
     await expect(dialog.getByRole('heading', { name: `Revoke token ${first}` })).toBeVisible();
     await dialog.locator('button[type="submit"]').click();
     await expect(page.locator('#token-revoke[open]')).toHaveCount(0);
     await expect(panelRow(first).getByText('Revoked')).toBeVisible();
-    await expect(panelRow(first).getByRole('button', { name: /^Revoke/ })).toHaveCount(0);
+    await expect(panelRow(first).locator('[data-row-action="revoke"]')).toHaveCount(0);
     await expect(panelRow(second).getByText('Active')).toBeVisible();
 
     await page.getByRole('button', { name: 'Disable' }).first().click();
@@ -352,7 +353,7 @@ test.describe('superadmin: every owner and the user page', () => {
     await expect(page).toHaveURL(new RegExp(`/users/${owner.user.id}\\?updated=disabled`));
     await expect(page.getByText('Sessions ended and API tokens revoked.')).toBeVisible();
     await expect(panelRow(second).getByText('Revoked')).toBeVisible();
-    await expect(panel.getByRole('button', { name: /^Revoke/ })).toHaveCount(0);
+    await expect(panel.locator('[data-row-action="revoke"]')).toHaveCount(0);
 
     await page.getByRole('button', { name: 'Enable' }).first().click();
     await expect(

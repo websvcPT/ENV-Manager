@@ -1,9 +1,0 @@
-{#- Shown after a request made from an open page found the session ended. -#}
-{% extends "layouts/bare.html" %}
-{% set theme_toggle = false %}
-{% from "macros/buttons.html" import button %}
-{% from "macros/shell.html" import brand_lockup %}
-{% block title %}Session expired{% endblock %}
-{% block content %}
-<section data-fragment="session-expired" class="rounded-panel border border-line bg-surface shadow-panel flex w-[420px] max-w-full flex-col items-center gap-4 p-8 text-center">{{ brand_lockup("h-24 w-auto") }}<h1 class="text-2xl font-bold">Session expired</h1><p class="text-ink2">For your security you were signed out after a period of inactivity. Unsaved changes in the editor were not saved.</p>{{ button("Sign in again", kind="primary", href="/login", extra_class="w-full") }}</section>
-{% endblock %}

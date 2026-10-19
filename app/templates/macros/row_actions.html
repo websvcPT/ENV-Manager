@@ -1,0 +1,63 @@
+{#- Actions of one table or list row. From `md` the actions are icon buttons (or links) with a
+    tooltip that shows on hover and on keyboard focus: a pseudo-element that takes its text from
+    the accessible name (`aria-label`), so the two always match, drawn with utility classes only.
+    Below `md` a 3-dot button opens the shared row menu (`row_menu`, one native dialog in the
+    page in the pattern of the account menu), which `app.js` fills with icon and text for each
+    action of that row from the controls drawn here, so a row carries its actions once. Escape
+    and a click outside close the menu and focus goes back to the 3-dot button. One action may
+    be `primary`, which stays a text link on desktop. A row with a single action shows that one
+    control at every width, with its text on a phone.
+
+    `id` is a prefix that is unique in the page (the same row drawn twice, as the service page
+    does for its table and its phone list, needs two prefixes), `subject` names the row for the
+    menu, and each action is a mapping: key (a stable name for specs), label (also the tooltip
+    and the accessible name), icon, href (a link when present, a button otherwise), danger,
+    primary and attrs (extra attributes of the control, such as the htmx and dialog attributes
+    of a confirm dialog). Controls carry data-row-action and the menu items data-row-menu-item. -#}
+{% from "macros/attrs.html" import attrs %}
+{% from "macros/icons.html" import ICON_PATHS, icon %}
+
+{#- One control: a link when the action has an href, a button otherwise. -#}
+{% macro _control(action, dom_id, classes, labelled) -%}
+{%- if action.get("href") -%}
+<a href="{{ action.href }}" id="{{ dom_id }}" data-row-action="{{ action.key }}"{% if action.get("danger") %} data-tone="danger"{% endif %}{% if labelled %} aria-label="{{ action.label }}"{% else %} data-icon="{{ ICON_PATHS[action.icon] }}"{% endif %} class="{{ classes }}"{{ attrs(action.get("attrs", {})) }}>{{ caller() }}</a>
+{%- else -%}
+<button type="button" id="{{ dom_id }}" data-row-action="{{ action.key }}"{% if action.get("danger") %} data-tone="danger"{% endif %}{% if labelled %} aria-label="{{ action.label }}"{% else %} data-icon="{{ ICON_PATHS[action.icon] }}"{% endif %} class="{{ classes }}"{{ attrs(action.get("attrs", {})) }}>{{ caller() }}</button>
+{%- endif -%}
+{%- endmacro %}
+
+{#- The tooltip classes of an icon control, to add to its own: `at_end` anchors it to the right
+    edge so the last tooltip of a row never leaves it, the others are centred on the control.
+    `from_md` keeps a control that shows its text on a phone from drawing it there. -#}
+{% macro _tip(at_end, from_md=false) -%}
+relative after:pointer-events-none after:absolute after:bottom-full after:z-20 after:mb-1 after:hidden after:whitespace-nowrap after:rounded-ctl after:bg-ink after:px-2 after:py-1 after:text-xs after:font-semibold after:text-surface after:shadow-panel after:content-[attr(aria-label)] {% if at_end %}after:right-0{% else %}after:left-1/2 after:-translate-x-1/2{% endif %} {% if from_md %}md:hover:after:block md:focus-visible:after:block{% else %}hover:after:block focus-visible:after:block{% endif %}
+{%- endmacro %}
+
+{% macro row_actions(id, subject, actions) -%}
+{%- set count = actions | length -%}
+{%- if count == 1 and actions[0].get("primary") -%}
+{%- set only = actions[0] -%}
+{%- call _control(only, id ~ "-" ~ only.key, "inline-flex items-center px-1 text-sm font-semibold text-link hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus max-md:min-h-11", false) %}{{ only.label }}{% endcall %}
+{%- elif count == 1 -%}
+{%- set only = actions[0] -%}
+{%- set tone = "border-danger bg-danger-soft text-danger hover:brightness-95 md:bg-transparent md:hover:bg-danger-soft" if only.get("danger") else "border-line-strong text-ink hover:bg-surface2 md:text-ink2 md:hover:text-ink" -%}
+{%- call _control(only, id ~ "-" ~ only.key, "inline-flex h-11 items-center justify-center gap-2 rounded-btn border px-3 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus md:size-9 md:gap-0 md:rounded-ctl md:border-transparent md:px-0 " ~ tone ~ " " ~ _tip(true, true), true) %}{{ icon(only.icon, "size-4", "2") }}<span class="md:sr-only">{{ only.label }}</span>{% endcall %}
+{%- elif count > 1 -%}
+<span data-row-actions class="hidden items-center justify-end gap-1 md:inline-flex">
+{%- for action in actions %}
+{%- if action.get("primary") %}
+{%- call _control(action, id ~ "-" ~ action.key, "inline-flex items-center px-2 text-sm font-semibold text-link hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus", false) %}{{ action.label }}{% endcall %}
+{%- else %}
+{%- call _control(action, id ~ "-" ~ action.key, "inline-flex size-9 items-center justify-center rounded-ctl hover:bg-surface2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus " ~ ("text-danger hover:bg-danger-soft" if action.get("danger") else "text-ink2 hover:text-ink") ~ " " ~ _tip(loop.last), true) %}{{ icon(action.icon, "size-4", "2") }}{% endcall %}
+{%- endif %}
+{%- endfor %}
+</span><button type="button" id="{{ id }}-more" data-row-menu-button data-js="row-menu" data-subject="{{ subject }}" aria-haspopup="dialog" aria-label="More actions for {{ subject }}" class="inline-flex size-11 items-center justify-center rounded-btn border border-line-strong text-ink hover:bg-surface2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus md:hidden">{{ icon("dots", "size-5", "3.2") }}</button>
+{%- endif -%}
+{%- endmacro %}
+
+{#- The shared row menu, once in every page of the shell: a bottom sheet that `app.js` fills
+    when a 3-dot button opens it. -#}
+{% macro row_menu() -%}
+<dialog id="row-menu" data-row-menu aria-label="Actions" class="fixed inset-x-0 bottom-0 top-auto m-0 max-h-[80vh] w-full max-w-none overflow-auto rounded-b-none rounded-t-dialog border-0 bg-surface p-0 text-ink shadow-dialog backdrop:bg-scrim md:hidden">
+<div class="flex flex-col gap-1 p-2 pb-4"><p data-row-menu-title class="truncate border-b border-line px-3 pb-2 pt-2 text-sm font-bold"></p><div data-row-menu-items class="flex flex-col gap-1"></div></div></dialog>
+{%- endmacro %}

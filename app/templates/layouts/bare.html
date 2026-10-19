@@ -1,11 +1,10 @@
-{#- Centered layout without the application shell, for people who are not signed in: sign in,
-    session expiry and error pages. Pages fill the `title` and `content` blocks and may set
-    `theme_toggle` to false to leave out the floating theme button. -#}
+{#- Centered layout without the application shell, for people who are not signed in: sign in and
+    error pages. Pages fill the `title` and `content` blocks. -#}
 {% extends "layouts/base.html" %}
 {% from "macros/icons.html" import icon %}
 {% block body %}
 <main class="flex min-h-screen items-center justify-center p-4">
 {% block content %}{% endblock %}
 </main>
-{% if theme_toggle | default(true) %}<button type="button" data-js="theme-toggle" aria-label="Switch to dark theme" class="fixed bottom-4 right-4 inline-flex size-10 shrink-0 items-center justify-center rounded-full border border-line-strong text-ink hover:bg-surface2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus bg-surface">{{ icon("moon", "size-[18px]", "2") }}</button>{% endif %}
+<button type="button" data-js="theme-toggle" aria-label="Switch to dark theme" class="fixed bottom-4 right-4 inline-flex size-10 shrink-0 items-center justify-center rounded-full border border-line-strong text-ink hover:bg-surface2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus bg-surface">{{ icon("moon", "size-[18px]", "2") }}</button>
 {% endblock %}

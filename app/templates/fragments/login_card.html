@@ -6,6 +6,7 @@
 {% from "macros/buttons.html" import button %}
 {% from "macros/forms.html" import csrf_field, field %}
 {% from "macros/icons.html" import icon %}
+{% from "macros/panels.html" import h1_class %}
 {% from "macros/shell.html" import brand_lockup %}
 {% set messages = {
   "invalid": ("alert", "bg-err-bg text-err-fg", "close", "Invalid credentials", "The username or password is incorrect. Try again."),
@@ -14,7 +15,7 @@
   "pending_invalid": ("status", "bg-info-bg text-info-fg", "info", "Verification expired", "The verification step timed out. Sign in again to continue.")
 } %}
 <div id="login-card" data-fragment="login-card" class="rounded-panel border border-line bg-surface shadow-panel flex w-[420px] max-w-full flex-col gap-5 p-6 md:p-8">
-<div class="flex flex-col items-center gap-3 text-center">{{ brand_lockup("h-24 w-auto") }}<h1 class="text-2xl font-bold">ENV Manager</h1><p class="text-ink2">Sign in to continue</p></div>
+<div class="flex flex-col items-center gap-3 text-center">{{ brand_lockup("h-24 w-auto") }}<h1 class="{{ h1_class() }}">ENV Manager</h1><p class="text-ink2">Sign in to continue</p></div>
 {%- if state == "totp" %}
 <form method="post" action="/login/totp" hx-post="/login/totp" hx-target="#login-card" hx-swap="outerHTML" class="flex flex-col gap-4">{{ csrf_field(csrf_token) }}<h2 class="text-lg font-bold">Two-factor authentication</h2><p class="text-ink2">Enter the 6-digit code from your authenticator app.</p>{{ field("code", "Authentication code", type="text", placeholder="000000", hint="Codes refresh every 30 seconds.", error=code_error | default(none), mono=true, inputmode="numeric", autocomplete="one-time-code", maxlength="6") }}{{ button("Verify", kind="primary", type="submit", extra_class="w-full") }}<a href="/login" class="font-semibold text-link hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus text-center text-sm">Back to sign in</a></form>
 {%- else %}

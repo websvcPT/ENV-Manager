@@ -3,6 +3,7 @@ import type { APIRequestContext, Browser, Locator, Page } from '@playwright/test
 import { SESSION_USERS, stateFile, SUPERADMIN_STATE } from '../global-setup';
 import { csrfHeaders, listProjects } from '../projects-api';
 import { disableUser, listUsers, type CreatedUser } from '../users-api';
+import { rowAction } from './row-actions';
 import {
   expect,
   horizontalOverflow,
@@ -82,7 +83,7 @@ async function addThrough(page: Page, user: CreatedUser): Promise<void> {
 }
 
 async function openRemoveDialog(page: Page, user: CreatedUser): Promise<void> {
-  await row(page, user).getByRole('button', { name: `Remove access for ${user.name}` }).click();
+  await (await rowAction(row(page, user), 'remove')).click();
   await expect(removeDialog(page)).toBeVisible();
   await expect(removeDialog(page).getByRole('heading')).toContainText(
     `Remove access for ${user.name}`,
@@ -176,27 +177,25 @@ test.describe('superadmin: project Access tab', () => {
     await expect(row(page, direct)).toContainText('Direct');
     await expect(row(page, direct)).toContainText('Includes future items');
     await expect(row(page, direct)).toContainText('Viewer');
-    await expect(
-      row(page, direct).getByRole('button', { name: `Remove access for ${direct.name}` }),
-    ).toBeVisible();
+    await expect(row(page, direct).locator('[data-row-action="remove"]')).toBeVisible();
     await expect(row(page, viaDeployment)).toContainText('Inherited');
     await expect(row(page, viaDeployment)).toContainText('from dep-a (Deployment)');
-    await expect(row(page, viaDeployment).getByRole('link', { name: /Edit at source/ })).toHaveAttribute(
+    await expect(row(page, viaDeployment).locator('[data-row-action="edit"]')).toHaveAttribute(
       'href',
       `/deployments/${scratch.depA}/access`,
     );
     await expect(row(page, viaDeployment).getByRole('button')).toHaveCount(0);
     await expect(row(page, viaFiles)).toContainText(
-      'from .env.cache (Environment), .env.cache2 (Environment)',
+      'from cache/.env.cache (Environment), cache/.env.cache2 (Environment)',
     );
-    await expect(row(page, viaFiles).getByRole('link', { name: /Edit grants/ })).toHaveAttribute(
+    await expect(row(page, viaFiles).locator('[data-row-action="edit"]')).toHaveAttribute(
       'href',
       `/users/${viaFiles.id}`,
     );
     await expect(row(page, nothing)).toHaveCount(0);
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
 
-    await row(page, viaDeployment).getByRole('link', { name: /Edit at source/ }).click();
+    await row(page, viaDeployment).locator('[data-row-action="edit"]').click();
     await expect(page).toHaveURL(new RegExp(`/deployments/${scratch.depA}/access$`));
     await expect(row(page, viaDeployment)).toContainText('Direct');
   });
@@ -310,12 +309,12 @@ test.describe('superadmin: deployment Access tab', () => {
     await expect(page.locator('nav[aria-label="Breadcrumb"] [aria-current="page"]')).toHaveText('dep-a');
     await expect(list(page)).toContainText('A deployment grant includes the services and environments');
     await expect(row(page, inherited)).toContainText(`from ${scratch.projectName} (Project)`);
-    await expect(row(page, inherited).getByRole('link', { name: /Edit at source/ })).toHaveAttribute(
+    await expect(row(page, inherited).locator('[data-row-action="edit"]')).toHaveAttribute(
       'href',
       `/projects/${scratch.projectId}/access`,
     );
-    await expect(row(page, viaFile)).toContainText('from .env.cache (Environment)');
-    await expect(row(page, viaFile).getByRole('link', { name: /Edit at source/ })).toHaveAttribute(
+    await expect(row(page, viaFile)).toContainText('from cache/.env.cache (Environment)');
+    await expect(row(page, viaFile).locator('[data-row-action="edit"]')).toHaveAttribute(
       'href',
       `/environments/${scratch.envA1}/access`,
     );
@@ -368,7 +367,7 @@ test.describe('superadmin: environment Access tab', () => {
     await expect(page).toHaveURL(new RegExp(`/environments/${scratch.envA1}/access$`));
     await expect(sections(page).filter({ hasText: 'Access' })).toHaveAttribute('aria-current', 'page');
     await expect(page.locator('[data-fragment="page-header"] h1')).toHaveText('.env.cache');
-    await expect(list(page)).toContainText('Users with access to environment .env.cache');
+    await expect(list(page)).toContainText('Users with access to environment cache/.env.cache');
     await expect(list(page)).not.toContainText('A project grant includes');
     await expect(row(page, inherited)).toContainText('from dep-a (Deployment)');
 
@@ -413,9 +412,9 @@ test.describe('superadmin: service Access tab', () => {
     await expect(page.locator('#grant-dialog, #access-remove')).toHaveCount(0);
     await expect(row(page, viaProject)).toContainText(`from ${scratch.projectName} (Project)`);
     await expect(row(page, viaDeployment)).toContainText('from dep-a (Deployment)');
-    await expect(row(page, viaFile)).toContainText('from .env.cache (Environment), sees 1 of 2');
+    await expect(row(page, viaFile)).toContainText('from cache/.env.cache (Environment), sees 1 of 2');
     await expect(row(page, viaProject)).not.toContainText('sees');
-    await expect(row(page, viaFile).getByRole('link', { name: /Edit at source/ })).toHaveAttribute(
+    await expect(row(page, viaFile).locator('[data-row-action="edit"]')).toHaveAttribute(
       'href',
       `/environments/${scratch.envA1}/access`,
     );
@@ -503,7 +502,7 @@ test.describe('superadmin: refusals', () => {
     await recordEvents(page);
     await saveGrants(request, viewer, [], [`project:${scratch.projectId}`]);
     await expect(row(page, viewer)).toBeVisible();
-    await row(page, viewer).getByRole('button', { name: `Remove access for ${viewer.name}` }).click();
+    await (await rowAction(row(page, viewer), 'remove')).click();
     await expect(removeDialog(page)).toBeVisible();
     await expect(removeDialog(page).locator('[role="alert"]')).toContainText(
       'This access changed since the page was loaded. The list shows the current state.',
@@ -606,9 +605,9 @@ test.describe('superadmin: small screens', () => {
     await openTab(page, 'project', scratch.projectId);
     const add = await list(page).getByRole('button', { name: 'Add access' }).boundingBox();
     expect(add?.height ?? 0).toBeGreaterThanOrEqual(TOUCH_TARGET);
-    const remove = await row(page, direct).getByRole('button', { name: /Remove/ }).boundingBox();
+    const remove = await row(page, direct).locator('[data-row-action="remove"]').boundingBox();
     expect(remove?.height ?? 0).toBeGreaterThanOrEqual(TOUCH_TARGET);
-    const edit = await row(page, inherited).getByRole('link', { name: /Edit at source/ }).boundingBox();
+    const edit = await row(page, inherited).locator('[data-row-action="edit"]').boundingBox();
     expect(edit?.height ?? 0).toBeGreaterThanOrEqual(TOUCH_TARGET);
     await openAddDialog(page);
     const dialog = await addDialog(page).boundingBox();

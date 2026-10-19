@@ -1,10 +1,11 @@
-import type { Browser, Page } from '@playwright/test';
+import type { Browser, Locator, Page } from '@playwright/test';
 
 import { expect, test } from '@playwright/test';
 
 import { deploymentId } from '../deployments-api';
 import { stateFile } from '../global-setup';
 import { serviceId } from '../services-api';
+import { actionControls, rowAction, usesMenus } from './row-actions';
 
 const MD_BREAKPOINT = 768;
 const LG_BREAKPOINT = 1024;
@@ -102,9 +103,7 @@ test.describe('superadmin', () => {
       'href',
       `/services/${id}/environments/new`,
     );
-    await expect(
-      environmentsPanel(page).getByRole('link', { name: 'Compare to dist' }).first(),
-    ).toBeVisible();
+    await expect(actionControls(environmentsPanel(page), 'dist').first()).toBeAttached();
 
     const postDeploy = page.locator('#postdeploy');
     await expect(postDeploy).toContainText('by admin · exit code 0');
@@ -117,10 +116,55 @@ test.describe('superadmin', () => {
     await expect(page.locator('#hist [data-fragment="history-row"]')).toHaveCount(2);
   });
 
+  test('fits the environments table at 1280px without a sideways scroll', async ({
+    page,
+    browser,
+  }) => {
+    test.skip(usesMenus(page), 'phones show the list, not the table');
+    const services = [
+      await stagingWeb(browser),
+      await prodMysql(browser),
+      await serviceId(browser, 'demo', 'stack', 'api'),
+      await serviceId(browser, 'demo', 'stack', 'db'),
+    ];
+    for (const id of services) {
+      await page.goto(`/services/${id}`);
+      const wrapper = environmentsPanel(page).locator('.overflow-x-auto');
+      const [scrolls, shows] = await wrapper.evaluate((element) => [
+        element.scrollWidth,
+        element.clientWidth,
+      ]);
+      expect(scrolls, `service ${id}`).toBeLessThanOrEqual(shows);
+      expect(await horizontalOverflow(page), `service ${id}`).toBeLessThanOrEqual(0);
+    }
+  });
+
+  test('puts the explanation of a service at the very bottom, below the deploy history', async ({
+    page,
+    browser,
+  }) => {
+    await page.goto(`/services/${await stagingWeb(browser)}`);
+    const explainer = page.locator(
+      width(page) >= LG_BREAKPOINT
+        ? 'section[data-fragment="service-explainer"]'
+        : 'details[data-fragment="service-explainer"]',
+    );
+    await expect(explainer).toBeVisible();
+    const box = async (locator: Locator) => (await locator.boundingBox()) ?? { y: 0, height: 0 };
+    const explainerTop = (await box(explainer)).y;
+    for (const panel of ['#environments', '#postdeploy', '#hist']) {
+      const above = await box(page.locator(panel));
+      expect(above.y + above.height, panel).toBeLessThanOrEqual(explainerTop);
+    }
+    const pageHeight = await page.evaluate(() => document.documentElement.scrollHeight);
+    expect(explainerTop + (await box(explainer)).height).toBeGreaterThan(pageHeight - 120);
+  });
+
   test('is reached from the deployment page and lists a failed run', async ({ page, browser }) => {
     const deployment = await deploymentId(browser, 'Fancy Proj. Name', 'prod');
     await page.goto(`/deployments/${deployment}`);
-    await page.locator('#services').getByRole('link', { name: 'Open' }).first().click();
+    const firstService = page.locator('#services [data-fragment="service-row"]').first();
+    await (await rowAction(firstService, 'open')).click();
     await expect(page).toHaveURL(/\/services\/\d+$/);
     await expect(header(page).locator('h1')).toHaveText('mysql');
     await expect(statuses(page)).toHaveText(['Failed', 'Never deployed', 'Failed']);
@@ -173,8 +217,8 @@ test.describe('admin', () => {
     await page.goto(`/services/${id}`);
     await expectLayout(page);
     await expect(visibleRows(page)).toHaveCount(4);
-    await expect(environmentsPanel(page).getByRole('link', { name: 'Edit' }).first()).toBeVisible();
-    await expect(environmentsPanel(page).getByRole('link', { name: 'Compare to dist' }).first()).toBeVisible();
+    await expect(actionControls(environmentsPanel(page), 'edit').first()).toBeAttached();
+    await expect(actionControls(environmentsPanel(page), 'dist').first()).toBeAttached();
     await expect(environmentsPanel(page).getByRole('link', { name: 'Add environment' })).toHaveCount(0);
     const postDeploy = page.locator('#postdeploy');
     await expect(postDeploy.locator('pre')).toHaveText('web recreated');
@@ -194,11 +238,12 @@ test.describe('viewer', () => {
       'Read-only view. Editing and deploying are not available for the Viewer group.',
     );
     const panel = environmentsPanel(page);
-    await expect(panel.getByRole('link', { name: 'View' }).first()).toBeVisible();
-    await expect(panel.getByRole('link', { name: 'History' }).first()).toBeVisible();
-    for (const absent of ['Edit', 'Compare to dist', 'Add environment']) {
-      await expect(panel.getByRole('link', { name: absent })).toHaveCount(0);
+    await expect(actionControls(panel, 'view').first()).toBeAttached();
+    await expect(actionControls(panel, 'history').first()).toBeAttached();
+    for (const absent of ['edit', 'dist']) {
+      await expect(actionControls(panel, absent)).toHaveCount(0);
     }
+    await expect(panel.getByRole('link', { name: 'Add environment' })).toHaveCount(0);
     const postDeploy = page.locator('#postdeploy');
     await expect(postDeploy).toContainText('Output and command text are not available for the Viewer group.');
     await expect(postDeploy.locator('pre')).toHaveCount(0);

@@ -125,10 +125,12 @@ class AccessList:
 
     ``candidates`` are the active admins and viewers a grant on the item would give something
     new: nobody who holds it or is covered by an item above, and nobody for a service, which is
-    not a grant level.
+    not a grant level. ``item_name`` is the name of the item as the lists show it (a file is
+    ``service/.env-name``).
     """
 
     node: GridNode
+    item_name: str
     entries: tuple[AccessEntry, ...]
     candidates: tuple[GridUser, ...]
 
@@ -140,7 +142,7 @@ class AccessList:
     @property
     def subtitle(self) -> str:
         """The item as a phrase, such as ``project rentals``."""
-        return f"{self.node.kind.value} {self.node.name}"
+        return f"{self.node.kind.value} {self.item_name}"
 
     @property
     def parents(self) -> tuple[AccessSource, ...]:
@@ -188,8 +190,30 @@ def _grantable_below(project: GridProject, node: GridNode) -> tuple[GridNode, ..
     return tuple(below)
 
 
+def _item_names(project: GridProject) -> dict[str, str]:
+    """The name each row of the project goes by in the lists, by row id.
+
+    A file is shown as ``service/.env-name`` so files of different services that share a name
+    are told apart; every other item keeps its own name. The grid keeps the bare names, its
+    rows already sit below their service.
+    """
+    services = {item.id: item.name for item in project.nodes if item.kind is NodeKind.SERVICE}
+    return {
+        item.id: (
+            f"{services[item.parent_id]}/{item.name}"
+            if item.kind is NodeKind.ENVIRONMENT and item.parent_id in services
+            else item.name
+        )
+        for item in project.nodes
+    }
+
+
 def _entry(
-    node: GridNode, below: tuple[GridNode, ...], user: GridUser, grants: frozenset[GrantTarget]
+    node: GridNode,
+    below: tuple[GridNode, ...],
+    names: dict[str, str],
+    user: GridUser,
+    grants: frozenset[GrantTarget],
 ) -> AccessEntry | None:
     """The entry of a user at a row, or None when the user has no access to it."""
     cell = cell_for(node, grants)
@@ -198,7 +222,7 @@ def _entry(
         return AccessEntry(user, True, also=AccessSource.of(covering) if covering else None)
     if covering is not None:
         return AccessEntry(user, False, (AccessSource.of(covering),))
-    held = [AccessSource(item.target, item.name) for item in below if item.target in grants]
+    held = [AccessSource(item.target, names[item.id]) for item in below if item.target in grants]
     if not held:
         return None
     sees = (cell.seen, cell.total) if node.kind is NodeKind.SERVICE else None
@@ -223,18 +247,19 @@ async def load_access_list(db: AsyncSession, project_id: int, node_id: str) -> A
         return None
     project, node = located
     below = _grantable_below(project, node)
+    names = _item_names(project)
     users = await load_grid_users(db)
     grants = await load_user_grants(db, project_id=project_id)
     entries: list[AccessEntry] = []
     candidates: list[GridUser] = []
     for user in users:
         held = grants.get(user.id, frozenset())
-        entry = _entry(node, below, user, held)
+        entry = _entry(node, below, names, user, held)
         if entry is not None:
             entries.append(entry)
         if node.target is not None and (entry is None or entry.below):
             candidates.append(user)
-    return AccessList(node, tuple(entries), tuple(candidates))
+    return AccessList(node, names[node.id], tuple(entries), tuple(candidates))
 
 
 async def change_access(

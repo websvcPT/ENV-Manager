@@ -1,5 +1,5 @@
-{#- Service detail: header, section links, explanation, environments, post-deploy panel and
-    deploy history. Context: service (a ServiceHeader), environments, pending, history,
+{#- Service detail: header, section links, environments, post-deploy panel, deploy history and
+    the explanation of a service. Context: service (a ServiceHeader), environments, pending, history,
     post_deploy, can_manage_structure, can_manage_grants, is_viewer, can_deploy, added (service or environment, optional) and
     the settings form values of the post-deploy panel (docker, socket_path, form, errors, saved). -#}
 {% extends "layouts/app.html" %}
@@ -22,10 +22,10 @@
 {% if is_viewer %}{{ note("Read-only view. Editing and deploying are not available for the Viewer group.") }}{% endif %}
 {% if service.outside_allowed and not is_viewer %}{{ note("This deployment is outside the allowed paths. It cannot be deployed until the path is allowed again or the deployment is moved.", tone="warn") }}{% endif %}
 {% if service.hidden_environments %}{{ note("You see " ~ (environments | length) ~ (" environment" if environments | length == 1 else " environments") ~ " of this service. Deploys write only the environments you can see.") }}{% endif %}
-{% include "fragments/service_explainer.html" %}
 {% include "fragments/service_environments.html" %}
 {% include "fragments/service_postdeploy.html" %}
 {% include "fragments/service_history.html" %}
+{% include "fragments/service_explainer.html" %}
 {% if can_deploy %}{{ deploy_shell() }}{% endif %}
 {% if added == "environment" %}{{ toast("success", "The file was added with its first version.", "Environment added", floating=true) }}{% elif added == "service" %}{{ toast("success", service.name ~ " was added. Add its first environment below.", "Service added", floating=true) }}{% endif %}
 {% endblock %}

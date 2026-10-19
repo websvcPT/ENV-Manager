@@ -7,6 +7,7 @@ import { stateFile } from '../global-setup';
 import { createHostFolder } from '../host-files';
 import { csrfHeaders } from '../projects-api';
 import { test } from '../settings-test';
+import { actionControls, rowAction, rowMenu } from './row-actions';
 
 const { expect } = test;
 const WIDE_BREAKPOINT = 768;
@@ -108,9 +109,13 @@ test.describe('the tab', () => {
       TOUCH_TARGET,
     );
     const first = rows(page).first();
-    if ((await rows(page).count()) > 0 && (await first.locator('a').count()) > 0) {
-      expect(await height(first.locator('a').first())).toBeGreaterThanOrEqual(TOUCH_TARGET);
-      expect(await height(first.locator('button').first())).toBeGreaterThanOrEqual(TOUCH_TARGET);
+    if ((await rows(page).count()) > 0 && (await first.locator('[data-row-menu-button]').count()) > 0) {
+      expect(await height(first.locator('[data-row-menu-button]'))).toBeGreaterThanOrEqual(TOUCH_TARGET);
+      await first.locator('[data-row-menu-button]').click();
+      for (const item of await rowMenu(page).locator('[data-row-menu-item]').all()) {
+        expect(await height(item)).toBeGreaterThanOrEqual(TOUCH_TARGET);
+      }
+      await page.keyboard.press('Escape');
     }
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
   });
@@ -176,11 +181,11 @@ test.describe('backups', () => {
     await expect(first.locator('[data-status="success"]')).toHaveText('Success');
     expect(await first.getAttribute('id')).not.toBe(before);
     await expect(first.locator('td').nth(1)).toHaveText(/^\d+(\.\d)? (B|KB|MB|GB)$/);
-    await expect(first.getByRole('link', { name: /Download/ })).toHaveAttribute(
+    await expect(actionControls(first, 'download').first()).toHaveAttribute(
       'href',
       /^\/settings\/backups\/\d+\/download$/,
     );
-    await expect(first.getByRole('button', { name: /Restore/ })).toBeVisible();
+    await expect(actionControls(first, 'restore').first()).toBeAttached();
     await expect(page.locator('[data-fragment="banner-area"]')).not.toContainText('Backup');
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
   });
@@ -194,7 +199,7 @@ test.describe('backups', () => {
       await runNow(page);
       await expect(rows(page).first()).toBeVisible();
     }
-    const href = await rows(page).first().getByRole('link', { name: /Download/ }).getAttribute('href');
+    const href = await actionControls(rows(page).first(), 'download').first().getAttribute('href');
     expect(href).toMatch(/^\/settings\/backups\/\d+\/download$/);
     const before = await auditEntryIds(page.request, 'action=backup.download');
     const response = await page.request.get(href ?? '');
@@ -258,7 +263,7 @@ test.describe('backups', () => {
       await expect(result).toContainText('The extra destination folder does not exist.');
       const first = rows(page).first();
       await expect(first.locator('[data-status="partial"]')).toHaveText('Not copied');
-      await expect(first.getByRole('link', { name: /Download/ })).toBeVisible();
+      await expect(actionControls(first, 'download').first()).toBeAttached();
       const banner = page.locator('[data-fragment="banner-area"]');
       await expect(banner).toContainText('Backup incomplete: the last backup (');
       await page.goto('/projects');
@@ -291,7 +296,7 @@ test.describe('backups', () => {
     const first = rows(page).first();
     const when = (await first.locator('time').first().innerText()).trim();
     const before = await auditEntryIds(page.request, 'action=backup.restore');
-    await first.getByRole('button', { name: /Restore/ }).click();
+    await (await rowAction(first, 'restore')).click();
     const dialog = page.locator('#backup-restore');
     await expect(dialog).toBeVisible();
     await expect(dialog.locator('h2')).toHaveText(`Restore backup ${when}`);

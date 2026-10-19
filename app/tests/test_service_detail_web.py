@@ -69,12 +69,12 @@ def environment_rows(page: str) -> dict[str, str]:
 
 
 def row_actions(page: str, name: str) -> list[str]:
-    """Labels of the action links in one environment table row."""
+    """Keys of the row actions of one environment table row, in order."""
     pattern = rf'<tr data-fragment="env-row" data-env="{re.escape(name)}">(.*?)</tr>'
     row = re.search(pattern, page, re.DOTALL)
     assert row is not None
     cell = row.group(1).rsplit("<td", 1)[1]
-    return re.findall(r"<a [^>]*>([^<]+)</a>", cell)
+    return re.findall(r'data-row-action="([a-z-]+)"', cell)
 
 
 async def test_superadmin_sees_everything_and_the_command_settings(
@@ -93,6 +93,8 @@ async def test_superadmin_sees_everything_and_the_command_settings(
     assert section_links(page) == ["Environments 4", "Deploy history", "AccessSuperadmin"]
     assert f'href="/services/{ids.staging_web}/access"' in page
     assert page.count('data-fragment="service-explainer"') == 2
+    history_at = page.rindex('data-fragment="deploy-history"')
+    assert history_at < page.index('data-fragment="service-explainer"')
     assert "What is a service?" in page and "Runs once, not per file" in page
     assert environment_rows(page) == {
         ".env.web": "deployed",
@@ -100,7 +102,7 @@ async def test_superadmin_sees_everything_and_the_command_settings(
         ".env.web.tuning": "pending",
         "web-ca.pem": "never",
     }
-    assert row_actions(page, ".env.web.tuning") == ["Edit", "History", "Compare to dist"]
+    assert row_actions(page, ".env.web.tuning") == ["edit", "history", "dist"]
     assert f'href="/services/{ids.staging_web}/environments/new"' in page
     assert "Read-only view" not in page and "Deploy service" in page
     assert "Command settings" in page and "Superadmin" in page
@@ -136,7 +138,7 @@ async def test_admin_reads_output_but_not_the_command(
     """Admins edit and check dist, see the output, and get no add action or command settings."""
     await sign_in(web_client, "admin")
     page = (await web_client.get(f"/services/{ids.staging_web}")).text
-    assert row_actions(page, ".env.web") == ["Edit", "History", "Compare to dist"]
+    assert row_actions(page, ".env.web") == ["edit", "history", "dist"]
     assert "web recreated" in page
     assert "Command text and settings are visible to the superadmin only." in page
     for absent in ("Add environment", "Command settings", "docker compose up", "Read-only view"):
@@ -150,7 +152,7 @@ async def test_viewer_reads_without_edit_dist_output_or_command(
     await sign_in(web_client, "viewer")
     page = (await web_client.get(f"/services/{ids.staging_web}")).text
     assert "Read-only view. Editing and deploying are not available for the Viewer group." in page
-    assert row_actions(page, ".env.web") == ["View", "History"]
+    assert row_actions(page, ".env.web") == ["view", "history"]
     assert "Output and command text are not available for the Viewer group." in page
     for absent in (
         "Compare to dist",
@@ -194,7 +196,7 @@ async def test_environment_grant_viewer_gets_both_notes(
     await sign_in(web_client, "env_scoped_viewer")
     body = main_of((await web_client.get(f"/services/{ids.mysql}")).text)
     assert "Read-only view." in body and "You see 1 environment of this service." in body
-    assert row_actions(body, ".env.db") == ["View", "History"]
+    assert row_actions(body, ".env.db") == ["view", "history"]
     assert ".env.db.secrets" not in body
 
 

@@ -1,5 +1,6 @@
-{#- Pieces shared by the API tokens screens: the status badge and the Revoke control. -#}
+{#- Pieces shared by the API tokens screens: the status badge and the row actions. -#}
 {% from "macros/badges.html" import badge %}
+{% from "macros/row_actions.html" import row_actions %}
 
 {#- The status of a token: Active in the success tone, every other status muted, with the reason
     a stopped token cannot be used under it. `status` is a TokenStatus value. -#}
@@ -7,7 +8,9 @@
 <span class="inline-flex flex-col items-start gap-0.5">{% if status == "active" %}{{ badge("deployed", "Active") }}{% else %}{{ badge("never", status | capitalize) }}{% endif %}{% if reason %}<span class="text-xs text-ink2">{{ reason }}</span>{% endif %}</span>
 {%- endmacro %}
 
-{#- The Revoke control of a token row: opens the confirm dialog, loaded for that token. -#}
-{% macro revoke_button(token_id, token_name) -%}
-<button type="button" data-js="dialog-open" data-target="token-revoke" aria-haspopup="dialog" hx-get="/tokens/{{ token_id }}/revoke" hx-target="#token-revoke" hx-swap="innerHTML" class="inline-flex min-h-11 items-center font-semibold text-danger hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus text-sm md:min-h-0">Revoke<span class="sr-only"> {{ token_name }}</span></button>
+{#- The actions of a token row: Revoke, which opens the confirm dialog loaded for that token. -#}
+{% macro token_actions(token_id, token_name) -%}
+{{ row_actions("token-" ~ token_id, token_name, [
+  {"key": "revoke", "label": "Revoke", "icon": "ban", "danger": true, "attrs": {"data_js": "dialog-open", "data_target": "token-revoke", "aria_haspopup": "dialog", "hx_get": "/tokens/" ~ token_id ~ "/revoke", "hx_target": "#token-revoke", "hx_swap": "innerHTML"}}
+]) }}
 {%- endmacro %}

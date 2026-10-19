@@ -27,8 +27,3 @@
 <dialog id="deploy-dialog" aria-labelledby="dd-title" data-loading="deploy-dialog-loading" class="m-auto max-h-[92vh] w-[820px] max-w-[calc(100%_-_1.5rem)] overflow-auto rounded-dialog bg-surface p-0 text-ink shadow-dialog backdrop:bg-scrim">{{ deploy_loading() }}</dialog>
 <template id="deploy-dialog-loading">{{ deploy_loading() }}</template>
 {%- endmacro %}
-
-{#- Attributes of a control that opens the dialog and starts the pre-flight of a service. -#}
-{% macro deploy_link(service_id, label="Deploy") -%}
-<button type="button" data-js="dialog-open" data-target="deploy-dialog" aria-haspopup="dialog" hx-post="/services/{{ service_id }}/deploy/preflight" hx-target="#deploy-dialog" hx-swap="innerHTML" class="font-semibold text-link hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus text-sm">{{ label }}</button>
-{%- endmacro %}

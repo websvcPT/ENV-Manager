@@ -25,7 +25,7 @@ from app.services.users import set_user_active
 from app.tests.auth_helpers import PASSWORD, make_user
 from app.web.dependencies import require_auth, require_group
 
-PUBLIC_PATHS = {"/healthz", "/login", "/login/totp", "/session-expired"}
+PUBLIC_PATHS = {"/healthz", "/login", "/login/totp"}
 PUBLIC_PREFIXES = ("/static",)
 COOKIE_AUTH = require_auth
 BEARER_AUTH = require_api_token

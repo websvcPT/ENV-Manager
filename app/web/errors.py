@@ -82,17 +82,16 @@ def unauthenticated_response(request: Request, headers: dict[str, str]) -> Respo
     """Send an unauthenticated browser or htmx request to the sign-in screens.
 
     A request that still carries a session cookie had a session that ended, so the person sees
-    the session expired state and the stale cookie is dropped. A page request goes to the sign-in
-    page; an htmx request from an open screen gets `HX-Redirect` to the standalone expiry page,
-    or to sign-in when it never had a session.
+    the session expired state on the sign-in page and the stale cookie is dropped. A page request
+    is redirected there; an htmx request from an open screen gets `HX-Redirect` to the same
+    address. A request that never had a session goes to the plain sign-in page.
     """
     expired = SESSION_COOKIE_NAME in request.cookies
+    target = "/login?expired=1" if expired else "/login"
     response: Response
     if is_htmx_request(request):
-        target = "/session-expired" if expired else "/login"
         response = Response(status_code=401, headers={**headers, "HX-Redirect": target})
     else:
-        target = "/login?expired=1" if expired else "/login"
         response = RedirectResponse(target, status_code=303, headers=headers)
     if expired:
         response.delete_cookie(SESSION_COOKIE_NAME, path="/")

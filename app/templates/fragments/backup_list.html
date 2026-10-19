@@ -7,9 +7,9 @@
 {% from "macros/buttons.html" import button %}
 {% from "macros/feedback.html" import empty_state, toast %}
 {% from "macros/panels.html" import cell, panel, table %}
+{% from "macros/row_actions.html" import row_actions %}
 {% from "macros/time.html" import moment with context %}
 {% set run_button %}{{ button("Run now", kind="primary-sm", extra_class="max-md:h-11", hx_post="/settings/backups", hx_target="#backups", hx_swap="outerHTML", hx_sync="this:drop") }}{% endset %}
-{% set action_class = "inline-flex min-h-11 items-center font-semibold hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus text-sm md:min-h-0" %}
 {% call panel("Backups", "backups-title", fragment="backup-list", actions=run_button, id="backups") %}
 {%- if backups.rows %}
 {% call table("Backups", ["Time", "Size", "Status", "Actions"], right_columns=[3], min_width_class="min-w-[620px]") %}
@@ -19,7 +19,10 @@
 {%- call cell() %}{{ badge(row.badge) }}{% if row.error %}<span class="mt-1 block max-w-80 text-xs text-ink2">{{ row.error }}</span>{% endif %}{% endcall %}
 <td class="border-t border-line px-4 py-3.5 whitespace-nowrap text-right">
 {%- if row.actionable -%}
-<span class="inline-flex gap-4"><a href="/settings/backups/{{ row.id }}/download" class="{{ action_class }} text-link">Download<span class="sr-only"> backup of {{ display.text(row.created_at) }}</span></a><button type="button" data-js="dialog-open" data-target="backup-restore" aria-haspopup="dialog" hx-get="/settings/backups/{{ row.id }}/restore" hx-target="#backup-restore" hx-swap="innerHTML" class="{{ action_class }} text-danger">Restore<span class="sr-only"> backup of {{ display.text(row.created_at) }}</span></button></span>
+{{ row_actions("backup-" ~ row.id, "backup of " ~ display.text(row.created_at), [
+  {"key": "download", "label": "Download", "icon": "download", "href": "/settings/backups/" ~ row.id ~ "/download"},
+  {"key": "restore", "label": "Restore", "icon": "restore", "danger": true, "attrs": {"data_js": "dialog-open", "data_target": "backup-restore", "aria_haspopup": "dialog", "hx_get": "/settings/backups/" ~ row.id ~ "/restore", "hx_target": "#backup-restore", "hx_swap": "innerHTML"}}
+]) }}
 {%- elif row.status.value != "failure" -%}
 <span class="text-[13px] text-ink3">File removed</span>
 {%- endif -%}

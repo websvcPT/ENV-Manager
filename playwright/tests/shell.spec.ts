@@ -1,5 +1,9 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Browser, type Page } from '@playwright/test';
 
+import { deploymentId } from '../deployments-api';
+import { seededEnvironmentId } from '../environments-api';
+import { listProjects } from '../projects-api';
+import { serviceId } from '../services-api';
 import { expectImageLoaded, renderedSize } from './images';
 
 const WIDE_BREAKPOINT = 768;
@@ -291,5 +295,68 @@ test.describe('log out', () => {
 
     await page.goto('/projects');
     await expect(page).toHaveURL(/\/login$/);
+  });
+});
+
+test.describe('top bar and page titles', () => {
+  async function signedInPages(page: Page, browser: Browser): Promise<string[]> {
+    const fancy = (await listProjects(page.request, 'Fancy Proj. Name'))[0][0];
+    const prod = await deploymentId(browser, 'Fancy Proj. Name', 'prod');
+    const mysql = await serviceId(browser, 'Fancy Proj. Name', 'prod', 'mysql');
+    const db = await seededEnvironmentId(browser, 'Fancy Proj. Name', 'prod', 'mysql', '.env.db');
+    return [
+      '/projects',
+      `/projects/${fancy}`,
+      `/deployments/${prod}`,
+      `/services/${mysql}`,
+      `/environments/${db}`,
+      `/environments/${db}/history`,
+      '/audit',
+      '/users',
+      '/access/grid',
+      '/tokens',
+      '/settings/paths',
+      '/account',
+      '/no-such-page',
+    ];
+  }
+
+  test('no page has a search box in the top bar; the projects filter stays in its section', async ({
+    page,
+    browser,
+  }) => {
+    for (const path of await signedInPages(page, browser)) {
+      await page.goto(path);
+      await expect(page.locator('header input[type="search"], header [role="search"]'), path).toHaveCount(0);
+      await expect(page.locator('#q'), path).toHaveCount(0);
+    }
+    await page.goto('/projects');
+    await expect(page.locator('main #ps')).toBeVisible();
+  });
+
+  test('every page title is 26px on a phone and 30px from md', async ({ page, browser }) => {
+    const expected = isWide(page) ? '30px' : '26px';
+    for (const path of await signedInPages(page, browser)) {
+      await page.goto(path);
+      const sizes = await page.locator('h1').evaluateAll((titles) =>
+        titles.map((title) => getComputedStyle(title).fontSize),
+      );
+      expect(sizes, path).toEqual([expected]);
+    }
+  });
+
+  test.describe('signed out', () => {
+    test.use({ storageState: { cookies: [], origins: [] } });
+
+    test('the sign-in card and the error page use the same title size', async ({ page }) => {
+      const expected = isWide(page) ? '30px' : '26px';
+      for (const path of ['/login', '/login?expired=1', '/no-such-page']) {
+        await page.goto(path);
+        const sizes = await page.locator('h1').evaluateAll((titles) =>
+          titles.map((title) => getComputedStyle(title).fontSize),
+        );
+        expect(sizes, path).toEqual([expected]);
+      }
+    });
   });
 });
