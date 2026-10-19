@@ -143,4 +143,4 @@ Contributors work in a Docker based development stack driven by `make`. See
 
 ## License
 
-License: to be decided
+ENV Manager is licensed under the Apache License 2.0, see [LICENSE](LICENSE).
