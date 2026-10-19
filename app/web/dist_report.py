@@ -26,18 +26,13 @@ from app.web.dependencies import get_crypto, get_db, get_notifier
 from app.web.deployments import DeploymentContext, deployment_access
 from app.web.editor import EnvironmentContext, environment_access
 from app.web.htmx import hx_redirect
+from app.web.params import plain_number, plain_number_text
 
 router = APIRouter()
 
 PAGE = "pages/dist_report.html"
 REFRESH = "fragments/dist_refresh.html"
 OVERVIEW = "pages/deployment_dist.html"
-MAX_NUMBER_DIGITS = 9
-
-
-def _plain_number(value: str) -> str:
-    """The value when it is a plain number, else empty."""
-    return value if value.isdecimal() and len(value) <= MAX_NUMBER_DIGITS else ""
 
 
 async def _check(db: AsyncSession, request: Request, access: EnvironmentContext) -> DistCheck:
@@ -87,8 +82,8 @@ async def dist_page(
             access,
             check,
             tab="dist",
-            added=_plain_number(added),
-            added_version=_plain_number(version),
+            added=plain_number_text(added),
+            added_version=plain_number_text(version),
         ),
     )
 
@@ -125,7 +120,7 @@ async def add_missing(
             access.env,
             actor=access.auth.user,
             ip_address=client_address(request),
-            base_number=int(_plain_number(base) or 0),
+            base_number=plain_number(base) or 0,
             notifier=get_notifier(request),
         )
     except EditorError as error:

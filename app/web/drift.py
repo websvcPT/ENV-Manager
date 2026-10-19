@@ -33,6 +33,7 @@ from app.web.dependencies import audit_actor, get_crypto, get_db, get_deploy_eng
 from app.web.deploy_dialog import DEPLOY_TIMEOUT_MS
 from app.web.editor import EnvironmentContext, environment_access
 from app.web.htmx import hx_redirect
+from app.web.params import plain_number
 
 router = APIRouter()
 
@@ -41,17 +42,8 @@ VALUES = "fragments/drift_values.html"
 REFUSED = "fragments/drift_reveal_refused.html"
 NOTICE = "fragments/drift_notice.html"
 OVERWRITE_FORM = "fragments/drift_overwrite.html"
-MAX_NUMBER_DIGITS = 9
 MAX_HASH_LENGTH = 128
 CONFIRM_MESSAGE = "Confirm the overwrite to continue."
-
-
-def _plain_number(value: object) -> int | None:
-    """The value as a positive whole number, None for anything else."""
-    text = value if isinstance(value, str) else ""
-    if text.isdecimal() and len(text) <= MAX_NUMBER_DIGITS and int(text) > 0:
-        return int(text)
-    return None
 
 
 def _text(form: FormData, name: str) -> str:
@@ -93,9 +85,9 @@ async def drift_page(
     if view is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "no version saved")
     result_toast: tuple[str, str] | None = None
-    if (number := _plain_number(imported)) is not None:
+    if (number := plain_number(imported)) is not None:
         result_toast = ("success", f"Imported the target as version {number}. Pending deploy.")
-    elif (number := _plain_number(overwritten)) is not None:
+    elif (number := plain_number(overwritten)) is not None:
         result_toast = _overwrite_notice(
             OverwriteResult(
                 version_number=number,
@@ -129,8 +121,8 @@ async def reveal_values(
     file); when any of it changed, the answer is a notice and holds no value.
     """
     form = await request.form()
-    managed = _plain_number(form.get("managed"))
-    deployed = _plain_number(form.get("deployed"))
+    managed = plain_number(form.get("managed"))
+    deployed = plain_number(form.get("deployed"))
     columns = {name for name in _text(form, "columns").split(",") if name in REVEAL_COLUMNS}
     if managed is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "version not found")
@@ -172,7 +164,7 @@ async def import_file(
             access.env,
             actor=access.auth.user,
             ip_address=client_address(request),
-            base_number=_plain_number(form.get("base_version")) or 0,
+            base_number=plain_number(form.get("base_version")) or 0,
             target_hash=_text(form, "target_hash"),
             notifier=get_notifier(request),
         )
@@ -211,7 +203,7 @@ async def overwrite(
     dialog form with the reason (422); success reloads the view with a toast.
     """
     form = await request.form()
-    base_version = _plain_number(form.get("base_version")) or 0
+    base_version = plain_number(form.get("base_version")) or 0
     if form.get("confirm_overwrite") != "1":
         return _overwrite_form(request, access, base_version, CONFIRM_MESSAGE)
     try:

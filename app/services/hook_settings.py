@@ -29,6 +29,7 @@ from app.services.hook_runner import WorkingDirectoryError, resolve_working_dire
 from app.services.paths import PathValidationError, load_allowed_paths
 from app.services.permissions import AccessScope, Capability
 from app.services.scrub_values import load_scrubber
+from app.services.structure_lookup import service_with_deployment
 
 ACTION_SAVE = "service.hook_save"
 ACTION_CHECK = "service.hook_check"
@@ -106,18 +107,12 @@ def _require_superadmin(scope: AccessScope) -> None:
         raise HookForbiddenError
 
 
-async def _load_service(db: AsyncSession, service_id: int) -> tuple[Service, Deployment]:
+async def _require_service(db: AsyncSession, service_id: int) -> tuple[Service, Deployment]:
     """The service and its deployment, or a refusal that the service does not exist."""
-    row = (
-        await db.execute(
-            select(Service, Deployment)
-            .join(Deployment, Deployment.id == Service.deployment_id)
-            .where(Service.id == service_id)
-        )
-    ).one_or_none()
-    if row is None:
+    chain = await service_with_deployment(db, service_id)
+    if chain is None:
         raise HookSettingsError({FORM_KEY: SERVICE_NOT_FOUND})
-    return row[0], row[1]
+    return chain.service, chain.deployment
 
 
 def commands_digest(commands: str) -> str:
@@ -151,7 +146,7 @@ async def save_post_deploy_hook(
     then.
     """
     _require_superadmin(scope)
-    service, deployment = await _load_service(db, service_id)
+    service, deployment = await _require_service(db, service_id)
     status = await cli.status()
     if not status.available:
         raise HookSettingsError({FORM_KEY: f"{status.reason} {UNAVAILABLE_SUFFIX}"})
@@ -253,7 +248,7 @@ async def check_compose_setup(
     service does not exist.
     """
     _require_superadmin(scope)
-    service, deployment = await _load_service(db, service_id)
+    service, deployment = await _require_service(db, service_id)
     result = await _run_compose_check(db, crypto, cli, deployment, working_directory)
     await record_actor_audit(
         db,

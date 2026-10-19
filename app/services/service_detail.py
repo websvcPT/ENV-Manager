@@ -12,7 +12,6 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
-    Deployment,
     DeployResult,
     DeployResultStatus,
     DeployRun,
@@ -20,8 +19,6 @@ from app.models import (
     EnvironmentVersion,
     HookType,
     PostDeployStatus,
-    Project,
-    Service,
     ServiceHook,
 )
 from app.services.deployment_detail import HistoryRow, load_history
@@ -35,6 +32,7 @@ from app.services.permissions import (
     compute_visibility,
     load_items,
 )
+from app.services.structure_lookup import service_with_deployment
 
 # Environment status keys, shared with the badge vocabulary.
 STATUS_PENDING = "pending"
@@ -136,17 +134,10 @@ async def load_service_header(
         and service_id not in visibility.context[ItemLevel.SERVICE]
     ):
         return None
-    row = (
-        await db.execute(
-            select(Service, Deployment, Project.name)
-            .join(Deployment, Deployment.id == Service.deployment_id)
-            .join(Project, Project.id == Deployment.project_id)
-            .where(Service.id == service_id)
-        )
-    ).one_or_none()
-    if row is None:
+    chain = await service_with_deployment(db, service_id)
+    if chain is None:
         return None
-    service, deployment, project_name = row
+    service, deployment, project_name = chain
     environment_ids = set(
         (await db.execute(select(Environment.id).where(Environment.service_id == service_id)))
         .scalars()

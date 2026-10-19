@@ -11,19 +11,15 @@ overview and later the API and the deploy sequence.
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import metrics, telemetry
 from app.core.crypto import CryptoService
 from app.models import (
     AuditResult,
-    Deployment,
     DistMissingPolicy,
     DistOutcome,
-    Environment,
     EnvironmentVersion,
-    Service,
     User,
 )
 from app.models.types import utc_now
@@ -47,6 +43,7 @@ from app.services.env_parser import parse_env
 from app.services.notify_events import NO_EVENT_NOTIFIER, EventNotifier
 from app.services.paths import load_allowed_paths
 from app.services.permissions import AccessScope, Capability, ItemLevel, load_items
+from app.services.structure_lookup import environment_chain
 
 ADDED_COMMENT = "Added missing keys from the dist file"
 STALE_MESSAGE = "This file changed since the check. The report below is up to date."
@@ -128,17 +125,10 @@ async def _load_subject(
     db: AsyncSession, environment_id: int
 ) -> tuple[DistSubject, str, DistMissingPolicy] | None:
     """The environment, its deployment root and the policy in force, or None when it is gone."""
-    row = (
-        await db.execute(
-            select(Environment, Service, Deployment)
-            .join(Service, Service.id == Environment.service_id)
-            .join(Deployment, Deployment.id == Service.deployment_id)
-            .where(Environment.id == environment_id)
-        )
-    ).one_or_none()
-    if row is None:
+    chain = await environment_chain(db, environment_id)
+    if chain is None:
         return None
-    environment, service, deployment = row
+    environment, service, deployment = chain
     subject = DistSubject(
         environment_id=environment.id,
         name=environment.name,

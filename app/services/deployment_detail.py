@@ -14,7 +14,6 @@ from sqlalchemy.orm import aliased
 
 from app.models import (
     ApiToken,
-    Deployment,
     DeployResult,
     DeployResultStatus,
     DeployRun,
@@ -28,7 +27,6 @@ from app.models import (
     EnvironmentVersion,
     MissingTargetPolicy,
     PostDeployStatus,
-    Project,
     Service,
     User,
 )
@@ -43,6 +41,7 @@ from app.services.permissions import (
     load_items,
 )
 from app.services.projects import LastDeploy, latest_runs
+from app.services.structure_lookup import deployment_with_project
 
 HISTORY_LIMIT = 50
 
@@ -183,16 +182,10 @@ async def load_deployment_detail(
     full = deployment_id in visibility.full[ItemLevel.DEPLOYMENT]
     if not full and deployment_id not in visibility.context[ItemLevel.DEPLOYMENT]:
         return None
-    row = (
-        await db.execute(
-            select(Deployment, Project.name)
-            .join(Project, Project.id == Deployment.project_id)
-            .where(Deployment.id == deployment_id)
-        )
-    ).one_or_none()
-    if row is None:
+    chain = await deployment_with_project(db, deployment_id)
+    if chain is None:
         return None
-    deployment, project_name = row
+    deployment, project_name = chain
 
     shown_services = visibility.full[ItemLevel.SERVICE] | visibility.context[ItemLevel.SERVICE]
     services = (

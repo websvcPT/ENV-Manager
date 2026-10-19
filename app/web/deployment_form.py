@@ -4,6 +4,7 @@ Superadmin only. The validation and picker endpoints read the host filesystem, s
 the same capability check as the form itself.
 """
 
+from dataclasses import dataclass
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
@@ -40,12 +41,60 @@ PICKER_FRAGMENT = "fragments/path_picker.html"
 PICKER_ERROR = "That folder cannot be opened."
 
 
+@dataclass(frozen=True)
+class FormTarget:
+    """Where a deployment form posts, what its button says and where Cancel goes."""
+
+    action: str
+    submit_label: str
+    cancel_href: str
+
+
+def _create_target(project_id: int) -> FormTarget:
+    """The create form of a project."""
+    return FormTarget(
+        action=f"/projects/{project_id}/deployments",
+        submit_label="Create deployment",
+        cancel_href=f"/projects/{project_id}",
+    )
+
+
+def _edit_target(deployment_id: int) -> FormTarget:
+    """The edit form of a deployment."""
+    return FormTarget(
+        action=f"/deployments/{deployment_id}/edit",
+        submit_label="Save deployment",
+        cancel_href=f"/deployments/{deployment_id}",
+    )
+
+
+async def posted_deployment_form(
+    name: Annotated[str, Form()] = "",
+    root: Annotated[str, Form()] = "",
+    dist_missing_policy: Annotated[str, Form()] = "",
+    drift_policy: Annotated[str, Form()] = "",
+    missing_target_policy: Annotated[str, Form()] = "",
+    file_mode: Annotated[str, Form()] = "",
+    file_owner: Annotated[str, Form()] = "",
+    file_group: Annotated[str, Form()] = "",
+) -> DeploymentForm:
+    """The deployment form as posted, a missing field reading as empty text."""
+    return DeploymentForm(
+        name=name,
+        root=root,
+        dist_missing_policy=dist_missing_policy,
+        drift_policy=drift_policy,
+        missing_target_policy=missing_target_policy,
+        file_mode=file_mode,
+        file_owner=file_owner,
+        file_group=file_group,
+    )
+
+
 def _form_context(
     form: DeploymentForm,
+    target: FormTarget,
     *,
-    action: str,
-    submit_label: str,
-    cancel_href: str,
     errors: dict[str, str] | None = None,
     root_check: RootCheck | None = None,
 ) -> dict[str, Any]:
@@ -54,10 +103,18 @@ def _form_context(
         "form": form,
         "errors": errors or {},
         "root_check": root_check,
-        "action": action,
-        "submit_label": submit_label,
-        "cancel_href": cancel_href,
+        "action": target.action,
+        "submit_label": target.submit_label,
+        "cancel_href": target.cancel_href,
     }
+
+
+def _refused(
+    request: Request, form: DeploymentForm, target: FormTarget, error: DeploymentFormError
+) -> Response:
+    """The form again with the reason each refused value was refused (422)."""
+    context = _form_context(form, target, errors=error.errors, root_check=error.root_check)
+    return render(request, FORM_FRAGMENT, context, status_code=422)
 
 
 async def _picker_view(db: AsyncSession) -> BrowseView:
@@ -100,10 +157,7 @@ async def new_deployment_page(
     """The deployment form, with the policies and file defaults of the General settings."""
     project = access.project
     context = _form_context(
-        DeploymentForm.from_defaults(stored.general),
-        action=f"/projects/{project.id}/deployments",
-        submit_label="Create deployment",
-        cancel_href=f"/projects/{project.id}",
+        DeploymentForm.from_defaults(stored.general), _create_target(project.id)
     )
     return render(
         request,
@@ -123,46 +177,17 @@ async def create_deployment_route(
     request: Request,
     access: Annotated[ProjectContext, Depends(project_access(Capability.MANAGE_STRUCTURE))],
     db: Annotated[AsyncSession, Depends(get_db)],
-    name: Annotated[str, Form()] = "",
-    root: Annotated[str, Form()] = "",
-    dist_missing_policy: Annotated[str, Form()] = "",
-    drift_policy: Annotated[str, Form()] = "",
-    missing_target_policy: Annotated[str, Form()] = "",
-    file_mode: Annotated[str, Form()] = "",
-    file_owner: Annotated[str, Form()] = "",
-    file_group: Annotated[str, Form()] = "",
+    form: Annotated[DeploymentForm, Depends(posted_deployment_form)],
 ) -> Response:
     """Create a deployment. A refused value swaps the form again with the reasons (422)."""
     project = await db.get(Project, access.project.id)
     if project is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "project not found")
-    form = DeploymentForm(
-        name=name,
-        root=root,
-        dist_missing_policy=dist_missing_policy,
-        drift_policy=drift_policy,
-        missing_target_policy=missing_target_policy,
-        file_mode=file_mode,
-        file_owner=file_owner,
-        file_group=file_group,
-    )
     allowed = await load_allowed_paths(db)
     try:
         clean = await validate_deployment(db, allowed, project, form)
     except DeploymentFormError as error:
-        return render(
-            request,
-            FORM_FRAGMENT,
-            _form_context(
-                form,
-                action=f"/projects/{project.id}/deployments",
-                submit_label="Create deployment",
-                cancel_href=f"/projects/{project.id}",
-                errors=error.errors,
-                root_check=error.root_check,
-            ),
-            status_code=422,
-        )
+        return _refused(request, form, _create_target(project.id), error)
     deployment = await create_deployment(
         db, project, clean, actor=access.auth.user, ip_address=client_address(request)
     )
@@ -182,9 +207,7 @@ async def edit_deployment_page(
     form = DeploymentForm.from_deployment(deployment)
     context = _form_context(
         form,
-        action=f"/deployments/{deployment.id}/edit",
-        submit_label="Save deployment",
-        cancel_href=f"/deployments/{deployment.id}",
+        _edit_target(deployment.id),
         root_check=await _initial_root_check(db, form.root),
     )
     return render(
@@ -205,47 +228,18 @@ async def edit_deployment_route(
     request: Request,
     access: Annotated[DeploymentContext, Depends(deployment_access(Capability.MANAGE_STRUCTURE))],
     db: Annotated[AsyncSession, Depends(get_db)],
-    name: Annotated[str, Form()] = "",
-    root: Annotated[str, Form()] = "",
-    dist_missing_policy: Annotated[str, Form()] = "",
-    drift_policy: Annotated[str, Form()] = "",
-    missing_target_policy: Annotated[str, Form()] = "",
-    file_mode: Annotated[str, Form()] = "",
-    file_owner: Annotated[str, Form()] = "",
-    file_group: Annotated[str, Form()] = "",
+    form: Annotated[DeploymentForm, Depends(posted_deployment_form)],
 ) -> Response:
     """Save a deployment. A refused value swaps the form again with the reasons (422)."""
     deployment = await db.get(Deployment, access.deployment.id)
     project = await db.get(Project, access.deployment.project_id)
     if deployment is None or project is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "deployment not found")
-    form = DeploymentForm(
-        name=name,
-        root=root,
-        dist_missing_policy=dist_missing_policy,
-        drift_policy=drift_policy,
-        missing_target_policy=missing_target_policy,
-        file_mode=file_mode,
-        file_owner=file_owner,
-        file_group=file_group,
-    )
     allowed = await load_allowed_paths(db)
     try:
         clean = await validate_deployment(db, allowed, project, form, ignore_id=deployment.id)
     except DeploymentFormError as error:
-        return render(
-            request,
-            FORM_FRAGMENT,
-            _form_context(
-                form,
-                action=f"/deployments/{deployment.id}/edit",
-                submit_label="Save deployment",
-                cancel_href=f"/deployments/{deployment.id}",
-                errors=error.errors,
-                root_check=error.root_check,
-            ),
-            status_code=422,
-        )
+        return _refused(request, form, _edit_target(deployment.id), error)
     await update_deployment(
         db, deployment, clean, actor=access.auth.user, ip_address=client_address(request)
     )

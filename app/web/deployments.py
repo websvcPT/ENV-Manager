@@ -1,10 +1,9 @@
 """Deployment detail routes: the page and its refreshable services and history panels."""
 
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,16 +11,9 @@ from app.core.templating import render
 from app.services.access_grid import NodeKind
 from app.services.deployment_detail import DeploymentDetail, load_deployment_detail
 from app.services.paths import load_allowed_paths
-from app.services.permissions import (
-    CAPABILITY_TARGETS,
-    AccessScope,
-    Capability,
-    ItemLevel,
-    ItemRef,
-    Target,
-)
+from app.services.permissions import AccessScope, Capability, ItemLevel, ItemRef
 from app.web.access_tabs import AccessSubject, mount_access_routes
-from app.web.dependencies import AuthContext, get_db, get_scope, require_auth
+from app.web.dependencies import AuthContext, item_access
 
 router = APIRouter()
 
@@ -35,39 +27,24 @@ class DeploymentContext:
     deployment: DeploymentDetail
 
 
-def deployment_access(
-    capability: Capability | None = None,
-) -> Callable[..., Awaitable[DeploymentContext]]:
-    """A dependency that loads a deployment for the caller and checks an optional capability.
+async def _load_deployment(
+    db: AsyncSession, scope: AccessScope, deployment_id: int
+) -> DeploymentDetail | None:
+    """The deployment as the caller sees it, with the allowed paths loaded for this request."""
+    allowed = await load_allowed_paths(db)
+    return await load_deployment_detail(db, scope, deployment_id, allowed)
 
-    A deployment outside the caller's scope answers 404, so its existence is not revealed; a
-    capability the caller's group lacks on a deployment in scope answers 403 (capabilities that
-    need an environment are not supported here). The allowed paths are loaded fresh for every
-    request.
-    """
 
-    async def load(
-        deployment_id: int,
-        auth: Annotated[AuthContext, Depends(require_auth)],
-        scope: Annotated[AccessScope, Depends(get_scope)],
-        db: Annotated[AsyncSession, Depends(get_db)],
-    ) -> DeploymentContext:
-        allowed = await load_allowed_paths(db)
-        deployment = await load_deployment_detail(db, scope, deployment_id, allowed)
-        if deployment is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "deployment not found")
-        if capability is not None:
-            item = ItemRef(
-                level=ItemLevel.DEPLOYMENT,
-                project_id=deployment.project_id,
-                deployment_id=deployment.id,
-            )
-            target = item if CAPABILITY_TARGETS[capability] is Target.ITEM else None
-            if not scope.can(capability, target):
-                raise HTTPException(status.HTTP_403_FORBIDDEN, "not permitted")
-        return DeploymentContext(auth=auth, scope=scope, deployment=deployment)
-
-    return load
+# Capabilities that need an environment are not supported on a deployment.
+deployment_access = item_access(
+    "deployment_id",
+    _load_deployment,
+    lambda deployment: ItemRef(
+        level=ItemLevel.DEPLOYMENT, project_id=deployment.project_id, deployment_id=deployment.id
+    ),
+    "deployment not found",
+    DeploymentContext,
+)
 
 
 def _page_context(access: DeploymentContext, **extra: Any) -> dict[str, Any]:

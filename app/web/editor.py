@@ -5,7 +5,6 @@ before the value leaves, answers only that value and is never cached. Saving nee
 capability; viewers cannot reveal or save and every response to them is masked.
 """
 
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Annotated, Any
 
@@ -37,10 +36,10 @@ from app.web.dependencies import (
     get_crypto,
     get_db,
     get_notifier,
-    get_scope,
-    require_auth,
+    item_access,
 )
 from app.web.htmx import hx_redirect
+from app.web.params import plain_number, plain_number_text
 
 router = APIRouter()
 
@@ -67,29 +66,13 @@ class EnvironmentContext:
     env: EditorHeader
 
 
-def environment_access(
-    capability: Capability | None = None,
-) -> Callable[..., Awaitable[EnvironmentContext]]:
-    """A dependency that loads an environment for the caller and checks an optional capability.
-
-    An environment outside the caller's scope answers 404 so its existence is not revealed; a
-    capability the caller's group lacks on an environment in scope answers 403.
-    """
-
-    async def load(
-        environment_id: int,
-        auth: Annotated[AuthContext, Depends(require_auth)],
-        scope: Annotated[AccessScope, Depends(get_scope)],
-        db: Annotated[AsyncSession, Depends(get_db)],
-    ) -> EnvironmentContext:
-        env = await load_editor_header(db, scope, environment_id)
-        if env is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "environment not found")
-        if capability is not None and not scope.can(capability, env.item):
-            raise HTTPException(status.HTTP_403_FORBIDDEN, "not permitted")
-        return EnvironmentContext(auth=auth, scope=scope, env=env)
-
-    return load
+environment_access = item_access(
+    "environment_id",
+    load_editor_header,
+    lambda env: env.item,
+    "environment not found",
+    EnvironmentContext,
+)
 
 
 async def _access_subject(
@@ -140,11 +123,6 @@ async def _content(db: AsyncSession, request: Request, access: EnvironmentContex
     return content
 
 
-def _saved_number(saved: str) -> str:
-    """The saved version number from the query, empty unless it is a plain number."""
-    return saved if saved.isdecimal() and len(saved) < 10 else ""
-
-
 @router.get("/environments/{environment_id:int}", include_in_schema=False)
 async def editor_page(
     request: Request,
@@ -165,7 +143,7 @@ async def editor_page(
             **_panel_context(access, content, mode),
             "tab": "edit",
             "is_viewer": access.scope.group not in CAPABILITY_GROUPS[Capability.EDIT_VALUES],
-            "saved": _saved_number(saved),
+            "saved": plain_number_text(saved),
         },
     )
 
@@ -310,8 +288,7 @@ def _save_error(
 
 def _version_field(form: FormData) -> int:
     """The version number the page was loaded from, 0 when missing or not a number."""
-    value = form.get("base_version")
-    return int(value) if isinstance(value, str) and value.isdecimal() and len(value) < 10 else 0
+    return plain_number(form.get("base_version")) or 0
 
 
 @router.post("/environments/{environment_id:int}/versions", include_in_schema=False)

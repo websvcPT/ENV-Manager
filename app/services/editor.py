@@ -16,11 +16,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.crypto import CryptoService
 from app.models import (
-    Deployment,
     DeployResult,
     DeployResultStatus,
     DeployRun,
-    Environment,
     EnvironmentVersion,
     User,
 )
@@ -43,6 +41,7 @@ from app.services.permissions import (
     load_item,
 )
 from app.services.service_detail import load_environment_rows, load_service_header
+from app.services.structure_lookup import environment_chain
 from app.services.versions import create_version
 
 MAX_COMMENT_LENGTH = 500
@@ -139,20 +138,17 @@ async def load_editor_header(
     db: AsyncSession, scope: AccessScope, environment_id: int
 ) -> EditorHeader | None:
     """The environment for the caller, or None when it does not exist or is outside the scope."""
-    service_id = await db.scalar(
-        select(Environment.service_id).where(Environment.id == environment_id)
-    )
-    if service_id is None:
+    chain = await environment_chain(db, environment_id)
+    if chain is None:
         return None
-    service = await load_service_header(db, scope, service_id)
+    environment, deployment = chain.environment, chain.deployment
+    service = await load_service_header(db, scope, chain.service.id)
     if service is None or environment_id not in service.visible_environment_ids:
         return None
     rows = await load_environment_rows(db, scope, service)
     row = next((row for row in rows if row.id == environment_id), None)
-    environment = await db.get(Environment, environment_id)
-    deployment = await db.get(Deployment, service.deployment_id)
     item = await load_item(db, ItemLevel.ENVIRONMENT, environment_id)
-    if row is None or environment is None or deployment is None or item is None:
+    if row is None or item is None:
         return None
     latest = (
         await db.execute(

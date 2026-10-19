@@ -2,7 +2,7 @@
 
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
-from typing import Annotated
+from typing import Annotated, Protocol
 
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,7 +21,7 @@ from app.services.docker_cli import DockerCli
 from app.services.hook_runner import DockerHookRunner
 from app.services.mailer import MailTransport
 from app.services.notify_events import FullNotifier
-from app.services.permissions import AccessScope, Capability, load_user_scope
+from app.services.permissions import AccessScope, Capability, ItemRef, load_user_scope
 from app.services.sessions import resolve_session
 from app.services.settings_events import SettingsNotifier
 from app.services.shell_banners import load_shell_banners
@@ -210,3 +210,46 @@ def require_capability(capability: Capability) -> Callable[..., Awaitable[AuthCo
         return context
 
     return check
+
+
+class ItemAccess[ContextT](Protocol):
+    """A dependency factory made by ``item_access``: the capability the route needs, if any."""
+
+    def __call__(self, capability: Capability | None = None) -> Callable[..., Awaitable[ContextT]]:
+        """The dependency that loads the item and checks the capability."""
+
+
+def item_access[ItemT, ContextT](
+    id_param: str,
+    loader: Callable[[AsyncSession, AccessScope, int], Awaitable[ItemT | None]],
+    item_ref: Callable[[ItemT], ItemRef],
+    not_found: str,
+    context: Callable[[AuthContext, AccessScope, ItemT], ContextT],
+) -> ItemAccess[ContextT]:
+    """The dependency factory of one kind of structure item (project, deployment, service, file).
+
+    The dependency reads the item's id from the path parameter ``id_param`` (every route uses the
+    ``int`` converter) and loads the item for the caller with ``loader``, which answers None for
+    an item that does not exist or lies outside the caller's scope: that is a 404 with the
+    ``not_found`` text, so the existence of a hidden item is not revealed. Only then is the
+    capability checked, on the item ``item_ref`` names, and a group that lacks it gets a 403.
+    ``context`` builds what the route receives from the caller, their scope and the item.
+    """
+
+    def access(capability: Capability | None = None) -> Callable[..., Awaitable[ContextT]]:
+        async def load(
+            request: Request,
+            auth: Annotated[AuthContext, Depends(require_auth)],
+            scope: Annotated[AccessScope, Depends(get_scope)],
+            db: Annotated[AsyncSession, Depends(get_db)],
+        ) -> ContextT:
+            item = await loader(db, scope, int(request.path_params[id_param]))
+            if item is None:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, not_found)
+            if capability is not None and not scope.can(capability, item_ref(item)):
+                raise HTTPException(status.HTTP_403_FORBIDDEN, "not permitted")
+            return context(auth, scope, item)
+
+        return load
+
+    return access

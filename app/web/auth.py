@@ -6,7 +6,6 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import get_settings
 from app.core.client_address import client_address
 from app.core.crypto import CryptoService
 from app.core.sessions import PENDING_LOGIN_COOKIE_NAME, SESSION_COOKIE_NAME
@@ -16,6 +15,7 @@ from app.services.audit import record_actor_audit
 from app.services.auth_policy import AuthPolicy
 from app.services.login import LoginResult, LoginStatus, authenticate, complete_totp_login
 from app.services.sessions import revoke_session
+from app.web.cookies import set_private_cookie
 from app.web.dependencies import (
     AuthContext,
     audit_actor,
@@ -61,14 +61,13 @@ def _signed_in(request: Request, token: str, policy: AuthPolicy) -> Response:
         response: Response = hx_redirect("/")
     else:
         response = RedirectResponse("/", status_code=303)
-    response.set_cookie(
+    set_private_cookie(
+        response,
         SESSION_COOKIE_NAME,
         token,
         max_age=int(policy.absolute_timeout.total_seconds()),
-        httponly=True,
-        secure=get_settings().base_url.startswith("https://"),
-        samesite="lax",
         path="/",
+        samesite="lax",
     )
     return response
 
@@ -82,14 +81,13 @@ def _locked(request: Request, result: LoginResult) -> Response:
 
 def _set_pending_cookie(response: Response, token: str, policy: AuthPolicy) -> None:
     """Hand the single-use pending login token to the browser, scoped to the code step."""
-    response.set_cookie(
+    set_private_cookie(
+        response,
         PENDING_LOGIN_COOKIE_NAME,
         token,
         max_age=int(policy.pending_login_timeout.total_seconds()),
-        httponly=True,
-        secure=get_settings().base_url.startswith("https://"),
-        samesite="strict",
         path="/login",
+        samesite="strict",
     )
 
 

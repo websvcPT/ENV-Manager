@@ -1,6 +1,5 @@
 """Project detail routes: the four tabs, rename, the extra notification addresses and delete."""
 
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Annotated, Any
 
@@ -13,7 +12,7 @@ from app.core.templating import render
 from app.models import Project
 from app.services.access_grid import NodeKind
 from app.services.paths import load_allowed_paths
-from app.services.permissions import AccessScope, Capability
+from app.services.permissions import AccessScope, Capability, ItemLevel, ItemRef
 from app.services.project_addresses import AddressesError, save_extra_addresses
 from app.services.project_detail import (
     ProjectDetail,
@@ -27,7 +26,7 @@ from app.services.projects import (
     rename_project,
 )
 from app.web.access_tabs import AccessSubject, mount_access_routes
-from app.web.dependencies import AuthContext, get_db, get_scope, require_auth
+from app.web.dependencies import AuthContext, get_db, item_access
 from app.web.htmx import hx_redirect
 
 router = APIRouter()
@@ -47,29 +46,20 @@ class ProjectContext:
     project: ProjectDetail
 
 
-def project_access(
-    capability: Capability | None = None,
-) -> Callable[..., Awaitable[ProjectContext]]:
-    """A dependency that loads a project for the caller and checks an optional capability.
+async def _load_project(
+    db: AsyncSession, scope: AccessScope, project_id: int
+) -> ProjectDetail | None:
+    """The project as the caller sees it, with the allowed paths loaded for this request."""
+    return await load_project_detail(db, scope, project_id, await load_allowed_paths(db))
 
-    A project outside the caller's scope answers 404, so its existence is not revealed; a
-    capability the caller's group lacks on a project in scope answers 403.
-    """
 
-    async def load(
-        project_id: int,
-        auth: Annotated[AuthContext, Depends(require_auth)],
-        scope: Annotated[AccessScope, Depends(get_scope)],
-        db: Annotated[AsyncSession, Depends(get_db)],
-    ) -> ProjectContext:
-        project = await load_project_detail(db, scope, project_id, await load_allowed_paths(db))
-        if project is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "project not found")
-        if capability is not None and not scope.can(capability):
-            raise HTTPException(status.HTTP_403_FORBIDDEN, "not permitted")
-        return ProjectContext(auth=auth, scope=scope, project=project)
-
-    return load
+project_access = item_access(
+    "project_id",
+    _load_project,
+    lambda project: ItemRef(level=ItemLevel.PROJECT, project_id=project.id),
+    "project not found",
+    ProjectContext,
+)
 
 
 async def _project_row(db: AsyncSession, access: ProjectContext) -> Project:

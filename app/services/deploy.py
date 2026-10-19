@@ -92,6 +92,7 @@ from app.services.output_scrub import OutputScrubber
 from app.services.paths import AllowedPaths, PathValidationError, load_allowed_paths
 from app.services.permissions import AccessScope, Capability, permitted_environment_ids
 from app.services.scrub_values import load_scrubber
+from app.services.structure_lookup import service_with_deployment
 from app.services.target_files import (
     BackupRequest,
     ChangeOwner,
@@ -269,19 +270,13 @@ class DeployEngine:
         self, db: AsyncSession, scope: AccessScope, request: DeployRequest
     ) -> _Context:
         """The service and the environments to deploy, with the version of each."""
-        row = (
-            await db.execute(
-                select(Service, Deployment)
-                .join(Deployment, Deployment.id == Service.deployment_id)
-                .where(Service.id == request.service_id)
-            )
-        ).one_or_none()
+        chain = await service_with_deployment(db, request.service_id)
         permitted = await permitted_environment_ids(
             db, scope, Capability.DEPLOY, service_id=request.service_id
         )
-        if row is None or not permitted:
+        if chain is None or not permitted:
             raise DeployRequestError(SERVICE_NOT_FOUND)
-        service, deployment = row
+        service, deployment = chain.service, chain.deployment
         if request.environment_ids is None:
             selected = permitted
         else:

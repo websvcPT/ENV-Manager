@@ -1,6 +1,5 @@
 """Service detail routes: the page, its refreshable panels and the post-deploy settings."""
 
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Annotated, Any
 
@@ -26,12 +25,10 @@ from app.services.hook_settings import (
 )
 from app.services.permissions import (
     CAPABILITY_GROUPS,
-    CAPABILITY_TARGETS,
     AccessScope,
     Capability,
     ItemLevel,
     ItemRef,
-    Target,
     permitted_environment_ids,
 )
 from app.services.service_detail import (
@@ -49,8 +46,7 @@ from app.web.dependencies import (
     get_crypto,
     get_db,
     get_docker_cli,
-    get_scope,
-    require_auth,
+    item_access,
 )
 
 log = get_logger(__name__)
@@ -76,38 +72,19 @@ class ServiceContext:
     service: ServiceHeader
 
 
-def service_access(
-    capability: Capability | None = None,
-) -> Callable[..., Awaitable[ServiceContext]]:
-    """A dependency that loads a service for the caller and checks an optional capability.
-
-    A service outside the caller's scope answers 404, so its existence is not revealed; a
-    capability the caller's group lacks on a service in scope answers 403 (capabilities that
-    need an environment are not supported here).
-    """
-
-    async def load(
-        service_id: int,
-        auth: Annotated[AuthContext, Depends(require_auth)],
-        scope: Annotated[AccessScope, Depends(get_scope)],
-        db: Annotated[AsyncSession, Depends(get_db)],
-    ) -> ServiceContext:
-        service = await load_service_header(db, scope, service_id)
-        if service is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "service not found")
-        if capability is not None:
-            item = ItemRef(
-                level=ItemLevel.SERVICE,
-                project_id=service.project_id,
-                deployment_id=service.deployment_id,
-                service_id=service.id,
-            )
-            target = item if CAPABILITY_TARGETS[capability] is Target.ITEM else None
-            if not scope.can(capability, target):
-                raise HTTPException(status.HTTP_403_FORBIDDEN, "not permitted")
-        return ServiceContext(auth=auth, scope=scope, service=service)
-
-    return load
+# Capabilities that need an environment are not supported on a service.
+service_access = item_access(
+    "service_id",
+    load_service_header,
+    lambda service: ItemRef(
+        level=ItemLevel.SERVICE,
+        project_id=service.project_id,
+        deployment_id=service.deployment_id,
+        service_id=service.id,
+    ),
+    "service not found",
+    ServiceContext,
+)
 
 
 def _flags(access: ServiceContext) -> dict[str, Any]:

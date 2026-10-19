@@ -30,6 +30,7 @@ from app.services.version_history import (
 from app.web.dependencies import get_crypto, get_db, get_notifier
 from app.web.editor import EnvironmentContext, environment_access
 from app.web.htmx import hx_redirect
+from app.web.params import plain_number, plain_number_text
 
 router = APIRouter()
 
@@ -37,21 +38,12 @@ PAGE = "pages/history.html"
 DIFF_PANEL = "fragments/diff_panel.html"
 DIFF_VALUES = "fragments/diff_values.html"
 RESTORE_FORM = "fragments/restore_form.html"
-MAX_NUMBER_DIGITS = 9
-
-
-def _plain_number(value: str) -> str:
-    """The value when it is a plain version number, else empty."""
-    return value if value.isdecimal() and len(value) <= MAX_NUMBER_DIGITS else ""
 
 
 def _requested(request: Request) -> list[int]:
     """The version numbers of the repeated ``v`` query field, ignoring anything not a number."""
-    return [
-        int(value)
-        for value in request.query_params.getlist("v")
-        if _plain_number(value) and int(value) > 0
-    ]
+    numbers = (plain_number(value) for value in request.query_params.getlist("v"))
+    return [number for number in numbers if number is not None]
 
 
 async def _diff_context(
@@ -99,8 +91,8 @@ async def history_page(
             "versions": versions,
             "selected": pair or (),
             "is_viewer": access.scope.group not in CAPABILITY_GROUPS[Capability.EDIT_VALUES],
-            "restored": _plain_number(restored),
-            "source": _plain_number(source),
+            "restored": plain_number_text(restored),
+            "source": plain_number_text(source),
         },
     )
 
@@ -159,7 +151,7 @@ async def restore_environment(
     ``base`` is the newest version number the page was loaded with. A refusal swaps the dialog
     form with the reason (422).
     """
-    base_number = int(_plain_number(base) or 0)
+    base_number = plain_number(base) or 0
     try:
         version = await restore_version(
             db,

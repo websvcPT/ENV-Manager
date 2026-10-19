@@ -28,6 +28,7 @@ from app.services.hook_settings import MAX_TIMEOUT_SECONDS
 from app.services.permissions import Capability, permitted_environment_ids
 from app.web.dependencies import audit_actor, get_db, get_deploy_engine, get_docker_cli
 from app.web.htmx import hx_events
+from app.web.params import plain_number
 from app.web.service_detail import ServiceContext, service_access
 
 router = APIRouter()
@@ -41,7 +42,6 @@ SELECT_NOTHING = "Select at least one environment to deploy."
 # the margin covers the file work around it. Without this the 60 second default of htmx would
 # cut the request while the deploy still runs on the server.
 DEPLOY_TIMEOUT_MS = (MAX_TIMEOUT_SECONDS + 120) * 1000
-MAX_NUMBER_DIGITS = 9
 VERSION_FIELD_PREFIX = "version_"
 
 
@@ -58,26 +58,17 @@ class DialogForm:
     confirmed: bool
 
 
-def _number(value: object) -> int | None:
-    """The value as a positive whole number, None for anything else."""
-    text = str(value)
-    if text.isdecimal() and len(text) <= MAX_NUMBER_DIGITS and int(text) > 0:
-        return int(text)
-    return None
-
-
 def parse_dialog_form(form: FormData) -> DialogForm:
     """Read the posted fields; anything that is not a plain number is ignored."""
-    chosen = {
-        number for value in form.getlist("environment") if (number := _number(value)) is not None
-    }
+    numbers = (plain_number(value) for value in form.getlist("environment"))
+    chosen = {number for number in numbers if number is not None}
     explicit = form.get("selection") == "explicit"
     versions: dict[int, int] = {}
     for key, value in form.multi_items():
         if not key.startswith(VERSION_FIELD_PREFIX):
             continue
-        environment = _number(key[len(VERSION_FIELD_PREFIX) :])
-        version = _number(value)
+        environment = plain_number(key[len(VERSION_FIELD_PREFIX) :])
+        version = plain_number(value)
         if environment is not None and version is not None:
             versions[environment] = version
     return DialogForm(

@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AuditResult, Deployment, Environment, Service
+from app.models import AuditResult, Environment
 from app.schemas.api import (
     MAX_ID,
     DeployBody,
@@ -34,6 +34,7 @@ from app.services.deploy import DeployEngine
 from app.services.deploy_records import ACTION_DEPLOY
 from app.services.deploy_types import DeployRefusal, DeployRequest, DeployRequestError
 from app.services.permissions import Capability, permitted_environment_ids
+from app.services.structure_lookup import ServiceChain, service_with_deployment
 from app.services.tokens import OPERATION_DEPLOY, OPERATION_READ_LAST_DEPLOYMENT
 
 ACTION_READ_LAST = "service.last_deploy_read"
@@ -55,7 +56,7 @@ class _Call:
     """
 
     requested: int | None
-    service: tuple[Service, Deployment] | None = None
+    service: ServiceChain | None = None
 
 
 def _service_id(reference: str) -> int | None:
@@ -65,18 +66,6 @@ def _service_id(reference: str) -> int | None:
     return int(reference)
 
 
-async def _load_service(db: AsyncSession, service_id: int) -> tuple[Service, Deployment] | None:
-    """The service with its deployment, or None when there is none."""
-    row = (
-        await db.execute(
-            select(Service, Deployment)
-            .join(Deployment, Deployment.id == Service.deployment_id)
-            .where(Service.id == service_id)
-        )
-    ).one_or_none()
-    return (row[0], row[1]) if row is not None else None
-
-
 async def _reachable(
     db: AsyncSession, caller: ApiCaller, call: _Call, capability: Capability, message: str
 ) -> tuple[int, list[int]]:
@@ -84,7 +73,7 @@ async def _reachable(
     not_found = ApiRefusal(RefusalKind.NOT_FOUND, message)
     if call.requested is None:
         raise not_found
-    found = await _load_service(db, call.requested)
+    found = await service_with_deployment(db, call.requested)
     permitted = (
         await permitted_environment_ids(db, caller.scope, capability, service_id=call.requested)
         if found is not None
@@ -106,7 +95,8 @@ async def _audit_call(
     details: dict[str, object],
 ) -> None:
     """Add and commit the entry of a call: the service is named only when the token reaches it."""
-    service, deployment = call.service if call.service else (None, None)
+    service = call.service.service if call.service else None
+    deployment = call.service.deployment if call.service else None
     await record_committed_audit(
         db,
         caller.actor,

@@ -14,7 +14,6 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import get_settings
 from app.core.client_address import client_address
 from app.core.crypto import CryptoService
 from app.core.sessions import TOTP_SETUP_COOKIE_NAME, TOTP_SETUP_COOKIE_PATH
@@ -39,6 +38,7 @@ from app.services.account_sessions import (
 )
 from app.services.auth_policy import AuthPolicy
 from app.services.totp_setup import SETUP_LIFETIME, PendingSetup, begin_setup, read_setup
+from app.web.cookies import set_private_cookie
 from app.web.dependencies import (
     AuthContext,
     get_auth_policy,
@@ -148,14 +148,13 @@ def _remove_context(
 
 def _set_setup_cookie(response: Response, sealed: str) -> None:
     """Hand the sealed pending secret to the browser, readable only by the setup routes."""
-    response.set_cookie(
+    set_private_cookie(
+        response,
         TOTP_SETUP_COOKIE_NAME,
         sealed,
         max_age=int(SETUP_LIFETIME.total_seconds()),
-        httponly=True,
-        secure=get_settings().base_url.startswith("https://"),
-        samesite="strict",
         path=TOTP_SETUP_COOKIE_PATH,
+        samesite="strict",
     )
 
 

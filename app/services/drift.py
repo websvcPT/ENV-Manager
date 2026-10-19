@@ -24,7 +24,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core import metrics, telemetry
 from app.core.crypto import CryptoService
 from app.models import (
-    Deployment,
     DeployResultStatus,
     DriftState,
     EnvironmentVersion,
@@ -54,6 +53,7 @@ from app.services.notify_events import (
 )
 from app.services.paths import load_allowed_paths
 from app.services.permissions import AccessScope
+from app.services.structure_lookup import environment_chain
 from app.services.target_files import (
     PROBLEM_MESSAGES,
     TargetError,
@@ -409,9 +409,10 @@ def _unreadable_kind(problem: TargetProblem) -> tuple[DriftKind, str]:
 async def _load(db: AsyncSession, crypto: CryptoService, header: EditorHeader) -> _Snapshot | None:
     """Everything the drift view needs, None when the file has no version or no deployment."""
     managed = await stored_version(db, header.id)
-    deployment = await db.get(Deployment, header.deployment_id)
-    if managed is None or deployment is None:
+    chain = await environment_chain(db, header.id)
+    if managed is None or chain is None:
         return None
+    deployment = chain.deployment
     baseline = (await load_baselines(db, [header.id])).get(header.id)
     deployed = await _deployed_version(db, header.id, baseline)
     read = await _read_target(db, deployment.root_path, header.target_path)
