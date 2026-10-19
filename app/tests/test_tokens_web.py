@@ -28,7 +28,7 @@ from app.tests.web_helpers import HTMX, assert_never_cached, main_of, post
 VIEWER_LIKE = ("viewer", "env_scoped_viewer")
 SECRET = re.compile(r'id="secret" readonly value="([^"]+)"')
 ROW = re.compile(r'<tr data-fragment="token-row" id="token-(\d+)">(.*?)</tr>', re.DOTALL)
-NAME = re.compile(r'<span class="font-mono text-\[13px\]">([^<]+)</span>')
+NAME = re.compile(r'<th scope="row"[^>]*><span[^>]*><span[^>]*>([^<]+)</span>')
 COLUMNS = re.compile(r'<th scope="col"[^>]*>([^<]+)</th>')
 
 

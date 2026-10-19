@@ -3,7 +3,7 @@ import type { APIRequestContext } from '@playwright/test';
 import { csrfHeaders } from './http';
 
 const TOKEN_ROW = /<tr data-fragment="token-row" id="token-(\d+)">(.*?)<\/tr>/gs;
-const NAME = /<span class="font-mono text-\[13px\]">([^<]+)<\/span>/;
+const NAME = /<th scope="row"[^>]*><span[^>]*><span[^>]*>([^<]+)<\/span>/;
 const SECRET = /id="secret" readonly value="([^"]+)"/;
 
 export interface CreatedToken {

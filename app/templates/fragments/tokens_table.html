@@ -10,14 +10,14 @@
 {%- if rows %}
 {% call table("API tokens", columns, right_columns=[8 if show_owner else 7], min_width_class="min-w-[900px]") %}
 {%- for row in rows %}
-<tr data-fragment="token-row" id="token-{{ row.id }}"><th scope="row" class="border-t border-line px-4 py-3.5 text-left font-semibold"><span class="inline-flex flex-col items-start gap-0.5"><span class="font-mono text-[13px]">{{ row.name }}</span><span class="font-mono text-xs font-normal text-ink3">{{ row.prefix }}</span></span></th>
+<tr data-fragment="token-row" id="token-{{ row.id }}"><th scope="row" class="border-t border-line px-4 py-3.5 text-left font-semibold"><span class="inline-flex flex-col items-start gap-0.5"><span class="wrap-anywhere font-mono text-[13px]">{{ row.name }}</span><span class="font-mono text-xs font-normal text-ink3">{{ row.prefix }}</span></span></th>
 {%- if show_owner %}
-<td class="border-t border-line px-4 py-3.5"><span class="inline-flex flex-col items-start gap-0.5"><span class="text-ink2">{{ row.owner_name }}</span><span class="text-xs text-ink3">{{ row.owner_email }}</span></span></td>
+<td class="min-w-40 border-t border-line px-4 py-3.5"><span class="inline-flex flex-col items-start gap-0.5"><span class="wrap-anywhere text-ink2">{{ row.owner_name }}</span><span class="wrap-anywhere text-xs text-ink3">{{ row.owner_email }}</span></span></td>
 {%- endif %}
 <td class="border-t border-line px-4 py-3.5">{{ row.operations | join(", ") }}</td>
 <td class="border-t border-line px-4 py-3.5">{{ row.restriction }}</td>
 <td class="border-t border-line px-4 py-3.5 whitespace-nowrap"><time datetime="{{ row.created_at.strftime('%Y-%m-%dT%H:%M:%SZ') }}" title="UTC">{{ row.created_at.strftime("%Y-%m-%d") }}</time></td>
-<td class="border-t border-line px-4 py-3.5 whitespace-nowrap">{% if row.last_used_at %}<span class="inline-flex flex-col items-start gap-0.5"><time datetime="{{ row.last_used_at.strftime('%Y-%m-%dT%H:%M:%SZ') }}" title="UTC">{{ row.last_used_at.strftime("%Y-%m-%d %H:%M") }}</time>{% if row.last_used_ip %}<span class="font-mono text-xs text-ink3">{{ row.last_used_ip }}</span>{% endif %}</span>{% else %}Never{% endif %}</td>
+<td class="border-t border-line px-4 py-3.5">{% if row.last_used_at %}<span class="inline-flex flex-col items-start gap-0.5"><time datetime="{{ row.last_used_at.strftime('%Y-%m-%dT%H:%M:%SZ') }}" title="UTC">{{ row.last_used_at.strftime("%Y-%m-%d %H:%M") }}</time>{% if row.last_used_ip %}<span class="font-mono text-xs text-ink3">{{ row.last_used_ip }}</span>{% endif %}</span>{% else %}Never{% endif %}</td>
 <td class="border-t border-line px-4 py-3.5 whitespace-nowrap">{% if row.expires_at %}<time datetime="{{ row.expires_at.strftime('%Y-%m-%dT%H:%M:%SZ') }}" title="UTC, through the end of the day">{{ row.expires_at.strftime("%Y-%m-%d") }}</time>{% else %}Never{% endif %}</td>
 <td class="border-t border-line px-4 py-3.5">{{ token_status_badge(row.status.value, row.reason) }}</td>
 <td class="border-t border-line px-4 py-3.5 whitespace-nowrap text-right">{% if row.revocable %}{{ token_actions(row.id, row.name) }}{% endif %}</td></tr>
