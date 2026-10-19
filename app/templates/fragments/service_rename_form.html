@@ -1,0 +1,15 @@
+{#- The rename service form. A refused name swaps this form again with the reason. Context:
+    service (a ServiceHeader), name and error. -#}
+{% from "macros/buttons.html" import button %}
+{% from "macros/feedback.html" import note %}
+{% from "macros/forms.html" import field %}
+{% from "macros/panels.html" import panel %}
+<form hx-post="/services/{{ service.id }}/rename" hx-target="#service-rename" hx-swap="outerHTML" hx-status:422="swap:outerHTML target:#service-rename" id="service-rename" data-fragment="service-rename" class="flex max-w-3xl flex-col gap-5">
+{% call panel("Service", "service-rename-title", fragment="form-section") %}
+<div class="flex flex-col gap-4 px-4 pb-5 md:px-5">
+{{ note("Renaming changes the name shown here and in the deploy history from now on. The stored post-deploy command is not changed: it names the Compose service literally, so update it if the Compose service is renamed too.") }}
+{{ field("svc-name", "Service name", name="name", value=name, hint="Use the Compose service name.", error=error, extra_class="max-w-md", autocomplete="off", maxlength="100") }}
+</div>
+{% endcall %}
+<div class="flex flex-wrap gap-3">{{ button("Save name", kind="primary", type="submit") }}{{ button("Cancel", href="/services/" ~ service.id, extra_class="h-11") }}</div>
+</form>

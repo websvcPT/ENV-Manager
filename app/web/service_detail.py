@@ -172,10 +172,12 @@ async def service_page(
     cli: Annotated[DockerCli, Depends(get_docker_cli)],
     stored: Stored,
     added: str = "",
+    renamed: bool = False,
 ) -> Response:
     """The service page: header, explanation, environments, post-deploy panel and history.
 
-    ``added`` (service or environment) shows the toast after the add forms redirect here.
+    ``added`` (service or environment) shows the toast after the add forms redirect here and
+    ``renamed`` the one after the rename form.
     """
     rows = await load_environment_rows(db, access.scope, access.service)
     history = await load_service_history(db, access.service)
@@ -193,6 +195,7 @@ async def service_page(
             "history": history,
             "post_deploy": post_deploy,
             "added": added if added in ADDED_TOASTS else "",
+            "renamed": renamed,
         },
     )
 

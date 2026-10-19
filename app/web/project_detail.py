@@ -87,10 +87,15 @@ def _page_context(access: ProjectContext, tab: str, **extra: Any) -> dict[str, A
 
 @router.get("/projects/{project_id:int}", include_in_schema=False)
 async def project_page(
-    request: Request, access: Annotated[ProjectContext, Depends(project_access())]
+    request: Request,
+    access: Annotated[ProjectContext, Depends(project_access())],
+    deleted: str = "",
 ) -> Response:
-    """The Deployments tab."""
-    return render(request, "pages/project.html", _page_context(access, "deployments"))
+    """The Deployments tab; ``deleted`` (deployment) shows the toast after one was deleted."""
+    context = _page_context(
+        access, "deployments", deleted="deployment" if deleted == "deployment" else ""
+    )
+    return render(request, "pages/project.html", context)
 
 
 @router.get("/projects/{project_id:int}/deployments", include_in_schema=False)

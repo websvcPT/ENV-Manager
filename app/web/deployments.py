@@ -3,19 +3,26 @@
 from dataclasses import dataclass
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.client_address import client_address
 from app.core.templating import render
+from app.models import Deployment
 from app.services.access_grid import NodeKind
 from app.services.deployment_detail import DeploymentDetail, load_deployment_detail
+from app.services.deployments import DeploymentInUseError, delete_deployment
 from app.services.paths import AllowedPaths
 from app.services.permissions import AccessScope, Capability, ItemLevel, ItemRef, Visibility
 from app.web.access_tabs import AccessSubject, mount_access_routes
-from app.web.dependencies import AuthContext, item_access
+from app.web.dependencies import AuthContext, get_db, item_access
+from app.web.htmx import hx_redirect
 
 router = APIRouter()
+
+DELETE_FRAGMENT = "fragments/deployment_delete_form.html"
+DELETE_CONFIRM_ERROR = "Type the deployment name exactly to confirm."
 
 
 @dataclass(frozen=True)
@@ -83,9 +90,62 @@ async def deployment_page(
     request: Request,
     access: Annotated[DeploymentContext, Depends(deployment_access())],
     saved: bool = False,
+    deleted: str = "",
 ) -> Response:
-    """The deployment detail page; ``saved`` shows the toast after the edit form saved."""
-    return render(request, "pages/deployment.html", _page_context(access, saved=saved))
+    """The deployment detail page.
+
+    ``saved`` shows the toast after the edit form saved and ``deleted`` (service) the one after
+    a service of the deployment was deleted.
+    """
+    return render(
+        request,
+        "pages/deployment.html",
+        _page_context(access, saved=saved, deleted="service" if deleted == "service" else ""),
+    )
+
+
+@router.get("/deployments/{deployment_id:int}/delete", include_in_schema=False)
+async def delete_deployment_form(
+    request: Request,
+    access: Annotated[DeploymentContext, Depends(deployment_access(Capability.MANAGE_STRUCTURE))],
+) -> Response:
+    """The delete confirmation, loaded into its dialog when it opens."""
+    return render(request, DELETE_FRAGMENT, {"deployment": access.deployment})
+
+
+@router.post("/deployments/{deployment_id:int}/delete", include_in_schema=False)
+async def delete_deployment_route(
+    request: Request,
+    access: Annotated[DeploymentContext, Depends(deployment_access(Capability.MANAGE_STRUCTURE))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    confirm_name: Annotated[str, Form()] = "",
+) -> Response:
+    """Delete the deployment after its name was typed back. Success leaves for the project.
+
+    A wrong name or API tokens still restricted to the deployment swap the dialog form again
+    with the reason (422); nothing is deleted.
+    """
+    deployment = await db.get(Deployment, access.deployment.id)
+    if deployment is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "deployment not found")
+    error: str | None = None
+    if confirm_name.strip() != deployment.name:
+        error = DELETE_CONFIRM_ERROR
+    else:
+        try:
+            await delete_deployment(
+                db, deployment, actor=access.auth.user, ip_address=client_address(request)
+            )
+        except DeploymentInUseError as refused:
+            error = str(refused)
+    if error is not None:
+        return render(
+            request,
+            DELETE_FRAGMENT,
+            {"deployment": access.deployment, "form_value": confirm_name, "form_error": error},
+            status_code=422,
+        )
+    return hx_redirect(f"/projects/{access.deployment.project_id}?deleted=deployment")
 
 
 @router.get("/deployments/{deployment_id:int}/services", include_in_schema=False)

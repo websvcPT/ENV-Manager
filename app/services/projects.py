@@ -9,8 +9,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
-    ApiToken,
-    ApiTokenRestriction,
     AuditResult,
     Deployment,
     DeployRun,
@@ -25,7 +23,7 @@ from app.models import (
 from app.services.audit import CLI_ACTOR_NAME, AuditActor, record_actor_audit
 from app.services.grants import projects_reached
 from app.services.permissions import AccessScope, Capability, ItemLevel, compute_visibility
-from app.services.tokens import is_live
+from app.services.token_guard import guard_delete, restrictions_below
 
 MIN_PROJECT_NAME_LENGTH = 3
 MAX_PROJECT_NAME_LENGTH = 100
@@ -173,27 +171,6 @@ async def rename_project(
     return project
 
 
-async def _restrictions_below(
-    db: AsyncSession, project: Project
-) -> list[tuple[ApiToken, ApiTokenRestriction]]:
-    """The tokens and restriction rows that point at the project or anything below it."""
-    deployment_ids = select(Deployment.id).where(Deployment.project_id == project.id)
-    service_ids = select(Service.id).where(Service.deployment_id.in_(deployment_ids))
-    environment_ids = select(Environment.id).where(Environment.service_id.in_(service_ids))
-    stmt = (
-        select(ApiToken, ApiTokenRestriction)
-        .join(ApiTokenRestriction, ApiTokenRestriction.token_id == ApiToken.id)
-        .where(
-            (ApiTokenRestriction.project_id == project.id)
-            | ApiTokenRestriction.deployment_id.in_(deployment_ids)
-            | ApiTokenRestriction.service_id.in_(service_ids)
-            | ApiTokenRestriction.environment_id.in_(environment_ids)
-        )
-        .order_by(ApiToken.name, ApiToken.id)
-    )
-    return [(token, restriction) for token, restriction in (await db.execute(stmt)).all()]
-
-
 async def delete_project(
     db: AsyncSession, project: Project, *, actor: User, ip_address: str | None = None
 ) -> None:
@@ -212,29 +189,22 @@ async def delete_project_as(db: AsyncSession, project: Project, who: AuditActor)
     that is revoked or expired can never be used again, so its restriction rows are removed with
     the project instead of keeping the project from being deleted.
     """
-    restricting = await _restrictions_below(db, project)
-    tokens = sorted({token.name for token, _ in restricting if is_live(token)})
+    tokens = await guard_delete(
+        db,
+        who,
+        await restrictions_below(db, project_id=project.id),
+        action="project.delete",
+        target_type="project",
+        target_id=project.id,
+        target_name=project.name,
+        project_id=project.id,
+    )
     if tokens:
-        await record_actor_audit(
-            db,
-            who,
-            action="project.delete",
-            result=AuditResult.BLOCKED,
-            target_type="project",
-            target_id=project.id,
-            target_name=project.name,
-            project_id=project.id,
-            details={"reason": "restricted_tokens", "tokens": tokens},
-        )
-        await db.commit()
         raise ProjectInUseError(
             "API tokens are restricted to this project or its contents: "
             + ", ".join(tokens)
             + ". Revoke them first."
         )
-    for _, restriction in restricting:
-        await db.delete(restriction)
-    await db.flush()
     deployments = (
         await db.execute(
             select(func.count()).select_from(Deployment).where(Deployment.project_id == project.id)

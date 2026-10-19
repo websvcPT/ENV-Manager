@@ -1,0 +1,13 @@
+{#- The delete deployment confirmation inside its dialog: what is lost, and the name to type back.
+    A wrong name, or tokens still restricted to the deployment, swap this form again with the
+    reason. Context: deployment (a DeploymentDetail), form_value and form_error (both optional). -#}
+{% from "macros/dialogs.html" import confirm_footer, confirm_message, dialog_body, dialog_head %}
+{% from "macros/forms.html" import field %}
+<div data-fragment="deployment-delete">
+{{ dialog_head("deployment-delete", "Delete deployment " ~ deployment.name) }}
+<form id="delete-deployment-form" data-fragment="delete-deployment-form" hx-post="/deployments/{{ deployment.id }}/delete" hx-target="#deployment-delete" hx-swap="innerHTML" hx-status:422="swap:innerHTML target:#deployment-delete">
+{% call dialog_body() %}{% call confirm_message(ink=false) %}This deletes the deployment, its {{ deployment.services | length }} {{ "service" if deployment.services | length == 1 else "services" }}, environments and all versions. Files already deployed to the host are not touched. Deploy history and audit entries are kept. This cannot be undone.{% endcall %}
+{{ field("ddn", "Type the deployment name to confirm", name="confirm_name", value=form_value | default(""), placeholder=deployment.name, error=form_error | default(none), mono=true, autocomplete="off") }}{% endcall %}
+{{ confirm_footer("Delete deployment", type="submit") }}
+</form>
+</div>

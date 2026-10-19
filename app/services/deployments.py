@@ -1,4 +1,4 @@
-"""Deployment structure: root path checks and superadmin-only create and update.
+"""Deployment structure: root path checks and superadmin-only create, update and delete.
 
 The root path is only ever probed on the filesystem when it lies inside the allowed paths. A
 path outside them answers with that single reason, whatever exists there, so the form cannot be
@@ -10,7 +10,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -20,6 +20,7 @@ from app.models import (
     DriftPolicy,
     MissingTargetPolicy,
     Project,
+    Service,
     User,
 )
 from app.services.app_settings import GeneralSettings
@@ -32,6 +33,7 @@ from app.services.paths import (
     path_status,
 )
 from app.services.slug_names import SLUG_MESSAGE, is_slug_name
+from app.services.token_guard import guard_delete, restrictions_below
 
 FILE_MODE_PATTERN = re.compile(r"0?[0-7]{3}")
 ACCOUNT_PATTERN = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*")
@@ -366,3 +368,56 @@ async def update_deployment(
     )
     await db.commit()
     return deployment
+
+
+class DeploymentInUseError(Exception):
+    """API tokens are restricted to the deployment or something inside it, so it is not deleted."""
+
+
+async def delete_deployment(
+    db: AsyncSession, deployment: Deployment, *, actor: User, ip_address: str | None = None
+) -> None:
+    """Delete a deployment with its services, environments and versions, and audit it.
+
+    Refused with ``DeploymentInUseError`` while a usable API token is restricted to the
+    deployment or anything inside it (the refusal is audited); restrictions of revoked or expired
+    tokens go with it. Files already written to the host are not touched, and deploy history
+    keeps the copied names.
+    """
+    who = AuditActor.for_user(actor, ip_address)
+    tokens = await guard_delete(
+        db,
+        who,
+        await restrictions_below(db, deployment_id=deployment.id),
+        action="deployment.delete",
+        target_type="deployment",
+        target_id=deployment.id,
+        target_name=deployment.name,
+        project_id=deployment.project_id,
+        deployment_id=deployment.id,
+    )
+    if tokens:
+        raise DeploymentInUseError(
+            "API tokens are restricted to this deployment or its contents: "
+            + ", ".join(tokens)
+            + ". Revoke them first."
+        )
+    services = (
+        await db.execute(
+            select(func.count()).select_from(Service).where(Service.deployment_id == deployment.id)
+        )
+    ).scalar_one()
+    await record_actor_audit(
+        db,
+        who,
+        action="deployment.delete",
+        result=AuditResult.SUCCESS,
+        target_type="deployment",
+        target_id=deployment.id,
+        target_name=deployment.name,
+        project_id=deployment.project_id,
+        deployment_id=deployment.id,
+        details={"services": services, "root_path": deployment.root_path},
+    )
+    await db.delete(deployment)
+    await db.commit()

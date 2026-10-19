@@ -1,0 +1,13 @@
+{#- The delete service confirmation inside its dialog: what is lost, and the name to type back. A
+    wrong name, or tokens still restricted to the service, swap this form again with the reason.
+    Context: service, form_value and form_error (both optional). -#}
+{% from "macros/dialogs.html" import confirm_footer, confirm_message, dialog_body, dialog_head %}
+{% from "macros/forms.html" import field %}
+<div data-fragment="service-delete">
+{{ dialog_head("service-delete", "Delete service " ~ service.name) }}
+<form id="delete-service-form" data-fragment="delete-service-form" hx-post="/services/{{ service.id }}/delete" hx-target="#service-delete" hx-swap="innerHTML" hx-status:422="swap:innerHTML target:#service-delete">
+{% call dialog_body() %}{% call confirm_message(ink=false) %}This deletes the service, its environments, all their versions and its post-deploy command. Files already deployed to the host are not touched. Deploy history and audit entries are kept. This cannot be undone.{% endcall %}
+{{ field("dsn", "Type the service name to confirm", name="confirm_name", value=form_value | default(""), placeholder=service.name, error=form_error | default(none), mono=true, autocomplete="off") }}{% endcall %}
+{{ confirm_footer("Delete service", type="submit") }}
+</form>
+</div>
