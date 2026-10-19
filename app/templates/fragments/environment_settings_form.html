@@ -4,7 +4,7 @@
     check (target path line and notice), action and cancel_href. -#}
 {% from "macros/buttons.html" import button %}
 {% from "macros/feedback.html" import note %}
-{% from "macros/forms.html" import field, radio_option %}
+{% from "macros/forms.html" import field, radio_option, save_button %}
 {% from "macros/panels.html" import panel %}
 {% set target_error = errors.get("target_path") %}
 {% set policy_groups = [
@@ -39,5 +39,5 @@
 {% for value, label, description in options %}{{ radio_option(name, value, label, description, checked=(value == current)) }}{% endfor %}</div>{% if errors.get(name) %}<p role="alert" class="mt-2 text-[13px] font-semibold text-danger">{{ errors.get(name) }}</p>{% endif %}</fieldset>{% endfor %}
 </div>
 {% endcall %}
-<div class="flex flex-wrap gap-3">{{ button("Save settings", kind="primary", type="submit") }}{{ button("Cancel", href=cancel_href, extra_class="h-11") }}</div>
+<div class="flex flex-wrap gap-3">{{ save_button() }}{{ button("Cancel", href=cancel_href, extra_class="h-11") }}</div>
 </form>
