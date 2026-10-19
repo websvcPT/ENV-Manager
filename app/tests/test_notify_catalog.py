@@ -22,6 +22,7 @@ from app.services.notify_events import (
     FileChange,
     FileChanged,
     GitPushFailed,
+    GitPushRecovered,
     LockoutScope,
     LockoutStarted,
     MasterKeyRotated,
@@ -49,13 +50,14 @@ def backup(status: BackupStatus) -> BackupFinished:
 def test_every_switch_and_recipients_choice_is_a_field_of_the_settings() -> None:
     """The catalog and the stored section describe the same fields, so neither can drift.
 
-    The webhook switch and address are the only fields that belong to no row of the matrix.
+    The webhook switch is the only field that belongs to no row of the matrix (the address and
+    the shared secret are secrets, stored apart).
     """
     names = {item.name for item in fields(NotificationSettings)}
     expected = {row.kind.value for row in EVENT_ROWS} | {
         f"{kind.value}_to" for kind in PROJECT_KINDS
     }
-    assert names == expected | {"webhook_enabled", "webhook_url"}
+    assert names == expected | {"webhook_enabled"}
 
 
 def test_the_defaults_are_the_decided_ones() -> None:
@@ -136,4 +138,5 @@ def test_every_other_event_has_its_kind() -> None:
         EventKind.FILE_CHANGED
     )
     assert kind_of(GitPushFailed("authentication failed", 3)) is EventKind.GIT_PUSH_FAILED
+    assert kind_of(GitPushRecovered(1)) is EventKind.GIT_PUSH_FAILED
     assert kind_of(MasterKeyRotated(10, 2, "cli")) is EventKind.KEY_ROTATED

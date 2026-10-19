@@ -25,6 +25,7 @@ from app.services.server_lock import (
     ServerLockUnavailableError,
     acquire_server_lock,
 )
+from app.services.webhook_url_upgrade import seal_plain_webhook_url
 
 log = get_logger("cli_key")
 
@@ -70,6 +71,7 @@ async def _rotate(
     are told afterwards, through the new key.
     """
     await ensure_key_check(db, old)
+    await seal_plain_webhook_url(db, old)
     new_key = prepare_new_key(new_key_file, current)
     locations = BackupLocations.from_settings(settings)
     run = await run_backup(

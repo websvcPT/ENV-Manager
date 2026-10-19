@@ -258,6 +258,15 @@ async def test_a_save_with_nothing_changed_says_so(root: httpx.AsyncClient) -> N
             "gk",
             "The key must not have a passphrase.",
         ),
+        (
+            {
+                "deploy_key": "-----BEGIN OPENSSH PRIVATE KEY-----\n"
+                "b3BlbnNzaC1rZXktdjEAAAAACmFlczI1Ni1jdHIAAAAGYmNyeXB0\n"
+                "-----END OPENSSH PRIVATE KEY-----"
+            },
+            "gk",
+            "The key must not have a passphrase.",
+        ),
         ({"token": "has a space"}, "gt", "Use printable characters without spaces, at most 1024."),
         (
             {"token": "new", "remove_token": "on"},

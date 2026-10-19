@@ -26,7 +26,12 @@ from app.core.display_time import DisplayTime
 from app.core.log import get_logger
 from app.models import AuditResult
 from app.models.types import utc_now
-from app.services.app_settings import WEBHOOK_SECRET_KEY, load_stored_settings, read_secret
+from app.services.app_settings import (
+    WEBHOOK_SECRET_KEY,
+    WEBHOOK_URL_KEY,
+    load_stored_settings,
+    read_secret,
+)
 from app.services.audit import AuditActor, record_committed_audit
 from app.services.deploy_events import DeployFinished
 from app.services.notify_status import WEBHOOK_CHANNEL, clear_failures, record_failure
@@ -46,7 +51,7 @@ WEBHOOK_ACTOR = "webhook"
 DELIVER_ACTION = "webhook.deliver"
 TEST_ACTION = "webhook.test"
 CONCURRENT_ATTEMPTS = 4
-UNREADABLE_SECRET = "The stored webhook secret cannot be read with the current key."  # noqa: S105
+UNREADABLE_SECRET = "The stored webhook address or secret cannot be read with the current key."  # noqa: S105
 NOT_SET_UP = "Save a webhook address and a shared secret first."
 
 Sleep = Callable[[float], Awaitable[None]]
@@ -118,16 +123,17 @@ class WebhookDelivery:
         """The address and secret now, None when the webhook is off, not set up or unreadable."""
         async with self._session_factory() as db:
             notifications = (await load_stored_settings(db)).notifications
-            if not notifications.webhook_enabled or not notifications.webhook_url:
+            if not notifications.webhook_enabled:
                 return None
             try:
+                url = await read_secret(db, self._crypto, WEBHOOK_URL_KEY)
                 secret = await read_secret(db, self._crypto, WEBHOOK_SECRET_KEY)
             except CryptoError:
                 await self._count_failure(UNREADABLE_SECRET)
                 return None
-        if not secret:
+        if not url or not secret:
             return None
-        return WebhookTarget(notifications.webhook_url, secret)
+        return WebhookTarget(url, secret)
 
     async def _post_with_retries(
         self, event: DeployFinished, event_id: str, target: WebhookTarget, body: bytes
@@ -264,11 +270,11 @@ async def send_test_event(
     """
     stored = await load_stored_settings(db)
     display = DisplayTime(stored.general.time_zone, stored.general.date_format)
-    url = stored.notifications.webhook_url
     try:
+        url = await read_secret(db, crypto, WEBHOOK_URL_KEY) or ""
         secret = await read_secret(db, crypto, WEBHOOK_SECRET_KEY)
     except CryptoError:
-        await _audit_test(db, actor, url, None, UNREADABLE_SECRET)
+        await _audit_test(db, actor, "", None, UNREADABLE_SECRET)
         return WebhookCheck(False, UNREADABLE_SECRET)
     if not url or not secret:
         return WebhookCheck(False, NOT_SET_UP)

@@ -18,6 +18,9 @@ class GitSyncState(Base):
     the repository), so a push happens only when the mark has moved. ``failures`` counts the runs
     that failed since the last one that worked and ``retry_at`` is when the next attempt may
     start, which grows with every failure. ``last_error`` is a fixed phrase, never output of git.
+    ``failure_notified_at`` is when the last failure notice of the current streak went out (empty
+    when none did), which decides whether the next failure notifies and whether a success sends
+    the recovered notice.
     The pinned host key belongs to ``host_key_host`` (the name the SSH client looks it up by) and
     holds a known_hosts line. Nothing here is a secret.
     """
@@ -31,6 +34,7 @@ class GitSyncState(Base):
     last_error: Mapped[str | None] = mapped_column(String(200), default=None)
     failures: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     retry_at: Mapped[datetime | None] = mapped_column(UtcDateTime, default=None)
+    failure_notified_at: Mapped[datetime | None] = mapped_column(UtcDateTime, default=None)
     host_key_host: Mapped[str | None] = mapped_column(String(300), default=None)
     host_key: Mapped[str | None] = mapped_column(Text, default=None)
     host_key_fingerprint: Mapped[str | None] = mapped_column(String(100), default=None)

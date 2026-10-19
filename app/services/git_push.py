@@ -5,8 +5,10 @@ worked, which the watermark (the change mark of that export) tells. A due run tr
 times, waiting 5, 30 and 120 seconds, but only for faults that can pass (an unreachable server, a
 timeout); a refused credential or a changed host key stops at once. A run that still fails is
 recorded (one more failure, a longer wait before the next run, the fixed reason), audited with
-the host only, announced as a failed push and shown in the banner until a push works or the
-settings change. Nothing here keeps or logs text printed by git.
+the host only, shown in the banner until a push works or the settings change, and announced as a
+failed push once at the first failure of a streak and then at most once a day while it lasts; a
+push that works after an announced streak sends one recovered notice. Nothing here keeps or logs
+text printed by git.
 """
 
 from dataclasses import dataclass
@@ -26,7 +28,7 @@ from app.services.git_hostkey import pinned_key
 from app.services.git_repo import GitRepository
 from app.services.git_services import GitServices, load_target, parse_saved_address
 from app.services.git_state import load_state, record_failure, record_success
-from app.services.notify_events import GitPushFailed, announce_event
+from app.services.notify_events import GitPushFailed, GitPushRecovered, announce_event
 
 log = get_logger("git_push")
 
@@ -151,7 +153,7 @@ async def _record_success(
 ) -> PushResult:
     """Store the new watermark and, for a real push, audit it."""
     state = await load_state(db)
-    record_success(state, mark, services.clock(), pushed=pushed.committed)
+    recovered = record_success(state, mark, services.clock(), pushed=pushed.committed)
     if pushed.committed:
         host = parse_saved_address(services, git).label
         await _audit_push(
@@ -167,6 +169,8 @@ async def _record_success(
             },
         )
     await db.commit()
+    if recovered:
+        await announce_event(services.notifier(), GitPushRecovered(attempts))
     return PushResult(PushStatus.PUSHED if pushed.committed else PushStatus.UNCHANGED, attempts)
 
 
@@ -178,7 +182,9 @@ async def _record_failure(
     attempts: int,
     actor: AuditActor,
 ) -> PushResult:
-    """Store the failure, audit it, and announce it once it is committed.
+    """Store the failure, audit it, and announce it once it is committed when a notice is due.
+
+    Every failure is audited; the first one of a streak is announced and then one a day.
 
     A run whose settings were changed while it ran records nothing: the save already gave the
     new settings a fresh start, and a failure of the old ones says nothing about them.
@@ -187,7 +193,7 @@ async def _record_failure(
     if (await load_stored_settings(db)).git != git:
         return _skipped(SkipReason.SETTINGS_CHANGED)
     state = await load_state(db)
-    record_failure(state, failure.message, services.clock())
+    announce = record_failure(state, failure.message, services.clock())
     metrics.record_git_push_failure(failure.problem.value)
     try:
         host = parse_saved_address(services, git).label
@@ -206,7 +212,8 @@ async def _record_failure(
         },
     )
     await db.commit()
-    await announce_event(services.notifier(), GitPushFailed(failure.message, attempts))
+    if announce:
+        await announce_event(services.notifier(), GitPushFailed(failure.message, attempts))
     return PushResult(PushStatus.FAILED, attempts, failure.message)
 
 

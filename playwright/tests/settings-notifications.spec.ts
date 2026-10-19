@@ -268,15 +268,18 @@ async function resetWebhook(page: Page): Promise<void> {
   await page.goto('/settings/notifications');
   await page.locator('#wu').fill('');
   await page.locator('#we').setChecked(false);
-  const remove = form(page).locator('input[name="remove_webhook_secret"]');
-  if (await remove.count()) {
-    await remove.setChecked(true);
+  for (const name of ['remove_webhook_url', 'remove_webhook_secret']) {
+    const remove = form(page).locator(`input[name="${name}"]`);
+    if (await remove.count()) {
+      await remove.setChecked(true);
+    }
   }
   await secretField(page).fill('');
   await save(page);
   await expect(toast(form(page))).toBeVisible();
   await page.goto('/settings/notifications');
   await expect(page.locator('#wu')).toHaveValue('');
+  await expect(page.locator('#wu')).toHaveAttribute('placeholder', '');
   await expect(page.locator('#we')).not.toBeChecked();
   await expect(secretField(page)).toHaveAttribute('placeholder', '');
 }
@@ -339,7 +342,7 @@ test.describe('webhook', () => {
     await expect(page.locator('#we')).not.toBeChecked();
   });
 
-  test('stores the secret without ever showing it, says why a test event failed and is audited', async ({
+  test('stores the address and the secret without ever showing them, says why a test event failed and is audited', async ({
     page,
     settingsLock: _lock,
   }) => {
@@ -351,12 +354,18 @@ test.describe('webhook', () => {
       await expect(toast(form(page))).toContainText('Notification settings saved');
       await expect(secretField(page)).toHaveValue('');
       await expect(secretField(page)).toHaveAttribute('placeholder', '••••••••');
+      await expect(page.locator('#wu')).toHaveValue('');
+      await expect(page.locator('#wu')).toHaveAttribute('placeholder', 'http://127.0.0.1:9/••••••••');
+      await expect(form(page).locator('input[name="remove_webhook_url"]')).toBeVisible();
       await expect(form(page).locator('input[name="remove_webhook_secret"]')).toBeVisible();
       expect(await page.content()).not.toContain(WEBHOOK_SECRET);
+      expect(await page.content()).not.toContain('e2e-path-token-5520');
       await page.reload();
-      await expect(page.locator('#wu')).toHaveValue(REFUSED_URL);
+      await expect(page.locator('#wu')).toHaveValue('');
+      await expect(page.locator('#wu')).toHaveAttribute('placeholder', 'http://127.0.0.1:9/••••••••');
       await expect(page.locator('#we')).not.toBeChecked();
       expect(await page.content()).not.toContain(WEBHOOK_SECRET);
+      expect(await page.content()).not.toContain('e2e-path-token-5520');
 
       await form(page).getByRole('button', { name: 'Send test event' }).click();
       const result = page.locator('#webhook-test');
@@ -376,6 +385,7 @@ test.describe('webhook', () => {
       const first = page.locator('#audit-results tr[data-fragment="audit-row"]').first();
       const detail = first.locator('xpath=following-sibling::tr[1]');
       await expect(detail).toContainText('notifications.webhook_secret');
+      await expect(detail).toContainText('notifications.webhook_url');
       expect(await page.content()).not.toContain(WEBHOOK_SECRET);
       expect(await page.content()).not.toContain('e2e-path-token-5520');
     } finally {

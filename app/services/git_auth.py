@@ -8,6 +8,7 @@ file in the format of git's own ``store`` credential helper, which git is told t
 call; the address stays free of it. The folder is removed when the call ends, whatever happened.
 """
 
+import base64
 import os
 import shlex
 import shutil
@@ -30,6 +31,8 @@ KEEPALIVE_COUNT = 3
 MAX_KEY_LENGTH = 16384
 KEY_BEGIN = "-----BEGIN "
 KEY_END = "PRIVATE KEY-----"
+OPENSSH_BEGIN = "-----BEGIN OPENSSH PRIVATE KEY-----"
+OPENSSH_MAGIC = b"openssh-key-v1\x00"
 
 
 @dataclass(frozen=True)
@@ -70,9 +73,36 @@ def deploy_key_problem(text: str) -> str | None:
         return "That is a public key. Paste the private key."
     if not first.startswith(KEY_BEGIN) or KEY_END not in first:
         return "Paste the whole private key, starting with -----BEGIN ... PRIVATE KEY-----."
-    if "ENCRYPTED" in first:
+    if "ENCRYPTED" in first or "Proc-Type: 4,ENCRYPTED" in text:
+        return "The key must not have a passphrase."
+    if _openssh_cipher(text) not in (None, "none"):
         return "The key must not have a passphrase."
     return None
+
+
+def _openssh_cipher(text: str) -> str | None:
+    """The cipher name an OpenSSH format key declares, None for any other or unreadable text.
+
+    The body of an ``openssh-key-v1`` key starts with a magic string and the name of the cipher
+    that seals the private part: ``none`` for a key without a passphrase. Only a body that
+    decodes and carries the magic is judged; everything else is left to the other checks.
+    """
+    lines = [line.strip() for line in text.strip().splitlines()]
+    if not lines or lines[0] != OPENSSH_BEGIN:
+        return None
+    body = "".join(line for line in lines[1:] if not line.startswith("-----"))
+    try:
+        raw = base64.b64decode(body, validate=True)
+    except ValueError:
+        return None
+    if not raw.startswith(OPENSSH_MAGIC) or len(raw) < len(OPENSSH_MAGIC) + 4:
+        return None
+    start = len(OPENSSH_MAGIC)
+    length = int.from_bytes(raw[start : start + 4], "big")
+    name = raw[start + 4 : start + 4 + length]
+    if len(name) != length:
+        return None
+    return name.decode("ascii", errors="replace")
 
 
 def ssh_command(key_path: Path, known_hosts_path: Path, key_type: str) -> str:

@@ -39,7 +39,7 @@ from app.services.git_push import (
 )
 from app.services.git_repo import COMMIT_EMAIL
 from app.services.git_state import load_state
-from app.services.notify_events import GitPushFailed
+from app.services.notify_events import GitPushFailed, GitPushRecovered
 from app.services.shell_banners import load_shell_banners
 from app.services.versions import create_version
 from app.tests.git_helpers import Call, clone, failed, git
@@ -311,16 +311,58 @@ async def test_a_push_that_keeps_failing_is_recorded_announced_audited_and_waite
         state = await load_state(db)
     assert state.failures == 2
     assert state.retry_at == git_world.clock.now + timedelta(hours=2)
-    assert len(git_world.events.events) == 2
+    assert len(git_world.events.events) == 1, "the second failure of the day is not announced"
+    async with git_world.factory() as db:
+        audits = (
+            await db.execute(select(AuditEntry).where(AuditEntry.action == "git.push"))
+        ).scalars()
+        assert len(list(audits)) == 2, "every failure is still audited"
 
     del git_world.runner.script["ls-remote"]
     git_world.later(121)
     assert (await git_world.push()).status is PushStatus.PUSHED
+    assert git_world.events.events == [GitPushFailed(reason, 4), GitPushRecovered(1)]
     async with git_world.factory() as db:
         state = await load_state(db)
         assert (state.failures, state.retry_at, state.last_error) == (0, None, None)
+        assert state.failure_notified_at is None
         banners = await load_shell_banners(db, DisplayTime())
     assert not any("Git push" in banner.message for banner in banners)
+
+
+async def test_a_streak_over_days_is_announced_at_the_start_then_once_a_day_and_recovery_once(
+    git_world: World,
+) -> None:
+    """Hour by hour with a fake clock: a failing push is announced at its first failure and then
+    no more than once in 24 hours, and the recovery is announced once. The runs happen at hours
+    0, 1, 3, 7, 15, 31, 55 and 79 (the waits double up to a day), so the notices are at hours 0,
+    31, 55 and 79."""
+    await git_world.configure()
+    git_world.runner.script["ls-remote"] = network_down
+    reason = PROBLEMS[GitProblem.NETWORK].message
+    announced: list[int] = []
+    for hour in range(0, 80):
+        before = len(git_world.events.events)
+        result = await git_world.push()
+        if len(git_world.events.events) > before:
+            announced.append(hour)
+            assert git_world.events.events[-1] == GitPushFailed(reason, 4)
+        assert result.status in {PushStatus.FAILED, PushStatus.SKIPPED}
+        git_world.later(60)
+
+    assert announced == [0, 31, 55, 79]
+    del git_world.runner.script["ls-remote"]
+    git_world.later(24 * 60)
+    assert (await git_world.push()).status is PushStatus.PUSHED
+    assert git_world.events.events[-1] == GitPushRecovered(1)
+    assert git_world.events.events.count(GitPushRecovered(1)) == 1
+
+    git_world.later(61)
+    async with git_world.factory() as db:
+        (await load_state(db)).watermark = None
+        await db.commit()
+    assert (await git_world.push()).status is PushStatus.UNCHANGED
+    assert git_world.events.events.count(GitPushRecovered(1)) == 1, "no second recovery notice"
 
 
 async def test_a_refused_credential_is_not_retried(git_world: World) -> None:

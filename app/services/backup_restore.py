@@ -49,6 +49,7 @@ from app.services.backup_lock import BackupBusyError, hold_backup_lock
 from app.services.backup_records import RecordSnapshot, merge_records, snapshot_records
 from app.services.backup_run import BackupLocations
 from app.services.key_rotation import rekey_database
+from app.services.webhook_url_upgrade import seal_plain_webhook_url
 
 log = get_logger("backup_restore")
 
@@ -125,18 +126,21 @@ async def _prepare(
     label: str,
     safety_name: str,
     keys: tuple[CryptoService, CryptoService] | None,
+    crypto: CryptoService,
 ) -> None:
     """Make the working copy ready to become the live database (see the module description).
 
     ``keys`` is the older key the backup was made with and the key in use now, for a backup made
     before a key rotation: everything the key protects is moved to the current key here, in the
-    working copy, so the switch brings in data the current key opens.
+    working copy, so the switch brings in data the current key opens. A webhook address a
+    backup still holds as plain text is sealed first, with the key the backup was made with.
     """
     engine = create_engine(work)
     try:
         if inspection.needs_upgrade:
             await upgrade_to_head(engine)
         async with create_session_factory(engine)() as session:
+            await seal_plain_webhook_url(session, keys[0] if keys is not None else crypto)
             if keys is not None:
                 await rekey_database(session, *keys)
             await session.execute(delete(UserSession))
@@ -271,6 +275,7 @@ async def _restore_locked(
             label=label,
             safety_name=safety.name,
             keys=(old_crypto, crypto) if old_crypto else None,
+            crypto=crypto,
         )
         await asyncio.to_thread(replace_database, work, locations.database_path)
     except RestoreRefusedError as error:

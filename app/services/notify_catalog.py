@@ -15,6 +15,7 @@ from app.services.deploy_events import DeployFinished
 from app.services.notify_events import (
     FileChanged,
     GitPushFailed,
+    GitPushRecovered,
     LockoutStarted,
     MasterKeyRotated,
     NotificationEvent,
@@ -116,7 +117,7 @@ def kind_of(event: NotificationEvent) -> EventKind | None:
         return EventKind.USER_CHANGED
     if isinstance(event, FileChanged):
         return EventKind.FILE_CHANGED
-    if isinstance(event, GitPushFailed):
+    if isinstance(event, GitPushFailed | GitPushRecovered):
         return EventKind.GIT_PUSH_FAILED
     if isinstance(event, MasterKeyRotated):
         return EventKind.KEY_ROTATED

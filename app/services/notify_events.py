@@ -106,6 +106,13 @@ class GitPushFailed:
 
 
 @dataclass(frozen=True)
+class GitPushRecovered:
+    """A push worked again after a streak of failures that had been announced."""
+
+    attempts: int
+
+
+@dataclass(frozen=True)
 class MasterKeyRotated:
     """The master key was replaced from the command line. It holds counts only, no key material."""
 
@@ -123,6 +130,7 @@ NotificationEvent = (
     | UserChanged
     | FileChanged
     | GitPushFailed
+    | GitPushRecovered
     | MasterKeyRotated
 )
 

@@ -11,7 +11,12 @@ from sqlalchemy import select
 
 from app.models import AuditEntry, AuditResult
 from app.models.types import utc_now
-from app.services.app_settings import WEBHOOK_SECRET_KEY, load_stored_settings, read_secret
+from app.services.app_settings import (
+    WEBHOOK_SECRET_KEY,
+    WEBHOOK_URL_KEY,
+    load_stored_settings,
+    read_secret,
+)
 from app.services.notify_status import EMAIL_CHANNEL, WEBHOOK_CHANNEL, load_failures, record_failure
 from app.tests.conftest import sign_in
 from app.tests.settings_helpers import (
@@ -39,6 +44,7 @@ from app.tests.webhook_helpers import (
 TAB = "/settings/notifications"
 TEST = "/settings/notifications/webhook/test"
 OTHER_SECRET = "another-secret-sentinel-98765"
+SHOWN_HOST = "https://hooks.example.com/••••••••"
 
 
 @pytest.fixture
@@ -54,6 +60,7 @@ def hook_form(
     secret: str = WEBHOOK_SECRET,
     enabled: bool = True,
     remove: bool = False,
+    remove_url: bool = False,
 ) -> dict[str, str]:
     """The default matrix with the webhook fields."""
     data = form_of(DEFAULTS_ON)
@@ -63,6 +70,8 @@ def hook_form(
         data["webhook_enabled"] = "on"
     if remove:
         data["remove_webhook_secret"] = "on"
+    if remove_url:
+        data["remove_webhook_url"] = "on"
     return data
 
 
@@ -81,10 +90,23 @@ def secret_input(page: str) -> str:
     return found.group(0)
 
 
+def url_input(page: str) -> str:
+    """The markup of the address input."""
+    found = re.search(r'<input id="wu"[^>]*>', page)
+    assert found is not None
+    return found.group(0)
+
+
 async def stored_secret(web_app: FastAPI) -> str | None:
     """The decrypted webhook secret, None when none is stored."""
     async with web_app.state.session_factory() as db:
         return await read_secret(db, web_app.state.crypto, WEBHOOK_SECRET_KEY)
+
+
+async def stored_url(web_app: FastAPI) -> str | None:
+    """The decrypted webhook address, None when none is stored."""
+    async with web_app.state.session_factory() as db:
+        return await read_secret(db, web_app.state.crypto, WEBHOOK_URL_KEY)
 
 
 async def audit_text(web_app: FastAPI) -> str:
@@ -102,73 +124,113 @@ async def test_the_tab_shows_the_webhook_fields_empty_and_off_by_default(
     page = response.text
     assert_never_cached(response)
     assert "Outbound webhook URL" in page and "Webhook shared secret" in page
-    assert value_of(page, "wu") == ""
+    assert value_of(page, "wu") == "" and 'placeholder=""' in url_input(page)
     assert 'type="password"' in secret_input(page) and 'value=""' in secret_input(page)
     assert 'placeholder=""' in secret_input(page)
     assert re.search(r'<input id="we" type="checkbox" name="webhook_enabled" class', page)
     assert 'hx-post="/settings/notifications/webhook/test"' in page
     assert "Send test event" in page and "Remove the stored shared secret" not in page
+    assert "Remove the stored webhook address" not in page
 
 
-async def test_saving_stores_the_address_and_an_encrypted_secret_and_never_shows_it_back(
+async def test_saving_stores_the_address_and_the_secret_encrypted_and_shows_only_the_host(
     root: httpx.AsyncClient, web_app: FastAPI
 ) -> None:
-    """The secret is sealed in the settings store, read back only by the code that signs."""
+    """Both are sealed in the settings store, read back only by the code that posts."""
     response = await post(root, TAB, hook_form())
     assert response.status_code == 200
     assert toast_of(response.text) == (
         "Notification settings saved",
         "They apply to the next event.",
     )
-    settings = (await stored(web_app)).notifications
-    assert settings.webhook_enabled is True and settings.webhook_url == WEBHOOK_URL
+    assert (await stored(web_app)).notifications.webhook_enabled is True
     assert await stored_secret(web_app) == WEBHOOK_SECRET
+    assert await stored_url(web_app) == WEBHOOK_URL
     rows = await stored_rows(web_app)
     assert WEBHOOK_SECRET not in json.dumps(rows) and WEBHOOK_SECRET_KEY in rows
+    assert WEBHOOK_URL not in json.dumps(rows) and "path-token" not in json.dumps(rows)
+    assert WEBHOOK_URL_KEY in rows
     page = response.text
     assert WEBHOOK_SECRET not in page and 'value="' + WEBHOOK_SECRET not in page
-    assert value_of(page, "wu") == WEBHOOK_URL
+    assert "path-token" not in page and "T0001" not in page
+    assert value_of(page, "wu") == ""
+    assert f'placeholder="{SHOWN_HOST}"' in url_input(page)
     assert 'value=""' in secret_input(page) and 'placeholder="••••••••"' in secret_input(page)
     assert "Remove the stored shared secret" in page and "Leave empty to keep it." in page
+    assert "Remove the stored webhook address" in page
+    assert "Stored encrypted, only the host is shown." in page
     assert 'hx-swap-oob="true"' in banner_area(page)
     again = (await root.get(TAB)).text
     assert WEBHOOK_SECRET not in again and 'value=""' in secret_input(again)
+    assert "path-token" not in again and f'placeholder="{SHOWN_HOST}"' in url_input(again)
     assert 'placeholder="••••••••"' in secret_input(again)
 
 
-async def test_the_audit_records_the_host_and_that_a_secret_changed_never_the_path_or_secret(
+async def test_the_audit_names_the_address_and_the_secret_and_never_holds_them(
     root: httpx.AsyncClient, web_app: FastAPI
 ) -> None:
-    """The address is kept as scheme and host, the secret only by its name."""
+    """Both secrets are listed by name only, with no host, path or value."""
     await post(root, TAB, hook_form())
     entries = await settings_entries(web_app)
     changes = [change for entry in entries for change in changes_of(entry)]
     by_name = {str(change["setting"]): change for change in changes}
-    assert by_name["notifications.webhook_url"] == {
-        "setting": "notifications.webhook_url",
-        "kind": "url",
-        "old": "",
-        "new": "https://hooks.example.com",
-    }
+    assert by_name[WEBHOOK_URL_KEY] == {"setting": WEBHOOK_URL_KEY, "kind": "secret"}
     assert by_name["notifications.webhook_enabled"]["new"] is True
     assert by_name[WEBHOOK_SECRET_KEY] == {"setting": WEBHOOK_SECRET_KEY, "kind": "secret"}
     text = await audit_text(web_app)
     assert WEBHOOK_SECRET not in text and "path-token" not in text and "T0001" not in text
+    assert "hooks.example.com" not in text
 
 
-async def test_an_empty_secret_field_keeps_the_stored_secret_and_a_typed_one_replaces_it(
+async def test_an_empty_field_keeps_the_stored_value_and_a_typed_one_replaces_it(
     root: httpx.AsyncClient, web_app: FastAPI
 ) -> None:
-    """Keep, then replace."""
+    """Keep, then replace, for the address and for the secret."""
     await post(root, TAB, hook_form())
+    kept = hook_form(url="", secret="")
+    assert toast_of((await post(root, TAB, kept)).text) == (
+        "Nothing to save",
+        "The settings are unchanged.",
+    )
+    assert await stored_url(web_app) == WEBHOOK_URL
+    assert await stored_secret(web_app) == WEBHOOK_SECRET
     moved = hook_form(url="https://hooks.example.com/other", secret="")
     assert toast_of((await post(root, TAB, moved)).text) is not None
     assert await stored_secret(web_app) == WEBHOOK_SECRET
-    assert (await stored(web_app)).notifications.webhook_url.endswith("/other")
-    await post(root, TAB, hook_form(secret=OTHER_SECRET))
+    assert (await stored_url(web_app) or "").endswith("/other")
+    await post(root, TAB, hook_form(url="", secret=OTHER_SECRET))
     assert await stored_secret(web_app) == OTHER_SECRET
     assert WEBHOOK_SECRET not in json.dumps(await stored_rows(web_app))
     assert OTHER_SECRET not in await audit_text(web_app)
+
+
+async def test_the_address_can_be_removed_and_then_the_webhook_cannot_be_on(
+    root: httpx.AsyncClient, web_app: FastAPI
+) -> None:
+    """Removing needs the switch off; it is audited by name only."""
+    await post(root, TAB, hook_form())
+    refused = await post(root, TAB, hook_form(url="", secret="", remove_url=True))
+    assert refused.status_code == 422
+    assert error_of(refused.text, "wu") == "Enter the address to switch the webhook on."
+    assert await stored_url(web_app) == WEBHOOK_URL
+    removed = await post(root, TAB, hook_form(url="", secret="", remove_url=True, enabled=False))
+    assert removed.status_code == 200 and await stored_url(web_app) is None
+    assert "Remove the stored webhook address" not in removed.text
+    assert 'placeholder=""' in url_input(removed.text)
+    changes = [change for entry in await settings_entries(web_app) for change in changes_of(entry)]
+    assert {"setting": WEBHOOK_URL_KEY, "kind": "secret", "removed": True} in changes
+    assert await stored_secret(web_app) == WEBHOOK_SECRET
+
+
+async def test_an_address_and_a_removal_together_are_refused(
+    root: httpx.AsyncClient, web_app: FastAPI
+) -> None:
+    """One or the other."""
+    await post(root, TAB, hook_form())
+    response = await post(root, TAB, hook_form(url="https://other.example.com/x", remove_url=True))
+    assert response.status_code == 422
+    assert error_of(response.text, "wu") == "Type a new address or remove the stored one, not both."
+    assert await stored_url(web_app) == WEBHOOK_URL
 
 
 async def test_the_secret_can_be_removed_and_then_the_webhook_cannot_be_on(
@@ -242,7 +304,8 @@ async def test_an_address_may_be_kept_while_the_webhook_is_off(
     response = await post(root, TAB, hook_form(enabled=False))
     assert response.status_code == 200
     settings = (await stored(web_app)).notifications
-    assert settings.webhook_enabled is False and settings.webhook_url == WEBHOOK_URL
+    assert settings.webhook_enabled is False
+    assert await stored_url(web_app) == WEBHOOK_URL
     assert await stored_secret(web_app) == WEBHOOK_SECRET
 
 
@@ -338,4 +401,4 @@ async def test_the_test_event_before_the_webhook_is_set_up_says_to_save_first(
     assert "Save a webhook address and a shared secret first." in response.text
     assert recorder.sent == []
     async with web_app.state.session_factory() as db:
-        assert not (await load_stored_settings(db)).notifications.webhook_url
+        assert WEBHOOK_URL_KEY not in (await load_stored_settings(db)).secrets

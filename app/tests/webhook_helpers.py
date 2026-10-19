@@ -13,6 +13,8 @@ from app.core.crypto import CryptoService
 from app.core.db import create_session_factory
 from app.services.app_settings import (
     WEBHOOK_SECRET_KEY,
+    WEBHOOK_URL_KEY,
+    clear_secret,
     load_stored_settings,
     save_section,
     write_secret,
@@ -96,8 +98,12 @@ async def configure_webhook(
     """Store the webhook address, switch and secret, keeping the rest of the matrix."""
     async with create_session_factory(engine)() as db:
         current = (await load_stored_settings(db)).notifications
-        new = replace(current, webhook_enabled=enabled, webhook_url=url)
+        new = replace(current, webhook_enabled=enabled)
         await save_section(db, "notifications", new, actor=AuditActor.cli())
+        if url:
+            await write_secret(db, crypto, WEBHOOK_URL_KEY, url, actor=AuditActor.cli())
+        else:
+            await clear_secret(db, WEBHOOK_URL_KEY, actor=AuditActor.cli())
         if secret is not None:
             await write_secret(db, crypto, WEBHOOK_SECRET_KEY, secret, actor=AuditActor.cli())
         await db.commit()

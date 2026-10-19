@@ -251,10 +251,18 @@ def scratch_files(scratch: Path) -> list[Path]:
     return [path for path in scratch.rglob("*") if path.is_file()] if scratch.exists() else []
 
 
-def generate_key(folder: Path, name: str) -> tuple[str, str]:
-    """A new ed25519 key pair from ssh-keygen: the private key text and the public key line."""
+def generate_key(
+    folder: Path, name: str, *, passphrase: str = "", key_type: str = "ed25519", pem: bool = False
+) -> tuple[str, str]:
+    """A new key pair from ssh-keygen: the private key text and the public key line.
+
+    The key has no passphrase unless one is given; ``pem`` writes the older PEM format instead of
+    the OpenSSH one.
+    """
     path = folder / name
-    tool("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "test", "-f", str(path))
+    options = ["-m", "PEM"] if pem else []
+    arguments = ["-q", "-t", key_type, *options, "-N", passphrase, "-C", "test", "-f", str(path)]
+    tool("ssh-keygen", *arguments)
     return path.read_text(), Path(f"{path}.pub").read_text().strip()
 
 

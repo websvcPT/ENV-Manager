@@ -35,12 +35,13 @@ TARGET_TYPE = "settings"
 
 SMTP_PASSWORD_KEY = "smtp.password"  # noqa: S105
 WEBHOOK_SECRET_KEY = "notifications.webhook_secret"  # noqa: S105
+WEBHOOK_URL_KEY = "notifications.webhook_url"
 GIT_DEPLOY_KEY_KEY = "git.deploy_key"
 GIT_TOKEN_KEY = "git.token"  # noqa: S105
 
 # Names of settings whose value is a secret. Each feature that stores one adds its name here.
 SECRET_KEYS: frozenset[str] = frozenset(
-    {SMTP_PASSWORD_KEY, WEBHOOK_SECRET_KEY, GIT_DEPLOY_KEY_KEY, GIT_TOKEN_KEY}
+    {SMTP_PASSWORD_KEY, WEBHOOK_SECRET_KEY, WEBHOOK_URL_KEY, GIT_DEPLOY_KEY_KEY, GIT_TOKEN_KEY}
 )
 
 
@@ -123,12 +124,12 @@ class NotificationSettings:
     deploys and file changes are off by default, everything that needs a person's attention is
     on.
 
-    The outbound webhook reports every real deploy to ``webhook_url`` while ``webhook_enabled``
-    is on; its shared secret is kept apart as a secret (``WEBHOOK_SECRET_KEY``).
+    The outbound webhook reports every real deploy while ``webhook_enabled`` is on. Its address
+    and its shared secret are kept apart as secrets (``WEBHOOK_URL_KEY``, ``WEBHOOK_SECRET_KEY``),
+    because chat tools put the credential in the address.
     """
 
     webhook_enabled: bool = False
-    webhook_url: str = ""
     login_new_address: bool = True
     lockout: bool = True
     deploy_succeeded: bool = False
@@ -185,7 +186,7 @@ class StoredSettings:
 
 
 # Settings whose value is an address that can carry a token in its path or query.
-URL_SETTINGS: frozenset[str] = frozenset({"notifications.webhook_url", "git.url"})
+URL_SETTINGS: frozenset[str] = frozenset({"git.url"})
 _SCP_LIKE = re.compile(r"^(?:[^@/\s]+@)?(?P<host>\[[0-9a-fA-F:]+\]|[A-Za-z0-9.-]+):(?!//)")
 
 

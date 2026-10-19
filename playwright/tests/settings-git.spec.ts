@@ -15,6 +15,12 @@ const DEPLOY_KEY = [
   'b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQ==',
   '-----END OPENSSH PRIVATE KEY-----',
 ].join('\n');
+// An OpenSSH key body that names the aes256-ctr cipher, which is how a passphrase shows.
+const SEALED_KEY = [
+  '-----BEGIN OPENSSH PRIVATE KEY-----',
+  'b3BlbnNzaC1rZXktdjEAAAAACmFlczI1Ni1jdHIAAAAGYmNyeXB0',
+  '-----END OPENSSH PRIVATE KEY-----',
+].join('\n');
 const UNREACHABLE_HTTPS = 'https://ops@127.0.0.1:1/ops/env.git';
 const UNREACHABLE_SSH = 'ssh://git@127.0.0.1:1/ops/env.git';
 
@@ -223,6 +229,21 @@ test.describe('saving', () => {
     expect(await page.content()).not.toContain(PASSWORD_IN_ADDRESS);
     await expect(page.locator('#gk')).toHaveValue('');
     await expect(page.locator('#gt')).toHaveValue('');
+    await page.reload();
+    expect(await readForm(page)).toEqual(original);
+  });
+
+  test('refuses a deploy key that is sealed with a passphrase', async ({
+    page,
+    settingsLock: _lock,
+  }) => {
+    await page.goto('/settings/git');
+    const original = await readForm(page);
+    await page.locator('#gk').fill(SEALED_KEY);
+    await save(page);
+    await expect(page.locator('#gk-e')).toHaveText('The key must not have a passphrase.');
+    await expect(toast(form(page))).toHaveCount(0);
+    await expect(page.locator('#gk')).toHaveValue('');
     await page.reload();
     expect(await readForm(page)).toEqual(original);
   });

@@ -13,6 +13,7 @@ from app.services.git_hostkey import HostKey
 
 BACKOFF_BASE = timedelta(hours=1)
 BACKOFF_CAP = timedelta(hours=24)
+NOTICE_INTERVAL = timedelta(days=1)
 
 
 _HELD_STATE = "git_sync_state"
@@ -55,34 +56,47 @@ def backoff_after(failures: int) -> timedelta:
     return min(BACKOFF_BASE * (1 << (failures - 1)), BACKOFF_CAP)
 
 
-def record_failure(state: GitSyncState, reason: str, now: datetime) -> None:
-    """Note a failed run: the reason, one more failure and when the next attempt may start."""
+def record_failure(state: GitSyncState, reason: str, now: datetime) -> bool:
+    """Note a failed run: the reason, one more failure and when the next attempt may start.
+
+    Returns whether the failure is to be announced: the first failure of a streak is, and then
+    one failure a day while the streak lasts. The time of the notice is kept when it is due.
+    """
     state.failures += 1
     state.last_attempt_at = now
     state.last_error = reason
     state.retry_at = now + backoff_after(state.failures)
+    due = state.failure_notified_at is None or now - state.failure_notified_at >= NOTICE_INTERVAL
+    if due:
+        state.failure_notified_at = now
+    return due
 
 
-def record_success(state: GitSyncState, mark: str, now: datetime, *, pushed: bool) -> None:
+def record_success(state: GitSyncState, mark: str, now: datetime, *, pushed: bool) -> bool:
     """Note a run that worked: the mark is the new watermark and the failures are forgotten.
 
     A run that found nothing to commit (the repository already holds this export) moves the
-    watermark but does not count as a push.
+    watermark but does not count as a push. Returns whether the recovery is to be announced,
+    which is when a failure notice of the streak that ends here had gone out.
     """
+    recovered = state.failure_notified_at is not None
     state.watermark = mark
     state.last_attempt_at = now
-    state.failures = 0
-    state.last_error = None
-    state.retry_at = None
+    forget_failures(state)
     if pushed:
         state.last_success_at = now
+    return recovered
 
 
 def forget_failures(state: GitSyncState) -> None:
-    """Forget the failures and the wait, so the next scheduled run tries again at once."""
+    """Forget the failures and the wait, so the next scheduled run tries again at once.
+
+    The streak ends without a recovery notice: a save of new settings starts afresh.
+    """
     state.failures = 0
     state.last_error = None
     state.retry_at = None
+    state.failure_notified_at = None
 
 
 def reset_progress(state: GitSyncState) -> None:

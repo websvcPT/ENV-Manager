@@ -295,7 +295,7 @@ start the container with the same key, copy a downloaded backup in and run `back
 ## Key rotation
 
 The master key seals every environment value, the second factor secrets and the secret settings
-(the SMTP password, the webhook secret, the git deploy key and token), and it keys the hashes that
+(the SMTP password, the webhook address and secret, the git deploy key and token), and it keys the hashes that
 drift detection compares. A rotation replaces it with a new key. It is offline: the application
 is stopped, the command rewrites the database in one transaction, and the application is started
 with the new key.
@@ -429,7 +429,8 @@ the master key, so keep that key apart from the repository (see Backup and resto
   starts with `-` and any other transport (`ext::`, `file://`, a local path), because a typed path
   would write outside the allowed paths. An address that names a user (`https://ops@host/...`)
   sends that user name with the token (Bitbucket wants `x-token-auth`); otherwise `x-access-token`.
-- **Credentials.** The deploy key (an unencrypted private key, pasted into the multi-line field)
+- **Credentials.** The deploy key (an unencrypted private key, pasted into the multi-line field;
+  a key with a passphrase is refused on save, whether it is in the OpenSSH or the PEM format)
   is used for an ssh address and the access token for an https address; both can be stored and
   both are sealed like the other secrets, never shown back (an empty field keeps what is stored,
   a checkbox removes it) and never in an audit entry. The application starts the `git` binary with
@@ -471,8 +472,10 @@ the master key, so keep that key apart from the repository (see Backup and resto
   address or a secret), announced as a Git push failure notification (see Notifications) and shown
   as the banner "Git push failing" on every superadmin page until a push works. The next attempt
   waits an hour after the first failed run, then two, four, up to a day, and a save of changed git
-  settings gives it a fresh start. Each failed run sends the notification, so a repository that
-  stays broken sends about five mails the first day and then one a day.
+  settings gives it a fresh start. Every failed run is audited, but the notification goes out at
+  the first failure of a streak and then at most once a day while the failure lasts, and one more
+  notice ("Git push works again") when a push works after a streak that was announced. The banner
+  does not change.
 - **Audit.** `git.push` (a push that went out or a failed run), `git.test` (each test, with the
   host and the outcome), `git.host_key_pin` and `git.host_key_clear` (host and fingerprint), and
   the usual `settings.update` entry for a save, which keeps the scheme and host of the address and
@@ -623,12 +626,16 @@ without SMTP.
 
 - **The settings.** The address must be `http` or `https`, with a host, at most 2048 plain
   characters and no user name or password (put the trust in the secret). Any host is allowed,
-  private ones included, because the receiver is often inside the same network. The shared secret
-  has at least 16 characters, is encrypted in the settings store like the SMTP password, and is
-  never put back into the page: an empty field keeps the stored one, and a checkbox that appears
-  while one is stored removes it. The switch can only be on while an address and a secret are set.
-  The settings audit entry keeps the scheme, host and port of the address and not its path or
-  query, which often hold a token, and for the secret only that it changed.
+  private ones included, because the receiver is often inside the same network. The address and
+  the shared secret are both encrypted in the settings store like the SMTP password (chat tools put
+  their credential in the address), and neither is put back into the page: the address field shows
+  the scheme and host of the stored address as its placeholder and nothing more, an empty field
+  keeps what is stored, and a checkbox that appears while one is stored removes it. The shared
+  secret has at least 16 characters. The switch can only be on while an address and a secret are
+  set. The settings audit entry names the two settings that changed and nothing of their values;
+  deliveries and the test event record the host only. A database from an earlier version that holds
+  the address as plain text has it sealed in place when the application starts (or when such a
+  backup is restored), and the plain text is gone from every table afterwards.
 - **Send test event.** Posts the test event once through the saved settings (so save a change
   before testing it), also while the switch is off, and shows how it went in fixed words that never
   repeat the address or what the receiver answered: it could not be reached, no answer in time, a

@@ -228,6 +228,7 @@ async def test_a_new_credential_forgets_the_failures_but_keeps_what_was_pushed(
     async with create_session_factory(engine)() as db:
         state = await load_state(db)
         assert (state.failures, state.last_error, state.retry_at) == (0, None, None)
+        assert state.failure_notified_at is None, "the streak ends without a recovery notice"
         assert state.watermark == "mark-1" and state.last_success_at is not None
         assert state.host_key is not None
 

@@ -25,6 +25,7 @@ from app.services.notify_events import (
     FileChange,
     FileChanged,
     GitPushFailed,
+    GitPushRecovered,
     LockoutScope,
     LockoutStarted,
     MasterKeyRotated,
@@ -320,6 +321,18 @@ def git_content(event: GitPushFailed, ctx: MessageContext) -> MailContent:
     )
 
 
+def git_recovered_content(event: GitPushRecovered, ctx: MessageContext) -> MailContent:
+    """The mail that says pushes work again after a failure that was announced."""
+    return MailContent(
+        subject=_subject("Git push works again"),
+        heading="Git push works again",
+        summary="The push to the git repository worked again after earlier failures.",
+        facts=(("Attempts", str(event.attempts)), ("When", ctx.when())),
+        link=ctx.url("/settings/git"),
+        link_label="Open git settings",
+    )
+
+
 def key_rotation_content(event: MasterKeyRotated, ctx: MessageContext) -> MailContent:
     """The mail about a master key rotation: counts and who ran it, never any key material."""
     return MailContent(
@@ -379,6 +392,8 @@ def describe_event(
         return user_content(event, ctx)
     if isinstance(event, GitPushFailed):
         return git_content(event, ctx)
+    if isinstance(event, GitPushRecovered):
+        return git_recovered_content(event, ctx)
     if isinstance(event, MasterKeyRotated):
         return key_rotation_content(event, ctx)
     return None

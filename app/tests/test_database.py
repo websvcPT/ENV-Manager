@@ -436,6 +436,41 @@ async def test_the_second_factor_time_column_is_added_and_removed_in_place(
         await engine.dispose()
 
 
+async def test_the_failure_notice_time_is_added_and_removed_in_place_and_keeps_the_state(
+    database_path: Path, backup_dir: Path
+) -> None:
+    """Migration 0017 gives the git state row that existed before it no notice time; going back
+    drops the column and keeps the row, and going forward starts without a notice again."""
+    engine = create_engine(database_path)
+    try:
+        await migrate_database(engine, database_path, backup_dir)
+        async with engine.begin() as connection:
+            await connection.run_sync(lambda sync: command.downgrade(build_config(sync), "0016"))
+            columns = (await connection.execute(text("PRAGMA table_info(git_sync_state)"))).all()
+            assert "failure_notified_at" not in [row[1] for row in columns]
+            await connection.execute(
+                text("INSERT INTO git_sync_state (id, failures) VALUES (1, 3)")
+            )
+        await _migrate(engine, "0017")
+        async with engine.connect() as connection:
+            columns = (await connection.execute(text("PRAGMA table_info(git_sync_state)"))).all()
+            row = (
+                await connection.execute(
+                    text("SELECT failures, failure_notified_at FROM git_sync_state")
+                )
+            ).one()
+        assert next(info[3] for info in columns if info[1] == "failure_notified_at") == 0
+        assert tuple(row) == (3, None)
+        await _migrate(engine, "0016", down=True)
+        async with engine.connect() as connection:
+            columns = (await connection.execute(text("PRAGMA table_info(git_sync_state)"))).all()
+            state = await connection.execute(text("SELECT failures FROM git_sync_state"))
+            kept = state.scalar_one()
+        assert "failure_notified_at" not in [info[1] for info in columns] and kept == 3
+    finally:
+        await engine.dispose()
+
+
 async def test_the_extra_addresses_column_is_added_and_removed_in_place_and_keeps_projects(
     database_path: Path, backup_dir: Path
 ) -> None:

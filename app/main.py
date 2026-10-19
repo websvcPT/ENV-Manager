@@ -46,6 +46,7 @@ from app.services.server_lock import (
     acquire_server_lock,
 )
 from app.services.webhook import HttpxWebhookTransport
+from app.services.webhook_url_upgrade import seal_plain_webhook_url
 from app.web.access_grid import router as access_grid_router
 from app.web.account import router as account_router
 from app.web.audit import router as audit_router
@@ -109,6 +110,9 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
                 raise
         if created:
             log.info("key check record created for a new database")
+        async with session_factory() as session:
+            if await seal_plain_webhook_url(session, crypto):
+                log.info("the webhook address was moved into the secret settings")
         async with session_factory() as session:
             await recover_interrupted_runs(session, settings.lock_path)
         application.state.crypto = crypto
