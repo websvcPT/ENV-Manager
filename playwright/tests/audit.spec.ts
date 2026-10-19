@@ -319,6 +319,11 @@ test.describe('superadmin', () => {
       expect(box!.x + box!.width).toBeLessThanOrEqual(360);
       await expect(page.locator('#f-d2')).toBeInViewport();
       await expect(page.locator('#audit-export')).toBeInViewport();
+      const form = await page.locator('#audit-filters').boundingBox();
+      for (const select of await page.locator('#audit-filters select').all()) {
+        const field = await select.boundingBox();
+        expect(field!.x + field!.width).toBeLessThanOrEqual(form!.x + form!.width);
+      }
     } else {
       await expect(page.locator('[data-nav]')).toBeVisible();
     }
