@@ -121,9 +121,12 @@ tag and pushes `websvcpt/env-manager` with the tags `<version>`, `<major>.<minor
 `latest`. The release commit is pushed with the workflow token, and a push made with that token
 does not start another workflow run.
 
-The first release is 1.0.0. Cut it with a manual run of the release workflow (Actions, Release,
-Run workflow) with `force` set to `major`; the same input forces an exceptional `patch`, `minor` or
-`major` bump later.
+The first release is 1.0.0: zero versions are disabled, so while the repository has no release
+tag, python-semantic-release makes 1.0.0 whatever the commit types are. Either the first push to
+the release branch (after the checks pass) or a manual run of the release workflow (Actions,
+Release, Run workflow) with `force` set to `major` cuts it; whichever comes first creates `v1.0.0`,
+and a second `major` run after that would make 2.0.0. Later, the same `force` input
+(`patch`, `minor` or `major`) makes an exceptional bump; leave it at `none` otherwise.
 
 Setup on GitHub and Docker Hub:
 
