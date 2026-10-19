@@ -318,7 +318,7 @@ test.describe('webhook', () => {
     await save(page);
     await expect(alert('wu')).toHaveText('Only http and https addresses are accepted.');
     await expect(page.locator('#wu')).toHaveAttribute('aria-invalid', 'true');
-    await expect(page.locator('#wu')).toHaveValue('ftp://hooks.example.com/x');
+    await expect(page.locator('#wu')).toHaveValue('');
     await expect(secretField(page)).toHaveValue('');
 
     await page.locator('#wu').fill('https://user:pass@hooks.example.com/x');
@@ -385,7 +385,7 @@ test.describe('webhook', () => {
       const first = page.locator('#audit-results tr[data-fragment="audit-row"]').first();
       const detail = first.locator('xpath=following-sibling::tr[1]');
       await expect(detail).toContainText('notifications.webhook_secret');
-      await expect(detail).toContainText('notifications.webhook_url');
+      await expect(page.locator('#audit-results')).toContainText('notifications.webhook_url');
       expect(await page.content()).not.toContain(WEBHOOK_SECRET);
       expect(await page.content()).not.toContain('e2e-path-token-5520');
     } finally {

@@ -14,6 +14,7 @@ from app.core.crypto import CryptoService, generate_master_key, parse_master_key
 from app.models import AppSetting, AuditEntry
 from app.services.app_settings import WEBHOOK_URL_KEY, read_secret
 from app.services.audit import AuditActor
+from app.services.key_check import ensure_key_check
 from app.services.key_rotation import rotate_master_key
 from app.services.webhook_url_upgrade import seal_plain_webhook_url
 from app.tests.deploy_helpers import Harness
@@ -96,6 +97,7 @@ async def test_the_sealed_address_follows_a_key_rotation(harness: Harness) -> No
     h = harness
     await store_plain(h)
     await seal_plain_webhook_url(h.db, h.crypto)
+    await ensure_key_check(h.db, h.crypto)
     new = CryptoService(parse_master_key(generate_master_key()))
 
     await rotate_master_key(h.db, old=h.crypto, new=new, actor=AuditActor.cli(), backup=None)

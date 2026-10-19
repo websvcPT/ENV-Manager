@@ -274,13 +274,15 @@ async def test_a_refused_field_answers_in_place_and_stores_nothing(
     field_id: str,
     message: str,
 ) -> None:
-    """The reason sits under the field (422), the typed secret is not put back."""
+    """The reason sits under the field (422), the typed address and secret are not put back."""
     url = fields.get("url", WEBHOOK_URL)
     data = hook_form(url=url, secret=fields.get("secret", WEBHOOK_SECRET))
     response = await post(root, TAB, data)
     assert response.status_code == 422
     assert error_of(response.text, field_id) == message
     assert data["webhook_secret"] not in response.text
+    assert url in {"", "https://"} or url not in response.text
+    assert value_of(response.text, "wu") == ""
     assert await stored_rows(web_app) == {}
     assert await settings_entries(web_app) == []
 

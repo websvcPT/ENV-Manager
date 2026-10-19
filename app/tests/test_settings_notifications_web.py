@@ -101,7 +101,8 @@ async def test_the_tab_shows_the_decided_defaults(root: httpx.AsyncClient) -> No
     )
     assert rows["login_new_address"]["label"] == "Login"
     assert rows["deploy_problem"]["label"] == "Failed, blocked or halted deploy"
-    assert response.text.count("Superadmins</span>") == 5
+    assert response.text.count("Superadmins</span>") == 6
+    assert rows["key_rotated"]["label"] == "Master key rotated"
 
 
 async def test_the_recipients_offered_for_a_project_event_are_the_three_choices(

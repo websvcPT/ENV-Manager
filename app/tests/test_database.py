@@ -336,6 +336,9 @@ async def test_the_users_migration_keeps_children_lets_names_repeat_and_goes_bac
             for statement in USER_TREE_STATEMENTS:
                 await connection.execute(text(statement))
         await migrate_database(engine, database_path, backup_dir)
+        # A refused way back leaves what an earlier downgrade already did (SQLite does not roll
+        # back a column drop), so the check below starts at the revision of this migration.
+        await _migrate(engine, "0016", down=True)
         async with engine.connect() as connection:
             after = await _user_tree_state(connection)
             sequence = (

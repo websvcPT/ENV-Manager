@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import SpanKind
 
 from app.core.telemetry import REDACTED, RedactRequestSpans, redacting_tracer_provider
 
@@ -74,6 +75,12 @@ def attributes_of(span: ReadableSpan) -> dict[str, object]:
     return dict(span.attributes or {})
 
 
+def request_span(exporter: InMemorySpanExporter) -> ReadableSpan:
+    """The span of the request itself; FastAPI also records spans for its inner operations."""
+    (span,) = [item for item in exporter.get_finished_spans() if item.kind is SpanKind.SERVER]
+    return span
+
+
 @pytest.mark.parametrize(("method", "target", "route"), CASES)
 async def test_a_request_span_has_the_route_template_and_no_value_of_the_request(
     method: str, target: str, route: str
@@ -82,13 +89,18 @@ async def test_a_request_span_has_the_route_template_and_no_value_of_the_request
 
     await send(application, method, target)
 
-    (span,) = exporter.get_finished_spans()
+    span = request_span(exporter)
     attributes = attributes_of(span)
     assert attributes["http.route"] == route
     assert span.name == f"{method} {route}"
     assert attributes["url.path"] == REDACTED
     assert attributes.get("url.query", REDACTED) == REDACTED
-    everything = repr((span.name, attributes, [event.attributes for event in span.events]))
+    everything = repr(
+        [
+            (item.name, attributes_of(item), [event.attributes for event in item.events])
+            for item in exporter.get_finished_spans()
+        ]
+    )
     for sentinel in (KEY_NAME, TYPED_PATH, "secret-folder-sentinel", SEARCH):
         assert sentinel not in everything
 
@@ -96,10 +108,9 @@ async def test_a_request_span_has_the_route_template_and_no_value_of_the_request
 async def test_a_request_without_a_query_string_gets_no_query_attribute() -> None:
     application, exporter = build_app()
 
-    await send(application, "GET", "/paths/validate?path=")
+    await send(application, "GET", "/projects")
 
-    (span,) = exporter.get_finished_spans()
-    assert attributes_of(span).get("url.query") in (None, REDACTED)
+    assert "url.query" not in attributes_of(request_span(exporter))
 
 
 def test_the_redaction_runs_before_any_exporter_of_the_provider() -> None:
