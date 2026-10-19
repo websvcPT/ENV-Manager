@@ -7,7 +7,7 @@ Tests of the migrations and of the first start build their own database instead.
 """
 
 import copy
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 
 import httpx
@@ -28,6 +28,7 @@ from app.tests.deploy_helpers import Harness, RecordingNotifier, RecordingRunner
 from app.tests.dist_helpers import relocate_deployments
 from app.tests.git_world import World as GitWorld
 from app.tests.git_world import build_git_world
+from app.tests.telemetry_helpers import Telemetry
 from app.tests.template_databases import (
     SeededTemplate,
     build_migrated_template,
@@ -239,3 +240,17 @@ def git_world(
 ) -> GitWorld:
     """The seeded database, an empty bare repository and git services that record what they run."""
     return build_git_world(tmp_path, seeded_database, seed_data, crypto, database_path)
+
+
+@pytest.fixture(scope="session")
+def telemetry_providers() -> Telemetry:
+    """The in-memory tracer and meter providers of this worker, installed on first use."""
+    return Telemetry.install()
+
+
+@pytest.fixture
+def telemetry_recorder(telemetry_providers: Telemetry) -> Iterator[Telemetry]:
+    """Record spans and metrics for one test; every other test of the worker records nothing."""
+    telemetry_providers.begin()
+    yield telemetry_providers
+    telemetry_providers.end()

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.telemetry import current_trace_id
 from app.models import ApiToken, AuditActorType, AuditEntry, AuditResult, User
 
 CLI_ACTOR_NAME = "cli"
@@ -74,7 +75,11 @@ async def record_audit(
     environment_id: int | None = None,
     details: dict[str, object] | None = None,
 ) -> AuditEntry:
-    """Add an audit entry to the session. The caller commits it with its own change."""
+    """Add an audit entry to the session. The caller commits it with its own change.
+
+    The entry keeps the id of the trace being recorded when it is written, so it can be matched to
+    its trace; it has none while nothing is recording.
+    """
     entry = AuditEntry(
         action=action,
         result=result,
@@ -91,6 +96,7 @@ async def record_audit(
         service_id=service_id,
         environment_id=environment_id,
         details=details or {},
+        trace_id=current_trace_id(),
     )
     db.add(entry)
     await db.flush()

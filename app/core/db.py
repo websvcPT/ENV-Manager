@@ -33,8 +33,13 @@ def sqlite_url(database_path: Path) -> str:
 
 
 def create_engine(database_path: Path) -> AsyncEngine:
-    """Create an async engine for the database file with the connection pragmas applied."""
-    engine = create_async_engine(sqlite_url(database_path))
+    """Create an async engine for the database file with the connection pragmas applied.
+
+    Statement parameters are hidden: the text of a database exception then names the statement
+    and never the values bound to it (a stored secret among them), which keeps it safe for logs,
+    error reports and traces.
+    """
+    engine = create_async_engine(sqlite_url(database_path), hide_parameters=True)
     event.listen(engine.sync_engine, "connect", _apply_pragmas)
     return engine
 

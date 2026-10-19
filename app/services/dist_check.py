@@ -14,6 +14,7 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import metrics, telemetry
 from app.core.crypto import CryptoService
 from app.models import (
     AuditResult,
@@ -175,7 +176,43 @@ async def evaluate_dist(
     env format is skipped before anything is read from the host, and so is a file without a dist
     link. Otherwise the dist file is read with allowed paths loaded now. Every refusal to read
     becomes a failed check; nothing here raises for them.
+
+    The check runs in a span that carries ids and the outcome, and a check that could not run is
+    counted by its problem.
     """
+    with telemetry.span(
+        telemetry.DIST_CHECK_SPAN, {telemetry.ENVIRONMENT_ID: environment_id}
+    ) as active:
+        try:
+            check = await _evaluate_dist(db, crypto, environment_id, checked_by, version_number)
+        except DistError as error:
+            metrics.record_dist_check_failure(error.problem.value)
+            raise
+        subject = check.subject
+        telemetry.annotate(
+            active,
+            {
+                telemetry.PROJECT_ID: subject.project_id,
+                telemetry.DEPLOYMENT_ID: subject.deployment_id,
+                telemetry.SERVICE_ID: subject.service_id,
+                telemetry.ENVIRONMENT_NAME: subject.name,
+                telemetry.DIST_OUTCOME: check.outcome.value,
+                telemetry.DIST_PROBLEM: check.problem.value if check.problem else None,
+            },
+        )
+        if check.outcome is DistOutcome.FAILED and check.problem is not None:
+            metrics.record_dist_check_failure(check.problem.value)
+        return check
+
+
+async def _evaluate_dist(
+    db: AsyncSession,
+    crypto: CryptoService,
+    environment_id: int,
+    checked_by: str,
+    version_number: int | None,
+) -> DistCheck:
+    """The comparison itself, without the span and the metric."""
     loaded = await _load_subject(db, environment_id)
     if loaded is None:
         missing = DistProblem.ENVIRONMENT_MISSING

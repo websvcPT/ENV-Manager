@@ -14,6 +14,7 @@ from enum import StrEnum
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core import metrics, telemetry
 from app.core.log import get_logger
 from app.models import AuditResult
 from app.services.app_settings import GitSettings, load_stored_settings
@@ -187,6 +188,7 @@ async def _record_failure(
         return _skipped(SkipReason.SETTINGS_CHANGED)
     state = await load_state(db)
     record_failure(state, failure.message, services.clock())
+    metrics.record_git_push_failure(failure.problem.value)
     try:
         host = parse_saved_address(services, git).label
     except GitSyncError:
@@ -213,7 +215,27 @@ async def push_if_due(db: AsyncSession, services: GitServices, *, actor: AuditAc
 
     Settings, state and the change mark are read here, so a change is effective for the next
     run. A failure is a recorded result, never an exception.
+
+    The run is a span with the result, the number of tries and, for a run that did nothing, why;
+    never the address, a credential or text printed by git.
     """
+    with telemetry.span(
+        telemetry.GIT_PUSH_SPAN, {telemetry.ACTOR_TYPE: actor.type.value}
+    ) as active:
+        result = await _push_if_due(db, services, actor=actor)
+        telemetry.annotate(
+            active,
+            {
+                telemetry.RESULT: result.status.value,
+                telemetry.ATTEMPTS: result.attempts,
+                telemetry.SKIP_REASON: result.skip.value if result.skip else None,
+            },
+        )
+        return result
+
+
+async def _push_if_due(db: AsyncSession, services: GitServices, *, actor: AuditActor) -> PushResult:
+    """The checks, the tries and the record of one run."""
     git = (await load_stored_settings(db)).git
     if not git.configured:
         return _skipped(SkipReason.NOT_CONFIGURED)

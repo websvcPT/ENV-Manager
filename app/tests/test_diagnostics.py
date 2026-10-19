@@ -91,16 +91,32 @@ def test_the_endpoint_is_reduced_to_its_host_name(endpoint: str, host: str | Non
     assert otel_endpoint_host({"OTEL_EXPORTER_OTLP_ENDPOINT": endpoint}) == host
 
 
-def test_the_general_endpoint_comes_before_the_signal_endpoints() -> None:
-    """The standard variable wins; the per-signal ones are read in a fixed order after it."""
-    environ = {
-        "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "https://logs.example.com",
-        "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": "https://traces.example.com",
-    }
-    assert otel_endpoint_host(environ) == "traces.example.com"
+def test_the_traces_endpoint_is_shown_first_and_its_own_variable_beats_the_general_one() -> None:
+    """The host is where traces go: the traces variable, else the general one; metrics and logs
+    only show when nothing sends traces. This is the order FastAPI's export uses."""
+    environ = {"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "https://logs.example.com"}
+    assert otel_endpoint_host(environ) == "logs.example.com"
+    environ["OTEL_EXPORTER_OTLP_METRICS_ENDPOINT"] = "https://metrics.example.com"
+    assert otel_endpoint_host(environ) == "metrics.example.com"
     environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "https://general.example.com"
     assert otel_endpoint_host(environ) == "general.example.com"
+    environ["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"] = "https://traces.example.com"
+    assert otel_endpoint_host(environ) == "traces.example.com"
     assert otel_endpoint_host({"OTEL_EXPORTER_OTLP_HEADERS": "authorization=Bearer abc"}) is None
+
+
+@pytest.mark.parametrize(
+    "environ",
+    [
+        {"OTEL_SDK_DISABLED": "true", "OTEL_EXPORTER_OTLP_ENDPOINT": "https://c.example.com"},
+        {"OTEL_TRACES_EXPORTER": "none", "OTEL_EXPORTER_OTLP_ENDPOINT": "https://c.example.com"},
+        {"OTEL_TRACES_EXPORTER": "console", "OTEL_EXPORTER_OTLP_ENDPOINT": "https://c.example.com"},
+    ],
+)
+def test_no_host_is_shown_for_a_signal_that_is_not_exported(environ: dict[str, str]) -> None:
+    """A disabled SDK, or an exporter other than OTLP for the signal, sends nothing there."""
+    environ = {**environ, "OTEL_METRICS_EXPORTER": "none", "OTEL_LOGS_EXPORTER": "none"}
+    assert otel_endpoint_host(environ) is None
 
 
 def test_headers_and_other_variables_are_never_read_into_the_diagnostics() -> None:

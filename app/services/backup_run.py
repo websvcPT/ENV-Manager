@@ -17,6 +17,7 @@ from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import Settings
+from app.core import metrics, telemetry
 from app.core.log import get_logger
 from app.models import AuditResult, Backup, BackupStatus, BackupTrigger
 from app.models.types import utc_now
@@ -82,7 +83,41 @@ async def run_backup(
     Settings and the allowed paths are read here, so a change is effective for the next backup.
     A failed snapshot is a recorded failure, not an exception. Raises ``BackupBusyError`` when
     another backup or restore is running.
+
+    The backup runs in a span that carries the trigger and the result, and is counted by result.
+    A backup that left a snapshot also moves the time the backup age gauge reads.
     """
+    attributes = {telemetry.TRIGGER: trigger.value, telemetry.ACTOR_TYPE: actor.type.value}
+    with telemetry.span(telemetry.BACKUP_SPAN, attributes) as active:
+        try:
+            run = await _take_backup(db, locations, trigger, actor, notifier)
+        except BackupBusyError:
+            metrics.record_backup("busy", trigger.value)
+            raise
+        except Exception:
+            metrics.record_backup("error", trigger.value)
+            raise
+        record = run.record
+        result = {
+            telemetry.RESULT: record.status.value,
+            telemetry.BACKUP_ID: record.id,
+            telemetry.BACKUP_PRUNED: run.pruned,
+        }
+        telemetry.annotate(active, result)
+        metrics.record_backup(record.status.value, trigger.value)
+        if record.status in (BackupStatus.SUCCESS, BackupStatus.PARTIAL):
+            metrics.backup_clock.note(record.created_at)
+        return run
+
+
+async def _take_backup(
+    db: AsyncSession,
+    locations: BackupLocations,
+    trigger: BackupTrigger,
+    actor: AuditActor,
+    notifier: BackupNotifier,
+) -> BackupRun:
+    """The backup, its record and audit entry, and the announcement of the result."""
     moment = utc_now()
     attempt = Attempt(trigger, actor, backup_file_name(trigger.value, moment), moment)
     settings = (await load_stored_settings(db)).backup

@@ -9,15 +9,16 @@ from alembic.autogenerate import compare_metadata
 from alembic.runtime.migration import MigrationContext
 from sqlalchemy import Connection, text
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 
 from app.core.crypto import CryptoService, KeyMismatchError, generate_master_key, parse_master_key
-from app.core.db import create_engine, create_session_factory
+from app.core.db import create_engine, create_session_factory, sqlite_url
 from app.core.migrations import build_config, migrate_database
 from app.models import AppSetting, Base
 from app.models.app_setting import KEY_CHECK_SETTING
 from app.services.backup import create_backup
 from app.services.key_check import ensure_key_check
+from app.tests.template_databases import copy_database
 
 
 async def test_connections_use_wal_and_foreign_keys(engine: AsyncEngine) -> None:
@@ -350,3 +351,39 @@ async def test_the_extra_addresses_column_is_added_and_removed_in_place_and_keep
             assert again.scalar_one() == "[]"
     finally:
         await engine.dispose()
+
+
+async def duplicate_setting_error(engine: AsyncEngine, secret: str) -> str:
+    """The text of the error raised by saving a setting key twice, the value being ``secret``."""
+    async with create_session_factory(engine)() as session:
+        session.add(AppSetting(key="duplicate", value="first"))
+        await session.commit()
+        session.add(AppSetting(key="duplicate", value=secret))
+        with pytest.raises(IntegrityError) as raised:
+            await session.commit()
+        return str(raised.value) + repr(raised.value)
+
+
+async def test_database_error_text_never_holds_the_values_bound_to_the_statement(
+    engine: AsyncEngine,
+) -> None:
+    """The text of an exception reaches logs, error reports and traces, so it names the statement
+    and never the parameters (a stored secret would be one)."""
+    secret = "hunter2-database-password"
+    text_of_error = await duplicate_setting_error(engine, secret)
+    assert "UNIQUE constraint failed" in text_of_error and "app_settings" in text_of_error
+    assert secret not in text_of_error and "[parameters:" not in text_of_error
+
+
+async def test_an_engine_without_hidden_parameters_would_leak_them(
+    database_path: Path, migrated_template: Path
+) -> None:
+    """Pins the premise of the test above: SQLAlchemy puts the parameters in the error text."""
+    copy_database(migrated_template, database_path)
+    visible = create_async_engine(sqlite_url(database_path))
+    try:
+        assert "hunter2-database-password" in await duplicate_setting_error(
+            visible, "hunter2-database-password"
+        )
+    finally:
+        await visible.dispose()

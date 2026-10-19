@@ -95,6 +95,84 @@ secret, trusted proxies and allowed sources stay in environment variables.
   (the host name only), the version, the environment, the trusted proxies, the allowed sources and
   the client address the application resolved for the request. No secret is shown.
 
+## Observability and error reporting
+
+Error reporting (Sentry) and tracing (OpenTelemetry) are both off. Nothing is exported, no
+exporter thread starts and no provider is installed until they are configured in the environment
+of the server; the code paths that would record only call a no-op. Neither integration is ever
+given a secret value, a file's content, a command or its output or a token.
+
+| Variable | Meaning |
+| --- | --- |
+| `ENVMANAGER_SENTRY_DSN` | Turns error reporting on. No personal data, no local variables and no request bodies are captured, tracing stays at 0 (OpenTelemetry does the tracing), and the release and `ENVMANAGER_ENVIRONMENT` are set. Headers with credentials, cookies, session ids, environment keys and values and SQL parameters are removed from events and breadcrumbs, and the expected outcomes (blocked or halted deploys, failed sign ins, a post-deploy command that exits non-zero) are not reported as errors. |
+| `FASTAPI_OTEL_AUTO_CONFIGURE=true` | Turns OpenTelemetry export on. Without it nothing is exported, whatever else is set. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Where traces, metrics and logs go (OTLP over HTTP, `http/protobuf`); `/v1/traces`, `/v1/metrics` and `/v1/logs` are added. `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `..._METRICS_ENDPOINT` and `..._LOGS_ENDPOINT` replace it for one signal and are used as they stand. A signal is not exported when it has no address, when `OTEL_<SIGNAL>_EXPORTER` is `none` or when `OTEL_SDK_DISABLED` is `true`. |
+| `OTEL_EXPORTER_OTLP_HEADERS` | Headers sent to the collector, for example its API key. Never shown in diagnostics or by the test command. |
+| `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`, `OTEL_TRACES_SAMPLER` | The standard variables. The service name defaults to `env-manager`, and the attributes to the version and the deployment environment name. |
+
+**What is recorded.** FastAPI's own spans and metrics for every request (the method, the route
+template, the status, the URL path and the query string as FastAPI records them; never a request
+body or a header). The path and query of this application's pages hold ids, names, filters, the
+project search text and, for the live path checks of the deployment form, the allowed paths
+dialog and the file target check, the host path being typed; values, passwords and tokens travel
+in request bodies and headers and are never in a URL. The reveal routes name the environment key
+in their path. Besides those, these spans, which carry ids, names, counts and results only (no
+path, command, output, address or text of an error):
+
+- `envmanager.deploy` (project, deployment and service ids and names, actor type, dry run, force,
+  number of files, result), with child spans `envmanager.dist_check` and `envmanager.drift_check`
+  for each file and `envmanager.post_deploy` (result and exit code, never the command or its
+  output) for a service that has a command;
+- `envmanager.dist_check` and `envmanager.drift_check` when a check or the drift view runs on its
+  own, `envmanager.backup` (trigger, result), `envmanager.git_push` (result, tries, why a run did
+  nothing), `envmanager.smtp.send` (TLS mode, result, whether trying again can help) and
+  `envmanager.webhook.deliver` (attempt, result, HTTP status; the address, which is a secret, is
+  not recorded).
+
+Metrics, whose labels are fixed words (never a name or an address): `envmanager.deploys` and
+`envmanager.deploy.duration` by result (real deploys only, a refused one counts as `refused`),
+`envmanager.post_deploy.runs` and `.duration` by result, `envmanager.drift.detections` by where
+the drift was seen (`deploy`, `dry_run` or `view`), `envmanager.dist_check.failures` by problem,
+`envmanager.login.failures` by channel (`sign_in` covers sign in and the account screens, `api`),
+`envmanager.login.lockouts` by counter kind, `envmanager.backup.runs` by result and trigger,
+`envmanager.git_push.failures` by problem and `envmanager.backup.age`, a gauge of the seconds
+since the newest backup that produced a snapshot. The gauge reads a time held in memory (read from
+the database once at start and moved by every backup the server takes), so a scrape never queries
+the database; a backup made by the command line while the server runs is not seen until the
+server restarts.
+
+**Logs.** FastAPI records an unhandled exception and a failed request validation as logs linked
+to the trace of the request. A processor that runs before the exporter keeps only the exception
+class, the route and the number of validation errors: the message, the stack and any request
+value are dropped, because a message can repeat a value. Sentry still receives the (scrubbed)
+exception.
+
+**Traces and the audit log.** An audit entry stores the id of the trace that was being recorded
+when it was written, so it can be matched to its trace (the audit log shows a shortened id when
+there is one). With export unconfigured a `traceparent` header is ignored: there is no span, no
+span context and no trace id. With export on, the request joins the trace of a sampled
+`traceparent` it carries, so the id on its audit entries is then one the client chose.
+
+**Database parameters.** The database engine hides statement parameters, so the text of an error
+never holds a bound value, and no database instrumentation is installed.
+
+### Checking the setup
+
+```sh
+docker compose exec app envmanager observability test [--timeout 10]
+```
+
+Sends one test event to Sentry (when a DSN is set) and one test span to the OTLP traces endpoint
+(when OpenTelemetry export is configured) and reports each by host name only, for example
+`Error reporting: test event 3f2a... accepted by o1.ingest.example.com (HTTP 200)` and
+`OpenTelemetry: test span 9c1f... exported to collector.internal and accepted`. A destination is
+reported as sent only when the other end took it: the Sentry result is the HTTP status the
+server answered with, the span result is the answer of the OTLP exporter, so an unreachable or
+refusing collector reads as failed. A destination that is not configured is reported as such and
+nothing is sent. The command exits 0 when everything configured was accepted (or nothing is
+configured) and 1 when a configured destination did not take its test. The command line commands
+(deploy, backup) do not export spans or metrics; only the running server does.
+
 ## Backup and restore
 
 A backup is a consistent copy of the SQLite database taken with SQLite's online backup, so the

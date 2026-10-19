@@ -76,6 +76,20 @@ async def latest_backup(db: AsyncSession) -> Backup | None:
     ).scalar_one_or_none()
 
 
+async def latest_snapshot_time(db: AsyncSession) -> datetime | None:
+    """When the newest backup that produced a snapshot was taken, None when there is none.
+
+    A partial backup counts: its snapshot exists and can be restored.
+    """
+    return (
+        await db.execute(
+            select(func.max(Backup.created_at)).where(
+                Backup.status.in_((BackupStatus.SUCCESS, BackupStatus.PARTIAL))
+            )
+        )
+    ).scalar_one()
+
+
 async def count_backups(db: AsyncSession) -> int:
     """How many records exist."""
     return int((await db.execute(select(func.count()).select_from(Backup))).scalar_one())

@@ -14,12 +14,13 @@ The test event goes through the same stored settings, once, and answers how it w
 
 import asyncio
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core import telemetry
 from app.core.crypto import CryptoError, CryptoService
 from app.core.display_time import DisplayTime
 from app.core.log import get_logger
@@ -134,7 +135,7 @@ class WebhookDelivery:
         """Post until it is accepted, refused for good or the waits are used up."""
         attempt = 1
         while True:
-            status, failure = await self._attempt(target, body)
+            status, failure = await self._attempt(target, body, attempt)
             will_retry = (
                 failure is not None and failure.retryable and attempt <= len(self._retry.delays)
             )
@@ -154,18 +155,40 @@ class WebhookDelivery:
             target = current
 
     async def _attempt(
-        self, target: WebhookTarget, body: bytes
+        self, target: WebhookTarget, body: bytes, attempt: int
     ) -> tuple[int | None, WebhookFailure | None]:
-        """One post with a fresh timestamp and signature: the status, or the failure."""
+        """One post with a fresh timestamp and signature: the status, or the failure.
+
+        The post is a span with the attempt number, the result and the HTTP status. The address
+        is a secret and is never attached, not even its host.
+        """
         headers = signed_headers(target.secret, body, int(self._clock()))
         async with self._limit:
-            try:
-                return await self._transport.post(target.url, headers, body), None
-            except WebhookFailure as failure:
-                return failure.status, failure
-            except Exception as error:
-                log.error("webhook transport raised %s", type(error).__name__)
-                return None, WebhookFailure(GENERIC_FAILURE, retryable=True)
+            with telemetry.span(
+                telemetry.WEBHOOK_DELIVER_SPAN, {telemetry.ATTEMPT: attempt}
+            ) as active:
+                status, failure = await self._post(target, headers, body)
+                telemetry.annotate(
+                    active,
+                    {
+                        telemetry.RESULT: "failed" if failure else "delivered",
+                        telemetry.HTTP_STATUS: status,
+                        telemetry.RETRYABLE: failure.retryable if failure else None,
+                    },
+                )
+                return status, failure
+
+    async def _post(
+        self, target: WebhookTarget, headers: Mapping[str, str], body: bytes
+    ) -> tuple[int | None, WebhookFailure | None]:
+        """Post once through the transport: the status, or the failure."""
+        try:
+            return await self._transport.post(target.url, headers, body), None
+        except WebhookFailure as failure:
+            return failure.status, failure
+        except Exception as error:
+            log.error("webhook transport raised %s", type(error).__name__)
+            return None, WebhookFailure(GENERIC_FAILURE, retryable=True)
 
     async def _audit_attempt(
         self,

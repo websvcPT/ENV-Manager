@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import metrics
 from app.models import ApiToken, AuditActorType, AuditResult, LoginCounterKind, User
 from app.models.types import utc_now
 from app.services.api_errors import ApiRefusal, RefusalKind
@@ -186,6 +187,7 @@ async def authenticate_token(
         status = token_status(token, owner, now=moment)[0] if owner is not None else None
         reason = status.value if status not in (None, TokenStatus.ACTIVE) else "unknown"
 
+    metrics.record_login_failure(metrics.CHANNEL_API)
     locked = await register_failure(
         db, LoginCounterKind.API_IP, subject, policy.api_ip_max_failures, policy, moment
     )

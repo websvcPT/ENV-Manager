@@ -6,17 +6,20 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import sentry_sdk
+from fastapi.telemetry import TelemetryConfig
 from sentry_sdk.types import Breadcrumb, BreadcrumbHint, Event, Hint
 
 from app import VERSION
 from app.config import Settings
 from app.core.errors import ExpectedOutcome
 from app.core.log import get_logger
+from app.core.telemetry_logs import scrubbing_logger_provider
 
 log = get_logger("observability")
 
 FILTERED = "[Filtered]"
 SERVICE_NAME = "env-manager"
+OTLP_SIGNALS = ("TRACES", "METRICS", "LOGS")
 
 # A key is scrubbed when its lower-cased name contains any of these fragments.
 SENSITIVE_KEY_FRAGMENTS = (
@@ -94,21 +97,27 @@ def scrub_breadcrumb(crumb: Breadcrumb, hint: BreadcrumbHint) -> Breadcrumb | No
     return scrubbed
 
 
+def sentry_options(settings: Settings) -> dict[str, Any]:
+    """The Sentry client options: no personal data, no variables, no bodies, no tracing."""
+    dsn = settings.sentry_dsn
+    return {
+        "dsn": dsn.get_secret_value() if dsn is not None else None,
+        "release": VERSION,
+        "environment": settings.environment,
+        "send_default_pii": False,
+        "include_local_variables": False,
+        "max_request_body_size": "never",
+        "traces_sample_rate": 0,
+        "before_send": scrub_event,
+        "before_breadcrumb": scrub_breadcrumb,
+    }
+
+
 def init_sentry(settings: Settings) -> bool:
     """Initialise Sentry when a DSN is configured. Returns whether it was enabled."""
     if settings.sentry_dsn is None:
         return False
-    sentry_sdk.init(
-        dsn=settings.sentry_dsn.get_secret_value(),
-        release=VERSION,
-        environment=settings.environment,
-        send_default_pii=False,
-        include_local_variables=False,
-        max_request_body_size="never",
-        traces_sample_rate=0,
-        before_send=scrub_event,
-        before_breadcrumb=scrub_breadcrumb,
-    )
+    sentry_sdk.init(**sentry_options(settings))
     log.info("error reporting enabled")
     return True
 
@@ -148,24 +157,60 @@ def otel_enabled(environ: Mapping[str, str]) -> bool:
     return environ.get("FASTAPI_OTEL_AUTO_CONFIGURE", "").lower() == "true"
 
 
-def otel_endpoint_host(environ: Mapping[str, str]) -> str | None:
-    """The host name of the configured OTLP endpoint, and nothing else of the address.
+def otlp_endpoint(environ: Mapping[str, str], signal: str) -> str | None:
+    """The address FastAPI's automatic export sends a signal to, None when it sends none.
 
-    The standard endpoint variable is read first, then the one for traces, metrics and logs.
+    ``signal`` is ``TRACES``, ``METRICS`` or ``LOGS``. The address of the signal's own variable
+    is used as it stands; the general variable gets the signal's path added. Nothing is exported
+    when the SDK is disabled, the signal's exporter is set to ``none`` (or to anything but OTLP,
+    which FastAPI does not set up) or no address is given.
+    """
+    if environ.get("OTEL_SDK_DISABLED", "").strip().lower() == "true":
+        return None
+    exporter = (environ.get(f"OTEL_{signal}_EXPORTER") or "otlp").strip().lower()
+    if exporter != "otlp":
+        return None
+    own = environ.get(f"OTEL_EXPORTER_OTLP_{signal}_ENDPOINT", "").strip()
+    if own:
+        return own
+    general = environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "").strip()
+    return f"{general.removesuffix('/')}/v1/{signal.lower()}" if general else None
+
+
+def endpoint_host(endpoint: str) -> str | None:
+    """The host name of an address, and nothing else of it.
+
+    Credentials, port, path, query and fragment are never returned; an address that cannot be
+    read gives None.
+    """
+    try:
+        host = urlsplit(endpoint if "//" in endpoint else f"//{endpoint}").hostname
+    except ValueError:
+        return None
+    return host or None
+
+
+def otel_endpoint_host(environ: Mapping[str, str]) -> str | None:
+    """The host name of the OTLP endpoint that traces go to, else metrics, else logs.
+
     Credentials, port, path and query of the address are never returned.
     """
-    for name in (
-        "OTEL_EXPORTER_OTLP_ENDPOINT",
-        "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
-        "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT",
-        "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT",
-    ):
-        value = environ.get(name, "").strip()
-        if not value:
-            continue
-        try:
-            host = urlsplit(value if "//" in value else f"//{value}").hostname
-        except ValueError:
-            return None
-        return host or None
+    for signal in OTLP_SIGNALS:
+        endpoint = otlp_endpoint(environ, signal)
+        if endpoint is not None:
+            return endpoint_host(endpoint)
     return None
+
+
+def fastapi_telemetry(environ: Mapping[str, str]) -> TelemetryConfig:
+    """The ``telemetry`` argument of the application.
+
+    Nothing is changed unless logs are exported: FastAPI's own setup then finds the provider that
+    scrubs the exception text and stack of its logs before any exporter sees them, and adds the
+    OTLP exporter after it. Without a logs destination the argument stays empty, so FastAPI keeps
+    its defaults and skips telemetry altogether while nothing is configured.
+    """
+    config: TelemetryConfig = {}
+    if otel_enabled(environ) and otlp_endpoint(environ, "LOGS") is not None:
+        config["logger_provider"] = scrubbing_logger_provider()
+    return config

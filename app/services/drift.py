@@ -21,6 +21,7 @@ from enum import StrEnum
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import metrics, telemetry
 from app.core.crypto import CryptoService
 from app.models import (
     AuditActorType,
@@ -485,9 +486,26 @@ async def _load(db: AsyncSession, crypto: CryptoService, header: EditorHeader) -
 async def load_drift_view(
     db: AsyncSession, crypto: CryptoService, header: EditorHeader
 ) -> DriftView | None:
-    """The masked three-way view of a file, None when it has no version to compare."""
-    snapshot = await _load(db, crypto, header)
-    return snapshot.view if snapshot else None
+    """The masked three-way view of a file, None when it has no version to compare.
+
+    The load runs in a drift check span that carries ids and the state found; a target changed
+    outside the app is counted as a detection.
+    """
+    ids = {
+        telemetry.PROJECT_ID: header.project_id,
+        telemetry.DEPLOYMENT_ID: header.deployment_id,
+        telemetry.SERVICE_ID: header.service_id,
+        telemetry.ENVIRONMENT_ID: header.id,
+    }
+    with telemetry.span(telemetry.DRIFT_CHECK_SPAN, ids) as active:
+        snapshot = await _load(db, crypto, header)
+        if snapshot is None:
+            return None
+        kind = snapshot.view.kind
+        telemetry.annotate(active, {telemetry.DRIFT_STATE: kind.value})
+    if kind in (DriftKind.DRIFT, DriftKind.NEVER_DEPLOYED):
+        metrics.record_drift_detection("view")
+    return snapshot.view
 
 
 def _same_hash(posted: str | None, current: str | None) -> bool:

@@ -1,5 +1,6 @@
 """Application factory."""
 
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -16,10 +17,12 @@ from app.config import get_settings
 from app.core.crypto import CryptoError, build_crypto_service
 from app.core.db import create_engine, create_session_factory
 from app.core.log import configure_logging, get_logger
+from app.core.metrics import backup_clock
 from app.core.middleware import install_middleware
 from app.core.migrations import migrate_database
-from app.core.observability import configure_otel, init_sentry
+from app.core.observability import configure_otel, fastapi_telemetry, init_sentry
 from app.services.api_errors import ApiRefusal
+from app.services.backup_records import latest_snapshot_time
 from app.services.backup_run import BackupLocations, adopt_backups
 from app.services.backup_schedule import BackupScheduler
 from app.services.deploy_recovery import recover_interrupted_runs
@@ -125,6 +128,8 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         application.state.backup_locations = locations
         application.state.backup_notifier = notifier
         await adopt_backups(session_factory, locations)
+        async with session_factory() as session:
+            backup_clock.reset(await latest_snapshot_time(session))
         git_services = GitServices(
             crypto,
             GitLocations.from_settings(settings),
@@ -186,6 +191,7 @@ def create_app() -> FastAPI:
         redoc_url=None,
         openapi_url=None,
         lifespan=lifespan,
+        telemetry=fastapi_telemetry(os.environ),
     )
     install_middleware(application, settings)
     application.add_exception_handler(ApiRefusal, refusal_handler)

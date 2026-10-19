@@ -12,6 +12,7 @@ from sqlalchemy import and_, case, literal, null, or_, select
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import metrics
 from app.models import AuditActorType, AuditResult, LoginCounter, LoginCounterKind, User
 from app.models.types import UtcDateTime
 from app.services.audit import record_audit
@@ -80,7 +81,10 @@ async def register_failure(
         )
     ).scalar_one()
     if counter.failures >= limit:
+        starts = counter.locked_until is None
         counter.locked_until = now + policy.lockout_duration
+        if starts:
+            metrics.record_login_lockout(kind.value)
         return True
     return False
 
@@ -96,8 +100,10 @@ async def register_attempt_failure(
     """Count one failed credential check against the name and the client address.
 
     Returns which of the two ("user", "ip") reached their limit and are now locked. Sign in and
-    the account screens share these counters, so a guess costs the same wherever it is made.
+    the account screens share these counters, so a guess costs the same wherever it is made. The
+    failure is counted once, whichever of the two counters it moves.
     """
+    metrics.record_login_failure(metrics.CHANNEL_SIGN_IN)
     locked: list[str] = []
     if subject and await register_failure(
         db, LoginCounterKind.USER, subject, policy.user_max_failures, policy, now

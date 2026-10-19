@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.cli.keys import key_app
 from app.cli.notify import cli_notifier
+from app.cli.observability import observability_app
 from app.cli.session import run_command
 from app.config import Settings, get_settings
 from app.core.crypto import CryptoError, CryptoService, build_crypto_service, load_master_key
@@ -65,6 +66,7 @@ app.add_typer(user_app, name="user")
 backup_app = typer.Typer(help="Create and restore backups.", no_args_is_help=True)
 app.add_typer(backup_app, name="backup")
 app.add_typer(key_app, name="key")
+app.add_typer(observability_app, name="observability")
 dev_app = typer.Typer(help="Development helpers.", no_args_is_help=True)
 app.add_typer(dev_app, name="dev")
 SEED_ENVIRONMENTS = {"development", "testing"}

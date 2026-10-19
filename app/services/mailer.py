@@ -20,8 +20,10 @@ from typing import Protocol
 import aiosmtplib
 from fastapi_mail import ConnectionConfig, FastMail, MessageSchema, MessageType
 from fastapi_mail.schemas import MultipartSubtypeEnum
+from opentelemetry.trace import Span
 from pydantic import SecretStr
 
+from app.core import telemetry
 from app.services.app_settings import SmtpSettings
 
 SENDER_NAME = "ENV Manager"
@@ -166,15 +168,28 @@ class FastapiMailTransport:
     async def send(self, smtp: SmtpSettings, password: str | None, mail: OutgoingMail) -> None:
         """Send one mail, with a bound on the whole attempt.
 
-        Raises ``MailFailure`` for any problem, with a fixed reason.
+        Raises ``MailFailure`` for any problem, with a fixed reason. The send runs in a span that
+        carries the TLS mode, the result and whether trying again can help; the server, the
+        recipient, the subject and the text of an error are never attached.
         """
-        if not valid_address(mail.to) or not valid_address(smtp.from_address):
-            raise MailFailure("An address in the mail is not valid.", retryable=False)
-        failure: MailFailure | None = None
-        try:
-            async with asyncio.timeout(TOTAL_TIMEOUT_SECONDS):
-                await FastMail(connection_config(smtp, password)).send_message(build_message(mail))
-        except Exception as error:
-            failure = classify(error)
-        if failure is not None:
-            raise failure
+        attributes = {telemetry.SMTP_TLS_MODE: smtp.tls_mode}
+        with telemetry.span(telemetry.SMTP_SEND_SPAN, attributes) as active:
+            if not valid_address(mail.to) or not valid_address(smtp.from_address):
+                self._mark_failed(active, retryable=False)
+                raise MailFailure("An address in the mail is not valid.", retryable=False)
+            failure: MailFailure | None = None
+            try:
+                async with asyncio.timeout(TOTAL_TIMEOUT_SECONDS):
+                    message = build_message(mail)
+                    await FastMail(connection_config(smtp, password)).send_message(message)
+            except Exception as error:
+                failure = classify(error)
+            if failure is not None:
+                self._mark_failed(active, retryable=failure.retryable)
+                raise failure
+            telemetry.annotate(active, {telemetry.RESULT: "sent"})
+
+    @staticmethod
+    def _mark_failed(active: Span, *, retryable: bool) -> None:
+        """Put the failed result on the span."""
+        telemetry.annotate(active, {telemetry.RESULT: "failed", telemetry.RETRYABLE: retryable})

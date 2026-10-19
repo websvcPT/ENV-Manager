@@ -30,10 +30,12 @@ import asyncio
 import os
 from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
+from time import monotonic
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import metrics, telemetry
 from app.core.crypto import CryptoError, CryptoService
 from app.core.log import get_logger
 from app.models import (
@@ -146,6 +148,26 @@ class _Findings:
     check: DistCheck | None = None
 
 
+@dataclass(frozen=True)
+class _TargetReading:
+    """The target as read for one environment and how it stands against what this app wrote."""
+
+    current: bytes | None
+    current_hash: str | None
+    drift: DriftState
+
+
+def _context_attributes(context: _Context) -> dict[str, object]:
+    """The ids and names of the service and its ancestors, for a span."""
+    return {
+        telemetry.PROJECT_ID: context.deployment.project_id,
+        telemetry.DEPLOYMENT_ID: context.deployment.id,
+        telemetry.DEPLOYMENT_NAME: context.deployment.name,
+        telemetry.SERVICE_ID: context.service.id,
+        telemetry.SERVICE_NAME: context.service.name,
+    }
+
+
 def _outcome(
     environment: Environment,
     version: EnvironmentVersion | None,
@@ -204,6 +226,33 @@ class DeployEngine:
         outcome, including a refusal because the lock is held, is a returned ``DeployOutcome``.
         """
         context = await self._load_context(db, scope, request)
+        attributes = {
+            **_context_attributes(context),
+            telemetry.ACTOR_TYPE: actor.type.value,
+            telemetry.DRY_RUN: request.dry_run,
+            telemetry.FORCED: request.force,
+            telemetry.ENVIRONMENT_COUNT: len(context.environments),
+        }
+        with telemetry.span(telemetry.DEPLOY_SPAN, attributes) as active:
+            started = monotonic()
+            result = "error"
+            try:
+                outcome = await self._run_loaded(db, context, actor, request)
+                result = "refused" if outcome.refusal is not None else outcome.status.value
+                telemetry.annotate(active, {telemetry.RESULT: result})
+            finally:
+                if not request.dry_run:
+                    metrics.record_deploy(result, monotonic() - started)
+        return outcome
+
+    async def _run_loaded(
+        self,
+        db: AsyncSession,
+        context: _Context,
+        actor: AuditActor,
+        request: DeployRequest,
+    ) -> DeployOutcome:
+        """Run the deploy or the dry run of a loaded context and announce a recorded real run."""
         if request.dry_run:
             return await self._dry_run(db, context, actor, request)
         try:
@@ -350,16 +399,18 @@ class DeployEngine:
         except DistError:
             return _outcome(environment, version, failed, FILE_NO_LONGER_EXISTS_MESSAGE), None
         try:
-            current = await asyncio.to_thread(read_target_file, location, allowed)
+            reading = await self._read_target(
+                environment, location, allowed, version_hash, baseline, request.dry_run
+            )
         except TargetError as error:
             unread = _outcome(
                 environment, version, failed, str(error), _Findings(check.outcome, check=check)
             )
             return unread, check
-        current_hash = self.crypto.content_hash(current) if current is not None else None
+        current, current_hash = reading.current, reading.current_hash
         deployment = context.deployment
         plan = plan_environment(
-            drift=drift_state(current, current_hash, version_hash, baseline),
+            drift=reading.drift,
             unchanged=current_hash == version_hash,
             check=check,
             drift_policy=environment.drift_policy or deployment.drift_policy,
@@ -397,6 +448,30 @@ class DeployEngine:
             context, allowed, environment, version, location, data, current, plan, findings
         )
         return outcome, check
+
+    async def _read_target(
+        self,
+        environment: Environment,
+        location: TargetLocation,
+        allowed: AllowedPaths,
+        version_hash: str,
+        baseline: str | None,
+        dry_run: bool,
+    ) -> _TargetReading:
+        """Read the target and decide its drift state, in a drift check span.
+
+        Raises ``TargetError`` when the target cannot be read. A drifted target is counted.
+        """
+        with telemetry.span(
+            telemetry.DRIFT_CHECK_SPAN, {telemetry.ENVIRONMENT_ID: environment.id}
+        ) as active:
+            current = await asyncio.to_thread(read_target_file, location, allowed)
+            current_hash = self.crypto.content_hash(current) if current is not None else None
+            drift = drift_state(current, current_hash, version_hash, baseline)
+            telemetry.annotate(active, {telemetry.DRIFT_STATE: drift.value})
+        if drift is DriftState.DRIFT:
+            metrics.record_drift_detection("dry_run" if dry_run else "deploy")
+        return _TargetReading(current, current_hash, drift)
 
     async def _write(
         self,
@@ -661,7 +736,7 @@ class DeployEngine:
             scrubber=scrubber,
         )
         try:
-            result = await self.hook_runner.run_post_deploy(hook_request)
+            result = await self._call_hook_runner(context, hook_request)
         except Exception as error:
             log.error("post-deploy runner failed: %s", type(error).__name__)
             return PostDeployResult(PostDeployStatus.FAILED, reason=POST_DEPLOY_ERROR_REASON)
@@ -672,6 +747,29 @@ class DeployEngine:
             output=scrubber.scrub_text(result.output) if result.output else result.output,
             reason=scrubber.scrub_text(result.reason) if result.reason else result.reason,
         )
+
+    async def _call_hook_runner(
+        self, context: _Context, hook_request: PostDeployRequest
+    ) -> PostDeployResult:
+        """Call the hook runner; a stored command runs in a span and is counted by its result.
+
+        The span holds ids, names, the result and the exit code; never the command, its output or
+        its reason. A runner that raises counts as an error.
+        """
+        if context.hook is None or not context.hook.commands.strip():
+            return await self.hook_runner.run_post_deploy(hook_request)
+        started = monotonic()
+        label = "error"
+        with telemetry.span(telemetry.POST_DEPLOY_SPAN, _context_attributes(context)) as active:
+            try:
+                result = await self.hook_runner.run_post_deploy(hook_request)
+                label = result.status.value
+                telemetry.annotate(
+                    active, {telemetry.RESULT: label, telemetry.EXIT_CODE: result.exit_code}
+                )
+                return result
+            finally:
+                metrics.record_post_deploy(label, monotonic() - started)
 
     async def _refuse(
         self,
