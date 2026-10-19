@@ -103,7 +103,7 @@ test.describe('icon buttons from md up', { tag: '@wide' }, () => {
   }) => {
     await page.goto(`/services/${await stagingWeb(browser)}`);
     const row = environmentRow(page, '.env.web.tuning');
-    const dist = row.locator('[data-row-action="dist"]');
+    const dist = row.locator('[data-row-action="delete"]');
     await dist.hover();
     await expectTooltip(dist, true);
     const anchored = await tooltipOf(dist);

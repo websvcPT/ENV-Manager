@@ -101,7 +101,7 @@ async def test_superadmin_sees_everything_and_the_command_settings(
         ".env.web.tuning": "pending",
         "web-ca.pem": "never",
     }
-    assert row_actions(page, ".env.web.tuning") == ["edit", "history", "dist"]
+    assert row_actions(page, ".env.web.tuning") == ["edit", "history", "dist", "settings", "delete"]
     assert f'href="/services/{ids.staging_web}/environments/new"' in page
     assert "Read-only view" not in page and "Deploy service" in page
     assert "Command settings" in page and "Superadmin" in page
@@ -150,7 +150,7 @@ async def test_a_halted_file_offers_the_drift_view_to_everyone_who_can_open_it(
     """The drift link sits in the row actions of a Halted row only, for every role."""
     await halt_replica(web_app, ids)
     for user, expected in (
-        ("root", ["edit", "history", "drift", "dist"]),
+        ("root", ["edit", "history", "drift", "dist", "settings", "delete"]),
         ("admin", ["edit", "history", "drift", "dist"]),
         ("viewer", ["view", "history", "drift"]),
     ):

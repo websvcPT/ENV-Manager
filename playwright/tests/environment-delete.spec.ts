@@ -39,7 +39,7 @@ test.describe('delete an environment', () => {
     await createEnvironment(request, service, '.env.kept', 'B=1\n');
     await page.goto(`/services/${service}`);
 
-    const row = page.locator('#environments [data-fragment="env-row"]', {
+    const row = page.locator('#environments tr[data-fragment="env-row"]', {
       hasText: '.env.doomed',
     });
     const remove = await rowAction(row, 'delete');
@@ -59,10 +59,10 @@ test.describe('delete an environment', () => {
     await expect(page).toHaveURL(new RegExp(`/services/${service}\\?deleted=environment$`));
     await expect(page.locator('[data-fragment="toast"]')).toContainText('File deleted');
     await expect(
-      page.locator('#environments [data-fragment="env-row"]', { hasText: '.env.doomed' }),
+      page.locator('#environments tr[data-fragment="env-row"]', { hasText: '.env.doomed' }),
     ).toHaveCount(0);
     await expect(
-      page.locator('#environments [data-fragment="env-row"]', { hasText: '.env.kept' }),
+      page.locator('#environments tr[data-fragment="env-row"]', { hasText: '.env.kept' }),
     ).toHaveCount(1);
     expect((await request.get(`/environments/${doomed}`)).status()).toBe(404);
   });

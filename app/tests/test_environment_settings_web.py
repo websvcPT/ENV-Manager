@@ -15,6 +15,7 @@ from app.models import (
     AllowedPath,
     AuditEntry,
     Deployment,
+    DeployResult,
     DistMissingPolicy,
     DriftPolicy,
     Environment,
@@ -245,6 +246,11 @@ async def test_a_changed_target_path_of_a_deployed_file_needs_the_confirmation(
     tuning = layout.ids.tuning
     old = (await stored(web_app, tuning)).target_path
     async with web_app.state.session_factory() as db:
+        result = (
+            await db.execute(select(DeployResult).where(DeployResult.environment_id == tuning))
+        ).scalar_one()
+        result.written_hash = "0" * 64
+        await db.commit()
         assert tuning in await load_baselines(db, [tuning])
     moved = values(target_path="environments/.env.web.tuning.moved")
 

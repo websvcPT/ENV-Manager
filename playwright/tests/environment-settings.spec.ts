@@ -39,7 +39,7 @@ test.describe('environment settings', () => {
     const environment = await createEnvironment(request, service, '.env.app', 'A=1\n');
 
     await page.goto(`/services/${service}`);
-    const row = page.locator('#environments [data-fragment="env-row"]', { hasText: '.env.app' });
+    const row = page.locator('#environments tr[data-fragment="env-row"]', { hasText: '.env.app' });
     const settings = await rowAction(row, 'settings');
     await expect(settings).toHaveAttribute('href', `/environments/${environment}/settings`);
 
@@ -102,10 +102,13 @@ test.describe('environment settings', () => {
 
     await page.locator('#m').fill('9');
     await page.locator('#dp').fill('environments/.env.app');
-    await page.locator('#tp').fill('environments/.env.other');
     await page.locator('#env-settings button[type="submit"]').click();
     await expect(page.locator('#m-e')).toContainText('octal mode');
     await expect(page.locator('#dp-e')).toContainText('different file from the target');
+
+    await page.locator('#dp').fill('');
+    await page.locator('#tp').fill('environments/.env.other');
+    await page.locator('#env-settings button[type="submit"]').click();
     await expect(page.locator('#tp-e')).toContainText('already uses this target path');
     await expect(page).toHaveURL(new RegExp(`/environments/${environment}/settings$`));
   });
@@ -130,7 +133,7 @@ test.describe('environment settings', () => {
     await expect(page.locator('[data-header-details]')).toContainText('never deployed');
     await page.goto(`/services/${service}`);
     await expect(
-      page.locator('#environments [data-fragment="env-row"]', { hasText: '.env.app' }),
+      page.locator('#environments tr[data-fragment="env-row"]', { hasText: '.env.app' }),
     ).toContainText('environments/.env.moved');
   });
 
