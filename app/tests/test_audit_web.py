@@ -150,7 +150,7 @@ async def test_a_scoped_admin_sees_its_file_and_only_its_parent_name(
     assert len(row_ids(body)) == 3
     assert "environment.save" in body and "file_save" in body
     assert rows_with(body, "login.success") == 1
-    assert ">rentals</option>" in body
+    assert ">Fancy Proj. Name</option>" in body
     for hidden in ("billing", ".env.api", ".env.db.secrets", "service.deploy", "retired"):
         assert hidden not in body, hidden
 
@@ -164,7 +164,7 @@ async def test_a_user_without_grants_sees_only_their_own_entries(
     body = main_of((await web_client.get("/audit")).text)
     assert len(row_ids(body)) == 1 and rows_with(body, "login.success") == 1
     assert "No entries yet" not in body
-    for hidden in ("rentals", "billing", "new.hire", BULK_ACTION):
+    for hidden in ("Fancy Proj. Name", "billing", "new.hire", BULK_ACTION):
         assert hidden not in body, hidden
     assert 'data-fragment="skeleton"' in body and 'aria-busy="true"' in body
 
@@ -210,8 +210,8 @@ async def test_filters_apply_on_the_server_and_are_kept_in_the_address(
 async def test_filters_combine(web_client: httpx.AsyncClient, web_app: FastAPI) -> None:
     """Project, user or token, action, result and dates narrow together."""
     await sign_in(web_client, "root")
-    rentals = await project_id(web_app, "rentals")
-    base = f"/audit/table?project={rentals}"
+    fancy = await project_id(web_app, "Fancy Proj. Name")
+    base = f"/audit/table?project={fancy}"
     assert len(row_ids((await get_fragment(web_client, base)).text)) == 7
     by_user = await get_fragment(web_client, f"{base}&actor=user:admin")
     assert len(row_ids(by_user.text)) == 2

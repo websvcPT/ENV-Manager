@@ -6,7 +6,7 @@ fixtures by hand in a test.
 
 Structure (project, deployment, service, environments):
 
-    rentals
+    Fancy Proj. Name
       prod (/opt/rentals/prod)
         mysql: .env.db, .env.db.secrets
         web: .env.web
@@ -19,29 +19,32 @@ Structure (project, deployment, service, environments):
       legacy (/srv/old/legacy, outside the allowed paths)
         cron: no environments
 
+The first project is a display name (spaces, a dot and capitals), while its host folders keep
+plain paths.
+
 Allowed paths: /opt/rentals and /opt/billing (the deployment roots lie under them, except legacy).
 
-Deploy runs: rentals/prod web succeeded (by admin, post-deploy ran), then mysql failed (by root,
-post-deploy skipped, the newest run of the project); billing/main has only a dry run, so it counts
-as never deployed. Each run has per-environment results. The prod deployment writes files as
-www-data:www-data.
+Deploy runs: Fancy Proj. Name/prod web succeeded (by admin, post-deploy ran), then mysql failed
+(by root, post-deploy skipped, the newest run of the project); billing/main has only a dry run, so
+it counts as never deployed. Each run has per-environment results. The prod deployment writes
+files as www-data:www-data.
 
-Audit history: deploy entries for rentals prod web (success) and mysql (failure), and file saves
-of .env.db and billing .env.api, each with the scope ids of its item.
+Audit history: deploy entries for Fancy Proj. Name prod web (success) and mysql (failure), and
+file saves of .env.db and billing .env.api, each with the scope ids of its item.
 
 API tokens: billing-ci, owned by admin, restricted to the billing .env.api environment.
 
-Dist links: .env.db and .env.web (rentals prod) point at environments/.env.db-dist and
+Dist links: .env.db and .env.web (Fancy Proj. Name prod) point at environments/.env.db-dist and
 environments/.env.web-dist below their deployment root; the files themselves are created by the
 tests that need them.
 
 Access:
 
     superadmin            every project, no grants needed
-    admin                  projects rentals and billing
-    viewer                 project rentals
-    project_admin          project rentals
-    deployment_admin       deployment rentals/prod
+    admin                  projects Fancy Proj. Name and billing
+    viewer                 project Fancy Proj. Name
+    project_admin          project Fancy Proj. Name
+    deployment_admin       deployment Fancy Proj. Name/prod
     env_scoped_admin       environment .env.db only (not .env.db.secrets)
     env_scoped_viewer      environments .env.db and billing .env.api
     ungranted_admin        no grants
@@ -63,7 +66,7 @@ from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.crypto import CryptoService
@@ -109,6 +112,19 @@ DEV_PASSWORD = "dev-only-password"  # noqa: S105
 DEV_TOTP_SECRET = "JBSWY3DPEHPK3PXP"  # noqa: S105
 TOTP_USER_NAME = "totp_user"
 TOTP_ALT_USER_NAME = "totp_user_alt"
+
+# The seeded project with a display name (capitals, a dot and spaces), and the plain name a
+# database seeded before project names became display names still holds it under.
+FANCY_PROJECT_NAME = "Fancy Proj. Name"
+_FORMER_FANCY_PROJECT_NAME = "rentals"
+
+# The stored command of the staging web service, and the texts older seeds stored for it and
+# for the demo services, which named their service with a placeholder.
+STAGING_WEB_COMMAND = "docker compose up -d --no-deps web"
+_PLACEHOLDER_SEED_COMMANDS = (
+    "docker compose up -d --no-deps {service_name}",
+    "docker compose up -d --no-deps --force-recreate {service_name}",
+)
 
 # Root of the seeded deployment that lies outside every allowed path.
 LEGACY_ROOT = "/srv/old/legacy"
@@ -174,7 +190,7 @@ class SeedUsers:
 class SeedProjects:
     """The seeded projects."""
 
-    rentals: Project
+    fancy: Project
     billing: Project
 
 
@@ -182,8 +198,8 @@ class SeedProjects:
 class SeedDeployments:
     """The seeded deployments."""
 
-    rentals_prod: Deployment
-    rentals_staging: Deployment
+    fancy_prod: Deployment
+    fancy_staging: Deployment
     billing_main: Deployment
     billing_legacy: Deployment
 
@@ -636,7 +652,7 @@ async def ensure_service_figures(
         ServiceHook(
             service_id=service.id,
             type=HookType.POST_DEPLOY,
-            commands="docker compose up -d --no-deps {service_name}",
+            commands=STAGING_WEB_COMMAND,
         )
     )
     await db.flush()
@@ -730,6 +746,50 @@ async def ensure_editor_figures(db: AsyncSession, crypto: CryptoService) -> Envi
     )
 
 
+async def ensure_project_display_name(db: AsyncSession) -> None:
+    """Give the seeded project its display name in a database seeded under the plain one.
+
+    The project is renamed in place (ids, deployments and grants stay), and the names the
+    seeded audit entries copied for it follow, so the log reads like a fresh seed. Does nothing
+    when the plain name is gone or the display name is already taken. The caller commits.
+    """
+    former = (
+        await db.execute(select(Project).where(Project.name == _FORMER_FANCY_PROJECT_NAME))
+    ).scalar_one_or_none()
+    taken = (await db.execute(select(Project.id).where(Project.name == FANCY_PROJECT_NAME))).first()
+    if former is None or taken is not None:
+        return
+    former.name = FANCY_PROJECT_NAME
+    await db.execute(
+        update(AuditEntry)
+        .where(
+            AuditEntry.target_type == "project",
+            AuditEntry.target_name == _FORMER_FANCY_PROJECT_NAME,
+        )
+        .values(target_name=FANCY_PROJECT_NAME)
+    )
+    await db.flush()
+
+
+async def ensure_literal_commands(db: AsyncSession) -> None:
+    """Name the service in the seeded commands that were stored with a placeholder.
+
+    A database seeded before commands ran exactly as stored holds ``{service_name}`` in the
+    staging web command and in both demo commands; each becomes the literal command of its own
+    service. Any other stored text is left alone. The caller commits.
+    """
+    rows = (
+        await db.execute(
+            select(ServiceHook, Service.name)
+            .join(Service, Service.id == ServiceHook.service_id)
+            .where(ServiceHook.commands.in_(_PLACEHOLDER_SEED_COMMANDS))
+        )
+    ).all()
+    for hook, service_name in rows:
+        hook.commands = hook.commands.replace("{service_name}", service_name)
+    await db.flush()
+
+
 async def ensure_dev_host_paths(db: AsyncSession) -> None:
     """Allow the directory the development stack mounts, so the deployment form has real folders.
 
@@ -770,16 +830,16 @@ async def seed(db: AsyncSession, crypto: CryptoService, demo_root: Path | None =
         totp_user_alt=await ensure_totp_user(db, crypto, TOTP_ALT_USER_NAME),
     )
     db.add_all(vars(users).values())
-    projects = SeedProjects(rentals=Project(name="rentals"), billing=Project(name="billing"))
+    projects = SeedProjects(fancy=Project(name=FANCY_PROJECT_NAME), billing=Project(name="billing"))
     db.add_all(vars(projects).values())
     await db.flush()
 
     deployments = SeedDeployments(
-        rentals_prod=Deployment(
-            project_id=projects.rentals.id, name="prod", root_path="/opt/rentals/prod"
+        fancy_prod=Deployment(
+            project_id=projects.fancy.id, name="prod", root_path="/opt/rentals/prod"
         ),
-        rentals_staging=Deployment(
-            project_id=projects.rentals.id, name="staging", root_path="/opt/rentals/staging"
+        fancy_staging=Deployment(
+            project_id=projects.fancy.id, name="staging", root_path="/opt/rentals/staging"
         ),
         billing_main=Deployment(
             project_id=projects.billing.id, name="main", root_path="/opt/billing/main"
@@ -792,9 +852,9 @@ async def seed(db: AsyncSession, crypto: CryptoService, demo_root: Path | None =
     await db.flush()
 
     services = SeedServices(
-        mysql=Service(deployment_id=deployments.rentals_prod.id, name="mysql"),
-        web=Service(deployment_id=deployments.rentals_prod.id, name="web"),
-        staging_web=Service(deployment_id=deployments.rentals_staging.id, name="web"),
+        mysql=Service(deployment_id=deployments.fancy_prod.id, name="mysql"),
+        web=Service(deployment_id=deployments.fancy_prod.id, name="web"),
+        staging_web=Service(deployment_id=deployments.fancy_staging.id, name="web"),
         api=Service(deployment_id=deployments.billing_main.id, name="api"),
         worker=Service(deployment_id=deployments.billing_main.id, name="worker"),
         cron=Service(deployment_id=deployments.billing_legacy.id, name="cron"),
@@ -843,11 +903,11 @@ async def seed(db: AsyncSession, crypto: CryptoService, demo_root: Path | None =
     db.add_all(allowed_paths)
 
     for user, level, target in (
-        (users.admin, GrantLevel.PROJECT, projects.rentals),
+        (users.admin, GrantLevel.PROJECT, projects.fancy),
         (users.admin, GrantLevel.PROJECT, projects.billing),
-        (users.viewer, GrantLevel.PROJECT, projects.rentals),
-        (users.project_admin, GrantLevel.PROJECT, projects.rentals),
-        (users.deployment_admin, GrantLevel.DEPLOYMENT, deployments.rentals_prod),
+        (users.viewer, GrantLevel.PROJECT, projects.fancy),
+        (users.project_admin, GrantLevel.PROJECT, projects.fancy),
+        (users.deployment_admin, GrantLevel.DEPLOYMENT, deployments.fancy_prod),
         (users.env_scoped_admin, GrantLevel.ENVIRONMENT, envs.db),
         (users.env_scoped_viewer, GrantLevel.ENVIRONMENT, envs.db),
         (users.env_scoped_viewer, GrantLevel.ENVIRONMENT, envs.api),

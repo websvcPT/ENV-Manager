@@ -725,9 +725,7 @@ class DeployEngine:
                 return PostDeployResult(PostDeployStatus.FAILED, reason=SCRUBBER_FAILED_REASON)
         hook_request = PostDeployRequest(
             service_id=context.service.id,
-            service_name=context.service.name,
             deployment_id=context.deployment.id,
-            deployment_name=context.deployment.name,
             deployment_root=root,
             hook=context.hook,
             changed=any(outcome.status is DeployResultStatus.WRITTEN for outcome in outcomes),

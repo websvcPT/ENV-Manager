@@ -260,8 +260,8 @@ async def test_a_check_is_audited_with_counts_and_never_a_value(
     assert entry.result is result
     assert entry.actor_name == "admin" and entry.ip_address == "10.0.0.9"
     assert (entry.project_id, entry.deployment_id, entry.service_id, entry.environment_id) == (
-        seed_data.projects.rentals.id,
-        seed_data.deployments.rentals_prod.id,
+        seed_data.projects.fancy.id,
+        seed_data.deployments.fancy_prod.id,
         seed_data.services.mysql.id,
         seed_data.envs.db.id,
     )
@@ -385,7 +385,7 @@ async def test_deployment_checks_cover_only_the_files_in_scope_and_audit_each(
     write_dist(roots["prod"], "environments/.env.web-dist", "APP_ENV=\n")
     await link_dist(db, seed_data.envs.web, "environments/.env.web-dist")
     users = seed_data.users
-    deployment = seed_data.deployments.rentals_prod.id
+    deployment = seed_data.deployments.fancy_prod.id
     scope = await load_user_scope(db, users.deployment_admin)
     checks = await run_deployment_dist_checks(
         db, crypto, scope, deployment, actor=users.deployment_admin, ip_address=None

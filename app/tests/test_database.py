@@ -387,3 +387,77 @@ async def test_an_engine_without_hidden_parameters_would_leak_them(
         )
     finally:
         await visible.dispose()
+
+
+PROJECT_INSERT = (
+    "INSERT INTO projects (name, created_at, updated_at) VALUES (:name, '2026-01-01', '2026-01-01')"
+)
+
+
+async def test_the_database_refuses_a_project_name_that_differs_only_in_case(
+    engine: AsyncEngine,
+) -> None:
+    """The unique index is on the lowercased name, so a case variant is a duplicate."""
+    async with engine.begin() as connection:
+        await connection.execute(text(PROJECT_INSERT), {"name": "Fancy Proj. Name"})
+    with pytest.raises(IntegrityError):
+        async with engine.begin() as connection:
+            await connection.execute(text(PROJECT_INSERT), {"name": "FANCY PROJ. NAME"})
+    async with engine.connect() as connection:
+        index_sql = (
+            await connection.execute(
+                text("SELECT sql FROM sqlite_master WHERE name = 'uq_projects_name_lower'")
+            )
+        ).scalar_one()
+    assert "UNIQUE" in index_sql and "lower(name)" in index_sql
+
+
+async def test_the_upgrade_refuses_projects_that_share_a_name_and_changes_nothing(
+    database_path: Path, backup_dir: Path
+) -> None:
+    """Projects that differ only in case stop the upgrade, naming them."""
+    engine = create_engine(database_path)
+    try:
+        await migrate_database(engine, database_path, backup_dir)
+        async with engine.begin() as connection:
+            await connection.run_sync(lambda sync: command.downgrade(build_config(sync), "0014"))
+            for name in ("Alpha", "alpha", "other"):
+                await connection.execute(text(PROJECT_INSERT), {"name": name})
+        with pytest.raises(RuntimeError) as refused:
+            await migrate_database(engine, database_path, backup_dir)
+        message = str(refused.value)
+        assert "Alpha, alpha" in message and "other" not in message
+        async with engine.connect() as connection:
+            revision = await connection.execute(text("SELECT version_num FROM alembic_version"))
+            projects = (
+                await connection.execute(text("SELECT count(*) FROM projects"))
+            ).scalar_one()
+        assert revision.scalar_one() == "0014" and projects == 3
+    finally:
+        await engine.dispose()
+
+
+async def test_the_project_name_index_is_added_and_removed_in_place_and_keeps_projects(
+    database_path: Path, backup_dir: Path
+) -> None:
+    """Going back drops the index and keeps the projects; going forward adds it again."""
+    engine = create_engine(database_path)
+    try:
+        await migrate_database(engine, database_path, backup_dir)
+        async with engine.begin() as connection:
+            await connection.execute(text(PROJECT_INSERT), {"name": "Fancy Proj. Name"})
+            await connection.run_sync(lambda sync: command.downgrade(build_config(sync), "0014"))
+        async with engine.connect() as connection:
+            gone = await connection.execute(
+                text("SELECT count(*) FROM sqlite_master WHERE name = 'uq_projects_name_lower'")
+            )
+            kept = (await connection.execute(text("SELECT name FROM projects"))).scalars().all()
+        assert gone.scalar_one() == 0 and kept == ["Fancy Proj. Name"]
+        await migrate_database(engine, database_path, backup_dir)
+        async with engine.connect() as connection:
+            back = await connection.execute(
+                text("SELECT count(*) FROM sqlite_master WHERE name = 'uq_projects_name_lower'")
+            )
+        assert back.scalar_one() == 1
+    finally:
+        await engine.dispose()

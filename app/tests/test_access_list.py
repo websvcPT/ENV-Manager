@@ -77,8 +77,8 @@ async def entries_of(db: AsyncSession, action: str) -> list[AuditEntry]:
 async def test_the_project_tab_lists_direct_grants_and_the_items_inside_that_carry_one(
     db: AsyncSession, seed_data: SeedData
 ) -> None:
-    rentals = seed_data.projects.rentals.id
-    access = await tab(db, rentals, f"project-{rentals}")
+    fancy = seed_data.projects.fancy.id
+    access = await tab(db, fancy, f"project-{fancy}")
     listed = by_name(access)
     assert set(listed) == {
         "admin",
@@ -98,26 +98,26 @@ async def test_the_project_tab_lists_direct_grants_and_the_items_inside_that_car
     assert listed["deployment_admin"].below and listed["deployment_admin"].source_count == 1
     assert listed["deployment_admin"].edit_label == "Edit at source"
     assert listed["deployment_admin"].edit_href == (
-        f"/deployments/{seed_data.deployments.rentals_prod.id}/access"
+        f"/deployments/{seed_data.deployments.fancy_prod.id}/access"
     )
     assert access.grantable and access.node.future_items
-    assert access.subtitle == "project rentals"
+    assert access.subtitle == "project Fancy Proj. Name"
 
 
 async def test_superadmins_are_never_listed_and_disabled_users_are_not(
     db: AsyncSession, seed_data: SeedData
 ) -> None:
-    rentals = seed_data.projects.rentals.id
+    fancy = seed_data.projects.fancy.id
     seed_data.users.viewer.is_active = False
     await db.merge(seed_data.users.viewer)
     await db.commit()
-    access = await tab(db, rentals, f"project-{rentals}")
+    access = await tab(db, fancy, f"project-{fancy}")
     assert "root" not in by_name(access) and "viewer" not in by_name(access)
     assert "root" not in names(access.candidates) and "viewer" not in names(access.candidates)
-    assert GrantTarget(PROJECT, rentals) in await list_grants(db, seed_data.users.viewer.id)
+    assert GrantTarget(PROJECT, fancy) in await list_grants(db, seed_data.users.viewer.id)
 
 
-@pytest.mark.parametrize("project", ["rentals", "billing"])
+@pytest.mark.parametrize("project", ["fancy", "billing"])
 async def test_the_listed_users_are_the_members_of_the_project_header(
     db: AsyncSession, seed_data: SeedData, project: str
 ) -> None:
@@ -129,18 +129,18 @@ async def test_the_listed_users_are_the_members_of_the_project_header(
 async def test_the_deployment_tab_names_the_project_above_and_the_environments_below(
     db: AsyncSession, seed_data: SeedData
 ) -> None:
-    prod = seed_data.deployments.rentals_prod
-    access = await tab(db, seed_data.projects.rentals.id, f"deployment-{prod.id}")
+    prod = seed_data.deployments.fancy_prod
+    access = await tab(db, seed_data.projects.fancy.id, f"deployment-{prod.id}")
     listed = by_name(access)
     assert set(listed) == set(by_name(await tab(db, prod.project_id, f"project-{prod.project_id}")))
     assert listed["deployment_admin"].direct
     for name in ("admin", "viewer", "project_admin"):
-        assert sources_of(listed[name]) == [("rentals", "Project")]
+        assert sources_of(listed[name]) == [("Fancy Proj. Name", "Project")]
         assert listed[name].edit_href == f"/projects/{prod.project_id}/access"
     assert sources_of(listed["env_scoped_admin"]) == [(".env.db", "Environment")]
     assert listed["env_scoped_admin"].below
     assert access.node.future_items and access.grantable
-    assert [(p.name, p.level_label) for p in access.parents] == [("rentals", "Project")]
+    assert [(p.name, p.level_label) for p in access.parents] == [("Fancy Proj. Name", "Project")]
 
 
 async def test_the_billing_deployment_lists_who_reaches_it_through_the_project_or_a_file(
@@ -157,17 +157,17 @@ async def test_the_service_tab_shows_the_result_and_links_the_items_that_grant_i
     db: AsyncSession, seed_data: SeedData
 ) -> None:
     mysql = seed_data.services.mysql
-    access = await tab(db, seed_data.projects.rentals.id, f"service-{mysql.id}")
+    access = await tab(db, seed_data.projects.fancy.id, f"service-{mysql.id}")
     listed = by_name(access)
     assert not access.grantable and not access.candidates
     assert not any(entry.direct for entry in access.entries)
-    assert sources_of(listed["admin"]) == [("rentals", "Project")]
+    assert sources_of(listed["admin"]) == [("Fancy Proj. Name", "Project")]
     assert sources_of(listed["deployment_admin"]) == [("prod", "Deployment")]
     assert listed["admin"].sees is None and listed["deployment_admin"].sees is None
     assert sources_of(listed["env_scoped_admin"]) == [(".env.db", "Environment")]
     assert listed["env_scoped_admin"].sees == (1, 3)
     assert [(p.name, p.level_label) for p in access.parents] == [
-        ("rentals", "Project"),
+        ("Fancy Proj. Name", "Project"),
         ("prod", "Deployment"),
     ]
     assert access.parents[1].href == f"/deployments/{mysql.deployment_id}/access"
@@ -176,31 +176,31 @@ async def test_the_service_tab_shows_the_result_and_links_the_items_that_grant_i
 async def test_the_environment_tab_shows_direct_and_inherited_access_without_future_items(
     db: AsyncSession, seed_data: SeedData
 ) -> None:
-    rentals = seed_data.projects.rentals.id
-    access = await tab(db, rentals, f"environment-{seed_data.envs.db.id}")
+    fancy = seed_data.projects.fancy.id
+    access = await tab(db, fancy, f"environment-{seed_data.envs.db.id}")
     listed = by_name(access)
     assert {name for name, entry in listed.items() if entry.direct} == {
         "env_scoped_admin",
         "env_scoped_viewer",
     }
     assert sources_of(listed["deployment_admin"]) == [("prod", "Deployment")]
-    assert sources_of(listed["admin"]) == [("rentals", "Project")]
+    assert sources_of(listed["admin"]) == [("Fancy Proj. Name", "Project")]
     assert not access.node.future_items
-    secrets = await tab(db, rentals, f"environment-{seed_data.envs.db_secrets.id}")
+    secrets = await tab(db, fancy, f"environment-{seed_data.envs.db_secrets.id}")
     assert set(by_name(secrets)) == {"admin", "viewer", "project_admin", "deployment_admin"}
 
 
 async def test_a_grant_held_again_below_a_covering_grant_is_direct_and_names_the_cover(
     db: AsyncSession, seed_data: SeedData
 ) -> None:
-    rentals = seed_data.projects.rentals.id
+    fancy = seed_data.projects.fancy.id
     environment = seed_data.envs.db
     viewer_id = seed_data.users.viewer.id
     db.add(AccessGrant(user_id=viewer_id, level=ENVIRONMENT, environment_id=environment.id))
     await db.commit()
-    access = await tab(db, rentals, f"environment-{environment.id}")
+    access = await tab(db, fancy, f"environment-{environment.id}")
     entry = by_name(access)["viewer"]
-    assert entry.direct and entry.also is not None and entry.also.name == "rentals"
+    assert entry.direct and entry.also is not None and entry.also.name == "Fancy Proj. Name"
     assert "viewer" not in names(access.candidates)
 
 
@@ -208,13 +208,13 @@ async def test_many_items_inside_are_cut_to_a_few_and_counted(
     db: AsyncSession, seed_data: SeedData
 ) -> None:
     user = seed_data.users.ungranted_admin
-    rentals = seed_data.projects.rentals.id
+    fancy = seed_data.projects.fancy.id
     environments = [seed_data.envs.db, seed_data.envs.db_secrets, seed_data.envs.web]
     environments.append(seed_data.editor)
     for environment in environments:
         db.add(AccessGrant(user_id=user.id, level=ENVIRONMENT, environment_id=environment.id))
     await db.commit()
-    entry = by_name(await tab(db, rentals, f"project-{rentals}"))[user.name]
+    entry = by_name(await tab(db, fancy, f"project-{fancy}"))[user.name]
     assert len(entry.sources) == SOURCES_SHOWN
     assert entry.more == len(environments) - SOURCES_SHOWN
     assert entry.source_count == len(environments)
@@ -224,8 +224,8 @@ async def test_many_items_inside_are_cut_to_a_few_and_counted(
 async def test_candidates_are_the_users_a_grant_would_give_something_new(
     db: AsyncSession, seed_data: SeedData
 ) -> None:
-    rentals = seed_data.projects.rentals.id
-    prod = seed_data.deployments.rentals_prod.id
+    fancy = seed_data.projects.fancy.id
+    prod = seed_data.deployments.fancy_prod.id
     users = seed_data.users
     everyone = {
         users.admin.name,
@@ -238,16 +238,16 @@ async def test_candidates_are_the_users_a_grant_would_give_something_new(
         users.totp_user.name,
         users.totp_user_alt.name,
     }
-    project = await tab(db, rentals, f"project-{rentals}")
+    project = await tab(db, fancy, f"project-{fancy}")
     assert names(project.candidates) == everyone - {"admin", "viewer", "project_admin"}
-    deployment = await tab(db, rentals, f"deployment-{prod}")
+    deployment = await tab(db, fancy, f"deployment-{prod}")
     assert names(deployment.candidates) == everyone - {
         "admin",
         "viewer",
         "project_admin",
         "deployment_admin",
     }
-    environment = await tab(db, rentals, f"environment-{seed_data.envs.db.id}")
+    environment = await tab(db, fancy, f"environment-{seed_data.envs.db.id}")
     assert names(environment.candidates) == {
         users.ungranted_admin.name,
         users.totp_user.name,
@@ -258,9 +258,9 @@ async def test_candidates_are_the_users_a_grant_would_give_something_new(
 async def test_an_item_of_another_project_is_not_found(
     db: AsyncSession, seed_data: SeedData
 ) -> None:
-    rentals, billing = seed_data.projects.rentals.id, seed_data.projects.billing.id
-    assert await load_access_list(db, billing, f"project-{rentals}") is None
-    assert await load_access_list(db, rentals, "project-987654") is None
+    fancy, billing = seed_data.projects.fancy.id, seed_data.projects.billing.id
+    assert await load_access_list(db, billing, f"project-{fancy}") is None
+    assert await load_access_list(db, fancy, "project-987654") is None
     assert await load_access_list(db, 987654, "project-987654") is None
 
 
@@ -278,19 +278,19 @@ async def test_loading_takes_the_same_queries_for_a_small_and_a_large_installati
     seeded_database: AsyncEngine, seed_data: SeedData, kind: str
 ) -> None:
     item_ids = {
-        "project": seed_data.projects.rentals.id,
-        "deployment": seed_data.deployments.rentals_prod.id,
+        "project": seed_data.projects.fancy.id,
+        "deployment": seed_data.deployments.fancy_prod.id,
         "service": seed_data.services.mysql.id,
         "environment": seed_data.envs.db.id,
     }
     node_id = f"{kind}-{item_ids[kind]}"
-    rentals = seed_data.projects.rentals.id
+    fancy = seed_data.projects.fancy.id
     async with create_session_factory(seeded_database)() as session:
         with count_statements(seeded_database) as small:
-            first = await tab(session, rentals, node_id)
+            first = await tab(session, fancy, node_id)
         await grow(session, projects=12, users=15)
         with count_statements(seeded_database) as large:
-            second = await tab(session, rentals, node_id)
+            second = await tab(session, fancy, node_id)
     assert len(small) == len(large) == 6
     assert len(second.candidates) == len(first.candidates) + (0 if kind == "service" else 15)
 
@@ -319,43 +319,43 @@ async def test_removing_a_grant_deletes_it_and_audits_it_once(
     db: AsyncSession, seed_data: SeedData
 ) -> None:
     user = seed_data.users.viewer
-    rentals = seed_data.projects.rentals.id
+    fancy = seed_data.projects.fancy.id
     change = await change_access(
-        db, rentals, f"project-{rentals}", user.id, grant=False, actor=actor_of(seed_data)
+        db, fancy, f"project-{fancy}", user.id, grant=False, actor=actor_of(seed_data)
     )
     assert change.changed and change.notice is None
     assert await list_grants(db, user.id) == set()
     [entry] = await entries_of(db, "grant.remove")
-    assert entry.details == {"level": "project", "item": "rentals"}
-    assert "viewer" not in by_name(await tab(db, rentals, f"project-{rentals}"))
+    assert entry.details == {"level": "project", "item": "Fancy Proj. Name"}
+    assert "viewer" not in by_name(await tab(db, fancy, f"project-{fancy}"))
 
 
 async def test_a_deployment_and_an_environment_grant_are_added_at_their_level(
     db: AsyncSession, seed_data: SeedData
 ) -> None:
     user = seed_data.users.ungranted_admin
-    rentals = seed_data.projects.rentals.id
-    staging = seed_data.deployments.rentals_staging.id
+    fancy = seed_data.projects.fancy.id
+    staging = seed_data.deployments.fancy_staging.id
     web = seed_data.envs.web.id
     actor = actor_of(seed_data)
-    await change_access(db, rentals, f"deployment-{staging}", user.id, grant=True, actor=actor)
-    await change_access(db, rentals, f"environment-{web}", user.id, grant=True, actor=actor)
+    await change_access(db, fancy, f"deployment-{staging}", user.id, grant=True, actor=actor)
+    await change_access(db, fancy, f"environment-{web}", user.id, grant=True, actor=actor)
     assert await list_grants(db, user.id) == {
         GrantTarget(DEPLOYMENT, staging),
         GrantTarget(ENVIRONMENT, web),
     }
     items = [entry.details["item"] for entry in await entries_of(db, "grant.add")]
-    assert items == ["rentals/staging", "rentals/prod/web/.env.web"]
+    assert items == ["Fancy Proj. Name/staging", "Fancy Proj. Name/prod/web/.env.web"]
 
 
 async def test_adding_what_the_user_already_holds_is_refused_as_an_old_page(
     db: AsyncSession, seed_data: SeedData
 ) -> None:
-    rentals = seed_data.projects.rentals.id
+    fancy = seed_data.projects.fancy.id
     change = await change_access(
         db,
-        rentals,
-        f"project-{rentals}",
+        fancy,
+        f"project-{fancy}",
         seed_data.users.viewer.id,
         grant=True,
         actor=actor_of(seed_data),
@@ -367,11 +367,11 @@ async def test_adding_what_the_user_already_holds_is_refused_as_an_old_page(
 async def test_removing_what_the_user_no_longer_holds_is_refused_as_an_old_page(
     db: AsyncSession, seed_data: SeedData
 ) -> None:
-    rentals = seed_data.projects.rentals.id
+    fancy = seed_data.projects.fancy.id
     change = await change_access(
         db,
-        rentals,
-        f"project-{rentals}",
+        fancy,
+        f"project-{fancy}",
         seed_data.users.ungranted_admin.id,
         grant=False,
         actor=actor_of(seed_data),
@@ -383,45 +383,45 @@ async def test_removing_what_the_user_no_longer_holds_is_refused_as_an_old_page(
 async def test_access_an_item_above_already_includes_cannot_be_granted_again(
     db: AsyncSession, seed_data: SeedData
 ) -> None:
-    rentals = seed_data.projects.rentals.id
+    fancy = seed_data.projects.fancy.id
     user = seed_data.users.viewer
     for node_id, covering in (
-        (f"deployment-{seed_data.deployments.rentals_prod.id}", "rentals"),
-        (f"environment-{seed_data.envs.web.id}", "rentals"),
+        (f"deployment-{seed_data.deployments.fancy_prod.id}", "Fancy Proj. Name"),
+        (f"environment-{seed_data.envs.web.id}", "Fancy Proj. Name"),
     ):
         change = await change_access(
-            db, rentals, node_id, user.id, grant=True, actor=actor_of(seed_data)
+            db, fancy, node_id, user.id, grant=True, actor=actor_of(seed_data)
         )
         assert not change.changed
         assert change.notice == f"Access to this item is already included through {covering}."
-    assert await list_grants(db, user.id) == {GrantTarget(PROJECT, rentals)}
+    assert await list_grants(db, user.id) == {GrantTarget(PROJECT, fancy)}
     assert await entries_of(db, "grant.add") == []
 
 
 async def test_a_redundant_direct_grant_can_be_removed_and_the_user_stays_listed(
     db: AsyncSession, seed_data: SeedData
 ) -> None:
-    rentals = seed_data.projects.rentals.id
+    fancy = seed_data.projects.fancy.id
     user = seed_data.users.viewer
     node_id = f"environment-{seed_data.envs.db.id}"
     db.add(AccessGrant(user_id=user.id, level=ENVIRONMENT, environment_id=seed_data.envs.db.id))
     await db.commit()
     change = await change_access(
-        db, rentals, node_id, user.id, grant=False, actor=actor_of(seed_data)
+        db, fancy, node_id, user.id, grant=False, actor=actor_of(seed_data)
     )
     assert change.changed and change.notice is None
-    entry = by_name(await tab(db, rentals, node_id))["viewer"]
-    assert not entry.direct and sources_of(entry) == [("rentals", "Project")]
+    entry = by_name(await tab(db, fancy, node_id))["viewer"]
+    assert not entry.direct and sources_of(entry) == [("Fancy Proj. Name", "Project")]
 
 
 async def test_a_superadmin_a_disabled_user_and_a_missing_user_are_refused(
     db: AsyncSession, seed_data: SeedData
 ) -> None:
-    rentals = seed_data.projects.rentals.id
-    node_id = f"project-{rentals}"
+    fancy = seed_data.projects.fancy.id
+    node_id = f"project-{fancy}"
     actor = actor_of(seed_data)
     root = await change_access(
-        db, rentals, node_id, seed_data.users.superadmin.id, grant=True, actor=actor
+        db, fancy, node_id, seed_data.users.superadmin.id, grant=True, actor=actor
     )
     assert (root.changed, root.notice) == (False, SUPERADMIN_REFUSAL)
     seed_data.users.ungranted_admin.is_active = False
@@ -429,10 +429,10 @@ async def test_a_superadmin_a_disabled_user_and_a_missing_user_are_refused(
     await db.commit()
     for grant in (True, False):
         off = await change_access(
-            db, rentals, node_id, seed_data.users.ungranted_admin.id, grant=grant, actor=actor
+            db, fancy, node_id, seed_data.users.ungranted_admin.id, grant=grant, actor=actor
         )
         assert (off.changed, off.notice) == (False, DISABLED_NOTICE)
-    missing = await change_access(db, rentals, node_id, 987654, grant=True, actor=actor)
+    missing = await change_access(db, fancy, node_id, 987654, grant=True, actor=actor)
     assert (missing.changed, missing.notice, missing.user_name) == (False, USER_GONE_NOTICE, None)
     assert await entries_of(db, "grant.add") == []
 
@@ -440,14 +440,14 @@ async def test_a_superadmin_a_disabled_user_and_a_missing_user_are_refused(
 async def test_a_service_a_missing_item_and_an_item_of_another_project_are_refused(
     db: AsyncSession, seed_data: SeedData
 ) -> None:
-    rentals, billing = seed_data.projects.rentals.id, seed_data.projects.billing.id
+    fancy, billing = seed_data.projects.fancy.id, seed_data.projects.billing.id
     user = seed_data.users.ungranted_admin
     actor = actor_of(seed_data)
     service = await change_access(
-        db, rentals, f"service-{seed_data.services.mysql.id}", user.id, grant=True, actor=actor
+        db, fancy, f"service-{seed_data.services.mysql.id}", user.id, grant=True, actor=actor
     )
     assert (service.changed, service.notice) == (False, NOT_GRANTABLE_NOTICE)
-    for project_id, node_id in ((rentals, "project-987654"), (billing, f"project-{rentals}")):
+    for project_id, node_id in ((fancy, "project-987654"), (billing, f"project-{fancy}")):
         gone = await change_access(db, project_id, node_id, user.id, grant=True, actor=actor)
         assert (gone.changed, gone.notice) == (False, GONE_NOTICE)
     assert await list_grants(db, user.id) == set()

@@ -44,9 +44,9 @@ async def test_superadmin_sees_services_history_and_policies(
     db: AsyncSession, seed_data: SeedData
 ) -> None:
     """The full view carries the path, both services, newest run first and the policies."""
-    detail = await _detail(db, seed_data.users.superadmin, seed_data.deployments.rentals_prod.id)
+    detail = await _detail(db, seed_data.users.superadmin, seed_data.deployments.fancy_prod.id)
     assert detail is not None
-    assert (detail.name, detail.project_name) == ("prod", "rentals")
+    assert (detail.name, detail.project_name) == ("prod", "Fancy Proj. Name")
     assert detail.full and not detail.outside_allowed
     assert detail.root_path == "/opt/rentals/prod"
     assert [row.name for row in detail.services] == ["mysql", "web"]
@@ -85,7 +85,7 @@ async def test_deployment_grant_sees_the_whole_deployment(
     db: AsyncSession, seed_data: SeedData
 ) -> None:
     """A deployment grant reaches both services and the policies."""
-    prod = seed_data.deployments.rentals_prod.id
+    prod = seed_data.deployments.fancy_prod.id
     detail = await _detail(db, seed_data.users.deployment_admin, prod)
     assert detail is not None and detail.full
     assert [row.name for row in detail.services] == ["mysql", "web"]
@@ -96,7 +96,7 @@ async def test_environment_grant_sees_only_its_path_to_the_file(
     db: AsyncSession, seed_data: SeedData
 ) -> None:
     """The parent deployment of one granted file shows no path, policies or other names."""
-    prod = seed_data.deployments.rentals_prod.id
+    prod = seed_data.deployments.fancy_prod.id
     detail = await _detail(db, seed_data.users.env_scoped_admin, prod)
     assert detail is not None and not detail.full
     assert detail.root_path is None and detail.policies is None and not detail.outside_allowed
@@ -125,16 +125,16 @@ async def test_run_that_touched_only_hidden_files_is_left_out(
         )
     )
     await db.commit()
-    prod = seed_data.deployments.rentals_prod.id
+    prod = seed_data.deployments.fancy_prod.id
     detail = await _detail(db, seed_data.users.env_scoped_admin, prod)
     assert detail is not None and detail.history == ()
-    full = await _detail(db, seed_data.users.superadmin, seed_data.deployments.rentals_prod.id)
+    full = await _detail(db, seed_data.users.superadmin, seed_data.deployments.fancy_prod.id)
     assert full is not None and [row.service for row in full.history] == ["mysql", "web"]
 
 
 async def test_viewer_cannot_check_or_deploy(db: AsyncSession, seed_data: SeedData) -> None:
     """A viewer reads the deployment but gets no check or deploy capability."""
-    detail = await _detail(db, seed_data.users.viewer, seed_data.deployments.rentals_prod.id)
+    detail = await _detail(db, seed_data.users.viewer, seed_data.deployments.fancy_prod.id)
     assert detail is not None and detail.full
     assert not detail.can_check_dist
     assert not any(row.can_deploy for row in detail.services)
@@ -170,7 +170,7 @@ async def test_a_deployment_outside_the_allowed_paths_is_flagged(
     detail = await _detail(db, seed_data.users.superadmin, legacy.id)
     assert detail is not None and detail.outside_allowed
     assert [row.name for row in detail.services] == ["cron"]
-    prod = seed_data.deployments.rentals_prod.id
+    prod = seed_data.deployments.fancy_prod.id
     before = await _detail(db, seed_data.users.superadmin, prod)
     assert before is not None and not before.outside_allowed
     await db.execute(delete(AllowedPath).where(AllowedPath.path == "/opt/rentals"))

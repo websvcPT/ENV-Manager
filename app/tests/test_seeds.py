@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pyotp
 import pytest
-from sqlalchemy import delete, func, inspect, select
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy import delete, func, inspect, select, update
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 from typer.testing import CliRunner
 
 from app.cli.main import app
@@ -31,6 +31,7 @@ from app.models import (
     DeployRun,
     Environment,
     EnvironmentVersion,
+    HookType,
     LoginCounter,
     LoginCounterKind,
     Project,
@@ -46,12 +47,16 @@ from app.seeds import (
     DEV_ALLOWED_ROOT,
     DEV_PASSWORD,
     DEV_TOTP_SECRET,
+    FANCY_PROJECT_NAME,
     FIRST_FIGURE_DAY,
     LAST_FIGURE_DAY,
+    STAGING_WEB_COMMAND,
     SeedData,
     SeedError,
     ensure_activity,
     ensure_audit_figures,
+    ensure_literal_commands,
+    ensure_project_display_name,
     ensure_service_figures,
     seed,
 )
@@ -333,8 +338,8 @@ async def test_audit_history_is_added_once_with_scope_ids(
         ("file_save", ".env.api"),
     ]
     file_save = entries[2]
-    assert file_save.project_id == seed_data.projects.rentals.id
-    assert file_save.deployment_id == seed_data.deployments.rentals_prod.id
+    assert file_save.project_id == seed_data.projects.fancy.id
+    assert file_save.deployment_id == seed_data.deployments.fancy_prod.id
     assert file_save.service_id == seed_data.services.mysql.id
     assert file_save.environment_id == seed_data.envs.db.id
 
@@ -491,3 +496,125 @@ def test_dev_seed_adds_the_audit_figures_to_a_new_and_to_an_older_database(
     assert _audit_figure_count(cli_environment) == BULK_COUNT
     assert runner.invoke(app, ["dev", "seed"]).exit_code == 1
     assert _audit_figure_count(cli_environment) == BULK_COUNT
+
+
+async def test_the_seeded_project_is_a_display_name_and_stored_commands_name_their_service(
+    seeded_database: AsyncEngine, seed_data: SeedData
+) -> None:
+    """The plain dataset names its first project with capitals, a dot and spaces, and no stored
+    command holds text in braces for a service name."""
+    async with create_session_factory(seeded_database)() as db:
+        names = (await db.execute(select(Project.name).order_by(Project.id))).scalars().all()
+        commands = (await db.execute(select(ServiceHook.commands))).scalars().all()
+    assert names == [FANCY_PROJECT_NAME, "billing"] == ["Fancy Proj. Name", "billing"]
+    assert seed_data.projects.fancy.name == FANCY_PROJECT_NAME
+    assert commands == ["docker compose up -d --no-deps web"] == [STAGING_WEB_COMMAND]
+
+
+async def _make_it_an_older_database(db: AsyncSession) -> None:
+    """Put back the plain project name, the audit copies of it and a placeholder command."""
+    await db.execute(
+        update(Project).where(Project.name == FANCY_PROJECT_NAME).values(name="rentals")
+    )
+    await db.execute(
+        update(ServiceHook).values(commands="docker compose up -d --no-deps {service_name}")
+    )
+    db.add(
+        AuditEntry(
+            action="project.rename",
+            result=AuditResult.SUCCESS,
+            actor_type=AuditActorType.SYSTEM,
+            target_type="project",
+            target_name="rentals",
+        )
+    )
+    await db.commit()
+
+
+async def test_an_older_database_gets_the_display_name_and_literal_commands_once(
+    seeded_database: AsyncEngine, seed_data: SeedData
+) -> None:
+    """The project is renamed in place with its audit copies, the placeholder commands name their
+    service, anything else is left alone, and running again changes nothing."""
+    async with create_session_factory(seeded_database)() as db:
+        await _make_it_an_older_database(db)
+        db.add(
+            ServiceHook(
+                service_id=seed_data.services.api.id,
+                type=HookType.POST_DEPLOY,
+                commands="docker compose up -d --no-deps {service_name} extra",
+            )
+        )
+        await db.commit()
+    for _ in range(2):
+        async with create_session_factory(seeded_database)() as db:
+            await ensure_project_display_name(db)
+            await ensure_literal_commands(db)
+            await db.commit()
+        async with create_session_factory(seeded_database)() as db:
+            project = await db.scalar(
+                select(Project).where(Project.id == seed_data.projects.fancy.id)
+            )
+            copies = (
+                (
+                    await db.execute(
+                        select(AuditEntry.target_name).where(AuditEntry.target_type == "project")
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            hooks = dict(
+                (await db.execute(select(ServiceHook.service_id, ServiceHook.commands))).all()
+            )
+        assert project is not None and project.name == FANCY_PROJECT_NAME
+        assert copies == [FANCY_PROJECT_NAME]
+        assert hooks == {
+            seed_data.services.staging_web.id: STAGING_WEB_COMMAND,
+            seed_data.services.api.id: "docker compose up -d --no-deps {service_name} extra",
+        }
+
+
+async def test_the_display_name_is_not_applied_over_a_project_that_already_has_it(
+    seeded_database: AsyncEngine, seed_data: SeedData
+) -> None:
+    async with create_session_factory(seeded_database)() as db:
+        db.add(Project(name="rentals"))
+        await db.commit()
+        await ensure_project_display_name(db)
+        await db.commit()
+        names = (await db.execute(select(Project.name).order_by(Project.id))).scalars().all()
+    assert names == [FANCY_PROJECT_NAME, "billing", "rentals"]
+
+
+def test_dev_seed_renames_the_project_and_fixes_the_commands_of_an_older_database(
+    cli_environment: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The command completes a database that still has the plain name and placeholder commands."""
+    monkeypatch.setenv("ENVMANAGER_ENVIRONMENT", "development")
+    get_settings.cache_clear()
+    assert runner.invoke(app, ["dev", "seed"]).exit_code == 0
+
+    async def older() -> None:
+        engine = create_engine(cli_environment / "envmanager.db")
+        try:
+            async with create_session_factory(engine)() as db:
+                await _make_it_an_older_database(db)
+        finally:
+            await engine.dispose()
+
+    async def current() -> tuple[list[str], list[str]]:
+        engine = create_engine(cli_environment / "envmanager.db")
+        try:
+            async with create_session_factory(engine)() as db:
+                names = (await db.execute(select(Project.name).order_by(Project.id))).scalars()
+                commands = (await db.execute(select(ServiceHook.commands))).scalars()
+                return list(names), list(commands)
+        finally:
+            await engine.dispose()
+
+    asyncio.run(older())
+    assert runner.invoke(app, ["dev", "seed"]).exit_code == 1
+    names, commands = asyncio.run(current())
+    assert names == [FANCY_PROJECT_NAME, "billing"]
+    assert commands == [STAGING_WEB_COMMAND]

@@ -638,7 +638,7 @@ async def use_the_overwrite_policy(staged: Staged) -> None:
     """Let the staging deployment replace a drifted target without asking."""
     await set_deployment(
         staged.h.db,
-        staged.h.seed.deployments.rentals_staging.id,
+        staged.h.seed.deployments.fancy_staging.id,
         drift_policy=DriftPolicy.OVERWRITE,
     )
 

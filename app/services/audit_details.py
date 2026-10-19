@@ -39,6 +39,21 @@ SECRET_KEYS = frozenset(
 )
 
 
+# Keys that hold the text of post-deploy commands, which only the superadmin may read, like the
+# command itself. An entry that carries them is still visible to everyone who may see the entry;
+# ``without_command_text`` takes them out for everyone else.
+COMMAND_TEXT_KEYS = frozenset({"previous_commands", "new_commands"})
+# Room for the most the safety net allows (10 lines of 500 characters and the line breaks).
+COMMAND_TEXT_LIMIT = 5100
+
+
+def without_command_text(details: object) -> object:
+    """The details without the command text keys; anything that is not a mapping is unchanged."""
+    if not isinstance(details, dict):
+        return details
+    return {key: value for key, value in details.items() if key not in COMMAND_TEXT_KEYS}
+
+
 @dataclass(frozen=True)
 class DetailLine:
     """One key of the details, as text. ``code`` marks long or multi-line text such as output."""
@@ -67,11 +82,11 @@ def redact(value: object, depth: int = 0) -> object:
     return value
 
 
-def _bounded(text: str) -> str:
+def _bounded(text: str, limit: int = MAX_TEXT_LENGTH) -> str:
     """The text cut to a display limit, with a marker when something was left out."""
-    if len(text) <= MAX_TEXT_LENGTH:
+    if len(text) <= limit:
         return text
-    return text[:MAX_TEXT_LENGTH] + "..."
+    return text[:limit] + "..."
 
 
 def _scalar(value: object) -> str:
@@ -109,7 +124,8 @@ def detail_lines(details: object) -> tuple[DetailLine, ...]:
     for key, value in safe.items():
         if value in (None, "", [], {}):
             continue
-        text = _bounded(_text_of(value))
+        limit = COMMAND_TEXT_LIMIT if key in COMMAND_TEXT_KEYS else MAX_TEXT_LENGTH
+        text = _bounded(_text_of(value), limit)
         code = isinstance(value, str) and ("\n" in value or len(value) > CODE_MIN_LENGTH)
         lines.append(DetailLine(key.replace("_", " "), text, code))
     return tuple(lines)

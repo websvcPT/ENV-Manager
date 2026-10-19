@@ -162,7 +162,7 @@ async def test_validation_collects_every_problem(
         file_group="x" * 65,
     )
     async with create_session_factory(seeded_database)() as db:
-        project = await db.get(Project, seed_data.projects.rentals.id)
+        project = await db.get(Project, seed_data.projects.fancy.id)
         assert project is not None
         with pytest.raises(DeploymentFormError) as caught:
             await validate_deployment(db, allowed, project, form, mount_points=[host])
@@ -182,16 +182,16 @@ async def test_validation_requires_a_name_and_a_unique_one_per_project(
     seeded_database: AsyncEngine, seed_data: SeedData, allowed: AllowedPaths, host: Path
 ) -> None:
     async with create_session_factory(seeded_database)() as db:
-        rentals = await db.get(Project, seed_data.projects.rentals.id)
+        fancy = await db.get(Project, seed_data.projects.fancy.id)
         billing = await db.get(Project, seed_data.projects.billing.id)
-        assert rentals is not None and billing is not None
+        assert fancy is not None and billing is not None
         base = DeploymentForm(root=str(host / "alpha"))
         with pytest.raises(DeploymentFormError) as empty:
-            await validate_deployment(db, allowed, rentals, base, mount_points=[host])
+            await validate_deployment(db, allowed, fancy, base, mount_points=[host])
         assert empty.value.errors == {"name": "Enter a deployment name."}
         taken = DeploymentForm(name="prod", root=str(host / "alpha"))
         with pytest.raises(DeploymentFormError) as duplicate:
-            await validate_deployment(db, allowed, rentals, taken, mount_points=[host])
+            await validate_deployment(db, allowed, fancy, taken, mount_points=[host])
         assert duplicate.value.errors == {
             "name": "A deployment named prod already exists in this project."
         }
@@ -206,9 +206,9 @@ async def test_validation_requires_a_name_and_a_unique_one_per_project(
         keeps_own_name = await validate_deployment(
             db,
             allowed,
-            rentals,
+            fancy,
             taken,
-            ignore_id=seed_data.deployments.rentals_prod.id,
+            ignore_id=seed_data.deployments.fancy_prod.id,
             mount_points=[host],
         )
         assert keeps_own_name.name == "prod"
@@ -228,7 +228,7 @@ async def test_validation_normalizes_values(
         file_group="1000",
     )
     async with create_session_factory(seeded_database)() as db:
-        project = await db.get(Project, seed_data.projects.rentals.id)
+        project = await db.get(Project, seed_data.projects.fancy.id)
         assert project is not None
         clean = await validate_deployment(db, allowed, project, form, mount_points=[host])
     assert clean.name == "alpha-1" and clean.root_path == str(host / "alpha")
@@ -247,7 +247,7 @@ async def test_create_stores_the_real_path_and_audits(
     form = DeploymentForm(name="gamma", root=str(host / "link-to-gamma"))
     actor = seed_data.users.superadmin
     async with create_session_factory(seeded_database)() as db:
-        project = await db.get(Project, seed_data.projects.rentals.id)
+        project = await db.get(Project, seed_data.projects.fancy.id)
         assert project is not None
         clean = await validate_deployment(db, allowed, project, form, mount_points=[host])
         created = await create_deployment(db, project, clean, actor=actor, ip_address="203.0.113.5")
@@ -275,8 +275,8 @@ async def test_update_changes_values_and_audits_only_what_changed(
 ) -> None:
     actor = seed_data.users.superadmin
     async with create_session_factory(seeded_database)() as db:
-        project = await db.get(Project, seed_data.projects.rentals.id)
-        deployment = await db.get(Deployment, seed_data.deployments.rentals_staging.id)
+        project = await db.get(Project, seed_data.projects.fancy.id)
+        deployment = await db.get(Deployment, seed_data.deployments.fancy_staging.id)
         assert project is not None and deployment is not None
         previous_root = deployment.root_path
         form = DeploymentForm.from_deployment(deployment)
@@ -296,7 +296,7 @@ async def test_update_changes_values_and_audits_only_what_changed(
         )
         await update_deployment(db, deployment, clean, actor=actor, ip_address=None)
     async with create_session_factory(seeded_database)() as db:
-        stored = await db.get(Deployment, seed_data.deployments.rentals_staging.id)
+        stored = await db.get(Deployment, seed_data.deployments.fancy_staging.id)
         assert stored is not None
         assert (stored.name, stored.root_path, stored.file_mode) == (
             "staging-2",

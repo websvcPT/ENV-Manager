@@ -15,7 +15,7 @@ import { expect, test } from './scratch-project';
 
 const SAMPLE_A = '/srv/deployments/sample-a';
 const UNAVAILABLE = 'The Docker socket is not mounted.';
-const STORED_COMMAND = 'docker compose up -d --no-deps {service_name}';
+const STORED_COMMAND = 'docker compose up -d --no-deps web';
 
 async function horizontalOverflow(page: Page): Promise<number> {
   return page.evaluate(
@@ -41,11 +41,11 @@ async function enableControls(page: Page): Promise<void> {
 }
 
 function stagingWeb(browser: Browser): Promise<number> {
-  return serviceId(browser, 'rentals', 'staging', 'web');
+  return serviceId(browser, 'Fancy Proj. Name', 'staging', 'web');
 }
 
 function prodMysql(browser: Browser): Promise<number> {
-  return serviceId(browser, 'rentals', 'prod', 'mysql');
+  return serviceId(browser, 'Fancy Proj. Name', 'prod', 'mysql');
 }
 
 test.describe('superadmin without a Docker socket', () => {

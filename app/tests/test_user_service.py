@@ -385,8 +385,8 @@ async def test_create_user_with_grants_stores_them_and_audits_each(
         added = [entry for entry in entries if entry.action == "grant.add"]
         assert [entry.details for entry in created] == [{"group": "viewer", "grants": 2}]
         assert sorted(str(entry.details["item"]) for entry in added) == [
+            "Fancy Proj. Name/prod/mysql/.env.db",
             "billing",
-            "rentals/prod/mysql/.env.db",
         ]
         for entry in [*created, *added]:
             assert entry.actor_name == "root" and entry.ip_address == "10.1.2.3"

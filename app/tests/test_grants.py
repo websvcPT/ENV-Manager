@@ -79,10 +79,10 @@ async def test_the_tree_lists_everything_by_name_with_services_as_context(
     db: AsyncSession, seed_data: SeedData
 ) -> None:
     tree = await load_grant_tree(db)
-    assert [project.name for project in tree] == ["billing", "rentals"]
-    rentals = tree[1]
-    assert [deployment.name for deployment in rentals.deployments] == ["prod", "staging"]
-    prod = rentals.deployments[0]
+    assert [project.name for project in tree] == ["billing", "Fancy Proj. Name"]
+    fancy = tree[1]
+    assert [deployment.name for deployment in fancy.deployments] == ["prod", "staging"]
+    prod = fancy.deployments[0]
     assert [service.name for service in prod.services] == ["mysql", "web"]
     mysql = prod.services[0]
     assert [environment.name for environment in mysql.environments] == [
@@ -100,16 +100,16 @@ async def test_a_path_is_given_for_items_that_exist_and_left_out_for_others(
     db: AsyncSession, seed_data: SeedData
 ) -> None:
     present = [
-        GrantTarget(GrantLevel.PROJECT, seed_data.projects.rentals.id),
-        GrantTarget(GrantLevel.DEPLOYMENT, seed_data.deployments.rentals_prod.id),
+        GrantTarget(GrantLevel.PROJECT, seed_data.projects.fancy.id),
+        GrantTarget(GrantLevel.DEPLOYMENT, seed_data.deployments.fancy_prod.id),
         GrantTarget(GrantLevel.ENVIRONMENT, seed_data.envs.db.id),
     ]
     missing = GrantTarget(GrantLevel.ENVIRONMENT, 424242)
     labels = await describe_targets(db, [*present, missing])
     assert [labels[target] for target in present] == [
-        "rentals",
-        "rentals/prod",
-        "rentals/prod/mysql/.env.db",
+        "Fancy Proj. Name",
+        "Fancy Proj. Name/prod",
+        "Fancy Proj. Name/prod/mysql/.env.db",
     ]
     assert missing not in labels
 
@@ -118,21 +118,21 @@ async def test_saving_adds_and_removes_grants_audits_each_and_applies_at_once(
     db: AsyncSession, seed_data: SeedData
 ) -> None:
     user = seed_data.users.ungranted_admin
-    rentals = GrantTarget(GrantLevel.PROJECT, seed_data.projects.rentals.id)
+    fancy = GrantTarget(GrantLevel.PROJECT, seed_data.projects.fancy.id)
     secrets = GrantTarget(GrantLevel.ENVIRONMENT, seed_data.envs.db_secrets.id)
     item = await load_item(db, ItemLevel.ENVIRONMENT, seed_data.envs.db_secrets.id)
     assert item is not None
     assert not (await load_user_scope(db, user)).covers(item)
 
     change = await set_user_grants(
-        db, user, {rentals, secrets}, actor=actor_of(seed_data), base=frozenset()
+        db, user, {fancy, secrets}, actor=actor_of(seed_data), base=frozenset()
     )
-    assert set(change.added) == {rentals, secrets} and change.removed == ()
-    assert await list_grants(db, user.id) == frozenset({rentals, secrets})
+    assert set(change.added) == {fancy, secrets} and change.removed == ()
+    assert await list_grants(db, user.id) == frozenset({fancy, secrets})
     assert (await load_user_scope(db, user)).covers(item)
 
     change = await set_user_grants(db, user, {secrets}, actor=actor_of(seed_data))
-    assert change.added == () and change.removed == (rentals,)
+    assert change.added == () and change.removed == (fancy,)
     assert await list_grants(db, user.id) == frozenset({secrets})
 
     entries = (
@@ -141,9 +141,9 @@ async def test_saving_adds_and_removes_grants_audits_each_and_applies_at_once(
         .all()
     )
     assert sorted((entry.action, str(entry.details["item"])) for entry in entries) == [
-        ("grant.add", "rentals"),
-        ("grant.add", "rentals/prod/mysql/.env.db.secrets"),
-        ("grant.remove", "rentals"),
+        ("grant.add", "Fancy Proj. Name"),
+        ("grant.add", "Fancy Proj. Name/prod/mysql/.env.db.secrets"),
+        ("grant.remove", "Fancy Proj. Name"),
     ]
     for entry in entries:
         assert entry.result is AuditResult.SUCCESS
@@ -195,20 +195,20 @@ async def test_a_deleted_item_is_refused_before_anything_is_written(
     db: AsyncSession, seed_data: SeedData
 ) -> None:
     user = seed_data.users.ungranted_admin
-    rentals = GrantTarget(GrantLevel.PROJECT, seed_data.projects.rentals.id)
+    fancy = GrantTarget(GrantLevel.PROJECT, seed_data.projects.fancy.id)
     ghost = GrantTarget(GrantLevel.ENVIRONMENT, 424242)
     before = await count_entries(db)
     with pytest.raises(GrantError) as refused:
-        await set_user_grants(db, user, {rentals, ghost}, actor=actor_of(seed_data))
+        await set_user_grants(db, user, {fancy, ghost}, actor=actor_of(seed_data))
     assert refused.value.field == "grants" and "no longer exists" in str(refused.value)
     assert await list_grants(db, user.id) == frozenset()
     assert await count_entries(db) == before
 
 
 async def test_a_superadmin_holds_no_grants(db: AsyncSession, seed_data: SeedData) -> None:
-    rentals = GrantTarget(GrantLevel.PROJECT, seed_data.projects.rentals.id)
+    fancy = GrantTarget(GrantLevel.PROJECT, seed_data.projects.fancy.id)
     with pytest.raises(GrantError):
-        await set_user_grants(db, seed_data.users.superadmin, {rentals}, actor=actor_of(seed_data))
+        await set_user_grants(db, seed_data.users.superadmin, {fancy}, actor=actor_of(seed_data))
     assert await list_grants(db, seed_data.users.superadmin.id) == frozenset()
 
 
@@ -217,11 +217,11 @@ async def test_projects_reached_counts_a_project_once_whatever_the_grant_level(
 ) -> None:
     reached = await projects_reached(db)
     users = seed_data.users
-    rentals, billing = seed_data.projects.rentals.id, seed_data.projects.billing.id
-    assert reached[users.admin.id] == {rentals, billing}
-    assert reached[users.project_admin.id] == {rentals}
-    assert reached[users.deployment_admin.id] == {rentals}
-    assert reached[users.env_scoped_viewer.id] == {rentals, billing}
+    fancy, billing = seed_data.projects.fancy.id, seed_data.projects.billing.id
+    assert reached[users.admin.id] == {fancy, billing}
+    assert reached[users.project_admin.id] == {fancy}
+    assert reached[users.deployment_admin.id] == {fancy}
+    assert reached[users.env_scoped_viewer.id] == {fancy, billing}
     assert users.ungranted_admin.id not in reached
     assert users.superadmin.id not in reached
 
@@ -230,11 +230,11 @@ async def test_a_deleted_project_takes_its_grants_with_it(
     db: AsyncSession, seed_data: SeedData
 ) -> None:
     user = seed_data.users.ungranted_admin
-    rentals = seed_data.projects.rentals.id
-    db.add(AccessGrant(user_id=user.id, level=GrantLevel.PROJECT, project_id=rentals))
+    fancy = seed_data.projects.fancy.id
+    db.add(AccessGrant(user_id=user.id, level=GrantLevel.PROJECT, project_id=fancy))
     await db.commit()
-    assert await list_grants(db, user.id) == frozenset({GrantTarget(GrantLevel.PROJECT, rentals)})
-    project = await db.get(Project, rentals)
+    assert await list_grants(db, user.id) == frozenset({GrantTarget(GrantLevel.PROJECT, fancy)})
+    project = await db.get(Project, fancy)
     assert project is not None
     await db.delete(project)
     await db.commit()

@@ -57,3 +57,14 @@
 {% macro code_block(text) -%}
 <pre tabindex="0" class="overflow-auto rounded-ctl bg-code p-3.5 font-mono text-[13px] leading-relaxed text-code-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ text }}</pre>
 {%- endmacro %}
+
+{#- The parsed arguments of changed post-deploy commands, shown before they are stored. Each
+    command is a numbered line of arguments, one chip per argument, so quoting and splitting are
+    visible. `review` has `commands` (a list of argument lists) and `digest` (sent back to
+    confirm exactly these commands). -#}
+{% macro command_review(review) -%}
+<section id="postdeploy-review" data-fragment="postdeploy-review" aria-labelledby="pr-title" class="flex flex-col gap-3 rounded-btn border border-line bg-surface2 p-3.5"><div class="flex items-start gap-2.5">{{ icon("info", "size-[18px] mt-px shrink-0 text-info-fg", "2.2") }}<div class="min-w-0"><h4 id="pr-title" class="text-[13px] font-bold">Review the commands</h4><p class="text-[13px] text-ink2">Each command is split into the arguments below and run exactly like this, with no shell. Nothing is stored until you confirm.</p></div></div>
+<ol class="flex flex-col gap-2">{% for words in review.commands %}<li class="flex min-w-0 items-start gap-2.5"><span class="mt-0.5 w-5 shrink-0 text-right font-mono text-xs text-ink3">{{ loop.index }}</span><span class="flex min-w-0 flex-wrap gap-1.5">{% for word in words %}<code class="max-w-full break-all rounded-ctl border border-line-strong bg-surface px-1.5 py-0.5 font-mono text-[13px] text-ink">{% if word %}{{ word }}{% else %}<span aria-label="empty argument">""</span>{% endif %}</code>{% endfor %}</span></li>{% endfor %}</ol>
+<input type="hidden" name="reviewed" value="{{ review.digest }}">
+</section>
+{%- endmacro %}

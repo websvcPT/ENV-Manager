@@ -59,7 +59,7 @@ test.describe('superadmin', () => {
     await expect(fileRows(page)).toHaveCount(2);
     await expect(fileNames(page)).toHaveText(['.env.api', 'demo-ca.pem']);
     await expect(page.locator('#postdeploy')).toContainText(
-      'docker compose up -d --no-deps --force-recreate {service_name}',
+      'docker compose up -d --no-deps --force-recreate api',
     );
 
     await page.goto(`/services/${await demoService(browser, 'db')}`);
@@ -67,7 +67,7 @@ test.describe('superadmin', () => {
     await expect(fileRows(page)).toHaveCount(2);
     await expect(fileNames(page)).toHaveText(['.env.db', '.env.db.secrets']);
     await expect(page.locator('#postdeploy')).toContainText(
-      'docker compose up -d --no-deps --force-recreate {service_name}',
+      'docker compose up -d --no-deps --force-recreate db',
     );
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
   });

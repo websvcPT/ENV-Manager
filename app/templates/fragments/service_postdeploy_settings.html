@@ -1,11 +1,13 @@
 {#- The command settings form of the post-deploy panel, shown to the superadmin only. Saving
     swaps this form again: with a toast when it was stored, with the reasons (422) when it was
-    refused. The fields are disabled while Docker cannot be used. Context: service, docker (a
-    DockerStatus), socket_path, form (a HookForm), errors (field name to message, "form" for a
-    refusal of the whole save) and saved (None, or a tone and a message for a toast). -#}
+    refused. Changed commands are first answered with a review of their parsed arguments and a
+    confirming save. The fields are disabled while Docker cannot be used. Context: service, docker
+    (a DockerStatus), socket_path, form (a HookForm), errors (field name to message, "form" for a
+    refusal of the whole save), saved (None, or a tone and a message for a toast) and review
+    (None, or the HookReviewRequired of the commands to confirm). -#}
 {% from "macros/badges.html" import badge %}
 {% from "macros/buttons.html" import button %}
-{% from "macros/feedback.html" import note, toast %}
+{% from "macros/feedback.html" import command_review, note, toast %}
 {% from "macros/forms.html" import checkbox, field, field_message %}
 {% from "macros/icons.html" import icon %}
 {% set off = not docker.available %}
@@ -19,7 +21,10 @@
 {%- endif %}
 {%- endif %}
 {{ field("wd", "Working directory", name="working_directory", value=form.working_directory, placeholder=service.root_path or "", error=errors.get("working_directory"), mono=true, disabled=off, autocomplete="off", spellcheck="false") }}
-<div class="flex flex-col gap-1.5"><label for="cmds" class="text-[13px] font-semibold">Commands, one per line</label><textarea id="cmds" name="commands" rows="{{ [[line_count, 2] | max, 8] | min }}" hx-ignore aria-describedby="cmds-{{ "e" if errors.get("commands") else "h" }}"{% if errors.get("commands") %} aria-invalid="true"{% endif %}{% if off %} disabled{% endif %} autocomplete="off" spellcheck="false" class="h-auto w-full rounded-ctl border {{ "border-danger" if errors.get("commands") else "border-line-strong" }} bg-surface px-3 py-2.5 font-mono text-[13px] leading-relaxed text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ form.commands }}</textarea>{{ field_message("cmds", "One command per line, run in order, first word must be docker. Placeholders: {deployment_path} {deployment_name} {service_name}.", errors.get("commands")) }}</div>
+<div class="flex flex-col gap-1.5"><label for="cmds" class="text-[13px] font-semibold">Commands, one per line</label><textarea id="cmds" name="commands" rows="{{ [[line_count, 2] | max, 8] | min }}" hx-ignore aria-describedby="cmds-{{ "e" if errors.get("commands") else "h" }}"{% if errors.get("commands") %} aria-invalid="true"{% endif %}{% if off %} disabled{% endif %} autocomplete="off" spellcheck="false" class="h-auto w-full rounded-ctl border {{ "border-danger" if errors.get("commands") else "border-line-strong" }} bg-surface px-3 py-2.5 font-mono text-[13px] leading-relaxed text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ form.commands }}</textarea>{{ field_message("cmds", "One command per line, run in order, first word must be docker, run exactly as typed. At most 10 commands of 500 characters. docker compose down, prune and the -v option of rm are refused.", errors.get("commands")) }}</div>
+{%- if review %}
+{{ command_review(review) }}
+{%- endif %}
 <div class="flex flex-wrap items-center gap-x-6 gap-y-3"><label class="flex items-center gap-2 text-[13px] font-semibold">Timeout<input id="timeout" name="timeout" type="number" inputmode="numeric" value="{{ form.timeout }}"{% if errors.get("timeout") %} aria-describedby="timeout-e" aria-invalid="true"{% endif %}{% if off %} disabled{% endif %} class="h-9 w-20 rounded-ctl border {{ "border-danger" if errors.get("timeout") else "border-line-strong" }} bg-surface px-2.5 font-mono text-[13px] disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus max-md:h-11">s</label>{{ checkbox("run_only_if_changed", "Run only if at least one environment changed", checked=form.run_only_if_changed, disabled=off, extra_class="max-md:min-h-11 max-md:items-center") }}</div>
 {%- if errors.get("timeout") %}
 <p id="timeout-e" role="alert" class="-mt-1.5 flex items-center gap-1.5 text-[13px] font-semibold text-danger">{{ icon("warning", "size-3.5", "2.4") }}{{ errors.get("timeout") }}</p>
@@ -27,7 +32,7 @@
 {%- if errors.get("form") %}
 <p role="alert" class="flex items-center gap-1.5 text-[13px] font-semibold text-danger">{{ icon("warning", "size-3.5", "2.4") }}{{ errors.get("form") }}</p>
 {%- endif %}
-<div class="flex gap-2.5">{{ button("Test command", disabled=off, extra_class="max-md:h-11", hx_post="/services/" ~ service.id ~ "/postdeploy/test", hx_target="#test-result", hx_swap="outerHTML", hx_include="closest form") }}{{ button("Save settings", kind="primary-sm", type="submit", disabled=off, extra_class="max-md:h-11") }}</div>
+<div class="flex gap-2.5">{{ button("Test command", disabled=off, extra_class="max-md:h-11", hx_post="/services/" ~ service.id ~ "/postdeploy/test", hx_target="#test-result", hx_swap="outerHTML", hx_include="closest form") }}{{ button("Confirm and save" if review else "Save settings", kind="primary-sm", type="submit", disabled=off, extra_class="max-md:h-11") }}</div>
 {% include "fragments/service_test_result.html" %}
 {%- if saved %}
 {{ toast(saved.tone, saved.message, saved.title, floating=true) }}

@@ -43,16 +43,16 @@ test.describe('superadmin', () => {
     page,
     browser,
   }) => {
-    const rentals = await projectId(browser, 'rentals');
+    const fancy = await projectId(browser, 'Fancy Proj. Name');
     await page.goto('/projects');
-    await page.locator('[data-fragment="project-row"] th a', { hasText: /^rentals$/ }).click();
-    await expect(page).toHaveURL(new RegExp(`/projects/${rentals}$`));
-    await expect(page.locator('[data-fragment="page-header"] h1')).toHaveText('rentals');
+    await page.locator('[data-fragment="project-row"] th a', { hasText: /^Fancy Proj\. Name$/ }).click();
+    await expect(page).toHaveURL(new RegExp(`/projects/${fancy}$`));
+    await expect(page.locator('[data-fragment="page-header"] h1')).toHaveText('Fancy Proj. Name');
     await expect(page.locator('[data-fragment="page-header"] p')).toHaveText(
       /^2 deployments · \d+ members$/,
     );
     await expect(page.locator('nav[aria-label="Breadcrumb"] [aria-current="page"]')).toHaveText(
-      'rentals',
+      'Fancy Proj. Name',
     );
     await expect(tabs(page)).toHaveText([
       'Deployments',
@@ -79,17 +79,17 @@ test.describe('superadmin', () => {
     );
     await expect(page.getByRole('link', { name: 'New deployment' })).toHaveAttribute(
       'href',
-      `/projects/${rentals}/deployments/new`,
+      `/projects/${fancy}/deployments/new`,
     );
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
   });
 
   test('moves between the tabs', async ({ page, browser }) => {
-    const rentals = await projectId(browser, 'rentals');
-    await page.goto(`/projects/${rentals}`);
+    const fancy = await projectId(browser, 'Fancy Proj. Name');
+    await page.goto(`/projects/${fancy}`);
 
     await tabs(page).filter({ hasText: 'Activity' }).click();
-    await expect(page).toHaveURL(new RegExp(`/projects/${rentals}/activity$`));
+    await expect(page).toHaveURL(new RegExp(`/projects/${fancy}/activity$`));
     await expect(tabs(page).filter({ hasText: 'Activity' })).toHaveAttribute(
       'aria-current',
       'page',
@@ -97,11 +97,11 @@ test.describe('superadmin', () => {
     await expect(page.locator('[data-fragment="activity-table"]')).toBeVisible();
 
     await tabs(page).filter({ hasText: 'Members and access' }).click();
-    await expect(page).toHaveURL(new RegExp(`/projects/${rentals}/access$`));
+    await expect(page).toHaveURL(new RegExp(`/projects/${fancy}/access$`));
     await expect(page.locator('[data-fragment="access-list"]')).toBeVisible();
 
     await tabs(page).filter({ hasText: 'Settings' }).click();
-    await expect(page).toHaveURL(new RegExp(`/projects/${rentals}/settings$`));
+    await expect(page).toHaveURL(new RegExp(`/projects/${fancy}/settings$`));
     await expect(page.locator('[data-fragment="project-rename"]')).toBeVisible();
 
     await tabs(page).filter({ hasText: 'Deployments' }).click();
@@ -110,10 +110,10 @@ test.describe('superadmin', () => {
   });
 
   test('lists who has access, direct and inherited', async ({ page, browser }) => {
-    const rentals = await projectId(browser, 'rentals');
-    await page.goto(`/projects/${rentals}/access`);
+    const fancy = await projectId(browser, 'Fancy Proj. Name');
+    await page.goto(`/projects/${fancy}/access`);
     const list = page.locator('#access-list');
-    await expect(list).toContainText('Users with access to project rentals');
+    await expect(list).toContainText('Users with access to project Fancy Proj. Name');
     await expect(list.locator('th[scope="col"]')).toHaveText(['User', 'Group', 'Access', 'Actions']);
     const row = (name: string) =>
       list.locator('tbody tr').filter({ has: page.getByRole('rowheader', { name, exact: true }) });
@@ -166,13 +166,13 @@ test.describe('superadmin', () => {
     const form = page.locator('#project-rename');
     await expect(form.locator('#rn')).toHaveValue(scratch.name);
 
-    await form.locator('#rn').fill('Bad Name');
+    await form.locator('#rn').fill('Bad Name!');
     await form.getByRole('button', { name: 'Save name' }).click();
-    await expect(form.locator('#rn-e[role="alert"]')).toContainText('lowercase letters');
+    await expect(form.locator('#rn-e[role="alert"]')).toContainText('Use 1 to 100 characters');
     await expect(form.locator('#rn')).toHaveAttribute('aria-invalid', 'true');
-    await expect(form.locator('#rn')).toHaveValue('Bad Name');
+    await expect(form.locator('#rn')).toHaveValue('Bad Name!');
 
-    await form.locator('#rn').fill('rentals');
+    await form.locator('#rn').fill('Fancy Proj. Name');
     await form.getByRole('button', { name: 'Save name' }).click();
     await expect(form.locator('#rn-e[role="alert"]')).toContainText('already exists');
 
@@ -271,11 +271,11 @@ test.describe('superadmin', () => {
   });
 
   test('refreshes the deployments panel when a deploy finishes', async ({ page, browser }) => {
-    const rentals = await projectId(browser, 'rentals');
-    await page.goto(`/projects/${rentals}`);
+    const fancy = await projectId(browser, 'Fancy Proj. Name');
+    await page.goto(`/projects/${fancy}`);
     const refreshed = page.waitForResponse(
       (response) =>
-        new URL(response.url()).pathname === `/projects/${rentals}/deployments` &&
+        new URL(response.url()).pathname === `/projects/${fancy}/deployments` &&
         response.status() === 200,
     );
     await page.evaluate(() =>
@@ -289,9 +289,9 @@ test.describe('superadmin', () => {
     page,
     browser,
   }) => {
-    const rentals = await projectId(browser, 'rentals');
-    await page.goto(`/projects/${rentals}`);
-    await page.route(`**/projects/${rentals}/deployments`, (route) => route.abort());
+    const fancy = await projectId(browser, 'Fancy Proj. Name');
+    await page.goto(`/projects/${fancy}`);
+    await page.route(`**/projects/${fancy}/deployments`, (route) => route.abort());
     await page.evaluate(() =>
       document.body.dispatchEvent(new CustomEvent('deploy-finished', { bubbles: true })),
     );
@@ -310,8 +310,8 @@ test.describe('admin', () => {
   test.use({ storageState: stateFile('admin') });
 
   test('sees deployments and activity without structure actions', async ({ page, browser }) => {
-    const rentals = await projectId(browser, 'rentals');
-    await page.goto(`/projects/${rentals}`);
+    const fancy = await projectId(browser, 'Fancy Proj. Name');
+    await page.goto(`/projects/${fancy}`);
     await expect(tabs(page)).toHaveText(['Deployments', 'Activity']);
     await expect(page.locator('[data-fragment="page-header"] p')).toHaveText('2 deployments');
     await expect(deploymentNames(page)).toHaveText(['prod', 'staging']);
@@ -323,17 +323,17 @@ test.describe('admin', () => {
   });
 
   test('is refused the superadmin tabs', async ({ page, browser }) => {
-    const rentals = await projectId(browser, 'rentals');
+    const fancy = await projectId(browser, 'Fancy Proj. Name');
     for (const tab of ['access', 'members', 'settings']) {
-      const response = await page.goto(`/projects/${rentals}/${tab}`);
+      const response = await page.goto(`/projects/${fancy}/${tab}`);
       expect(response?.status()).toBe(403);
       await expect(page.locator('main')).toContainText('No access');
     }
   });
 
   test('lists the activity in scope', async ({ page, browser }) => {
-    const rentals = await projectId(browser, 'rentals');
-    await page.goto(`/projects/${rentals}/activity`);
+    const fancy = await projectId(browser, 'Fancy Proj. Name');
+    await page.goto(`/projects/${fancy}/activity`);
     await expect(page.locator('[data-fragment="activity-table"]')).toBeVisible();
     await expect(page.locator('main')).not.toContainText('Settings');
   });
@@ -343,16 +343,16 @@ test.describe('viewer', () => {
   test.use({ storageState: stateFile('viewer') });
 
   test('reads deployments with no edit actions and no activity tab', async ({ page, browser }) => {
-    const rentals = await projectId(browser, 'rentals');
-    await page.goto(`/projects/${rentals}`);
+    const fancy = await projectId(browser, 'Fancy Proj. Name');
+    await page.goto(`/projects/${fancy}`);
     await expect(tabs(page)).toHaveText(['Deployments']);
     await expect(deploymentNames(page)).toHaveText(['prod', 'staging']);
     await expect(page.getByRole('link', { name: 'New deployment' })).toHaveCount(0);
   });
 
   test('is refused the activity tab', async ({ page, browser }) => {
-    const rentals = await projectId(browser, 'rentals');
-    const response = await page.goto(`/projects/${rentals}/activity`);
+    const fancy = await projectId(browser, 'Fancy Proj. Name');
+    const response = await page.goto(`/projects/${fancy}/activity`);
     expect(response?.status()).toBe(403);
     await expect(page.locator('main')).toContainText('No access');
   });
@@ -371,8 +371,8 @@ test.describe('scoped users', () => {
     test.use({ storageState: stateFile('deploymentAdmin') });
 
     test('sees only the granted deployment and is told so', async ({ page, browser }) => {
-      const rentals = await projectId(browser, 'rentals');
-      await page.goto(`/projects/${rentals}`);
+      const fancy = await projectId(browser, 'Fancy Proj. Name');
+      await page.goto(`/projects/${fancy}`);
       await expect(page.locator('[data-fragment="page-header"] p')).toHaveText(
         'Your access is limited to one deployment of this project.',
       );
@@ -391,8 +391,8 @@ test.describe('scoped users', () => {
     test.use({ storageState: stateFile('envScopedViewer') });
 
     test('sees the parent deployment by name only', async ({ page, browser }) => {
-      const rentals = await projectId(browser, 'rentals');
-      await page.goto(`/projects/${rentals}`);
+      const fancy = await projectId(browser, 'Fancy Proj. Name');
+      await page.goto(`/projects/${fancy}`);
       await expect(page.locator('[data-fragment="page-header"] p')).toHaveText(
         'Your access is limited to selected files of this project.',
       );
@@ -412,8 +412,8 @@ test.describe('layout on small screens', () => {
     page,
     browser,
   }) => {
-    const rentals = await projectId(browser, 'rentals');
-    await page.goto(`/projects/${rentals}`);
+    const fancy = await projectId(browser, 'Fancy Proj. Name');
+    await page.goto(`/projects/${fancy}`);
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
     if (!isWide(page)) {
       const scroller = page.locator('#deployments-table .overflow-x-auto');

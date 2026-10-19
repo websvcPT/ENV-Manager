@@ -656,11 +656,12 @@ mounts the Docker socket.
   while a deploy limited to `.env.db` is not.
 - The seed (`envmanager dev seed` and the test dataset) describes the same deployment in the
   database when the demo root is given: project `demo`, deployment `stack` rooted at
-  `demo/stack` (added to the allowed paths), services `api` and `db` with the post-deploy command
-  `docker compose up -d --no-deps --force-recreate {service_name}`, and grants for
-  `project_admin` (the project) and `env_scoped_admin` (only `.env.db`). Nothing else changes for
-  the other seeded users. `make e2e` seeds these rows too; without the demo override the app
-  container cannot reach the folder, which only matters for deploys.
+  `demo/stack` (added to the allowed paths), services `api` and `db` with the post-deploy
+  commands `docker compose up -d --no-deps --force-recreate api` and `... db` (each names its own
+  service), and grants for `project_admin` (the project) and `env_scoped_admin` (only
+  `.env.db`). Nothing else changes for the other seeded users. `make e2e` seeds these rows too;
+  without the demo override the app container cannot reach the folder, which only matters for
+  deploys.
 
 | Target | What it does |
 | --- | --- |
@@ -693,6 +694,11 @@ The Docker socket is root-equivalent on the host; keep the demo override for loc
 docker compose exec app envmanager deploy <project>/<deployment>/<service> \
     [--env <file name> ...] [--dry-run] [--force]
 ```
+
+A project name is a display name (letters in any case, numbers, spaces and `. - _`, 1 to 100
+characters, unique ignoring case), so quote the path when it holds spaces:
+`envmanager deploy "Fancy Proj. Name/prod/web"`. Deployment and service names stay lowercase
+slugs (letters, numbers and dashes), as they usually mirror the Compose project and service.
 
 Deploys the service as the actor `cli`: every file of the service, or the named ones. The command
 prints one line per file and exits 0 only when every file was written or found unchanged and the
@@ -892,9 +898,25 @@ reachable, compose version); while Docker is not usable the fields are disabled 
 and a save is refused.
 
 - One command per line, split into words and run without a shell: no pipes, redirects or `&&`
-  (an unquoted operator is refused), and the first word must be exactly `docker`. The
-  placeholders `{deployment_path}`, `{deployment_name}` and `{service_name}` are replaced inside
-  the words with validated values; nothing else is interpolated.
+  (an unquoted operator is refused), and the first word must be exactly `docker`. Commands run
+  exactly as stored: nothing in them is replaced (there are no placeholders), so a command names
+  its service literally (`docker compose up -d --no-deps --force-recreate api`) and text in braces
+  such as Docker's `--format '{{.Names}}'` templates reaches Docker as written.
+- Safety net, checked when the settings are saved and again before every run, with the reason
+  shown (a field error on save, the reason of a failed run at deploy time): at most 10 commands
+  of at most 500 characters each; `docker compose down`, every `prune` (`docker system prune`,
+  `image`, `volume`, `container`, `network`, `builder` and `buildx` prune) and the `-v` and
+  `--volumes` options of `rm` are refused. The rules read the parsed words and err on the side
+  of refusing: a word `down` after `compose`, a word `prune` anywhere, and `--volumes` or a short
+  option holding `v` (`-v`, `-fv`) anywhere after a word `rm` are refused even where a name
+  happens to look like one. Every other docker command is allowed.
+- Saving changed commands is a review first: the first Save shows the exact arguments each line
+  was split into (one chip per argument, so quoting is visible) and stores nothing; Confirm and
+  save stores exactly the text that was shown, and editing the commands after the review asks
+  again. Saving other settings, or commands that did not change, needs no review. The audit entry
+  of a change to the commands keeps the old and the new command text, which only the superadmin
+  sees (the audit log, its single entry view and its CSV export leave the two fields out for
+  everyone else), like the command itself.
 - Commands run in order in the working directory (default the deployment root, always inside an
   allowed path, checked again when the command runs) and stop at the first non-zero exit. One
   timeout (default 120 seconds) covers all of them and the deploy lock stays held until they

@@ -159,14 +159,14 @@ async def test_the_secret_and_its_hash_never_reach_an_audit_entry(
 async def test_creation_is_audited_with_the_owner_the_choices_and_no_scope_ids(
     db: AsyncSession, seed_data: SeedData
 ) -> None:
-    rentals = seed_data.projects.rentals
+    fancy = seed_data.projects.fancy
     tomorrow = (utc_now() + timedelta(days=1)).date().isoformat()
     created = await make_token(
         db,
         seed_data.users.admin,
         name="deploy-bot",
         operations=(OPERATION_READ_LAST_DEPLOYMENT, OPERATION_DEPLOY),
-        restriction=f"project:{rentals.id}",
+        restriction=f"project:{fancy.id}",
         expires=tomorrow,
     )
     (entry,) = await audit_rows(db, "token.create")
@@ -184,7 +184,7 @@ async def test_creation_is_audited_with_the_owner_the_choices_and_no_scope_ids(
     assert entry.result is AuditResult.SUCCESS and entry.ip_address == "203.0.113.4"
     assert entry.details == {
         "operations": [OPERATION_DEPLOY, OPERATION_READ_LAST_DEPLOYMENT],
-        "restriction": "rentals",
+        "restriction": "Fancy Proj. Name",
         "expires": tomorrow,
     }
     assert (entry.project_id, entry.deployment_id, entry.service_id) == (None, None, None)
@@ -194,8 +194,8 @@ async def test_a_restriction_row_is_written_for_each_level_a_token_can_be_restri
     db: AsyncSession, seed_data: SeedData
 ) -> None:
     targets = {
-        RestrictionLevel.PROJECT: seed_data.projects.rentals.id,
-        RestrictionLevel.DEPLOYMENT: seed_data.deployments.rentals_prod.id,
+        RestrictionLevel.PROJECT: seed_data.projects.fancy.id,
+        RestrictionLevel.DEPLOYMENT: seed_data.deployments.fancy_prod.id,
         RestrictionLevel.SERVICE: seed_data.services.mysql.id,
     }
     for level, item_id in targets.items():
@@ -338,29 +338,29 @@ async def test_the_restriction_choices_are_items_with_a_file_the_owner_may_deplo
 
     admin = await restriction_choices(db, await load_user_scope(db, seed_data.users.admin))
     assert labels(admin) == {
-        "projects": ["billing", "rentals"],
-        "deployments": ["billing / main", "rentals / prod", "rentals / staging"],
+        "projects": ["billing", "Fancy Proj. Name"],
+        "deployments": ["billing / main", "Fancy Proj. Name / prod", "Fancy Proj. Name / staging"],
         "services": [
             "billing / main / api",
             "billing / main / worker",
-            "rentals / prod / mysql",
-            "rentals / prod / web",
-            "rentals / staging / web",
+            "Fancy Proj. Name / prod / mysql",
+            "Fancy Proj. Name / prod / web",
+            "Fancy Proj. Name / staging / web",
         ],
     }
-    assert admin.keys >= {f"project:{seed_data.projects.rentals.id}"}
+    assert admin.keys >= {f"project:{seed_data.projects.fancy.id}"}
 
     single_file = await restriction_choices(
         db, await load_user_scope(db, seed_data.users.env_scoped_admin)
     )
     assert labels(single_file) == {
-        "projects": ["rentals"],
-        "deployments": ["rentals / prod"],
-        "services": ["rentals / prod / mysql"],
+        "projects": ["Fancy Proj. Name"],
+        "deployments": ["Fancy Proj. Name / prod"],
+        "services": ["Fancy Proj. Name / prod / mysql"],
     }
 
     root = await restriction_choices(db, await load_user_scope(db, seed_data.users.superadmin))
-    assert labels(root)["projects"] == ["billing", "rentals"]
+    assert labels(root)["projects"] == ["billing", "Fancy Proj. Name"]
     assert "billing / legacy" not in labels(root)["deployments"]
 
     none = await restriction_choices(db, await load_user_scope(db, seed_data.users.ungranted_admin))
@@ -422,7 +422,7 @@ async def test_a_row_shows_what_the_token_may_do_where_and_when(
         admin,
         name="both",
         operations=(OPERATION_READ_LAST_DEPLOYMENT, OPERATION_DEPLOY),
-        restriction=f"deployment:{seed_data.deployments.rentals_prod.id}",
+        restriction=f"deployment:{seed_data.deployments.fancy_prod.id}",
     )
     created.token.last_used_at = utc_now()
     created.token.last_used_ip = "198.51.100.7"
@@ -430,7 +430,7 @@ async def test_a_row_shows_what_the_token_may_do_where_and_when(
     rows = {row.name: row for row in await list_tokens(db, admin, await load_user_scope(db, admin))}
     both = rows["both"]
     assert both.operations == ("Deploy", "Read last deployment")
-    assert both.restriction == "rentals / prod"
+    assert both.restriction == "Fancy Proj. Name / prod"
     assert (both.prefix, both.last_used_ip) == (created.secret[:PREFIX_LENGTH], "198.51.100.7")
     assert both.status is TokenStatus.ACTIVE and both.revocable
     assert rows["billing-ci"].restriction == "billing / main / api / .env.api"
@@ -442,22 +442,22 @@ async def test_the_restriction_column_never_names_an_item_the_viewer_lost_access
     db: AsyncSession, seed_data: SeedData
 ) -> None:
     admin, root = seed_data.users.admin, seed_data.users.superadmin
-    rentals = seed_data.projects.rentals
-    await make_token(db, admin, name="rentals-only", restriction=f"project:{rentals.id}")
+    fancy = seed_data.projects.fancy
+    await make_token(db, admin, name="fancy-only", restriction=f"project:{fancy.id}")
     await db.execute(
         delete(AccessGrant).where(
-            AccessGrant.user_id == admin.id, AccessGrant.project_id == seed_data.projects.rentals.id
+            AccessGrant.user_id == admin.id, AccessGrant.project_id == seed_data.projects.fancy.id
         )
     )
     await db.commit()
     rows = {row.name: row for row in await list_tokens(db, admin, await load_user_scope(db, admin))}
-    assert rows["rentals-only"].restriction == HIDDEN_ITEM
-    assert "rentals" not in rows["rentals-only"].restriction
+    assert rows["fancy-only"].restriction == HIDDEN_ITEM
+    assert "Fancy Proj. Name" not in rows["fancy-only"].restriction
     assert rows["billing-ci"].restriction.startswith("billing")
     as_root = {
         row.name: row for row in await list_tokens(db, root, await load_user_scope(db, root))
     }
-    assert as_root["rentals-only"].restriction == "rentals"
+    assert as_root["fancy-only"].restriction == "Fancy Proj. Name"
 
 
 async def test_an_item_the_viewer_only_sees_as_context_keeps_its_name(
@@ -469,7 +469,10 @@ async def test_an_item_the_viewer_only_sees_as_context_keeps_its_name(
         db, single_file, name="mysql", restriction=f"service:{seed_data.services.mysql.id}"
     )
     rows = await list_tokens(db, single_file, scope)
-    assert rows[0].name == created.token.name and rows[0].restriction == "rentals / prod / mysql"
+    assert (
+        rows[0].name == created.token.name
+        and rows[0].restriction == "Fancy Proj. Name / prod / mysql"
+    )
 
 
 async def test_a_row_is_revocable_only_while_revoking_changes_something(

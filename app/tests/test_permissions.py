@@ -3,7 +3,7 @@
 Every test runs against the seed dataset in a real temporary SQLite database. Item keys are
 "level:name" labels for the seeded structure:
 
-    rentals
+    fancy (the project Fancy Proj. Name)
       prod
         mysql: db, db_secrets, db_app
         web: web
@@ -60,8 +60,8 @@ LEVEL_PREFIX = {
     ItemLevel.SERVICE: "service",
     ItemLevel.ENVIRONMENT: "environment",
 }
-ALL_RENTALS = {
-    "project:rentals",
+ALL_FANCY = {
+    "project:fancy",
     "deployment:prod",
     "deployment:staging",
     "service:mysql",
@@ -86,7 +86,7 @@ ALL_BILLING = {
     "environment:api",
     "environment:worker",
 }
-ALL_ITEMS = ALL_RENTALS | ALL_BILLING
+ALL_ITEMS = ALL_FANCY | ALL_BILLING
 DEPLOYMENT_PROD = {
     "deployment:prod",
     "service:mysql",
@@ -167,10 +167,10 @@ def tree(seed_data: SeedData) -> Tree:
         "environment": vars(seed_data.envs),
     }
     labels = {
-        "project": {"rentals": "rentals", "billing": "billing"},
+        "project": {"fancy": "fancy", "billing": "billing"},
         "deployment": {
-            "rentals_prod": "prod",
-            "rentals_staging": "staging",
+            "fancy_prod": "prod",
+            "fancy_staging": "staging",
             "billing_main": "main",
             "billing_legacy": "legacy",
         },
@@ -300,7 +300,7 @@ async def test_capability_matrix_with_a_covering_grant(
 ) -> None:
     """With a grant that covers the item, the group alone decides."""
     item = await _item(db, tree, "environment:db")
-    covering = TargetSet(project_ids=frozenset({tree.id_of("project:rentals")}))
+    covering = TargetSet(project_ids=frozenset({tree.id_of("project:fancy")}))
     target_item = None if CAPABILITY_TARGETS[capability].value == "none" else item
     expected = {
         UserGroup.SUPERADMIN: superadmin,
@@ -335,7 +335,7 @@ async def test_superadmin_needs_no_grants(db: AsyncSession, tree: Tree) -> None:
 
 
 # Minimum grant: environment-level actions need a grant at or above the environment.
-# Columns: environment, then whether a grant on project rentals, deployment prod or
+# Columns: environment, then whether a grant on project fancy, deployment prod or
 # environment db allows.
 MINIMUM_GRANT_TABLE = [
     ("environment:db", True, True, True),
@@ -366,7 +366,7 @@ async def test_minimum_grant_for_environment_actions(
 ) -> None:
     item = await _item(db, tree, key)
     for grant_key, expected in (
-        ("project:rentals", by_project),
+        ("project:fancy", by_project),
         ("deployment:prod", by_deployment),
         ("environment:db", by_environment),
     ):
@@ -376,13 +376,13 @@ async def test_minimum_grant_for_environment_actions(
         scope = await load_user_scope(db, admin)
         assert scope.can(capability, item) is expected, grant_key
     viewer = await _make_user(db, "viewer-all", UserGroup.VIEWER)
-    await _grant(db, tree, viewer, "project:rentals", "project:billing")
+    await _grant(db, tree, viewer, "project:fancy", "project:billing")
     assert (await load_user_scope(db, viewer)).can(capability, item) is False
 
 
 async def test_environment_capabilities_refuse_other_levels(db: AsyncSession, tree: Tree) -> None:
     scope = _group_scope(UserGroup.SUPERADMIN, TargetSet(unrestricted=True))
-    for key in ("project:rentals", "deployment:prod", "service:mysql"):
+    for key in ("project:fancy", "deployment:prod", "service:mysql"):
         with pytest.raises(ValueError, match="environments"):
             scope.can(Capability.DEPLOY, await _item(db, tree, key))
 
@@ -395,7 +395,7 @@ async def test_item_capabilities_need_an_item(db: AsyncSession, tree: Tree) -> N
 # What a single set of grants lets a user see: items in scope and context-only parents.
 VISIBILITY_TABLE = [
     pytest.param((), set(), set(), id="no-grants"),
-    pytest.param(("project:rentals",), ALL_RENTALS, set(), id="project"),
+    pytest.param(("project:fancy",), ALL_FANCY, set(), id="project"),
     pytest.param(
         ("deployment:prod",),
         {
@@ -407,26 +407,26 @@ VISIBILITY_TABLE = [
             "environment:db_app",
             "environment:web",
         },
-        {"project:rentals"},
+        {"project:fancy"},
         id="deployment",
     ),
     pytest.param(
         ("environment:db",),
         {"environment:db"},
-        {"project:rentals", "deployment:prod", "service:mysql"},
+        {"project:fancy", "deployment:prod", "service:mysql"},
         id="environment",
     ),
     pytest.param(
         ("environment:db", "environment:web"),
         {"environment:db", "environment:web"},
-        {"project:rentals", "deployment:prod", "service:mysql", "service:web"},
+        {"project:fancy", "deployment:prod", "service:mysql", "service:web"},
         id="two-environments-of-one-deployment",
     ),
     pytest.param(
         ("environment:db", "environment:staging_web"),
         {"environment:db", "environment:staging_web"},
         {
-            "project:rentals",
+            "project:fancy",
             "deployment:prod",
             "deployment:staging",
             "service:mysql",
@@ -445,22 +445,22 @@ VISIBILITY_TABLE = [
             "environment:staging_replica",
             "environment:staging_ca",
         },
-        {"project:rentals", "deployment:prod", "service:mysql"},
+        {"project:fancy", "deployment:prod", "service:mysql"},
         id="mixed-levels",
     ),
     pytest.param(
         ("deployment:prod", "project:billing"),
         DEPLOYMENT_PROD | ALL_BILLING,
-        {"project:rentals"},
+        {"project:fancy"},
         id="deployment-and-other-project",
     ),
     pytest.param(
-        ("project:rentals", "environment:db"),
-        ALL_RENTALS,
+        ("project:fancy", "environment:db"),
+        ALL_FANCY,
         set(),
         id="overlapping-grants-are-a-union",
     ),
-    pytest.param(("project:rentals", "project:billing"), ALL_ITEMS, set(), id="every-project"),
+    pytest.param(("project:fancy", "project:billing"), ALL_ITEMS, set(), id="every-project"),
 ]
 
 
@@ -490,19 +490,19 @@ async def test_visibility_follows_grants(
 SEEDED_USER_TABLE = [
     ("superadmin", ALL_ITEMS, set()),
     ("admin", ALL_ITEMS, set()),
-    ("viewer", ALL_RENTALS, set()),
-    ("project_admin", ALL_RENTALS, set()),
-    ("deployment_admin", DEPLOYMENT_PROD, {"project:rentals"}),
+    ("viewer", ALL_FANCY, set()),
+    ("project_admin", ALL_FANCY, set()),
+    ("deployment_admin", DEPLOYMENT_PROD, {"project:fancy"}),
     (
         "env_scoped_admin",
         {"environment:db"},
-        {"project:rentals", "deployment:prod", "service:mysql"},
+        {"project:fancy", "deployment:prod", "service:mysql"},
     ),
     (
         "env_scoped_viewer",
         {"environment:db", "environment:api"},
         {
-            "project:rentals",
+            "project:fancy",
             "project:billing",
             "deployment:prod",
             "deployment:main",
@@ -553,7 +553,7 @@ async def test_environment_grant_user_sees_parents_only_as_context(
     await _grant(db, tree, admin, "environment:db")
     scope = await load_user_scope(db, admin)
     visibility = await compute_visibility(db, scope)
-    for key in ("project:rentals", "deployment:prod", "service:mysql"):
+    for key in ("project:fancy", "deployment:prod", "service:mysql"):
         level = ItemLevel(key.partition(":")[0])
         item_id = tree.id_of(key)
         assert visibility.is_context_only(level, item_id)
@@ -567,8 +567,8 @@ async def test_environment_grant_user_sees_parents_only_as_context(
 
 async def test_project_grant_covers_items_added_later(db: AsyncSession, tree: Tree) -> None:
     admin = await _make_user(db, "project-admin", UserGroup.ADMIN)
-    await _grant(db, tree, admin, "project:rentals")
-    await _add_deployment(db, tree, "rentals", "d-new")
+    await _grant(db, tree, admin, "project:fancy")
+    await _add_deployment(db, tree, "fancy", "d-new")
     await _add_service(db, tree, "d-new", "s-new")
     await _add_environment(db, tree, "s-new", "e-new")
     await _add_environment(db, tree, "mysql", "e-extra")
@@ -592,7 +592,7 @@ async def test_deployment_grant_covers_services_and_environments_added_later(
     await _add_service(db, tree, "prod", "s-new")
     await _add_environment(db, tree, "s-new", "e-new")
     await _add_environment(db, tree, "mysql", "e-extra")
-    await _add_deployment(db, tree, "rentals", "d-sibling")
+    await _add_deployment(db, tree, "fancy", "d-sibling")
     await _add_service(db, tree, "d-sibling", "s-sibling")
     await _add_environment(db, tree, "s-sibling", "e-sibling")
     await db.commit()
@@ -622,12 +622,13 @@ async def test_environment_grant_leaves_new_environments_invisible(
 
 async def test_revoked_grant_applies_immediately(db: AsyncSession, tree: Tree) -> None:
     admin = await _make_user(db, "revoked", UserGroup.ADMIN)
-    await _grant(db, tree, admin, "project:rentals", "environment:api")
+    await _grant(db, tree, admin, "project:fancy", "environment:api")
     item = await _item(db, tree, "environment:db")
     assert (await load_user_scope(db, admin)).can(Capability.DEPLOY, item)
     await db.execute(
         delete(AccessGrant).where(
-            AccessGrant.user_id == admin.id, AccessGrant.project_id == tree.id_of("project:rentals")
+            AccessGrant.user_id == admin.id,
+            AccessGrant.project_id == tree.id_of("project:fancy"),
         )
     )
     await db.commit()
@@ -640,9 +641,9 @@ async def test_revoked_grant_applies_immediately(db: AsyncSession, tree: Tree) -
 async def test_grants_of_other_users_do_not_leak(db: AsyncSession, tree: Tree) -> None:
     first = await _make_user(db, "first", UserGroup.ADMIN)
     second = await _make_user(db, "second", UserGroup.ADMIN)
-    await _grant(db, tree, first, "project:rentals")
+    await _grant(db, tree, first, "project:fancy")
     await _grant(db, tree, second, "project:billing")
-    assert (await _visible(db, tree, await load_user_scope(db, first)))[0] == ALL_RENTALS
+    assert (await _visible(db, tree, await load_user_scope(db, first)))[0] == ALL_FANCY
     full, _ = await _visible(db, tree, await load_user_scope(db, second))
     assert full == ALL_BILLING
 
@@ -650,7 +651,7 @@ async def test_grants_of_other_users_do_not_leak(db: AsyncSession, tree: Tree) -
 async def test_disabled_user_scope_allows_nothing(db: AsyncSession, tree: Tree) -> None:
     for group in UserGroup:
         user = await _make_user(db, f"off-{group.value}", group, active=False)
-        await _grant(db, tree, user, "project:rentals")
+        await _grant(db, tree, user, "project:fancy")
         scope = await load_user_scope(db, user)
         assert not scope.active
         for capability in Capability:
@@ -667,7 +668,7 @@ async def test_user_moved_to_viewer_loses_edit_capabilities_at_once(
     db: AsyncSession, tree: Tree
 ) -> None:
     user = await _make_user(db, "demoted", UserGroup.ADMIN)
-    await _grant(db, tree, user, "project:rentals")
+    await _grant(db, tree, user, "project:fancy")
     item = await _item(db, tree, "environment:db")
     assert (await load_user_scope(db, user)).can(Capability.EDIT_VALUES, item)
     user.group = UserGroup.VIEWER
@@ -693,7 +694,7 @@ async def test_permitted_environments_for_a_service(db: AsyncSession, tree: Tree
         == []
     )
     viewer = await _make_user(db, "db-viewer", UserGroup.VIEWER)
-    await _grant(db, tree, viewer, "project:rentals")
+    await _grant(db, tree, viewer, "project:fancy")
     viewer_scope = await load_user_scope(db, viewer)
     assert (
         await permitted_environment_ids(db, viewer_scope, Capability.DEPLOY, service_id=mysql) == []
@@ -703,38 +704,61 @@ async def test_permitted_environments_for_a_service(db: AsyncSession, tree: Tree
 
 # Audit entries are in scope when their most specific id is in scope.
 AUDIT_TABLE = [
-    pytest.param(("project:rentals",), (None, None, None, None), False, id="no-ids-hidden"),
-    pytest.param(("project:rentals",), ("rentals", None, None, None), True, id="project-in-scope"),
+    pytest.param(("project:fancy",), (None, None, None, None), False, id="no-ids-hidden"),
     pytest.param(
-        ("project:rentals",), ("billing", None, None, None), False, id="project-out-of-scope"
+        ("project:fancy",),
+        ("fancy", None, None, None),
+        True,
+        id="project-in-scope",
     ),
     pytest.param(
-        ("project:rentals",),
-        ("rentals", "staging", "staging_web", "staging_web"),
+        ("project:fancy",),
+        ("billing", None, None, None),
+        False,
+        id="project-out-of-scope",
+    ),
+    pytest.param(
+        ("project:fancy",),
+        ("fancy", "staging", "staging_web", "staging_web"),
         True,
         id="environment-in-scope",
     ),
     pytest.param(
-        ("environment:db",), ("rentals", "prod", "mysql", "db"), True, id="granted-environment"
+        ("environment:db",),
+        ("fancy", "prod", "mysql", "db"),
+        True,
+        id="granted-environment",
     ),
     pytest.param(
         ("environment:db",),
-        ("rentals", "prod", "mysql", "db_secrets"),
+        ("fancy", "prod", "mysql", "db_secrets"),
         False,
         id="sibling-environment",
     ),
     pytest.param(
-        ("environment:db",), ("rentals", "prod", "mysql", None), False, id="context-service"
+        ("environment:db",),
+        ("fancy", "prod", "mysql", None),
+        False,
+        id="context-service",
     ),
     pytest.param(
-        ("environment:db",), ("rentals", "prod", None, None), False, id="context-deployment"
+        ("environment:db",),
+        ("fancy", "prod", None, None),
+        False,
+        id="context-deployment",
     ),
-    pytest.param(("environment:db",), ("rentals", None, None, None), False, id="context-project"),
+    pytest.param(("environment:db",), ("fancy", None, None, None), False, id="context-project"),
     pytest.param(
-        ("deployment:prod",), ("rentals", "prod", None, None), True, id="deployment-in-scope"
+        ("deployment:prod",),
+        ("fancy", "prod", None, None),
+        True,
+        id="deployment-in-scope",
     ),
     pytest.param(
-        ("deployment:prod",), ("rentals", "staging", None, None), False, id="other-deployment"
+        ("deployment:prod",),
+        ("fancy", "staging", None, None),
+        False,
+        id="other-deployment",
     ),
     pytest.param(("deployment:prod",), (None, None, None, 99999), False, id="deleted-item"),
 ]
@@ -850,13 +874,13 @@ async def test_a_viewer_and_a_token_have_no_own_audit_entries(db: AsyncSession, 
 # Token narrowing: owner grants, token restrictions, and the items the token may reach.
 NARROWING_TABLE = [
     pytest.param(
-        ("project:rentals",),
-        (("project", "rentals"),),
-        ALL_RENTALS,
+        ("project:fancy",),
+        (("project", "fancy"),),
+        ALL_FANCY,
         id="same-project",
     ),
     pytest.param(
-        ("project:rentals",),
+        ("project:fancy",),
         (("deployment", "prod"),),
         {
             "deployment:prod",
@@ -870,29 +894,32 @@ NARROWING_TABLE = [
         id="project-owner-deployment-token",
     ),
     pytest.param(
-        ("project:rentals",),
+        ("project:fancy",),
         (("service", "mysql"),),
         {"service:mysql", "environment:db", "environment:db_secrets", "environment:db_app"},
         id="project-owner-service-token",
     ),
     pytest.param(
-        ("project:rentals",),
+        ("project:fancy",),
         (("environment", "db"), ("environment", "staging_web")),
         {"environment:db", "environment:staging_web"},
         id="project-owner-environment-set-token",
     ),
     pytest.param(
-        ("project:rentals",), (("project", "billing"),), set(), id="other-project-gives-nothing"
+        ("project:fancy",),
+        (("project", "billing"),),
+        set(),
+        id="other-project-gives-nothing",
     ),
     pytest.param(
-        ("project:rentals",),
-        (("project", "rentals"), ("project", "billing")),
-        ALL_RENTALS,
+        ("project:fancy",),
+        (("project", "fancy"), ("project", "billing")),
+        ALL_FANCY,
         id="extra-restriction-outside-owner-scope-adds-nothing",
     ),
     pytest.param(
         ("environment:db",),
-        (("project", "rentals"),),
+        (("project", "fancy"),),
         {"environment:db"},
         id="environment-owner-wide-token",
     ),
@@ -914,7 +941,7 @@ NARROWING_TABLE = [
         {"environment:db_secrets", "environment:staging_web"},
         id="mixed-owner-grants",
     ),
-    pytest.param(("project:rentals",), (), ALL_RENTALS, id="no-restriction-is-owner-scope"),
+    pytest.param(("project:fancy",), (), ALL_FANCY, id="no-restriction-is-owner-scope"),
 ]
 
 
@@ -955,13 +982,13 @@ async def test_token_context_lists_only_ancestors_of_reachable_items(
     db: AsyncSession, tree: Tree
 ) -> None:
     owner = await _make_user(db, "owner", UserGroup.ADMIN)
-    await _grant(db, tree, owner, "project:rentals")
+    await _grant(db, tree, owner, "project:fancy")
     token = await _new_token(db, owner, _restriction(tree, ("environment", "web")))
     scope = await load_token_scope(db, token)
     assert scope is not None
     full, context = await _visible(db, tree, scope)
     assert full == {"environment:web"}
-    assert context == {"project:rentals", "deployment:prod", "service:web"}
+    assert context == {"project:fancy", "deployment:prod", "service:web"}
 
     other_owner = await _make_user(db, "other", UserGroup.ADMIN)
     await _grant(db, tree, other_owner, "environment:db")
@@ -975,7 +1002,7 @@ async def test_token_context_lists_only_ancestors_of_reachable_items(
 
 async def test_token_never_widens_when_owner_grants_change(db: AsyncSession, tree: Tree) -> None:
     owner = await _make_user(db, "owner", UserGroup.ADMIN)
-    await _grant(db, tree, owner, "project:rentals")
+    await _grant(db, tree, owner, "project:fancy")
     token = await _new_token(db, owner, _restriction(tree, ("deployment", "prod")))
     await db.execute(delete(AccessGrant).where(AccessGrant.user_id == owner.id))
     await db.commit()
@@ -989,7 +1016,7 @@ async def test_token_sees_items_added_later_inside_its_restriction_only(
     db: AsyncSession, tree: Tree
 ) -> None:
     owner = await _make_user(db, "owner", UserGroup.ADMIN)
-    await _grant(db, tree, owner, "project:rentals")
+    await _grant(db, tree, owner, "project:fancy")
     token = await _new_token(db, owner, _restriction(tree, ("service", "mysql")))
     await _add_environment(db, tree, "mysql", "e-new")
     await _add_environment(db, tree, "web", "e-other")
@@ -1026,7 +1053,7 @@ async def test_token_stops_when_owner_is_disabled_or_made_viewer(
     db: AsyncSession, tree: Tree
 ) -> None:
     owner = await _make_user(db, "owner", UserGroup.ADMIN)
-    await _grant(db, tree, owner, "project:rentals")
+    await _grant(db, tree, owner, "project:fancy")
     token = await _new_token(db, owner)
     assert await load_token_scope(db, token) is not None
 
@@ -1046,14 +1073,15 @@ async def test_token_stops_when_owner_is_disabled_or_made_viewer(
 
 async def test_revoked_grant_reaches_tokens_immediately(db: AsyncSession, tree: Tree) -> None:
     owner = await _make_user(db, "owner", UserGroup.ADMIN)
-    await _grant(db, tree, owner, "project:rentals", "project:billing")
+    await _grant(db, tree, owner, "project:fancy", "project:billing")
     token = await _new_token(db, owner)
     item = await _item(db, tree, "environment:db")
     scope = await load_token_scope(db, token)
     assert scope is not None and scope.can(Capability.DEPLOY, item)
     await db.execute(
         delete(AccessGrant).where(
-            AccessGrant.user_id == owner.id, AccessGrant.project_id == tree.id_of("project:rentals")
+            AccessGrant.user_id == owner.id,
+            AccessGrant.project_id == tree.id_of("project:fancy"),
         )
     )
     await db.commit()

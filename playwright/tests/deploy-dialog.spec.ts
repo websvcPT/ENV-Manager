@@ -598,7 +598,7 @@ test.describe('viewer', () => {
     request,
     browser,
   }) => {
-    const service = await serviceId(browser, 'rentals', 'prod', 'mysql');
+    const service = await serviceId(browser, 'Fancy Proj. Name', 'prod', 'mysql');
     await page.goto(`/services/${service}`);
     await expect(page.locator('[data-fragment="page-header"]')).toBeVisible();
     await expect(page.getByRole('button', { name: /Deploy/ })).toHaveCount(0);
@@ -623,7 +623,7 @@ test.describe('scoped viewer', () => {
     request,
     browser,
   }) => {
-    const service = await serviceId(browser, 'rentals', 'prod', 'mysql');
+    const service = await serviceId(browser, 'Fancy Proj. Name', 'prod', 'mysql');
     await page.goto(`/services/${service}`);
     await expect(page.getByRole('button', { name: /Deploy/ })).toHaveCount(0);
     const headers = await csrfHeaders(request);
@@ -641,7 +641,7 @@ test.describe('admin without a grant', () => {
   test.use({ storageState: stateFile('ungrantedAdmin') });
 
   test('gets 404 for the service and for both requests', async ({ page, request, browser }) => {
-    const service = await serviceId(browser, 'rentals', 'prod', 'mysql');
+    const service = await serviceId(browser, 'Fancy Proj. Name', 'prod', 'mysql');
     const response = await page.goto(`/services/${service}`);
     expect(response?.status()).toBe(404);
     const headers = await csrfHeaders(request);
@@ -664,7 +664,7 @@ test.describe('admin roles', () => {
       test.use({ storageState: stateFile(user) });
 
       test(`sees the Deploy action on a service in scope`, async ({ page, browser }) => {
-        const service = await serviceId(browser, 'rentals', 'prod', 'mysql');
+        const service = await serviceId(browser, 'Fancy Proj. Name', 'prod', 'mysql');
         await page.goto(`/services/${service}`);
         await expect(page.getByRole('button', { name: 'Deploy service' })).toBeVisible();
         await expect(page.locator('#deploy-dialog')).toHaveCount(1);

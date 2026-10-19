@@ -422,11 +422,11 @@ test.describe('deployment overview', () => {
 });
 
 async function seededDb(browser: Browser): Promise<number> {
-  return seededEnvironmentId(browser, 'rentals', 'prod', 'mysql', '.env.db');
+  return seededEnvironmentId(browser, 'Fancy Proj. Name', 'prod', 'mysql', '.env.db');
 }
 
 async function seededEditor(browser: Browser): Promise<number> {
-  return seededEnvironmentId(browser, 'rentals', 'prod', 'mysql', '.env.db.app');
+  return seededEnvironmentId(browser, 'Fancy Proj. Name', 'prod', 'mysql', '.env.db.app');
 }
 
 test.describe('viewer', () => {
@@ -437,7 +437,7 @@ test.describe('viewer', () => {
     browser,
   }) => {
     const id = await seededDb(browser);
-    const prod = await deploymentId(browser, 'rentals', 'prod');
+    const prod = await deploymentId(browser, 'Fancy Proj. Name', 'prod');
     await page.goto(`/environments/${id}`);
     await expect(page.locator('nav[aria-label="Sections"] a')).toHaveText(['View', 'History']);
     expect((await page.request.get(`/environments/${id}/dist`)).status()).toBe(403);
@@ -482,7 +482,7 @@ test.describe('other roles', () => {
   }) => {
     const owned = await seededDb(browser);
     const other = await seededEditor(browser);
-    const prod = await deploymentId(browser, 'rentals', 'prod');
+    const prod = await deploymentId(browser, 'Fancy Proj. Name', 'prod');
     const context = await browser.newContext({ storageState: stateFile('envScopedAdmin') });
     const page = await context.newPage();
     try {
@@ -503,7 +503,7 @@ test.describe('other roles', () => {
 
   test('a scoped viewer is refused and an admin without grants gets 404', async ({ browser }) => {
     const id = await seededDb(browser);
-    const prod = await deploymentId(browser, 'rentals', 'prod');
+    const prod = await deploymentId(browser, 'Fancy Proj. Name', 'prod');
     const viewer = await browser.newContext({ storageState: stateFile('envScopedViewer') });
     const denied = await viewer.newPage();
     try {

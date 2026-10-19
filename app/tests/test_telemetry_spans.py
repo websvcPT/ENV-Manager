@@ -33,7 +33,7 @@ async def test_a_real_deploy_is_one_span_with_ids_and_the_result_and_is_counted(
     assert outcome.status is DeployStatus.SUCCESS
 
     span = telemetry_recorder.span(telemetry.DEPLOY_SPAN)
-    deployment, service = h.seed.deployments.rentals_staging, h.seed.services.staging_web
+    deployment, service = h.seed.deployments.fancy_staging, h.seed.services.staging_web
     attributes = dict(span.attributes or {})
     assert attributes == {
         telemetry.PROJECT_ID: deployment.project_id,

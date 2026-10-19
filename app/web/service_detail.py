@@ -21,6 +21,7 @@ from app.services.docker_cli import DockerCli
 from app.services.hook_settings import (
     HookForbiddenError,
     HookForm,
+    HookReviewRequired,
     HookSettingsError,
     check_compose_setup,
     save_post_deploy_hook,
@@ -158,10 +159,21 @@ async def _settings_context(
     form: HookForm | None = None,
     errors: dict[str, str] | None = None,
     saved: dict[str, str] | None = None,
+    review: HookReviewRequired | None = None,
 ) -> dict[str, Any]:
-    """What the settings form needs; only the superadmin gets the Docker status and the form."""
+    """What the settings form needs; only the superadmin gets the Docker status and the form.
+
+    ``review`` holds the parsed commands to show before they are stored.
+    """
     if not access.service.can_view_command:
-        return {"docker": None, "socket_path": "", "form": HookForm(), "errors": {}, "saved": None}
+        return {
+            "docker": None,
+            "socket_path": "",
+            "form": HookForm(),
+            "errors": {},
+            "saved": None,
+            "review": None,
+        }
     return {
         "docker": await cli.status(),
         "post_deploy_enabled": (await load_stored_settings(db)).post_deploy.enabled,
@@ -169,6 +181,7 @@ async def _settings_context(
         "form": form or _form_of(hook),
         "errors": errors or {},
         "saved": saved,
+        "review": review,
     }
 
 
@@ -257,14 +270,25 @@ async def save_post_deploy(
     commands: Annotated[str, Form()] = "",
     timeout: Annotated[str, Form()] = "",
     run_only_if_changed: Annotated[str | None, Form()] = None,
+    reviewed: Annotated[str, Form()] = "",
 ) -> Response:
-    """Save the post-deploy settings (superadmin). A refusal swaps the form with its reasons."""
-    typed = HookForm(working_directory, commands, timeout, run_only_if_changed is not None)
+    """Save the post-deploy settings (superadmin).
+
+    A refusal swaps the form with its reasons. Changed commands are not stored by the first
+    save: the form comes back (200) with the parsed arguments of every line and a confirming
+    save, and only that second save stores them.
+    """
+    typed = HookForm(
+        working_directory, commands, timeout, run_only_if_changed is not None, reviewed
+    )
     actor = AuditActor.for_user(access.auth.user, client_address(request))
     try:
         hook = await save_post_deploy_hook(db, cli, access.scope, actor, access.service.id, typed)
     except HookForbiddenError as error:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "not permitted") from error
+    except HookReviewRequired as review:
+        context = await _settings_context(db, access, cli, None, form=typed, review=review)
+        return render(request, SETTINGS_FRAGMENT, {**_flags(access), **context})
     except HookSettingsError as error:
         context = await _settings_context(db, access, cli, None, form=typed, errors=error.errors)
         return render(

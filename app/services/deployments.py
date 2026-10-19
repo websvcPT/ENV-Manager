@@ -32,7 +32,7 @@ from app.services.paths import (
     normalize_path,
     path_status,
 )
-from app.services.projects import MAX_PROJECT_NAME_LENGTH, PROJECT_NAME_PATTERN
+from app.services.slug_names import SLUG_MESSAGE, is_slug_name
 
 FILE_MODE_PATTERN = re.compile(r"0?[0-7]{3}")
 ACCOUNT_PATTERN = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*")
@@ -227,10 +227,8 @@ async def validate_deployment(
     name = form.name.strip()
     if not name:
         errors["name"] = "Enter a deployment name."
-    elif len(name) > MAX_PROJECT_NAME_LENGTH or PROJECT_NAME_PATTERN.fullmatch(name) is None:
-        errors["name"] = (
-            "Use 1 to 100 lowercase letters, numbers and dashes, starting with a letter or number."
-        )
+    elif not is_slug_name(name):
+        errors["name"] = SLUG_MESSAGE
     else:
         taken = select(Deployment.id).where(
             Deployment.project_id == project.id, Deployment.name == name

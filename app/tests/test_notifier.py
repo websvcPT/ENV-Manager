@@ -57,8 +57,8 @@ def deploy(seed: SeedData, status: DeployStatus = DeployStatus.FAILED) -> Deploy
     envs = seed.envs
     return DeployFinished(
         1,
-        seed.projects.rentals.id,
-        seed.deployments.rentals_prod.id,
+        seed.projects.fancy.id,
+        seed.deployments.fancy_prod.id,
         "prod",
         seed.services.mysql.id,
         "mysql",
@@ -529,7 +529,7 @@ async def test_extra_addresses_hear_of_a_problem_with_every_file_whatever_the_ch
     await switch(seeded_database, deploy_problem_to="superadmins")
     await set_extra_addresses(
         seeded_database,
-        seed_data.projects.rentals.id,
+        seed_data.projects.fancy.id,
         ["Team@Example.org", "team@example.org", "pager@corp.local"],
     )
     await world.notify(deploy(seed_data, DeployStatus.BLOCKED))
@@ -549,7 +549,7 @@ async def test_an_extra_address_that_is_also_a_scoped_admin_is_told_about_the_wh
 ) -> None:
     """One mail to the address, and it names every file of the event, as the superadmin chose."""
     await set_extra_addresses(
-        seeded_database, seed_data.projects.rentals.id, ["ENV_SCOPED_ADMIN@example.test"]
+        seeded_database, seed_data.projects.fancy.id, ["ENV_SCOPED_ADMIN@example.test"]
     )
     await world.notify(deploy(seed_data))
     await world.idle()
@@ -565,7 +565,7 @@ async def test_the_extra_addresses_follow_the_switch_of_the_event(
     seeded_database: AsyncEngine,
 ) -> None:
     """A kind that is off sends nothing to anyone, and a success needs its own switch."""
-    await set_extra_addresses(seeded_database, seed_data.projects.rentals.id, ["team@example.org"])
+    await set_extra_addresses(seeded_database, seed_data.projects.fancy.id, ["team@example.org"])
     await world.notify(deploy(seed_data, DeployStatus.SUCCESS))
     await world.idle()
     assert "team@example.org" not in transport.to()
@@ -586,13 +586,13 @@ async def test_the_extra_addresses_are_told_of_file_changes_of_their_project_onl
 ) -> None:
     """A new version in the project reaches them; one in another project does not."""
     await switch(seeded_database, file_changed=True, file_changed_to="superadmins")
-    await set_extra_addresses(seeded_database, seed_data.projects.rentals.id, ["team@example.org"])
+    await set_extra_addresses(seeded_database, seed_data.projects.fancy.id, ["team@example.org"])
     await set_extra_addresses(seeded_database, seed_data.projects.billing.id, ["bill@example.org"])
     envs = seed_data.envs
     await world.notify(
         FileChanged(
-            seed_data.projects.rentals.id,
-            seed_data.deployments.rentals_prod.id,
+            seed_data.projects.fancy.id,
+            seed_data.deployments.fancy_prod.id,
             seed_data.services.mysql.id,
             envs.db.id,
             ".env.db",
@@ -612,7 +612,7 @@ async def test_a_system_event_never_goes_to_the_extra_addresses(
     seeded_database: AsyncEngine,
 ) -> None:
     """Lockouts and the like are the superadmins' business."""
-    await set_extra_addresses(seeded_database, seed_data.projects.rentals.id, ["team@example.org"])
+    await set_extra_addresses(seeded_database, seed_data.projects.fancy.id, ["team@example.org"])
     await world.notify(lockout())
     await world.idle()
     assert transport.to() == ["root@example.test"]

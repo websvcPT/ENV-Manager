@@ -37,7 +37,7 @@ from app.services.tokens import (
 from app.tests.dist_helpers import relocate_deployments
 from app.tests.fake_docker import FakeDocker
 
-HOOK_COMMAND = "docker compose up -d --no-deps {service_name}"
+HOOK_COMMAND = "docker compose up -d --no-deps mysql"
 BOTH_OPERATIONS = (OPERATION_DEPLOY, OPERATION_READ_LAST_DEPLOYMENT)
 CLIENT_ADDRESS = ("198.51.100.7", 4321)
 

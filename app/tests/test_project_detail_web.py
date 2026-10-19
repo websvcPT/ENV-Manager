@@ -25,7 +25,7 @@ HTMX = {"HX-Request": "true"}
 class ProjectIds:
     """Ids of the seeded projects, read from the application database."""
 
-    rentals: int
+    fancy: int
     billing: int
 
 
@@ -34,7 +34,7 @@ async def ids(web_app: FastAPI) -> ProjectIds:
     """The seeded project ids of the web application."""
     async with web_app.state.session_factory() as db:
         rows = dict((await db.execute(select(Project.name, Project.id))).all())
-    return ProjectIds(rentals=rows["rentals"], billing=rows["billing"])
+    return ProjectIds(fancy=rows["Fancy Proj. Name"], billing=rows["billing"])
 
 
 async def post(http: httpx.AsyncClient, url: str, **data: str) -> httpx.Response:
@@ -62,12 +62,12 @@ async def test_superadmin_sees_all_tabs_and_actions(
 ) -> None:
     """The superadmin gets four tabs, the member count and the structure actions."""
     await sign_in(web_client, "root")
-    rentals = ids.rentals
-    page = (await web_client.get(f"/projects/{rentals}")).text
+    fancy = ids.fancy
+    page = (await web_client.get(f"/projects/{fancy}")).text
     assert tab_labels(page) == ["Deployments", "Members and access", "Activity", "Settings"]
     assert "2 deployments · 6 members" in page
     assert "1 needs attention" in page
-    assert f'href="/projects/{rentals}/deployments/new"' in page
+    assert f'href="/projects/{fancy}/deployments/new"' in page
     assert row_names(page) == ["prod", "staging"]
     assert "/opt/rentals/prod" in page
     assert 'hx-trigger="deploy-finished from:body"' in page
@@ -79,7 +79,7 @@ async def test_admin_has_two_tabs_and_no_structure_actions(
 ) -> None:
     """Edit actions are absent for an admin and the members count is not shown."""
     await sign_in(web_client, "admin")
-    page = (await web_client.get(f"/projects/{ids.rentals}")).text
+    page = (await web_client.get(f"/projects/{ids.fancy}")).text
     assert tab_labels(page) == ["Deployments", "Activity"]
     assert "2 deployments" in page and "members" not in page.split("<main")[1]
     assert "New deployment" not in page
@@ -90,7 +90,7 @@ async def test_viewer_sees_the_same_read_only_page(
 ) -> None:
     """A viewer reads deployments only: the audit log is not open to viewers."""
     await sign_in(web_client, "viewer")
-    page = (await web_client.get(f"/projects/{ids.rentals}")).text
+    page = (await web_client.get(f"/projects/{ids.fancy}")).text
     assert tab_labels(page) == ["Deployments"]
     assert row_names(page) == ["prod", "staging"]
     assert "New deployment" not in page
@@ -101,7 +101,7 @@ async def test_deployment_grant_is_told_what_is_hidden_without_names(
 ) -> None:
     """A deployment grant lists the one deployment and never names the others."""
     await sign_in(web_client, "deployment_admin")
-    page = (await web_client.get(f"/projects/{ids.rentals}")).text
+    page = (await web_client.get(f"/projects/{ids.fancy}")).text
     assert "Your access is limited to one deployment of this project." in page
     assert "You have access to prod only. Other deployments of this project are not listed." in page
     assert row_names(page) == ["prod"]
@@ -114,7 +114,7 @@ async def test_environment_grant_hides_the_parent_path(
 ) -> None:
     """The parent deployment of a granted file appears by name with no path or siblings."""
     await sign_in(web_client, "env_scoped_admin")
-    page = (await web_client.get(f"/projects/{ids.rentals}")).text
+    page = (await web_client.get(f"/projects/{ids.fancy}")).text
     assert "Your access is limited to selected files of this project." in page
     assert row_names(page) == ["prod"]
     assert "Limited access" in page
@@ -138,12 +138,12 @@ async def test_superadmin_only_tabs_are_forbidden_for_other_groups(
 ) -> None:
     """A project in scope still refuses Access and Settings to a non-superadmin."""
     await sign_in(web_client, "project_admin")
-    rentals = ids.rentals
-    assert (await web_client.get(f"/projects/{rentals}/access")).status_code == 403
-    assert (await web_client.get(f"/projects/{rentals}/members")).status_code == 403
-    assert (await web_client.get(f"/projects/{rentals}/settings")).status_code == 403
-    assert (await post(web_client, f"/projects/{rentals}/rename", name="x")).status_code == 403
-    deleted = await post(web_client, f"/projects/{rentals}/delete", confirm_name="rentals")
+    fancy = ids.fancy
+    assert (await web_client.get(f"/projects/{fancy}/access")).status_code == 403
+    assert (await web_client.get(f"/projects/{fancy}/members")).status_code == 403
+    assert (await web_client.get(f"/projects/{fancy}/settings")).status_code == 403
+    assert (await post(web_client, f"/projects/{fancy}/rename", name="x")).status_code == 403
+    deleted = await post(web_client, f"/projects/{fancy}/delete", confirm_name="Fancy Proj. Name")
     assert deleted.status_code == 403
 
 
@@ -152,7 +152,7 @@ async def test_deployments_fragment_is_only_the_panel(
 ) -> None:
     """The refresh endpoint answers exactly the swappable section."""
     await sign_in(web_client, "root")
-    response = await web_client.get(f"/projects/{ids.rentals}/deployments", headers=HTMX)
+    response = await web_client.get(f"/projects/{ids.fancy}/deployments", headers=HTMX)
     assert response.text.lstrip().startswith('<section aria-labelledby="deployments-title"')
     assert 'data-fragment="deployments-table"' in response.text
     assert "<html" not in response.text
@@ -181,7 +181,7 @@ async def test_activity_tab_lists_scoped_entries(
 ) -> None:
     """The activity table shows time, actor, action, object and result, newest first."""
     await sign_in(web_client, "root")
-    page = (await web_client.get(f"/projects/{ids.rentals}/activity")).text
+    page = (await web_client.get(f"/projects/{ids.fancy}/activity")).text
     assert 'data-fragment="activity-table"' in page
     assert "2026-10-17 10:05" in page
     assert page.index("2026-10-17 10:05") < page.index("2026-10-15 17:40")
@@ -193,7 +193,7 @@ async def test_activity_for_a_scoped_user_leaves_out_other_items(
 ) -> None:
     """An environment grant sees its own file save and not the deploys beside it."""
     await sign_in(web_client, "env_scoped_admin")
-    page = (await web_client.get(f"/projects/{ids.rentals}/activity")).text
+    page = (await web_client.get(f"/projects/{ids.fancy}/activity")).text
     assert "file_save" in page
     assert ">deploy<" not in page
 
@@ -204,8 +204,8 @@ async def test_activity_is_forbidden_for_viewers(
 ) -> None:
     """The project activity follows the audit log rule: viewers get no tab and a 403."""
     await sign_in(web_client, user)
-    assert (await web_client.get(f"/projects/{ids.rentals}/activity")).status_code == 403
-    page = (await web_client.get(f"/projects/{ids.rentals}")).text
+    assert (await web_client.get(f"/projects/{ids.fancy}/activity")).status_code == 403
+    page = (await web_client.get(f"/projects/{ids.fancy}")).text
     assert "/activity" not in page
 
 
@@ -229,11 +229,11 @@ async def test_members_tab_address_redirects_to_the_access_tab(
 ) -> None:
     """The old address of the Members tab still works and leads to the Access tab."""
     await sign_in(web_client, "root")
-    response = await web_client.get(f"/projects/{ids.rentals}/members", follow_redirects=False)
+    response = await web_client.get(f"/projects/{ids.fancy}/members", follow_redirects=False)
     assert response.status_code == 307
-    assert response.headers["location"] == f"/projects/{ids.rentals}/access"
+    assert response.headers["location"] == f"/projects/{ids.fancy}/access"
     assert response.headers["cache-control"] == "no-store"
-    page = (await web_client.get(f"/projects/{ids.rentals}/members", follow_redirects=True)).text
+    page = (await web_client.get(f"/projects/{ids.fancy}/members", follow_redirects=True)).text
     assert 'data-fragment="access-list"' in page
 
 
@@ -242,9 +242,9 @@ async def test_settings_tab_has_rename_and_delete(
 ) -> None:
     """The settings tab holds the rename form, the danger zone and the delete dialog."""
     await sign_in(web_client, "root")
-    page = (await web_client.get(f"/projects/{ids.rentals}/settings")).text
+    page = (await web_client.get(f"/projects/{ids.fancy}/settings")).text
     assert 'data-fragment="project-rename"' in page
-    assert 'value="rentals"' in page
+    assert 'value="Fancy Proj. Name"' in page
     assert 'data-target="delete-project"' in page
     assert 'id="delete-project"' in page
     assert "Type the project name to confirm" in page
@@ -256,12 +256,12 @@ async def test_rename_refuses_bad_and_duplicate_names_and_keeps_the_input(
 ) -> None:
     """A refused rename swaps the panel with the reason and the typed value."""
     await sign_in(web_client, "root")
-    rentals = ids.rentals
-    bad = await post(web_client, f"/projects/{rentals}/rename", name="Bad Name")
+    fancy = ids.fancy
+    bad = await post(web_client, f"/projects/{fancy}/rename", name="Bad Name!")
     assert bad.status_code == 422
     assert bad.text.lstrip().startswith("<section")
-    assert 'role="alert"' in bad.text and 'value="Bad Name"' in bad.text
-    duplicate = await post(web_client, f"/projects/{rentals}/rename", name="billing")
+    assert 'role="alert"' in bad.text and 'value="Bad Name!"' in bad.text
+    duplicate = await post(web_client, f"/projects/{fancy}/rename", name="billing")
     assert duplicate.status_code == 422
     assert "already exists" in duplicate.text
 
@@ -271,19 +271,19 @@ async def test_rename_succeeds_and_reloads_the_settings_tab(
 ) -> None:
     """A good name is stored, audited, and the browser is sent back to the settings tab."""
     await sign_in(web_client, "root")
-    rentals = ids.rentals
-    response = await post(web_client, f"/projects/{rentals}/rename", name="rentals-two")
+    fancy = ids.fancy
+    response = await post(web_client, f"/projects/{fancy}/rename", name="fancy-two")
     assert response.status_code == 200
-    assert response.headers["hx-redirect"] == f"/projects/{rentals}/settings?renamed=true"
+    assert response.headers["hx-redirect"] == f"/projects/{fancy}/settings?renamed=true"
     page = (await web_client.get(response.headers["hx-redirect"])).text
-    assert "Project renamed" in page and "rentals-two" in page
+    assert "Project renamed" in page and "fancy-two" in page
     async with web_app.state.session_factory() as db:
-        renamed = await db.get(Project, rentals)
-        assert renamed is not None and renamed.name == "rentals-two"
+        renamed = await db.get(Project, fancy)
+        assert renamed is not None and renamed.name == "fancy-two"
         entry = (
             await db.execute(select(AuditEntry).where(AuditEntry.action == "project.rename"))
         ).scalar_one()
-    assert entry.details == {"previous_name": "rentals"}
+    assert entry.details == {"previous_name": "Fancy Proj. Name"}
 
 
 async def test_delete_needs_the_exact_name(
@@ -291,14 +291,14 @@ async def test_delete_needs_the_exact_name(
 ) -> None:
     """A wrong or empty confirmation keeps the project and swaps the form with the message."""
     await sign_in(web_client, "root")
-    rentals = ids.rentals
-    for typed in ("", "rental", "RENTALS"):
-        response = await post(web_client, f"/projects/{rentals}/delete", confirm_name=typed)
+    fancy = ids.fancy
+    for typed in ("", "Fancy Proj", "FANCY PROJ. NAME", "fancy proj. name"):
+        response = await post(web_client, f"/projects/{fancy}/delete", confirm_name=typed)
         assert response.status_code == 422
         assert "Type the project name exactly to confirm." in response.text
         assert 'id="delete-project-form"' in response.text
     async with web_app.state.session_factory() as db:
-        assert await db.get(Project, rentals) is not None
+        assert await db.get(Project, fancy) is not None
 
 
 async def test_delete_removes_the_project_and_leaves_for_the_list(
@@ -350,7 +350,7 @@ async def test_non_superadmin_pages_have_no_settings_or_delete_markup(
 ) -> None:
     """Edit actions are absent, not disabled, for groups that cannot manage structure."""
     await sign_in(web_client, user)
-    page = (await web_client.get(f"/projects/{ids.rentals}")).text
+    page = (await web_client.get(f"/projects/{ids.fancy}")).text
     for absent in ("delete-project", "project-rename", "/settings", "/members", "/access"):
         assert absent not in page
 
@@ -359,7 +359,7 @@ async def test_anonymous_requests_are_refused(
     web_client: httpx.AsyncClient, ids: ProjectIds
 ) -> None:
     """Every detail route needs a session."""
-    rentals = ids.rentals
+    fancy = ids.fancy
     for suffix in ("", "/activity", "/access", "/members", "/settings", "/deployments"):
-        response = await web_client.get(f"/projects/{rentals}{suffix}", follow_redirects=False)
+        response = await web_client.get(f"/projects/{fancy}{suffix}", follow_redirects=False)
         assert response.status_code in (303, 401)

@@ -212,7 +212,7 @@ async def harness(
     async with create_session_factory(seeded_database)() as db:
         roots = await relocate_deployments(db, tmp_path / "host")
         await set_deployment(
-            db, seed_data.deployments.rentals_prod.id, file_owner=None, file_group=None
+            db, seed_data.deployments.fancy_prod.id, file_owner=None, file_group=None
         )
         runner = RecordingRunner()
         notifier = RecordingNotifier()

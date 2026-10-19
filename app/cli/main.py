@@ -40,6 +40,8 @@ from app.seeds import (
     ensure_dev_host_paths,
     ensure_dev_smtp,
     ensure_editor_figures,
+    ensure_literal_commands,
+    ensure_project_display_name,
     ensure_service_figures,
     ensure_totp_user,
 )
@@ -432,7 +434,8 @@ def seed_dataset() -> None:
     """Create the development dataset with its fixed dev-only passwords.
 
     An already seeded database is left alone except for users, deploy runs and tokens that
-    were added to the dataset later, and it always allows the development deployments directory.
+    were added to the dataset later, the seeded project's display name and the seeded commands
+    that once held a placeholder, and it always allows the development deployments directory.
     It also adds the audit history figures that the audit log screen needs (every kind of actor
     and scope, and a second page of entries), which the plain dataset leaves out so tests that
     read the audit log find only what they wrote.
@@ -453,6 +456,8 @@ def seed_dataset() -> None:
             await _ensure_dev_mail(db)
             await db.commit()
         except SeedError:
+            await ensure_project_display_name(db)
+            await ensure_literal_commands(db)
             for name in (TOTP_USER_NAME, TOTP_ALT_USER_NAME):
                 await ensure_totp_user(db, crypto, name)
             await ensure_activity(db)

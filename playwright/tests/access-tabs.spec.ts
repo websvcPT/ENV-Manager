@@ -618,7 +618,7 @@ test.describe('superadmin: small screens', () => {
 });
 
 interface Seeded {
-  rentals: number;
+  fancy: number;
   prod: number;
   staging: number;
   mysql: number;
@@ -640,21 +640,21 @@ async function seededIds(browser: Browser): Promise<Seeded> {
   const context = await browser.newContext({ storageState: SUPERADMIN_STATE });
   try {
     const get = async (url: string) => (await context.request.get(url)).text();
-    const found = (await listProjects(context.request, 'rentals')).find(
-      ([, name]) => name === 'rentals',
+    const found = (await listProjects(context.request, 'Fancy Proj. Name')).find(
+      ([, name]) => name === 'Fancy Proj. Name',
     );
     if (!found) {
-      throw new Error('seeded project rentals is missing');
+      throw new Error('seeded project Fancy Proj. Name is missing');
     }
-    const rentals = found[0];
-    const project = await get(`/projects/${rentals}`);
+    const fancy = found[0];
+    const project = await get(`/projects/${fancy}`);
     const prod = idOf(project, '/deployments/', 'prod');
     const staging = idOf(project, '/deployments/', 'staging');
     const mysql = idOf(await get(`/deployments/${prod}`), '/services/', 'mysql');
     const service = await get(`/services/${mysql}`);
     const db = idOf(service, '/environments/', '.env.db');
     const secrets = idOf(service, '/environments/', '.env.db.secrets');
-    return { rentals, prod, staging, mysql, db, secrets };
+    return { fancy, prod, staging, mysql, db, secrets };
   } finally {
     await context.close();
   }
@@ -677,7 +677,7 @@ for (const [role, outside] of ROLES) {
     test('has no Access tab and is refused every Access route', async ({ page, browser }) => {
       const seeded = await seededIds(browser);
       const items: Array<[Kind, keyof Seeded]> = [
-        ['project', 'rentals'],
+        ['project', 'fancy'],
         ['deployment', 'prod'],
         ['deployment', 'staging'],
         ['service', 'mysql'],
@@ -712,7 +712,7 @@ for (const [role, outside] of ROLES) {
       if (outside.all) {
         return;
       }
-      await page.goto(`/projects/${seeded.rentals}`);
+      await page.goto(`/projects/${seeded.fancy}`);
       await expect(sections(page).filter({ hasText: 'Access' })).toHaveCount(0);
       await page.goto(`/environments/${seeded.db}`);
       await expect(sections(page).filter({ hasText: 'Access' })).toHaveCount(0);

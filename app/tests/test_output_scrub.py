@@ -156,7 +156,7 @@ async def test_the_deployment_scrubber_holds_the_newest_value_of_every_file(
 ) -> None:
     """All files of the deployment count, also those a caller has no grant for."""
     h = harness
-    scrubber = await load_scrubber(h.db, h.crypto, h.seed.deployments.rentals_prod.id)
+    scrubber = await load_scrubber(h.db, h.crypto, h.seed.deployments.fancy_prod.id)
     assert scrubber.scrub_text("p=3306 s=seed-secret") == "p=**** s=****"
     assert scrubber.scrub_text("host db") == "host db"
     other = await load_scrubber(h.db, h.crypto, h.seed.deployments.billing_main.id)
@@ -165,7 +165,7 @@ async def test_the_deployment_scrubber_holds_the_newest_value_of_every_file(
 
 async def test_a_written_older_version_adds_its_values(harness: Harness) -> None:
     h = harness
-    deployment_id = h.seed.deployments.rentals_prod.id
+    deployment_id = h.seed.deployments.fancy_prod.id
     author = h.seed.users.superadmin
     older = await create_version(h.db, h.crypto, h.seed.envs.db.id, "P=4406\n", author=author)
     await create_version(h.db, h.crypto, h.seed.envs.db.id, "P=5507\n", author=author)
@@ -184,5 +184,5 @@ async def test_a_version_that_cannot_be_read_is_skipped(harness: Harness) -> Non
     assert unreadable is not None
     unreadable.content_encrypted = "not a ciphertext"
     await h.db.commit()
-    scrubber = await load_scrubber(h.db, h.crypto, h.seed.deployments.rentals_prod.id)
+    scrubber = await load_scrubber(h.db, h.crypto, h.seed.deployments.fancy_prod.id)
     assert scrubber.scrub_text("s=seed-secret p=3306") == "s=seed-secret p=****"

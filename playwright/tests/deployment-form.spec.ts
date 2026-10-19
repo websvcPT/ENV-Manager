@@ -329,15 +329,15 @@ for (const user of ['admin', 'viewer'] as const) {
       browser,
       request,
     }) => {
-      const rentals = await seededProjectId(browser, 'rentals');
-      const prod = await deploymentId(browser, 'rentals', 'prod');
-      for (const url of [`/projects/${rentals}/deployments/new`, `/deployments/${prod}/edit`]) {
+      const fancy = await seededProjectId(browser, 'Fancy Proj. Name');
+      const prod = await deploymentId(browser, 'Fancy Proj. Name', 'prod');
+      for (const url of [`/projects/${fancy}/deployments/new`, `/deployments/${prod}/edit`]) {
         const response = await page.goto(url);
         expect(response?.status()).toBe(403);
       }
       expect((await request.get('/paths/validate?root=/etc')).status()).toBe(403);
       expect((await request.get('/paths/browse')).status()).toBe(403);
-      await page.goto(`/projects/${rentals}`);
+      await page.goto(`/projects/${fancy}`);
       await expect(page.getByRole('link', { name: 'New deployment' })).toHaveCount(0);
     });
   });

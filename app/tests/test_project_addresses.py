@@ -95,11 +95,11 @@ def test_an_unreasonably_long_text_is_refused_before_it_is_read() -> None:
 
 
 async def test_saving_stores_the_list_and_audits_what_was_added_and_removed(
-    web_app: FastAPI, rentals: int
+    web_app: FastAPI, fancy: int
 ) -> None:
     """The entry names the project and the addresses and has no item scope."""
     async with web_app.state.session_factory() as db:
-        project = await db.get(Project, rentals)
+        project = await db.get(Project, fancy)
         actor = await db.scalar(select(User).where(User.name == "root"))
         assert actor is not None
         assert project is not None and project.extra_addresses == []
@@ -116,7 +116,7 @@ async def test_saving_stores_the_list_and_audits_what_was_added_and_removed(
         same = await save_extra_addresses(db, project, "b@example.com\nc@example.com", actor=actor)
         assert same.changed is False
     async with web_app.state.session_factory() as db:
-        stored = await db.scalar(select(Project.extra_addresses).where(Project.id == rentals))
+        stored = await db.scalar(select(Project.extra_addresses).where(Project.id == fancy))
         entries = list(
             (
                 await db.execute(
@@ -134,15 +134,15 @@ async def test_saving_stores_the_list_and_audits_what_was_added_and_removed(
     ]
     for entry in entries:
         assert entry.result is AuditResult.SUCCESS and entry.actor_name == "root"
-        assert entry.target_type == "project" and entry.target_name == "rentals"
+        assert entry.target_type == "project" and entry.target_name == "Fancy Proj. Name"
         assert (entry.project_id, entry.deployment_id, entry.service_id) == (None, None, None)
     assert entries[0].ip_address == "203.0.113.5"
 
 
-async def test_a_refused_list_changes_and_audits_nothing(web_app: FastAPI, rentals: int) -> None:
+async def test_a_refused_list_changes_and_audits_nothing(web_app: FastAPI, fancy: int) -> None:
     """The stored list stays as it was."""
     async with web_app.state.session_factory() as db:
-        project = await db.get(Project, rentals)
+        project = await db.get(Project, fancy)
         assert project is not None
         actor = await db.scalar(select(User).where(User.name == "root"))
         assert actor is not None
@@ -168,20 +168,20 @@ def panel_of(page: str) -> str:
 
 
 @pytest.fixture
-async def rentals(web_app: FastAPI) -> int:
-    """The id of the seeded rentals project."""
+async def fancy(web_app: FastAPI) -> int:
+    """The id of the seeded Fancy Proj. Name project."""
     async with web_app.state.session_factory() as db:
-        found = await db.scalar(select(Project.id).where(Project.name == "rentals"))
+        found = await db.scalar(select(Project.id).where(Project.name == "Fancy Proj. Name"))
     assert found is not None
     return int(found)
 
 
 async def test_the_settings_tab_has_the_addresses_panel_between_rename_and_delete(
-    web_client: httpx.AsyncClient, rentals: int
+    web_client: httpx.AsyncClient, fancy: int
 ) -> None:
     """An empty textarea, its hint and a save button; the panel sits above the danger zone."""
     await sign_in(web_client, "root")
-    response = await web_client.get(f"/projects/{rentals}/settings")
+    response = await web_client.get(f"/projects/{fancy}/settings")
     assert_never_cached(response)
     page = response.text
     assert (
@@ -192,44 +192,44 @@ async def test_the_settings_tab_has_the_addresses_panel_between_rename_and_delet
     panel = panel_of(page)
     assert 'id="addresses-title"' in panel and "Notification addresses" in panel
     assert 'name="addresses"' in panel and "Extra addresses, one per line" in panel
-    assert f'hx-post="/projects/{rentals}/notification-addresses"' in panel
+    assert f'hx-post="/projects/{fancy}/notification-addresses"' in panel
     assert "Save addresses" in panel and "At most 20 addresses." in panel
 
 
 async def test_saving_the_addresses_stores_them_and_shows_the_cleaned_list(
-    web_client: httpx.AsyncClient, web_app: FastAPI, rentals: int
+    web_client: httpx.AsyncClient, web_app: FastAPI, fancy: int
 ) -> None:
     """Duplicates collapse, the toast says saved and a reload shows the same list."""
     await sign_in(web_client, "root")
     typed = "Ops@Example.com\n\nops@example.com\nteam@example.org"
     response = await post(
-        web_client, f"/projects/{rentals}/notification-addresses", {"addresses": typed}
+        web_client, f"/projects/{fancy}/notification-addresses", {"addresses": typed}
     )
     assert response.status_code == 200
     assert toast_of(response.text) == ("Addresses saved", "They apply to the next notification.")
     assert 'data-fragment="project-addresses"' in response.text
     assert ">Ops@Example.com\nteam@example.org</textarea>" in response.text
     async with web_app.state.session_factory() as db:
-        stored = await db.scalar(select(Project.extra_addresses).where(Project.id == rentals))
+        stored = await db.scalar(select(Project.extra_addresses).where(Project.id == fancy))
     assert stored == ["Ops@Example.com", "team@example.org"]
-    page = (await web_client.get(f"/projects/{rentals}/settings")).text
+    page = (await web_client.get(f"/projects/{fancy}/settings")).text
     assert ">Ops@Example.com\nteam@example.org</textarea>" in page
     again = await post(
         web_client,
-        f"/projects/{rentals}/notification-addresses",
+        f"/projects/{fancy}/notification-addresses",
         {"addresses": "Ops@Example.com\nteam@example.org"},
     )
     assert toast_of(again.text) == ("Nothing to save", "The list is unchanged.")
 
 
 async def test_a_refused_list_answers_with_the_reason_and_keeps_what_was_typed(
-    web_client: httpx.AsyncClient, web_app: FastAPI, rentals: int
+    web_client: httpx.AsyncClient, web_app: FastAPI, fancy: int
 ) -> None:
     """The panel comes back (422) with the message under the field and nothing stored."""
     await sign_in(web_client, "root")
     response = await post(
         web_client,
-        f"/projects/{rentals}/notification-addresses",
+        f"/projects/{fancy}/notification-addresses",
         {"addresses": "ok@example.com\nnot-an-address"},
     )
     assert response.status_code == 422
@@ -237,26 +237,26 @@ async def test_a_refused_list_answers_with_the_reason_and_keeps_what_was_typed(
     assert ">ok@example.com\nnot-an-address</textarea>" in response.text
     assert 'aria-invalid="true"' in response.text
     async with web_app.state.session_factory() as db:
-        assert await db.scalar(select(Project.extra_addresses).where(Project.id == rentals)) == []
+        assert await db.scalar(select(Project.extra_addresses).where(Project.id == fancy)) == []
 
 
 async def test_only_the_superadmin_reaches_the_addresses_and_other_projects_stay_hidden(
-    web_client: httpx.AsyncClient, web_app: FastAPI, rentals: int
+    web_client: httpx.AsyncClient, web_app: FastAPI, fancy: int
 ) -> None:
     """403 for a project in scope, 404 for one outside it, and nothing stored."""
     async with web_app.state.session_factory() as db:
         billing = await db.scalar(select(Project.id).where(Project.name == "billing"))
     await sign_in(web_client, "project_admin")
-    assert (await web_client.get(f"/projects/{rentals}/settings")).status_code == 403
+    assert (await web_client.get(f"/projects/{fancy}/settings")).status_code == 403
     sent = await post(
-        web_client, f"/projects/{rentals}/notification-addresses", {"addresses": "a@example.com"}
+        web_client, f"/projects/{fancy}/notification-addresses", {"addresses": "a@example.com"}
     )
     assert sent.status_code == 403
     outside = await post(
         web_client, f"/projects/{billing}/notification-addresses", {"addresses": "a@example.com"}
     )
     assert outside.status_code == 404
-    page = (await web_client.get(f"/projects/{rentals}")).text
+    page = (await web_client.get(f"/projects/{fancy}")).text
     assert "project-addresses" not in page and "notification-addresses" not in page
     async with web_app.state.session_factory() as db:
         stored = (await db.scalars(select(Project.extra_addresses))).all()

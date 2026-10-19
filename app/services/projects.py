@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -28,8 +29,14 @@ from app.services.permissions import AccessScope, Capability, ItemLevel, compute
 from app.services.tokens import is_live
 
 MAX_PROJECT_NAME_LENGTH = 100
-PROJECT_NAME_PATTERN = re.compile(r"[a-z0-9][a-z0-9-]*")
-NAME_RULE = "Lowercase letters, numbers and dashes."
+# ASCII letters only: SQLite folds the case of ASCII letters alone, so the unique index on
+# ``lower(name)`` and the check in code agree on what a duplicate is.
+PROJECT_NAME_PATTERN = re.compile(r"[A-Za-z0-9 ._-]+")
+NAME_RULE = "Letters, numbers, spaces and the characters . - _"
+NAME_MESSAGE = (
+    f"Use 1 to {MAX_PROJECT_NAME_LENGTH} characters: letters, numbers, spaces and the "
+    "characters . - _"
+)
 
 
 class ProjectError(Exception):
@@ -41,7 +48,7 @@ class InvalidProjectNameError(ProjectError):
 
 
 class ProjectExistsError(ProjectError):
-    """A project with that name already exists."""
+    """A project with that name, ignoring case, already exists."""
 
 
 class ProjectInUseError(ProjectError):
@@ -76,24 +83,35 @@ class ProjectRow:
 
 
 def validate_project_name(name: str) -> str:
-    """The trimmed name when it is acceptable, else ``InvalidProjectNameError``."""
+    """The trimmed display name when it is acceptable, else ``InvalidProjectNameError``.
+
+    A project name is a display name: letters in any case, numbers, spaces and ``. - _``,
+    1 to 100 characters once trimmed.
+    """
     name = name.strip()
     if not name:
         raise InvalidProjectNameError("Enter a project name.")
     if len(name) > MAX_PROJECT_NAME_LENGTH or PROJECT_NAME_PATTERN.fullmatch(name) is None:
-        raise InvalidProjectNameError(
-            "Use 1 to 100 lowercase letters, numbers and dashes, starting with a letter or number."
-        )
+        raise InvalidProjectNameError(NAME_MESSAGE)
     return name
 
 
 async def _ensure_name_free(db: AsyncSession, name: str, *, ignore_id: int | None = None) -> None:
-    """Refuse a name another project already has."""
-    stmt = select(Project.id).where(Project.name == name)
+    """Refuse a name another project already has, whatever the case."""
+    stmt = select(Project.id).where(func.lower(Project.name) == name.lower())
     if ignore_id is not None:
         stmt = stmt.where(Project.id != ignore_id)
     if (await db.execute(stmt)).first() is not None:
         raise ProjectExistsError(f"A project named {name} already exists.")
+
+
+async def _flush_unique(db: AsyncSession, name: str) -> None:
+    """Flush pending changes, turning a lost race on the unique name into the same refusal."""
+    try:
+        await db.flush()
+    except IntegrityError as error:
+        await db.rollback()
+        raise ProjectExistsError(f"A project named {name} already exists.") from error
 
 
 async def create_project(
@@ -104,7 +122,7 @@ async def create_project(
     await _ensure_name_free(db, name)
     project = Project(name=name)
     db.add(project)
-    await db.flush()
+    await _flush_unique(db, name)
     await record_audit(
         db,
         action="project.create",
@@ -131,6 +149,7 @@ async def rename_project(
     await _ensure_name_free(db, name, ignore_id=project.id)
     previous = project.name
     project.name = name
+    await _flush_unique(db, name)
     await record_audit(
         db,
         action="project.rename",
@@ -292,7 +311,11 @@ async def list_project_rows(
     shown_projects = visibility.full[ItemLevel.PROJECT] | visibility.context[ItemLevel.PROJECT]
     if not shown_projects:
         return []
-    stmt = select(Project).where(Project.id.in_(shown_projects)).order_by(Project.name)
+    stmt = (
+        select(Project)
+        .where(Project.id.in_(shown_projects))
+        .order_by(func.lower(Project.name), Project.id)
+    )
     needle = query.strip().lower()
     if needle:
         stmt = stmt.where(func.lower(Project.name).contains(needle, autoescape=True))

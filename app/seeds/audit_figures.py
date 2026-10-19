@@ -26,6 +26,7 @@ from app.models import (
     Service,
     User,
 )
+from app.seeds.dataset import FANCY_PROJECT_NAME
 from app.services.audit import AuditActor, record_actor_audit, record_audit
 
 BULK_ACTION = "backup.create"
@@ -156,8 +157,8 @@ async def ensure_audit_figures(db: AsyncSession) -> None:
         entry.created_at = at
         entry.version_ids = versions or []
 
-    rentals_db = scope("rentals", "prod", "mysql", ".env.db")
-    secrets = scope("rentals", "prod", "mysql", ".env.db.secrets")
+    fancy_db = scope(FANCY_PROJECT_NAME, "prod", "mysql", ".env.db")
+    secrets = scope(FANCY_PROJECT_NAME, "prod", "mysql", ".env.db.secrets")
     billing_api = scope("billing", "main", "api", ".env.api")
     db_v2 = await _version_id(db, environments[("prod", ".env.db")], 2)
     secrets_v1 = await _version_id(db, environments[("prod", ".env.db.secrets")], 1)
@@ -169,7 +170,7 @@ async def ensure_audit_figures(db: AsyncSession) -> None:
         _at(2026, 10, 17, 9, 12),
         "environment.save",
         AuditResult.SUCCESS,
-        rentals_db,
+        fancy_db,
         "environment",
         ".env.db",
         {"version": 2, "mode": "keys", "changed_keys": ["DB_PORT"]},
@@ -193,7 +194,7 @@ async def ensure_audit_figures(db: AsyncSession) -> None:
         _at(2026, 10, 13, 16, 5),
         "deployment.update",
         AuditResult.SUCCESS,
-        scope("rentals", "prod"),
+        scope(FANCY_PROJECT_NAME, "prod"),
         "deployment",
         "prod",
         {"drift_policy": "halt", "missing_keys_policy": "block"},
@@ -204,10 +205,10 @@ async def ensure_audit_figures(db: AsyncSession) -> None:
         _at(2026, 10, 12, 11, 30),
         "project.rename",
         AuditResult.SUCCESS,
-        _Scope(project=projects["rentals"]),
+        _Scope(project=projects[FANCY_PROJECT_NAME]),
         "project",
-        "rentals",
-        {"previous_name": "rentals-old"},
+        FANCY_PROJECT_NAME,
+        {"previous_name": "Fancy Proj. Name (old)"},
     )
     await user_entry(
         "admin",

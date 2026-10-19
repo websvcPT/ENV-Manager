@@ -66,7 +66,7 @@ async function labelFill(page: Page, id: string): Promise<string> {
 }
 
 async function seededMysql(browser: Browser): Promise<number> {
-  return serviceId(browser, 'rentals', 'prod', 'mysql');
+  return serviceId(browser, 'Fancy Proj. Name', 'prod', 'mysql');
 }
 
 test.describe('superadmin add service', () => {
@@ -458,7 +458,7 @@ for (const user of ['admin', 'viewer'] as const) {
 
     test('both forms answer 403', async ({ browser, page }) => {
       const mysql = await seededMysql(browser);
-      const prod = await deploymentId(browser, 'rentals', 'prod');
+      const prod = await deploymentId(browser, 'Fancy Proj. Name', 'prod');
       for (const url of [
         `/services/${mysql}/environments/new`,
         `/deployments/${prod}/services/new`,
@@ -472,7 +472,7 @@ for (const user of ['admin', 'viewer'] as const) {
 
     test('the pages show no add actions', async ({ browser, page }) => {
       const mysql = await seededMysql(browser);
-      const prod = await deploymentId(browser, 'rentals', 'prod');
+      const prod = await deploymentId(browser, 'Fancy Proj. Name', 'prod');
       await page.goto(`/services/${mysql}`);
       await expect(page.getByRole('link', { name: 'Add environment' })).toHaveCount(0);
       await page.goto(`/deployments/${prod}`);

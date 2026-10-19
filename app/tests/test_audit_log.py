@@ -26,6 +26,7 @@ from app.seeds import (
     ensure_audit_figures,
 )
 from app.services.audit import AuditActor, record_actor_audit, record_audit
+from app.services.audit_details import detail_lines
 from app.services.audit_filters import AuditFilters, Cursor, parse_number
 from app.services.audit_log import (
     PAGE_SIZE,
@@ -82,15 +83,15 @@ async def test_the_sql_scope_matches_the_python_rule_for_every_user_and_every_id
 ) -> None:
     """Whatever ids an entry carries, the clause admits it exactly when the Python rule does."""
     chains = {
-        "rentals db": (
-            seed_data.projects.rentals.id,
-            seed_data.deployments.rentals_prod.id,
+        "Fancy Proj. Name db": (
+            seed_data.projects.fancy.id,
+            seed_data.deployments.fancy_prod.id,
             seed_data.services.mysql.id,
             seed_data.envs.db.id,
         ),
-        "rentals secrets": (
-            seed_data.projects.rentals.id,
-            seed_data.deployments.rentals_prod.id,
+        "Fancy Proj. Name secrets": (
+            seed_data.projects.fancy.id,
+            seed_data.deployments.fancy_prod.id,
             seed_data.services.mysql.id,
             seed_data.envs.db_secrets.id,
         ),
@@ -172,7 +173,7 @@ async def test_each_role_sees_only_the_entries_of_its_scope(
         ("file_save", ".env.db"),
         ("file_save", ".env.api"),
         ("deployment.update", "prod"),
-        ("project.rename", "rentals"),
+        ("project.rename", "Fancy Proj. Name"),
     ]
     assert len(await seen(users.project_admin)) == 7
     assert "project.rename" in actions_of(await seen(users.project_admin))
@@ -301,12 +302,12 @@ def test_numbers_that_are_not_positive_whole_numbers_are_ignored(raw: str | None
 async def test_every_filter_narrows_and_they_combine(db: AsyncSession, seed_data: SeedData) -> None:
     """Project, actor, action, result and the date range each filter, and combine with AND."""
     visibility = await visibility_of(db, seed_data.users.superadmin)
-    rentals = seed_data.projects.rentals.id
+    fancy = seed_data.projects.fancy.id
 
     async def rows(filters: AuditFilters) -> list[AuditRow]:
         return await every_row(db, visibility, filters)
 
-    assert len(await rows(AuditFilters(project_id=rentals))) == 7
+    assert len(await rows(AuditFilters(project_id=fancy))) == 7
     assert actions_of(await rows(AuditFilters(action="environment.save"))) == ["environment.save"]
     assert actions_of(await rows(AuditFilters(result=AuditResult.HALTED))) == ["service.deploy"]
     token = AuditFilters(actor_type=AuditActorType.API, actor_name="token billing-ci")
@@ -319,11 +320,11 @@ async def test_every_filter_narrows_and_they_combine(db: AsyncSession, seed_data
     assert sorted(actions_of(on_the_day)) == ["deploy", "environment.save"]
     assert len(await rows(AuditFilters(date_to=date(2026, 10, 14)))) == ALL_ENTRIES - 8
     combined = AuditFilters(
-        project_id=rentals, result=AuditResult.SUCCESS, date_from=date(2026, 10, 16)
+        project_id=fancy, result=AuditResult.SUCCESS, date_from=date(2026, 10, 16)
     )
     assert actions_of(await rows(combined)) == ["environment.save", "environment.reveal", "deploy"]
-    assert await rows(AuditFilters(project_id=rentals, result=AuditResult.HALTED)) == []
-    assert await count_entries(db, visibility, AuditFilters(project_id=rentals)) == 7
+    assert await rows(AuditFilters(project_id=fancy, result=AuditResult.HALTED)) == []
+    assert await count_entries(db, visibility, AuditFilters(project_id=fancy)) == 7
     assert await count_entries(db, visibility, AuditFilters()) == ALL_ENTRIES
 
 
@@ -359,7 +360,7 @@ async def test_filter_options_offer_only_values_found_in_the_callers_entries(
         return await load_filter_options(db, await visibility_of(db, user))
 
     superadmin = await options(seed_data.users.superadmin)
-    assert [name for _, name in superadmin.projects] == ["billing", "rentals"]
+    assert [name for _, name in superadmin.projects] == ["billing", "Fancy Proj. Name"]
     assert {option.label for option in superadmin.actors} == {
         "admin",
         "root",
@@ -371,12 +372,12 @@ async def test_filter_options_offer_only_values_found_in_the_callers_entries(
     assert [value for value, _ in superadmin.results] == ["success", "halted", "blocked", "failure"]
 
     admin = await options(seed_data.users.admin)
-    assert [name for _, name in admin.projects] == ["billing", "rentals"]
+    assert [name for _, name in admin.projects] == ["billing", "Fancy Proj. Name"]
     assert {option.label for option in admin.actors} == {"admin", "root", "token billing-ci"}
     assert not {BULK_ACTION, "user.create", "login.failure", "project.delete"} & set(admin.actions)
 
     scoped = await options(seed_data.users.env_scoped_admin)
-    assert [name for _, name in scoped.projects] == ["rentals"]
+    assert [name for _, name in scoped.projects] == ["Fancy Proj. Name"]
     assert {option.label for option in scoped.actors} == {"admin", "root"}
     assert scoped.actions == ("environment.save", "file_save")
 
@@ -458,8 +459,8 @@ async def test_a_version_is_named_only_when_it_lies_within_the_item_of_the_entry
         ).all()
     )
     api, secrets, saved = versions[".env.api"], versions[".env.db.secrets"], versions[".env.db"]
-    rentals = seed_data.projects.rentals.id
-    prod = seed_data.deployments.rentals_prod.id
+    fancy = seed_data.projects.fancy.id
+    prod = seed_data.deployments.fancy_prod.id
 
     async def entry(
         *,
@@ -482,14 +483,14 @@ async def test_a_version_is_named_only_when_it_lies_within_the_item_of_the_entry
         await db.commit()
         return created.id
 
-    prod_entry = await entry(project_id=rentals, deployment_id=prod)
+    prod_entry = await entry(project_id=fancy, deployment_id=prod)
     file_entry = await entry(
-        project_id=rentals,
+        project_id=fancy,
         deployment_id=prod,
         service_id=seed_data.services.mysql.id,
         environment_id=seed_data.envs.db.id,
     )
-    project_entry = await entry(project_id=rentals)
+    project_entry = await entry(project_id=fancy)
     superadmin = await visibility_of(db, seed_data.users.superadmin)
     for entry_id, expected in (
         (prod_entry, (f"#{api}", ".env.db.secrets v1", ".env.db v1", "#987654")),
@@ -520,3 +521,60 @@ async def test_a_page_of_no_rows_has_no_cursor(db: AsyncSession, seed_data: Seed
     visibility = await visibility_of(db, seed_data.users.ungranted_admin)
     page: AuditPage = await list_page(db, visibility, AuditFilters())
     assert page.rows == () and page.next_cursor is None
+
+
+@pytest.mark.parametrize(
+    ("user", "sees_text"),
+    [
+        ("superadmin", True),
+        ("admin", False),
+        ("project_admin", False),
+        ("deployment_admin", False),
+    ],
+)
+async def test_the_command_text_of_a_hook_save_is_shown_to_the_superadmin_only(
+    db: AsyncSession, seed_data: SeedData, user: str, sees_text: bool
+) -> None:
+    """Who may read the entry may read that commands changed, but not what they said.
+
+    The text is taken out of the list rows, the single entry and the export column alike.
+    """
+    saved = await record_actor_audit(
+        db,
+        AuditActor.for_user(seed_data.users.superadmin),
+        action="service.hook_save",
+        result=AuditResult.SUCCESS,
+        target_type="service",
+        target_id=seed_data.services.mysql.id,
+        target_name="mysql",
+        project_id=seed_data.projects.fancy.id,
+        deployment_id=seed_data.deployments.fancy_prod.id,
+        service_id=seed_data.services.mysql.id,
+        details={
+            "hook": "post_deploy",
+            "changed": ["commands"],
+            "commands": 1,
+            "previous_commands": "docker compose up -d --no-deps old-marker-3917",
+            "new_commands": "docker compose up -d --no-deps new-marker-3917",
+        },
+    )
+    await db.commit()
+    visibility = await visibility_of(db, getattr(seed_data.users, user))
+    page = await list_page(db, visibility, AuditFilters(action="service.hook_save"))
+    single = await load_entry(db, visibility, saved.id)
+    assert single is not None and [row.id for row in page.rows] == [saved.id]
+    for row in (page.rows[0], single):
+        shown = " ".join(f"{line.key} {line.text}" for line in row.details)
+        assert ("new-marker-3917" in shown) is sees_text
+        assert ("old-marker-3917" in shown) is sees_text
+        assert ("new-marker-3917" in row.details_json) is sees_text
+        assert ("previous_commands" in row.details_json) is sees_text
+        assert '"changed":["commands"]' in row.details_json
+
+
+def test_the_most_command_text_the_safety_net_allows_is_shown_whole() -> None:
+    """Ten lines of 500 characters fit the display bound that cuts other long text."""
+    longest = "\n".join(["docker " + "x" * 493] * 10)
+    lines = {line.key: line for line in detail_lines({"new_commands": longest, "output": longest})}
+    assert lines["new commands"].text == longest
+    assert lines["output"].text == longest[:4000] + "..."

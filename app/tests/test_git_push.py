@@ -127,7 +127,7 @@ async def test_the_scan_finds_a_plaintext_file_so_a_clean_result_means_something
         "commit",
         "--allow-empty",
         "-m",
-        "rentals Zq7vK2mPw9 leak",
+        "Fancy Proj. Name Zq7vK2mPw9 leak",
         cwd=checkout,
     )
     assert scan_history(checkout, needles)
@@ -171,7 +171,7 @@ async def test_the_snapshot_layout_is_one_sealed_database_file(
     )
     with sqlite3.connect(opened) as connection:
         names = {row[0] for row in connection.execute("select name from projects")}
-    assert names == {"rentals", "billing"}
+    assert names == {"Fancy Proj. Name", "billing"}
 
 
 async def test_nothing_changed_means_nothing_pushed_and_one_new_version_adds_only_its_files(

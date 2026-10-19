@@ -68,7 +68,7 @@ async def test_each_kind_of_call_leaves_exactly_one_entry(api_world: ApiWorld) -
     owner_id, token_id = await identities(world, "admin")
     mysql = world.services["prod/mysql"]
     scope_ids = {
-        "project_id": world.projects["rentals"],
+        "project_id": world.projects["Fancy Proj. Name"],
         "deployment_id": world.deployments["prod"],
         "service_id": mysql,
     }

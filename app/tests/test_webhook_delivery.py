@@ -126,7 +126,7 @@ async def test_a_deploy_is_posted_once_as_a_signed_document_of_the_whole_run(
     assert request.url == WEBHOOK_URL and verifies(WEBHOOK_SECRET, request)
     body = DeployWebhookBody.model_validate_json(request.body)
     assert body.event == "deploy.finished" and body.event_id == "event-1"
-    assert body.project.name == world.h.seed.projects.rentals.name
+    assert body.project.name == world.h.seed.projects.fancy.name
     assert body.deployment.name == "staging" and body.service.name == "web"
     assert body.run_id == event.run_id and body.status is DeployStatus.SUCCESS
     async with create_session_factory(world.h.database)() as db:

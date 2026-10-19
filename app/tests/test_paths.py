@@ -239,8 +239,8 @@ async def test_seeded_allowed_paths_cover_the_seeded_deployment_roots(
         allowed = await load_allowed_paths(db)
     assert allowed.roots == (Path("/opt/billing"), Path("/opt/rentals"))
     for deployment in (
-        seed_data.deployments.rentals_prod,
-        seed_data.deployments.rentals_staging,
+        seed_data.deployments.fancy_prod,
+        seed_data.deployments.fancy_staging,
         seed_data.deployments.billing_main,
     ):
         assert allowed.contains(deployment.root_path)

@@ -104,7 +104,7 @@ async def test_superadmin_sees_everything_and_the_command_settings(
     assert f'href="/services/{ids.staging_web}/environments/new"' in page
     assert "Read-only view" not in page and "Deploy service" in page
     assert "Command settings" in page and "Superadmin" in page
-    assert "docker compose up -d --no-deps {service_name}" in page
+    assert "docker compose up -d --no-deps web" in page
     assert 'placeholder="/opt/rentals/staging"' in page
     assert "web recreated" in page and "exit code 0" in page and "by admin" in page
     assert page.count('data-fragment="history-row"') == 2
@@ -179,7 +179,7 @@ async def test_environment_grant_sees_a_name_only_view_with_notes(
         in body
     )
     assert "This service also loads environments outside your access." in body
-    assert "Deployment <strong" in body and "rentals" in body
+    assert "Deployment <strong" in body and "Fancy Proj. Name" in body
     assert "deploy did not finish" in body
     assert "Command text and settings are visible to the superadmin only." in body
     for hidden in (".env.db.secrets", "/opt/rentals", "Add environment", "Read-only view"):
@@ -286,6 +286,6 @@ async def test_page_links_lead_back_to_the_structure(
     page = (await web_client.get(f"/services/{ids.mysql}")).text
     back_link = r'<nav aria-label="Breadcrumb" class="-mb-2 md:hidden"><a href="/deployments/\d+"'
     assert re.search(back_link, page)
-    assert "rentals / prod" in page
-    assert re.search(r'<li><a href="/projects/\d+"[^>]*>rentals</a></li>', page)
+    assert "Fancy Proj. Name / prod" in page
+    assert re.search(r'<li><a href="/projects/\d+"[^>]*>Fancy Proj. Name</a></li>', page)
     assert re.search(r'<li><a href="/deployments/\d+"[^>]*>prod</a></li>', page)

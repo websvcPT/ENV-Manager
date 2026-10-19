@@ -80,11 +80,18 @@ def read_rows[Row: (AuditEntry, DeployRun, DeployResult)](model: type[Row]) -> l
 def test_deploy_writes_the_named_files_as_the_cli_actor(roots: dict[str, Path]) -> None:
     result = runner.invoke(
         app,
-        ["deploy", "rentals/staging/web", "--env", ".env.web.tuning", "--env", "web-ca.pem"],
+        [
+            "deploy",
+            "Fancy Proj. Name/staging/web",
+            "--env",
+            ".env.web.tuning",
+            "--env",
+            "web-ca.pem",
+        ],
     )
     assert result.exit_code == 0, result.output
     lines = result.output.splitlines()
-    assert lines[0].startswith("deploy of rentals/staging/web: success (run ")
+    assert lines[0].startswith("deploy of Fancy Proj. Name/staging/web: success (run ")
     assert any(line.startswith("  .env.web.tuning (v2): written. Created.") for line in lines)
     assert any(line.startswith("  web-ca.pem (v1): written.") for line in lines)
     assert "  post-deploy: skipped (The Docker socket is not mounted.)" in lines
@@ -104,15 +111,17 @@ def test_deploy_writes_the_named_files_as_the_cli_actor(roots: dict[str, Path]) 
 def test_deploy_without_file_names_deploys_every_file_of_the_service(
     roots: dict[str, Path],
 ) -> None:
-    result = runner.invoke(app, ["deploy", "rentals/staging/web"])
+    result = runner.invoke(app, ["deploy", "Fancy Proj. Name/staging/web"])
     assert result.exit_code == 0, result.output
     assert len(list((roots["staging"] / "environments").iterdir())) == 4
 
 
 def test_a_dry_run_reports_and_writes_nothing(roots: dict[str, Path]) -> None:
-    result = runner.invoke(app, ["deploy", "rentals/staging/web", "--dry-run"])
+    result = runner.invoke(app, ["deploy", "Fancy Proj. Name/staging/web", "--dry-run"])
     assert result.exit_code == 0, result.output
-    assert result.output.splitlines()[0].startswith("dry run of rentals/staging/web: success")
+    assert result.output.splitlines()[0].startswith(
+        "dry run of Fancy Proj. Name/staging/web: success"
+    )
     assert "would_write" in result.output and "post-deploy" not in result.output
     assert list((roots["staging"] / "environments").iterdir()) == []
     (run,) = [run for run in read_rows(DeployRun) if run.trigger is DeployTrigger.CLI]
@@ -126,12 +135,14 @@ def test_a_drifted_target_halts_with_exit_code_1_and_force_overwrites_it(
 ) -> None:
     target = roots["staging"] / "environments" / ".env.web"
     target.write_text("EDITED=1\n", encoding="utf-8")
-    halted = runner.invoke(app, ["deploy", "rentals/staging/web", "--env", ".env.web"])
+    halted = runner.invoke(app, ["deploy", "Fancy Proj. Name/staging/web", "--env", ".env.web"])
     assert halted.exit_code == 1
     assert "halted" in halted.output and HALT_DRIFT_MESSAGE in halted.output
     assert target.read_text(encoding="utf-8") == "EDITED=1\n"
 
-    forced = runner.invoke(app, ["deploy", "rentals/staging/web", "--env", ".env.web", "--force"])
+    forced = runner.invoke(
+        app, ["deploy", "Fancy Proj. Name/staging/web", "--env", ".env.web", "--force"]
+    )
     assert forced.exit_code == 0, forced.output
     assert "Forced past drift." in forced.output and "backed up" in forced.output
     assert target.read_text(encoding="utf-8") != "EDITED=1\n"
@@ -144,7 +155,7 @@ def test_a_drifted_target_halts_with_exit_code_1_and_force_overwrites_it(
 
 def test_a_deploy_while_the_root_is_locked_exits_with_the_refusal(roots: dict[str, Path]) -> None:
     with hold_deploy_lock(get_settings().lock_path, str(roots["staging"])):
-        result = runner.invoke(app, ["deploy", "rentals/staging/web"])
+        result = runner.invoke(app, ["deploy", "Fancy Proj. Name/staging/web"])
     assert result.exit_code == 1
     assert "Another deploy is running" in result.output
     assert list((roots["staging"] / "environments").iterdir()) == []
@@ -153,10 +164,13 @@ def test_a_deploy_while_the_root_is_locked_exits_with_the_refusal(roots: dict[st
 @pytest.mark.parametrize(
     ("arguments", "message"),
     [
-        (["deploy", "rentals/staging"], "name the service as project/deployment/service"),
-        (["deploy", "rentals//web"], "name the service as project/deployment/service"),
-        (["deploy", "rentals/staging/nope"], "no service rentals/staging/nope"),
-        (["deploy", "rentals/staging/web", "--env", "nope"], "no file nope in rentals/staging/web"),
+        (["deploy", "Fancy Proj. Name/staging"], "name the service as project/deployment/service"),
+        (["deploy", "Fancy Proj. Name//web"], "name the service as project/deployment/service"),
+        (["deploy", "Fancy Proj. Name/staging/nope"], "no service Fancy Proj. Name/staging/nope"),
+        (
+            ["deploy", "Fancy Proj. Name/staging/web", "--env", "nope"],
+            "no file nope in Fancy Proj. Name/staging/web",
+        ),
     ],
 )
 def test_a_target_that_does_not_exist_is_an_error(
@@ -216,7 +230,7 @@ def test_a_deploy_first_closes_runs_that_a_dead_process_left_running(
             await engine.dispose()
 
     run_id = asyncio.run(add_running_run())
-    result = runner.invoke(app, ["deploy", "rentals/staging/web", "--dry-run"])
+    result = runner.invoke(app, ["deploy", "Fancy Proj. Name/staging/web", "--dry-run"])
     assert result.exit_code == 0, result.output
     (closed,) = [run for run in read_rows(DeployRun) if run.id == run_id]
     assert closed.post_deploy_status is PostDeployStatus.FAILED

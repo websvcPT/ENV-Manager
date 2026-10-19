@@ -356,7 +356,7 @@ test.describe('superadmin history', () => {
   });
 
   test('marks the deployed version of a seeded file', async ({ page, browser }) => {
-    const id = await seededEnvironmentId(browser, 'rentals', 'staging', 'web', '.env.web.tuning');
+    const id = await seededEnvironmentId(browser, 'Fancy Proj. Name', 'staging', 'web', '.env.web.tuning');
     await page.goto(`/environments/${id}/history`);
     await expect(versionRow(page, 1).locator('[data-status="deployed"]')).toBeVisible();
     await expect(versionRow(page, 2).locator('[data-status="deployed"]')).toHaveCount(0);
@@ -365,7 +365,7 @@ test.describe('superadmin history', () => {
 });
 
 async function seededEditor(browser: Browser): Promise<number> {
-  return seededEnvironmentId(browser, 'rentals', 'prod', 'mysql', '.env.db.app');
+  return seededEnvironmentId(browser, 'Fancy Proj. Name', 'prod', 'mysql', '.env.db.app');
 }
 
 test.describe('viewer', () => {
@@ -435,7 +435,7 @@ test.describe('other roles', () => {
   });
 
   test('an environment scoped admin reaches the history of its file only', async ({ browser }) => {
-    const owned = await seededEnvironmentId(browser, 'rentals', 'prod', 'mysql', '.env.db');
+    const owned = await seededEnvironmentId(browser, 'Fancy Proj. Name', 'prod', 'mysql', '.env.db');
     const other = await seededEditor(browser);
     const context = await browser.newContext({ storageState: stateFile('envScopedAdmin') });
     const page = await context.newPage();

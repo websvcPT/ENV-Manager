@@ -23,7 +23,7 @@ from app.models import (
     Project,
     Service,
 )
-from app.services.audit_details import DetailLine, detail_lines, details_json
+from app.services.audit_details import DetailLine, detail_lines, details_json, without_command_text
 from app.services.audit_filters import AuditFilters, Cursor
 from app.services.permissions import ItemLevel, Visibility
 
@@ -238,12 +238,18 @@ def _actor_name(entry: AuditEntry) -> str:
     return SYSTEM_ACTOR if entry.actor_type is AuditActorType.SYSTEM else UNKNOWN_ACTOR
 
 
-async def _rows(db: AsyncSession, entries: Sequence[AuditEntry]) -> tuple[AuditRow, ...]:
-    """The display rows for entries already filtered to the caller's scope."""
+async def _rows(
+    db: AsyncSession, entries: Sequence[AuditEntry], *, show_command_text: bool
+) -> tuple[AuditRow, ...]:
+    """The display rows for entries already filtered to the caller's scope.
+
+    Only the superadmin (``show_command_text``) reads the command text an entry may carry.
+    """
     stored = await _stored_versions(db, entries)
     rows: list[AuditRow] = []
     for entry in entries:
         version_ids = tuple(item for item in entry.version_ids if isinstance(item, int))
+        details = entry.details if show_command_text else without_command_text(entry.details)
         rows.append(
             AuditRow(
                 id=entry.id,
@@ -255,8 +261,8 @@ async def _rows(db: AsyncSession, entries: Sequence[AuditEntry]) -> tuple[AuditR
                 object_type=entry.target_type,
                 object_name=entry.target_name,
                 result=entry.result,
-                details=detail_lines(entry.details),
-                details_json=details_json(entry.details),
+                details=detail_lines(details),
+                details_json=details_json(details),
                 version_ids=version_ids,
                 versions=_version_labels(entry, stored),
                 trace_id=entry.trace_id,
@@ -289,7 +295,8 @@ async def list_page(
     more = len(entries) > limit
     entries = entries[:limit]
     next_cursor = Cursor(entries[-1].created_at, entries[-1].id).encode() if more else None
-    return AuditPage(await _rows(db, entries), next_cursor)
+    rows = await _rows(db, entries, show_command_text=visibility.unrestricted)
+    return AuditPage(rows, next_cursor)
 
 
 async def load_entry(db: AsyncSession, visibility: Visibility, entry_id: int) -> AuditRow | None:
@@ -304,7 +311,7 @@ async def load_entry(db: AsyncSession, visibility: Visibility, entry_id: int) ->
     ).scalar_one_or_none()
     if entry is None:
         return None
-    return (await _rows(db, [entry]))[0]
+    return (await _rows(db, [entry], show_command_text=visibility.unrestricted))[0]
 
 
 async def count_entries(

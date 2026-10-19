@@ -222,8 +222,8 @@ async def test_the_remove_dialog_states_what_happens_to_the_deployments(
     root: httpx.AsyncClient, web_app: FastAPI
 ) -> None:
     """The text counts the deployments the removal leaves outside the list."""
-    rentals = await entry_id(web_app, "/opt/rentals")
-    page = await _fragment(root, f"/settings/paths/{rentals}/remove")
+    fancy = await entry_id(web_app, "/opt/rentals")
+    page = await _fragment(root, f"/settings/paths/{fancy}/remove")
     assert 'data-fragment="path-remove"' in page and ">Remove /opt/rentals</h2>" in page
     assert "Nothing is deleted. The 2 deployments under this path are flagged as outside" in page
     assert "or the deployments are moved." in page
@@ -249,12 +249,12 @@ async def test_removing_a_path_audits_announces_and_flags_its_deployments(
 ) -> None:
     """The entry goes, the audit entry counts the flagged deployments and the deployment page
     shows the outside state."""
-    rentals = await entry_id(web_app, "/opt/rentals")
-    response = await post(root, f"/settings/paths/{rentals}/remove")
+    fancy = await entry_id(web_app, "/opt/rentals")
+    response = await post(root, f"/settings/paths/{fancy}/remove")
     assert response.status_code == 204
     assert json.loads(response.headers["hx-trigger"]) == CHANGED_AND_CLOSED
     async with web_app.state.session_factory() as db:
-        assert await db.get(AllowedPath, rentals) is None
+        assert await db.get(AllowedPath, fancy) is None
         removal = (
             await db.execute(select(AuditEntry).where(AuditEntry.action == "allowed_path.remove"))
         ).scalar_one()
@@ -271,12 +271,12 @@ async def test_removing_an_entry_twice_answers_that_it_is_gone(
     root: httpx.AsyncClient, web_app: FastAPI
 ) -> None:
     """The second removal is a 409 with the dialog saying so and the table refreshing."""
-    rentals = await entry_id(web_app, "/opt/rentals")
-    assert (await post(root, f"/settings/paths/{rentals}/remove")).status_code == 204
-    again = await post(root, f"/settings/paths/{rentals}/remove")
+    fancy = await entry_id(web_app, "/opt/rentals")
+    assert (await post(root, f"/settings/paths/{fancy}/remove")).status_code == 204
+    again = await post(root, f"/settings/paths/{fancy}/remove")
     assert again.status_code == 409
     assert "This path is no longer in the list." in again.text
     assert json.loads(again.headers["hx-trigger"]) == {"paths-changed": True}
-    assert (await root.get(f"/settings/paths/{rentals}/remove", headers=HTMX)).status_code == 404
+    assert (await root.get(f"/settings/paths/{fancy}/remove", headers=HTMX)).status_code == 404
     removed = [e for e in await settings_entries(web_app) if e.action == "allowed_path.remove"]
     assert len(removed) == 1

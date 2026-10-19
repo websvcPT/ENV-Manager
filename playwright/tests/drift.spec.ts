@@ -692,7 +692,7 @@ test.describe('viewer', () => {
     request,
     browser,
   }) => {
-    const id = await seededEnvironmentId(browser, 'rentals', 'prod', 'mysql', '.env.db.app');
+    const id = await seededEnvironmentId(browser, 'Fancy Proj. Name', 'prod', 'mysql', '.env.db.app');
     const response = await page.goto(url(id));
     expect(response?.status()).toBe(200);
     await expect(header(page).locator('h1')).toHaveText('.env.db.app');
@@ -725,8 +725,8 @@ test.describe('scoped viewer', () => {
     request,
     browser,
   }) => {
-    const own = await seededEnvironmentId(browser, 'rentals', 'prod', 'mysql', '.env.db');
-    const hidden = await seededEnvironmentId(browser, 'rentals', 'prod', 'mysql', '.env.db.app');
+    const own = await seededEnvironmentId(browser, 'Fancy Proj. Name', 'prod', 'mysql', '.env.db');
+    const hidden = await seededEnvironmentId(browser, 'Fancy Proj. Name', 'prod', 'mysql', '.env.db.app');
     const response = await page.goto(url(own));
     expect(response?.status()).toBe(200);
     await expect(page.getByRole('button', { name: /Reveal|Import|Overwrite/ })).toHaveCount(0);
@@ -749,7 +749,7 @@ test.describe('admin', () => {
     request,
     browser,
   }) => {
-    const id = await seededEnvironmentId(browser, 'rentals', 'prod', 'mysql', '.env.db.app');
+    const id = await seededEnvironmentId(browser, 'Fancy Proj. Name', 'prod', 'mysql', '.env.db.app');
     const response = await page.goto(url(id));
     expect(response?.status()).toBe(200);
     await expect(badge(page)).toHaveText('Target missing');
@@ -785,8 +785,8 @@ test.describe('scoped admin', () => {
     page,
     browser,
   }) => {
-    const own = await seededEnvironmentId(browser, 'rentals', 'prod', 'mysql', '.env.db');
-    const hidden = await seededEnvironmentId(browser, 'rentals', 'prod', 'mysql', '.env.db.app');
+    const own = await seededEnvironmentId(browser, 'Fancy Proj. Name', 'prod', 'mysql', '.env.db');
+    const hidden = await seededEnvironmentId(browser, 'Fancy Proj. Name', 'prod', 'mysql', '.env.db.app');
     expect((await page.goto(url(own)))?.status()).toBe(200);
     await expect(badge(page)).toHaveText('Target missing');
     await expect(header(page)).toContainText('The target folder does not exist.');
@@ -799,7 +799,7 @@ test.describe('admin without a grant', () => {
   test.use({ storageState: stateFile('ungrantedAdmin') });
 
   test('gets 404 for the view and for every action', async ({ page, request, browser }) => {
-    const id = await seededEnvironmentId(browser, 'rentals', 'prod', 'mysql', '.env.db.app');
+    const id = await seededEnvironmentId(browser, 'Fancy Proj. Name', 'prod', 'mysql', '.env.db.app');
     expect((await page.goto(url(id)))?.status()).toBe(404);
     const headers = await csrfHeaders(request);
     for (const path of ['drift/reveal', 'import', 'overwrite']) {

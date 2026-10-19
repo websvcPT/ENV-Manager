@@ -80,9 +80,11 @@ def hx_vals(page: str, path: str) -> dict[str, object]:
 
 
 def without_csrf_token(page: str) -> str:
-    """The page without the request token its body carries.
+    """The page without the request token its body carries, in the htmx headers and in the hidden
+    field of a form (the log out form of the account menu).
 
     The token is random hex, so a search of a whole page for a short digit string such as a port
     would now and then find it there.
     """
-    return re.sub(r"hx-headers:inherited='[^']*'", "", page)
+    page = re.sub(r"hx-headers:inherited='[^']*'", "", page)
+    return re.sub(r'<input type="hidden" name="csrf_token" value="[^"]*">', "", page)

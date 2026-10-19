@@ -6,6 +6,7 @@ import type { Browser, Locator, Page } from '@playwright/test';
 import { createDeployment } from '../deployments-api';
 import { createEnvironment } from '../environments-api';
 import { stateFile } from '../global-setup';
+import { saveChangedCommands } from '../post-deploy-form';
 import { createService, serviceId } from '../services-api';
 import { expect, test } from '../tests/scratch-project';
 
@@ -117,7 +118,7 @@ test.describe('superadmin on the demo stack', () => {
     const preview = dialog(page).locator('[data-fragment="post-deploy-preview"]');
     await expect(preview).toContainText('The post-deploy command will run once');
     await expect(preview.locator('pre')).toHaveText(
-      'docker compose up -d --no-deps --force-recreate {service_name}',
+      'docker compose up -d --no-deps --force-recreate api',
     );
     await expect(preview).toContainText('Command text is shown to the superadmin only.');
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
@@ -268,7 +269,7 @@ test.describe('a failing command', () => {
       await page.goto(`/services/${service}`);
       const settings = page.locator('#postdeploy-settings');
       await settings.locator('#cmds').fill('docker compose ps --no-such-flag');
-      await settings.getByRole('button', { name: 'Save settings' }).click();
+      await saveChangedCommands(settings);
       await expect(page.locator('[data-fragment="toast"]')).toContainText('Post-deploy settings saved');
 
       await page.getByRole('button', { name: 'Deploy service' }).click();

@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import AuditActorType, AuditResult, Deployment, Service, User
 from app.services.audit import record_audit
-from app.services.projects import MAX_PROJECT_NAME_LENGTH, PROJECT_NAME_PATTERN
+from app.services.slug_names import SLUG_MESSAGE, is_slug_name
 
 
 class ServiceNameError(Exception):
@@ -21,10 +21,8 @@ async def validate_service_name(db: AsyncSession, deployment_id: int, raw: str) 
     name = raw.strip()
     if not name:
         raise ServiceNameError("Enter a service name.")
-    if len(name) > MAX_PROJECT_NAME_LENGTH or PROJECT_NAME_PATTERN.fullmatch(name) is None:
-        raise ServiceNameError(
-            "Use 1 to 100 lowercase letters, numbers and dashes, starting with a letter or number."
-        )
+    if not is_slug_name(name):
+        raise ServiceNameError(SLUG_MESSAGE)
     taken = select(Service.id).where(Service.deployment_id == deployment_id, Service.name == name)
     if (await db.execute(taken)).first() is not None:
         raise ServiceNameError(f"A service named {name} already exists in this deployment.")

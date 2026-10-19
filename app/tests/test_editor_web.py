@@ -96,10 +96,11 @@ async def test_the_page_search_helper_removes_only_the_request_token(
     nothing else, so a search for a value still looks at all the rest of the page."""
     await sign_in(web_client, "env_scoped_admin")
     page = (await web_client.get(f"/environments/{ids.db}")).text
-    assert "hx-headers:inherited=" in page
+    assert "hx-headers:inherited=" in page and 'name="csrf_token"' in page
     cleaned = without_csrf_token(page)
     assert "hx-headers:inherited=" not in cleaned and "X-CSRFToken" not in cleaned
-    assert len(cleaned) > len(page) - 200 and "DB_HOST" in cleaned
+    assert 'name="csrf_token"' not in cleaned
+    assert len(cleaned) > len(page) - 400 and "DB_HOST" in cleaned
 
 
 @pytest.mark.parametrize("role", OUT_OF_SCOPE_FOR_EDITOR)

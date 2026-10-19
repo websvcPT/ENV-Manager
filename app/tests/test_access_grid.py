@@ -141,14 +141,18 @@ async def test_a_project_grant_is_direct_and_passes_down_as_inherited(
 ) -> None:
     grid = await load_access_grid(db, GridFilters())
     viewer = seed_data.users.viewer
-    project = f"project-{seed_data.projects.rentals.id}"
-    deployment = f"deployment-{seed_data.deployments.rentals_prod.id}"
+    project = f"project-{seed_data.projects.fancy.id}"
+    deployment = f"deployment-{seed_data.deployments.fancy_prod.id}"
     service = f"service-{seed_data.services.mysql.id}"
     environment = f"environment-{seed_data.envs.db.id}"
     assert cell_of(grid, viewer, project) == GridCell(CellKind.DIRECT)
     assert node_of(grid, project).future_items
-    assert cell_of(grid, viewer, deployment) == GridCell(CellKind.INHERITED, source="rentals")
-    assert cell_of(grid, viewer, environment) == GridCell(CellKind.INHERITED, source="rentals")
+    assert cell_of(grid, viewer, deployment) == GridCell(
+        CellKind.INHERITED, source="Fancy Proj. Name"
+    )
+    assert cell_of(grid, viewer, environment) == GridCell(
+        CellKind.INHERITED, source="Fancy Proj. Name"
+    )
     result = cell_of(grid, viewer, service)
     assert result.kind is CellKind.RESULT
     assert result.reaches
@@ -165,11 +169,11 @@ async def test_a_deployment_grant_passes_down_with_the_deployment_as_source(
 ) -> None:
     grid = await load_access_grid(db, GridFilters())
     user = seed_data.users.deployment_admin
-    prod = f"deployment-{seed_data.deployments.rentals_prod.id}"
-    staging = f"deployment-{seed_data.deployments.rentals_staging.id}"
+    prod = f"deployment-{seed_data.deployments.fancy_prod.id}"
+    staging = f"deployment-{seed_data.deployments.fancy_staging.id}"
     assert cell_of(grid, user, prod) == GridCell(CellKind.DIRECT)
     assert node_of(grid, prod).future_items
-    assert cell_of(grid, user, f"project-{seed_data.projects.rentals.id}").kind is CellKind.NONE
+    assert cell_of(grid, user, f"project-{seed_data.projects.fancy.id}").kind is CellKind.NONE
     assert cell_of(grid, user, f"environment-{seed_data.envs.web.id}") == GridCell(
         CellKind.INHERITED, source="prod"
     )
@@ -192,7 +196,7 @@ async def test_an_environment_grant_shows_a_partial_service_result(
     assert (mysql.seen, mysql.reaches) == (1, True)
     assert mysql.total == len(node_of(grid, f"service-{seed_data.services.mysql.id}").environments)
     assert mysql.total > 1
-    assert cell_of(grid, user, f"deployment-{seed_data.deployments.rentals_prod.id}").kind is (
+    assert cell_of(grid, user, f"deployment-{seed_data.deployments.fancy_prod.id}").kind is (
         CellKind.NONE
     )
 
@@ -201,19 +205,19 @@ async def test_the_widest_item_is_the_source_and_a_redundant_grant_stays_direct(
     db: AsyncSession, seed_data: SeedData
 ) -> None:
     user = seed_data.users.viewer
-    prod = GrantTarget(DEPLOYMENT, seed_data.deployments.rentals_prod.id)
+    prod = GrantTarget(DEPLOYMENT, seed_data.deployments.fancy_prod.id)
     db_file = GrantTarget(ENVIRONMENT, seed_data.envs.db.id)
-    project = GrantTarget(PROJECT, seed_data.projects.rentals.id)
+    project = GrantTarget(PROJECT, seed_data.projects.fancy.id)
     await set_user_grants(db, user, {project, prod, db_file}, actor=actor_of(seed_data))
     grid = await load_access_grid(db, GridFilters())
     assert cell_of(grid, user, f"deployment-{prod.item_id}") == GridCell(
-        CellKind.DIRECT, also="rentals"
+        CellKind.DIRECT, also="Fancy Proj. Name"
     )
     assert cell_of(grid, user, f"environment-{db_file.item_id}") == GridCell(
-        CellKind.DIRECT, also="rentals"
+        CellKind.DIRECT, also="Fancy Proj. Name"
     )
     assert cell_of(grid, user, f"environment-{seed_data.envs.web.id}") == GridCell(
-        CellKind.INHERITED, source="rentals"
+        CellKind.INHERITED, source="Fancy Proj. Name"
     )
 
 
@@ -302,7 +306,7 @@ async def test_a_cell_that_shows_an_old_state_is_refused_and_nothing_changes(
     db: AsyncSession, seed_data: SeedData
 ) -> None:
     user = seed_data.users.viewer
-    project = GrantTarget(PROJECT, seed_data.projects.rentals.id)
+    project = GrantTarget(PROJECT, seed_data.projects.fancy.id)
     before = await entries(db, "grant.remove")
     update = await toggle_cell(db, user, project, was=False, actor=actor_of(seed_data))
     assert update.notice == STALE_NOTICE
@@ -326,15 +330,15 @@ async def test_access_an_item_above_already_includes_cannot_be_granted_again(
     user = seed_data.users.viewer
     target = GrantTarget(ENVIRONMENT, seed_data.envs.db.id)
     update = await toggle_cell(db, user, target, was=False, actor=actor_of(seed_data))
-    assert update.notice == "Access to this item is already included through rentals."
-    assert await grants_of(db, user) == {GrantTarget(PROJECT, seed_data.projects.rentals.id)}
+    assert update.notice == "Access to this item is already included through Fancy Proj. Name."
+    assert await grants_of(db, user) == {GrantTarget(PROJECT, seed_data.projects.fancy.id)}
     assert await entries(db, "grant.add") == []
 
 
 async def test_a_redundant_grant_can_be_removed(db: AsyncSession, seed_data: SeedData) -> None:
     user = seed_data.users.viewer
     target = GrantTarget(ENVIRONMENT, seed_data.envs.db.id)
-    project = GrantTarget(PROJECT, seed_data.projects.rentals.id)
+    project = GrantTarget(PROJECT, seed_data.projects.fancy.id)
     await set_user_grants(db, user, {project, target}, actor=actor_of(seed_data))
     update = await toggle_cell(db, user, target, was=True, actor=actor_of(seed_data))
     assert update.changed and update.notice is None

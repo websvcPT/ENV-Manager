@@ -38,8 +38,6 @@ from app.tests.deploy_helpers import (
 from app.tests.fake_docker import FakeDocker
 from app.tests.test_hook_process import wait_until_gone
 
-COMMAND = "docker compose up -d --no-deps {service_name}"
-
 
 @pytest.fixture
 def fake(tmp_path: Path) -> FakeDocker:

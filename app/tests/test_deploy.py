@@ -135,7 +135,7 @@ async def test_a_deploy_is_audited_with_the_actor_versions_and_force_flag(
         h.seed.services.staging_web.id,
         h.seed.services.staging_web.id,
     )
-    assert entry.deployment_id == h.seed.deployments.rentals_staging.id
+    assert entry.deployment_id == h.seed.deployments.fancy_staging.id
     assert entry.details["force"] is True and entry.details["dry_run"] is False
     assert entry.details["environments"] == [
         {
@@ -264,7 +264,7 @@ async def test_deployment_defaults_and_environment_overrides_set_the_mode(
     harness: Harness,
 ) -> None:
     h = harness
-    await set_deployment(h.db, h.seed.deployments.rentals_staging.id, file_mode="0640")
+    await set_deployment(h.db, h.seed.deployments.fancy_staging.id, file_mode="0640")
     await set_environment(h.db, h.seed.figures.tuning.id, file_mode="0644")
     await staging_run(h, environments=[h.seed.envs.staging_web, h.seed.figures.tuning])
     modes = {path.name: stat.S_IMODE(path.stat().st_mode) for path in staging_folder(h).iterdir()}
@@ -277,7 +277,7 @@ async def test_the_configured_owner_and_group_are_applied_when_the_app_may_set_t
     h = harness
     await set_deployment(
         h.db,
-        h.seed.deployments.rentals_staging.id,
+        h.seed.deployments.fancy_staging.id,
         file_owner=str(os.getuid()),
         file_group=str(os.getgid()),
     )
@@ -296,7 +296,7 @@ async def test_an_owner_the_app_cannot_set_fails_the_environment_with_a_clear_re
         raise PermissionError
 
     h.engine.change_owner = deny
-    await set_deployment(h.db, h.seed.deployments.rentals_staging.id, file_owner="0")
+    await set_deployment(h.db, h.seed.deployments.fancy_staging.id, file_owner="0")
     (staging_folder(h) / ".env.web.tuning").write_text("WORKERS=9\n", encoding="utf-8")
     outcome = await staging_run(h, environments=[h.seed.figures.tuning], force=True)
 
@@ -352,7 +352,7 @@ async def test_a_dry_run_reports_without_writing_backing_up_or_taking_the_lock(
     h = harness
     folder = staging_folder(h)
     (folder / ".env.web").write_text("WORKERS=old\n", encoding="utf-8")
-    staging_id = h.seed.deployments.rentals_staging.id
+    staging_id = h.seed.deployments.fancy_staging.id
     await set_deployment(h.db, staging_id, drift_policy=DriftPolicy.BACKUP_OVERWRITE)
     before = (folder / ".env.web").stat()
     outcome = await staging_run(h, dry_run=True)
@@ -419,7 +419,7 @@ async def test_a_deployment_moved_outside_the_allowed_paths_cannot_deploy(
     h = harness
     elsewhere = tmp_path.resolve() / "elsewhere"
     (elsewhere / "environments").mkdir(parents=True)
-    await set_deployment(h.db, h.seed.deployments.rentals_staging.id, root_path=str(elsewhere))
+    await set_deployment(h.db, h.seed.deployments.fancy_staging.id, root_path=str(elsewhere))
     outcome = await staging_run(h, force=True)
     assert outcome.status is DeployStatus.FAILED
     assert {result.status for result in outcome.environments} == {DeployResultStatus.FAILED}
@@ -453,7 +453,7 @@ async def test_a_swap_to_a_symlink_between_validation_and_write_writes_nothing_o
     victim.write_text("UNTOUCHED\n", encoding="utf-8")
     folder = staging_folder(h)
     (folder / ".env.web.tuning").write_text("OLD=1\n", encoding="utf-8")
-    staging_id = h.seed.deployments.rentals_staging.id
+    staging_id = h.seed.deployments.fancy_staging.id
     await set_deployment(h.db, staging_id, drift_policy=DriftPolicy.OVERWRITE)
     swapped: list[str] = []
 

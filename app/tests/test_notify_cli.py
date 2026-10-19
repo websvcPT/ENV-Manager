@@ -212,7 +212,7 @@ def test_a_halted_deploy_from_the_command_line_notifies_the_project_admins(
     """The deploy command passes the notifier to the engine: a halt is a problem kind."""
     target = cli_world["staging"] / "environments" / ".env.web"
     target.write_text("EDITED=1\n", encoding="utf-8")
-    halted = runner.invoke(app, ["deploy", "rentals/staging/web", "--env", ".env.web"])
+    halted = runner.invoke(app, ["deploy", "Fancy Proj. Name/staging/web", "--env", ".env.web"])
     assert halted.exit_code == 1
     sent = mails()
     assert sorted(to for to, _subject, _text in sent) == [
@@ -221,7 +221,9 @@ def test_a_halted_deploy_from_the_command_line_notifies_the_project_admins(
     ]
     assert all(subject == "[ENV Manager] Deploy halted: web (staging)" for _to, subject, _t in sent)
     assert all("EDITED" not in text for _to, _subject, text in sent)
-    forced = runner.invoke(app, ["deploy", "rentals/staging/web", "--env", ".env.web", "--force"])
+    forced = runner.invoke(
+        app, ["deploy", "Fancy Proj. Name/staging/web", "--env", ".env.web", "--force"]
+    )
     assert forced.exit_code == 0
     assert len(mails()) == len(sent)  # a success is off by default
 

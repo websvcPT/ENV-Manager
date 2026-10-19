@@ -30,7 +30,7 @@ async def staging_detail(h: Harness, user: str = "superadmin") -> DeploymentDeta
     """The staging deployment page data as a seeded user sees it."""
     scope = await load_user_scope(h.db, getattr(h.seed.users, user))
     detail = await load_deployment_detail(
-        h.db, scope, h.seed.deployments.rentals_staging.id, await load_allowed_paths(h.db)
+        h.db, scope, h.seed.deployments.fancy_staging.id, await load_allowed_paths(h.db)
     )
     assert detail is not None
     return detail
@@ -68,7 +68,7 @@ async def test_a_dry_run_that_finds_drift_counts_until_a_write_settles_it(
     target = h.roots["staging"] / "environments" / web.name
     target.write_text("WORKERS=old\n", encoding="utf-8")
     await set_deployment(
-        h.db, h.seed.deployments.rentals_staging.id, drift_policy=DriftPolicy.OVERWRITE
+        h.db, h.seed.deployments.fancy_staging.id, drift_policy=DriftPolicy.OVERWRITE
     )
     await h.deploy(h.seed.services.staging_web.id, environments=[web], dry_run=True)
     assert (await staging_detail(h)).drift_state is DriftState.DRIFT
@@ -101,7 +101,7 @@ async def test_a_scoped_caller_sees_only_the_outcomes_of_the_files_in_scope(
     async def prod_detail(user: str) -> DeploymentDetail:
         scope = await load_user_scope(h.db, getattr(h.seed.users, user))
         detail = await load_deployment_detail(
-            h.db, scope, h.seed.deployments.rentals_prod.id, await load_allowed_paths(h.db)
+            h.db, scope, h.seed.deployments.fancy_prod.id, await load_allowed_paths(h.db)
         )
         assert detail is not None
         return detail

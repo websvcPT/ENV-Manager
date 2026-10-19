@@ -48,7 +48,7 @@ async def deploy_files(
 
 async def set_staging(h: Harness, **fields: object) -> None:
     """Change fields of the staging deployment."""
-    await set_deployment(h.db, h.seed.deployments.rentals_staging.id, **fields)
+    await set_deployment(h.db, h.seed.deployments.fancy_staging.id, **fields)
 
 
 async def test_missing_dist_keys_block_the_environment_by_default(harness: Harness) -> None:

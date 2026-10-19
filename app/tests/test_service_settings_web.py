@@ -1,5 +1,6 @@
 """The post-deploy command settings of the service page: who sees them and every state of them."""
 
+import html
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,7 +27,7 @@ from app.tests.fake_docker import FakeDocker
 from app.tests.web_helpers import HTMX, assert_never_cached, post
 from app.web.service_detail import NOTHING_STORED_MESSAGE, SAVED_EMPTY_MESSAGE, SAVED_MESSAGE
 
-STORED_COMMAND = "docker compose up -d --no-deps {service_name}"
+STORED_COMMAND = "docker compose up -d --no-deps web"
 NOT_MOUNTED_COPY = (
     "The Docker socket is not mounted, so post-deploy commands are off. These fields are "
     "disabled and saving is refused. Mount {socket} and recreate the container to enable the "
@@ -43,6 +44,7 @@ NON_SUPERADMINS = (
 FORM = re.compile(r'<form id="postdeploy-settings".*?</form>', re.DOTALL)
 STATUS_LINE = re.compile(r'<p data-fragment="docker-status".*?</p>', re.DOTALL)
 ERROR_IDS = re.compile(r'<p id="([\w-]+-e)" role="alert"')
+DIGEST = re.compile(r'name="reviewed" value="([0-9a-f]{64})"')
 
 
 @dataclass(frozen=True)
@@ -182,7 +184,7 @@ async def test_the_superadmin_sees_the_status_line_and_the_enabled_form(
     assert 'hx-status:422="swap:outerHTML target:#postdeploy-settings"' in form
     assert 'name="working_directory"' in form and 'placeholder="/opt/rentals/staging"' in form
     assert 'value=""' in form
-    assert ">docker compose up -d --no-deps {service_name}</textarea>" in form
+    assert ">docker compose up -d --no-deps web</textarea>" in form
     assert 'name="timeout" type="number" inputmode="numeric" value="120"' in form
     assert 'name="run_only_if_changed" checked' in form
     assert ">Test command</button>" in form and ">Save settings</button>" in form
@@ -250,7 +252,7 @@ async def test_without_usable_docker_the_form_is_disabled_and_explains_why(
         assert disabled_count(form) == 6, "four fields and two buttons"
         assert note.replace("{socket}", str(cli.socket_path)) in form
         assert 'role="note"' in form
-        assert ">docker compose up -d --no-deps {service_name}</textarea>" in form
+        assert ">docker compose up -d --no-deps web</textarea>" in form
 
 
 @pytest.mark.parametrize("user", NON_SUPERADMINS)
@@ -323,27 +325,51 @@ async def test_the_superadmin_saves_the_settings_and_gets_a_toast_and_the_stored
     folder = roots["staging"] / "compose"
     folder.mkdir()
     await sign_in(web_client, "root")
+    typed = {
+        "working_directory": str(folder),
+        "commands": "docker compose up -d web\r\n\r\n  docker ps  \r\n",
+        "timeout": "300",
+    }
+    review = await post(web_client, f"/services/{ids.staging_web}/postdeploy", typed)
+    assert review.status_code == 200
+    assert_never_cached(review)
+    asked = form_of(review.text)
+    assert 'data-fragment="postdeploy-review"' in asked and "Review the commands" in asked
+    assert [html.unescape(word) for word in re.findall(r"<code [^>]*>(.*?)</code>", asked)] == [
+        "docker",
+        "compose",
+        "up",
+        "-d",
+        "web",
+        "docker",
+        "ps",
+    ]
+    assert "Confirm and save" in asked and "Save settings" not in asked
+    assert 'data-fragment="toast"' not in asked
+    before_review = await stored(web_app, ids.staging_web)
+    assert before_review is not None and before_review.commands == STORED_COMMAND
+    assert await entries(web_app, "service.hook_save") == []
+    digest = DIGEST.search(asked)
+    assert digest is not None
+
     response = await post(
         web_client,
         f"/services/{ids.staging_web}/postdeploy",
-        {
-            "working_directory": str(folder),
-            "commands": "docker compose up -d {service_name}\r\n\r\n  docker ps  \r\n",
-            "timeout": "300",
-        },
+        {**typed, "reviewed": digest.group(1)},
     )
     assert response.status_code == 200
     assert_never_cached(response)
     form = form_of(response.text)
+    assert 'data-fragment="postdeploy-review"' not in form and "Save settings" in form
     assert 'data-fragment="toast"' in form and "Post-deploy settings saved" in form
     assert SAVED_MESSAGE in form
-    assert ">docker compose up -d {service_name}\ndocker ps</textarea>" in form
+    assert ">docker compose up -d web\ndocker ps</textarea>" in form
     assert f'value="{folder}"' in form and 'value="300"' in form
     assert 'name="run_only_if_changed" checked' not in form
     hook = await stored(web_app, ids.staging_web)
     assert hook is not None
     assert (hook.commands, hook.working_directory, hook.timeout_seconds) == (
-        "docker compose up -d {service_name}\ndocker ps",
+        "docker compose up -d web\ndocker ps",
         str(folder),
         300,
     )
@@ -356,17 +382,65 @@ async def test_the_superadmin_saves_the_settings_and_gets_a_toast_and_the_stored
         "timeout",
         "run_only_if_changed",
     ]
-    assert "docker" not in str(entry.details) and str(folder) not in str(entry.details)
+    assert entry.details["previous_commands"] == STORED_COMMAND
+    assert entry.details["new_commands"] == "docker compose up -d web\ndocker ps"
+    assert str(folder) not in str(entry.details)
 
     unchanged = settings_data(
         working_directory=str(folder),
-        commands="docker compose up -d {service_name}\ndocker ps",
+        commands="docker compose up -d web\ndocker ps",
         timeout="300",
     )
     del unchanged["run_only_if_changed"]
     again = await post(web_client, f"/services/{ids.staging_web}/postdeploy", unchanged)
     assert again.status_code == 200
     assert len(await entries(web_app, "service.hook_save")) == 1, "nothing changed, nothing audited"
+
+
+async def test_commands_edited_after_the_review_or_a_made_up_digest_are_asked_again(
+    web_app: FastAPI, web_client: httpx.AsyncClient, ids: Ids, docker: FakeDocker
+) -> None:
+    await sign_in(web_client, "root")
+    url = f"/services/{ids.staging_web}/postdeploy"
+    first = await post(web_client, url, settings_data(commands="docker ps"))
+    digest = DIGEST.search(first.text)
+    assert digest is not None
+    edited = await post(
+        web_client, url, settings_data(commands="docker ps -a", reviewed=digest.group(1))
+    )
+    assert 'data-fragment="postdeploy-review"' in edited.text
+    assert 'data-fragment="toast"' not in edited.text
+    renewed = DIGEST.search(edited.text)
+    assert renewed is not None and renewed.group(1) != digest.group(1)
+    forged = await post(web_client, url, settings_data(commands="docker ps", reviewed="x" * 64))
+    assert 'data-fragment="postdeploy-review"' in forged.text
+    stored_hook = await stored(web_app, ids.staging_web)
+    assert stored_hook is not None and stored_hook.commands == STORED_COMMAND
+    assert await entries(web_app, "service.hook_save") == []
+
+
+async def test_the_review_shows_every_argument_escaped_and_quoting_visible(
+    web_client: httpx.AsyncClient, ids: Ids, docker: FakeDocker
+) -> None:
+    await sign_in(web_client, "root")
+    typed = 'docker run --name \'a b\' --label "<b>x</b>" alpine "" {{.Names}}'
+    response = await post(
+        web_client, f"/services/{ids.staging_web}/postdeploy", settings_data(commands=typed)
+    )
+    asked = form_of(response.text)
+    chips = [html.unescape(chip) for chip in re.findall(r"<code [^>]*>(.*?)</code>", asked)]
+    assert chips == [
+        "docker",
+        "run",
+        "--name",
+        "a b",
+        "--label",
+        "<b>x</b>",
+        "alpine",
+        '<span aria-label="empty argument">""</span>',
+        "{{.Names}}",
+    ]
+    assert "<b>x</b>" not in asked.replace("&lt;b&gt;x&lt;/b&gt;", "")
 
 
 async def test_clearing_the_commands_is_saved_and_a_save_with_nothing_to_store_says_so(
@@ -393,6 +467,10 @@ async def test_clearing_the_commands_is_saved_and_a_save_with_nothing_to_store_s
     [
         ({"commands": "ls -la"}, {"cmds-e"}, "Line 1: the first word must be docker."),
         ({"commands": "docker ps | cat"}, {"cmds-e"}, "shell operators are not supported"),
+        ({"commands": "docker compose down"}, {"cmds-e"}, "Line 1: docker compose down is not"),
+        ({"commands": "docker system prune -af"}, {"cmds-e"}, "prune commands are not allowed"),
+        ({"commands": "docker ps\ndocker rm -fv web"}, {"cmds-e"}, "Line 2: the -v and --volumes"),
+        ({"commands": "docker ps\n" * 11}, {"cmds-e"}, "Use at most 10 commands."),
         ({"timeout": "0"}, {"timeout-e"}, TIMEOUT_MESSAGE),
         ({"timeout": "3601"}, {"timeout-e"}, TIMEOUT_MESSAGE),
         ({"timeout": ""}, {"timeout-e"}, TIMEOUT_MESSAGE),

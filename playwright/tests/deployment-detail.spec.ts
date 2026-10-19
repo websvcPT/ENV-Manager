@@ -17,7 +17,7 @@ async function horizontalOverflow(page: Page): Promise<number> {
 }
 
 function prod(browser: Browser): Promise<number> {
-  return deploymentId(browser, 'rentals', 'prod');
+  return deploymentId(browser, 'Fancy Proj. Name', 'prod');
 }
 
 function header(page: Page) {
@@ -46,7 +46,7 @@ test.describe('superadmin', () => {
 
     await expect(header(page).locator('h1')).toHaveText('prod');
     await expect(header(page).locator('[data-status]')).toHaveText(['Failed']);
-    await expect(header(page).locator('p')).toContainText('Project rentals · /opt/rentals/prod');
+    await expect(header(page).locator('p')).toContainText('Project Fancy Proj. Name · /opt/rentals/prod');
     await expect(header(page).getByRole('link', { name: 'Check dist' })).toHaveAttribute(
       'href',
       `/deployments/${id}/dist`,
@@ -58,7 +58,7 @@ test.describe('superadmin', () => {
     await expect(page.locator('nav[aria-label="Breadcrumb"] li')).toHaveText([
       'Projects',
       '/',
-      'rentals',
+      'Fancy Proj. Name',
       '/',
       'prod',
     ]);
@@ -159,7 +159,7 @@ test.describe('superadmin', () => {
   }) => {
     const id = await prod(browser);
     await page.goto('/projects');
-    await page.locator('[data-fragment="project-row"] th a', { hasText: /^rentals$/ }).click();
+    await page.locator('[data-fragment="project-row"] th a', { hasText: /^Fancy Proj\. Name$/ }).click();
     await page
       .locator('[data-fragment="deployment-row"]', { hasText: '/opt/rentals/prod' })
       .getByRole('link', { name: 'Open' })
@@ -167,7 +167,7 @@ test.describe('superadmin', () => {
     await expect(page).toHaveURL(new RegExp(`/deployments/${id}$`));
     const breadcrumb = page.locator('nav[aria-label="Breadcrumb"]');
     if (isWide(page)) {
-      await breadcrumb.getByRole('link', { name: 'rentals' }).click();
+      await breadcrumb.getByRole('link', { name: 'Fancy Proj. Name' }).click();
     } else {
       await expect(breadcrumb).toBeHidden();
       await page.goBack();
@@ -282,7 +282,7 @@ test.describe('scoped users', () => {
       browser,
     }) => {
       await page.goto(`/deployments/${await prod(browser)}`);
-      await expect(header(page).locator('p')).toHaveText('Project rentals');
+      await expect(header(page).locator('p')).toHaveText('Project Fancy Proj. Name');
       await expect(page.locator('[role="note"]')).toHaveText(
         'You have access to one environment of this deployment. Only its service is shown.',
       );

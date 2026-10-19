@@ -324,7 +324,7 @@ test.describe('superadmin editor', () => {
 });
 
 async function seededEditor(browser: Browser): Promise<number> {
-  return seededEnvironmentId(browser, 'rentals', 'prod', 'mysql', '.env.db.app');
+  return seededEnvironmentId(browser, 'Fancy Proj. Name', 'prod', 'mysql', '.env.db.app');
 }
 
 test.describe('viewer', () => {
@@ -433,5 +433,5 @@ test.describe('other roles', () => {
 });
 
 async function seededDb(browser: Browser): Promise<number> {
-  return seededEnvironmentId(browser, 'rentals', 'prod', 'mysql', '.env.db');
+  return seededEnvironmentId(browser, 'Fancy Proj. Name', 'prod', 'mysql', '.env.db');
 }

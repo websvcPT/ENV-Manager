@@ -52,7 +52,9 @@ async def ids(web_app: FastAPI) -> dict[str, int]:
     async with web_app.state.session_factory() as db:
         found = {
             "billing": await db.scalar(select(Project.id).where(Project.name == "billing")),
-            "rentals": await db.scalar(select(Project.id).where(Project.name == "rentals")),
+            "Fancy Proj. Name": await db.scalar(
+                select(Project.id).where(Project.name == "Fancy Proj. Name")
+            ),
             "api": await db.scalar(select(Environment.id).where(Environment.name == ".env.api")),
             "db": await db.scalar(select(Environment.id).where(Environment.name == ".env.db")),
             "main": await db.scalar(select(Deployment.id).where(Deployment.name == "main")),
@@ -189,14 +191,17 @@ async def test_the_table_fragment_follows_the_filters_and_pushes_the_page_addres
     names = [name for _, name in COLUMN.findall(response.text)]
     assert "viewer" in names and "admin" not in names
     assert f"project-{item['billing']}" in rows_of(response.text)
-    assert f"project-{item['rentals']}" not in rows_of(response.text)
+    assert f"project-{item['Fancy Proj. Name']}" not in rows_of(response.text)
     plain = await web_client.get("/access/grid/table?group=bogus&project=zz", headers=HTMX)
     assert plain.headers["HX-Push-Url"] == "/access/grid"
     assert "admin" in [name for _, name in COLUMN.findall(plain.text)]
-    full = await web_client.get(f"/access/grid?group=admin&project={item['rentals']}")
-    assert f'<option value="{item["rentals"]}" selected>rentals</option>' in full.text
+    full = await web_client.get(f"/access/grid?group=admin&project={item['Fancy Proj. Name']}")
+    assert (
+        f'<option value="{item["Fancy Proj. Name"]}" selected>Fancy Proj. Name</option>'
+        in full.text
+    )
     assert '<option value="admin" selected>Admin</option>' in full.text
-    assert set(rows_of(full.text)) >= {f"project-{item['rentals']}"}
+    assert set(rows_of(full.text)) >= {f"project-{item['Fancy Proj. Name']}"}
     assert f"project-{item['billing']}" not in rows_of(full.text)
 
 
@@ -219,7 +224,7 @@ async def test_a_toggle_sets_the_grant_audits_it_and_answers_the_cells_that_chan
     assert f'id="cell-{victim}-environment-{item["api"]}"' in response.text
     assert "from billing" in response.text
     assert response.text.count('hx-swap-oob="true"') == response.text.count("<td ")
-    assert f'id="cell-{victim}-project-{item["rentals"]}"' not in response.text
+    assert f'id="cell-{victim}-project-{item["Fancy Proj. Name"]}"' not in response.text
     rows = await grant_rows(web_app)
     assert (victim, "project", item["billing"], None, None) in rows
     assert await audit_count(web_app, "grant.add") == 1
@@ -256,13 +261,13 @@ async def test_a_cell_from_an_old_page_is_refused_with_the_current_column(
     viewer = await user_id(web_app, "viewer")
     before = await grant_rows(web_app)
     entries = await audit_count(web_app, "grant.add", "grant.remove")
-    values = {"user": viewer, "target": f"project:{item['rentals']}", "was": "0"}
+    values = {"user": viewer, "target": f"project:{item['Fancy Proj. Name']}", "was": "0"}
     response = await post(web_client, "/access/grid/toggle", values)
     assert response.status_code == 409
     assert "HX-Trigger" not in response.headers
     assert_never_cached(response)
     assert "changed since the page was loaded" in response.text
-    assert f'id="grant-{viewer}-project-{item["rentals"]}" checked' in response.text
+    assert f'id="grant-{viewer}-project-{item["Fancy Proj. Name"]}" checked' in response.text
     assert response.text.count('role="alert"') == 1
     assert f'id="cell-{viewer}-environment-{item["db"]}"' in response.text
     assert await grant_rows(web_app) == before
@@ -279,7 +284,7 @@ async def test_an_item_already_included_from_above_cannot_be_granted_in_the_grid
     values = {"user": viewer, "target": f"environment:{item['db']}", "was": "0"}
     response = await post(web_client, "/access/grid/toggle", values)
     assert response.status_code == 409
-    assert "already included through rentals" in response.text
+    assert "already included through Fancy Proj. Name" in response.text
     assert 'data-cell="inherited"' in response.text
     assert "HX-Trigger" not in response.headers
     assert await grant_rows(web_app) == before

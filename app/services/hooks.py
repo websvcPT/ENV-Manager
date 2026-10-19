@@ -43,9 +43,7 @@ class PostDeployRequest:
     """
 
     service_id: int
-    service_name: str
     deployment_id: int
-    deployment_name: str
     deployment_root: Path
     hook: PostDeployHook | None
     changed: bool

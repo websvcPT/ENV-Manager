@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test';
 
 import { createDeployment } from '../deployments-api';
+import { saveChangedCommands } from '../post-deploy-form';
 import { createService } from '../services-api';
 import { expect, test } from '../tests/scratch-project';
 
@@ -76,22 +77,45 @@ test.describe('superadmin with a usable Docker', () => {
     const service = await stackService(request, scratch.id);
     await page.goto(`/services/${service}`);
     const form = settings(page);
-    await form.locator('#cmds').fill('docker compose up -d --no-deps {service_name}\n\ndocker ps');
+    await form.locator('#cmds').fill('docker compose up -d --no-deps api\n\ndocker ps');
     await form.locator('#timeout').fill('300');
     await form.locator('input[name="run_only_if_changed"]').uncheck();
     await form.getByRole('button', { name: 'Save settings' }).click();
+
+    const review = form.locator('#postdeploy-review');
+    await expect(review).toBeVisible();
+    await expect(review).toContainText('Nothing is stored until you confirm.');
+    await expect(review.locator('li')).toHaveCount(2);
+    await expect(review.locator('li').first().locator('code')).toHaveText([
+      'docker',
+      'compose',
+      'up',
+      '-d',
+      '--no-deps',
+      'api',
+    ]);
+    await expect(review.locator('li').last().locator('code')).toHaveText(['docker', 'ps']);
+    await expect(form.getByRole('button', { name: 'Save settings' })).toHaveCount(0);
+    await expect(page.locator('[data-fragment="toast"]')).toHaveCount(0);
+    await page.reload();
+    await expect(form.locator('#cmds')).toHaveValue('');
+
+    await form.locator('#cmds').fill('docker compose up -d --no-deps api\n\ndocker ps');
+    await form.locator('#timeout').fill('300');
+    await form.locator('input[name="run_only_if_changed"]').uncheck();
+    await saveChangedCommands(form);
 
     const toast = page.locator('[data-fragment="toast"]');
     await expect(toast).toContainText('Post-deploy settings saved');
     await expect(toast).toContainText('They apply from the next deploy.');
     await expect(form.locator('#cmds')).toHaveValue(
-      'docker compose up -d --no-deps {service_name}\ndocker ps',
+      'docker compose up -d --no-deps api\ndocker ps',
     );
     await expect(form.locator('p[role="alert"]')).toHaveCount(0);
 
     await page.reload();
     await expect(form.locator('#cmds')).toHaveValue(
-      'docker compose up -d --no-deps {service_name}\ndocker ps',
+      'docker compose up -d --no-deps api\ndocker ps',
     );
     await expect(form.locator('#timeout')).toHaveValue('300');
     await expect(form.locator('input[name="run_only_if_changed"]')).not.toBeChecked();
@@ -143,10 +167,67 @@ test.describe('superadmin with a usable Docker', () => {
     await expect(form.locator('#cmds-e')).toBeVisible();
 
     await form.locator('#cmds').fill('docker compose ps');
-    await form.getByRole('button', { name: 'Save settings' }).click();
+    await saveChangedCommands(form);
     await expect(page.locator('[data-fragment="toast"]')).toContainText('Post-deploy settings saved');
     await expect(form.locator('#cmds-e')).toHaveCount(0);
     await expect(form.locator('#cmds')).toHaveValue('docker compose ps');
+  });
+
+  test('the safety net refuses the commands that remove a project or data, with the rule', async ({
+    page,
+    request,
+    scratch,
+  }) => {
+    const service = await stackService(request, scratch.id);
+    await page.goto(`/services/${service}`);
+    const form = settings(page);
+    const refused: Array<[string, string]> = [
+      ['docker compose down', 'Line 1: docker compose down is not allowed.'],
+      ['docker ps\ndocker system prune -af', 'Line 2: prune commands are not allowed.'],
+      ['docker compose rm -sfv api', 'Line 1: the -v and --volumes options of rm are not allowed'],
+      ['docker ps\n'.repeat(11), 'Use at most 10 commands.'],
+    ];
+    for (const [commands, reason] of refused) {
+      await form.locator('#cmds').fill(commands);
+      await form.getByRole('button', { name: 'Save settings' }).click();
+      await expect(form.locator('#cmds-e')).toContainText(reason);
+      await expect(form.locator('#postdeploy-review')).toHaveCount(0);
+      await expect(form.locator('#cmds')).toHaveValue(commands);
+    }
+    await page.reload();
+    await expect(form.locator('#cmds')).toHaveValue('');
+    expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+  });
+
+  test('commands edited after the review are shown again before anything is stored', async ({
+    page,
+    request,
+    scratch,
+  }) => {
+    const service = await stackService(request, scratch.id);
+    await page.goto(`/services/${service}`);
+    const form = settings(page);
+    await form.locator('#cmds').fill('docker compose ps');
+    await form.getByRole('button', { name: 'Save settings' }).click();
+    await expect(form.locator('#postdeploy-review li')).toHaveCount(1);
+
+    await form.locator('#cmds').fill("docker run --name 'a b' alpine\ndocker ps");
+    await form.getByRole('button', { name: 'Confirm and save' }).click();
+    const review = form.locator('#postdeploy-review');
+    await expect(review.locator('li')).toHaveCount(2);
+    await expect(review.locator('li').first().locator('code')).toHaveText([
+      'docker',
+      'run',
+      '--name',
+      'a b',
+      'alpine',
+    ]);
+    await expect(page.locator('[data-fragment="toast"]')).toHaveCount(0);
+
+    await form.getByRole('button', { name: 'Confirm and save' }).click();
+    await expect(page.locator('[data-fragment="toast"]')).toContainText('Post-deploy settings saved');
+    await expect(form.locator('#postdeploy-review')).toHaveCount(0);
+    await expect(form.locator('#cmds')).toHaveValue("docker run --name 'a b' alpine\ndocker ps");
   });
 
   test('Test command checks the Compose file of the deployment root', async ({

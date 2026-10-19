@@ -500,18 +500,18 @@ async def test_project_rows_link_the_check_for_checkers_with_files_inside_the_al
     roots: dict[str, Path],
 ) -> None:
     async with web_app.state.session_factory() as db:
-        query = select(Project.id).where(Project.name == "rentals")
-        rentals = (await db.execute(query)).scalar_one()
+        query = select(Project.id).where(Project.name == "Fancy Proj. Name")
+        fancy = (await db.execute(query)).scalar_one()
     link_prod = f'href="/deployments/{deployment_ids["prod"]}/dist"'
     link_staging = f'href="/deployments/{deployment_ids["staging"]}/dist"'
     await sign_in(web_client, "admin")
-    page = (await web_client.get(f"/projects/{rentals}")).text
+    page = (await web_client.get(f"/projects/{fancy}")).text
     assert link_prod in page and link_staging in page
     await sign_in(web_client, "viewer")
-    assert link_prod not in (await web_client.get(f"/projects/{rentals}")).text
+    assert link_prod not in (await web_client.get(f"/projects/{fancy}")).text
     await forget_allowed_paths(web_app)
     await sign_in(web_client, "admin")
-    outside = (await web_client.get(f"/projects/{rentals}")).text
+    outside = (await web_client.get(f"/projects/{fancy}")).text
     assert link_prod not in outside and link_staging not in outside
 
 

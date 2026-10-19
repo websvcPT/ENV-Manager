@@ -137,7 +137,7 @@ async def test_environment_grant_limits_rows_and_hides_the_path(
     header = await _header(db, seed_data.users.env_scoped_admin, seed_data.services.mysql.id)
     assert header is not None
     names = (header.name, header.deployment_name, header.project_name)
-    assert names == ("mysql", "prod", "rentals")
+    assert names == ("mysql", "prod", "Fancy Proj. Name")
     assert header.root_path is None and not header.deployment_full
     assert header.hidden_environments == 2
     rows = await _rows(db, seed_data.users.env_scoped_admin, seed_data.services.mysql.id)
@@ -186,7 +186,7 @@ async def test_output_and_command_follow_the_group(db: AsyncSession, seed_data: 
     assert panels["viewer"].last is not None and panels["viewer"].last.output is None
     root_hook = panels["root"].hook
     assert root_hook is not None
-    assert root_hook.commands == "docker compose up -d --no-deps {service_name}"
+    assert root_hook.commands == "docker compose up -d --no-deps web"
     assert root_hook.timeout_seconds == 120 and root_hook.run_only_if_changed
     assert panels["admin"].hook is None and panels["viewer"].hook is None
 

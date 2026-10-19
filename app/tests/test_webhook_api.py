@@ -64,7 +64,10 @@ async def test_an_api_deploy_is_posted_as_the_run_the_api_answered(
     answer = answered.json()
     assert {key: document[key] for key in answer} == answer
     assert document["event"] == "deploy.finished" and document["event_id"]
-    assert document["project"]["name"] == "rentals" and document["deployment"]["name"] == "prod"
+    assert (
+        document["project"]["name"] == "Fancy Proj. Name"
+        and document["deployment"]["name"] == "prod"
+    )
     text = request.body.decode() + json.dumps(dict(request.headers))
     assert "OUTPUT-MARKER" not in text and "output" not in text
     assert "compose" not in text and "docker" not in text

@@ -54,8 +54,8 @@ async def set_deployment_policy(
 ) -> None:
     """Set the missing-keys policy of the seeded deployment with this name."""
     deployments = {
-        "prod": seed_data.deployments.rentals_prod,
-        "staging": seed_data.deployments.rentals_staging,
+        "prod": seed_data.deployments.fancy_prod,
+        "staging": seed_data.deployments.fancy_staging,
         "main": seed_data.deployments.billing_main,
     }
     stored = await db.get(Deployment, deployments[name].id)

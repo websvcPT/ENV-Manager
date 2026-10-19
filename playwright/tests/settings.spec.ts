@@ -492,7 +492,7 @@ test.describe('post-deploy without a Docker socket', () => {
   });
 
   test('the link of the service page opens this tab', async ({ page, browser }) => {
-    const id = await serviceId(browser, 'rentals', 'staging', 'web');
+    const id = await serviceId(browser, 'Fancy Proj. Name', 'staging', 'web');
     await page.goto(`/services/${id}`);
     await page
       .locator('#postdeploy [data-fragment="docker-status"]')
@@ -560,7 +560,7 @@ test.describe('general', () => {
     settingsLock: _lock,
   }, testInfo) => {
     const owner = `e2e-owner-${testInfo.project.name}`;
-    const [[rentals]] = await listProjects(page.request, 'rentals');
+    const [[fancy]] = await listProjects(page.request, 'Fancy Proj. Name');
     try {
       await page.goto('/settings/general');
       await page.locator('#d5').fill(owner);
@@ -569,7 +569,7 @@ test.describe('general', () => {
       await expect(toast(page.locator('#general'))).toContainText('General settings saved');
       await expect(page.locator('#d5')).toHaveValue(owner);
 
-      await page.goto(`/projects/${rentals}/deployments/new`);
+      await page.goto(`/projects/${fancy}/deployments/new`);
       await expect(page.locator('#owner')).toHaveValue(owner);
       await expect(page.locator('#group')).toHaveValue('e2e-group');
       await expect(page.locator('#mode')).toHaveValue('0600');
@@ -586,7 +586,7 @@ test.describe('general', () => {
       await expect(toast(page.locator('#general'))).toBeVisible();
       await expect(page.locator('#d5')).toHaveValue('');
     }
-    await page.goto(`/projects/${rentals}/deployments/new`);
+    await page.goto(`/projects/${fancy}/deployments/new`);
     await expect(page.locator('#owner')).toHaveValue('');
     await expect(page.locator('#group')).toHaveValue('');
   });

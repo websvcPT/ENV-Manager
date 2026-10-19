@@ -328,8 +328,8 @@ test.describe('admin', () => {
     );
     await expect(page.getByRole('note')).toHaveText('Showing entries within your granted scope only.');
     await expect(auditRows(page)).toHaveCount(1);
-    await expect(auditRows(page).locator('td').nth(4)).toHaveText('rentals');
-    await expect(page.locator('#f-p option')).toHaveText(['All assigned', 'billing', 'rentals']);
+    await expect(auditRows(page).locator('td').nth(4)).toHaveText('Fancy Proj. Name');
+    await expect(page.locator('#f-p option')).toHaveText(['All assigned', 'billing', 'Fancy Proj. Name']);
     const actors = await page.locator('#f-u option').evaluateAll((options) =>
       options.map((option) => (option as HTMLOptionElement).value),
     );
@@ -379,7 +379,7 @@ test.describe('scoped admin', () => {
     await expect(auditRows(page).locator('td').nth(4)).toHaveText('.env.db');
     const projects = await page.locator('#f-p option').allTextContents();
     expect(projects[0]).toBe('All assigned');
-    expect(projects).toContain('rentals');
+    expect(projects).toContain('Fancy Proj. Name');
     expect(projects).not.toContain('billing');
     await expect(page.locator('main')).not.toContainText('billing');
 
@@ -433,7 +433,7 @@ test.describe('admin without grants', () => {
     expect(actors.length).toBeGreaterThan(0);
     expect(new Set(actors)).toEqual(new Set(['ungranted_admin']));
     await expect(page.locator('#f-p option')).toHaveText(['All assigned']);
-    await expect(page.locator('main')).not.toContainText('rentals');
+    await expect(page.locator('main')).not.toContainText('Fancy Proj. Name');
     await expect(page.locator('main')).not.toContainText('billing');
   });
 

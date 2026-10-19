@@ -35,7 +35,8 @@ from app.tests.web_helpers import HTMX, assert_never_cached, main_of, post
 
 DEPLOY_ROLES = ("root", "admin", "project_admin", "deployment_admin")
 SCOPED_BLOCKED = ("viewer", "env_scoped_viewer")
-HOOK_COMMAND = "docker compose up -d --no-deps {service_name}"
+HOOK_COMMAND = "docker compose up -d --no-deps web"
+MYSQL_COMMAND = "docker compose up -d --no-deps mysql"
 PREFLIGHT_ROW = re.compile(
     r'<label data-fragment="preflight-row" data-env="([^"]+)"(.*?)</label>', re.DOTALL
 )
@@ -68,7 +69,7 @@ async def staged(web_app: FastAPI, tmp_path: Path) -> Staged:
             deployment.file_group = None
         mysql = await db.scalar(select(Service).where(Service.name == "mysql"))
         assert mysql is not None
-        db.add(ServiceHook(service_id=mysql.id, type=HookType.POST_DEPLOY, commands=HOOK_COMMAND))
+        db.add(ServiceHook(service_id=mysql.id, type=HookType.POST_DEPLOY, commands=MYSQL_COMMAND))
         await db.commit()
         services = {
             f"{deployment}/{service}": identifier
@@ -440,7 +441,7 @@ async def test_no_response_holds_a_value_or_the_command_for_an_admin(
         await deploy(web_client, service, chosen(editor)),
     ):
         assert not any(value in response.text for value in EDITOR_SECRET_VALUES)
-        assert HOOK_COMMAND not in response.text
+        assert MYSQL_COMMAND not in response.text
 
 
 @pytest.mark.parametrize("role", SCOPED_BLOCKED)
@@ -484,7 +485,7 @@ async def test_a_scoped_admin_deploys_only_their_file_and_the_command_runs_once(
 
     page = (await preflight(web_client, service, chosen(db_file))).text
     assert list(checkbox_rows(page)) == [".env.db"]
-    assert ".env.db.secrets" not in page and HOOK_COMMAND not in page
+    assert ".env.db.secrets" not in page and MYSQL_COMMAND not in page
     assert "The service may also load environments you cannot see; they are not changed." in page
 
     page = (await deploy(web_client, service, chosen(db_file))).text

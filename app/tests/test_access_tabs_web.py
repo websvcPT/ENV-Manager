@@ -37,7 +37,7 @@ ROW_NAME = re.compile(r'<th scope="row"[^>]*><span class="font-semibold">([^<]+)
 class Items:
     """Ids of the seeded items and users the tests name."""
 
-    rentals: int
+    fancy: int
     billing: int
     prod: int
     staging: int
@@ -82,7 +82,7 @@ async def items(web_app: FastAPI) -> Items:
         }
         users = dict((await db.execute(select(User.name, User.id))).all())
     return Items(
-        rentals=projects["rentals"],
+        fancy=projects["Fancy Proj. Name"],
         billing=projects["billing"],
         prod=deployments["prod"],
         staging=deployments["staging"],
@@ -182,12 +182,12 @@ async def test_the_project_tab_lists_users_with_how_they_reach_the_project(
     web_client: httpx.AsyncClient, items: Items
 ) -> None:
     await sign_in(web_client, "root")
-    response = await web_client.get(base_of("project", items.rentals))
+    response = await web_client.get(base_of("project", items.fancy))
     assert response.status_code == 200
     assert_never_cached(response)
     page = response.text
     assert section_labels(page) == ["Deployments", "Members and access", "Activity", "Settings"]
-    assert f'href="/projects/{items.rentals}/access" aria-current="page"' in page
+    assert f'href="/projects/{items.fancy}/access" aria-current="page"' in page
     body = main_of(page)
     rows = listed(body)
     assert set(rows) == {
@@ -203,16 +203,18 @@ async def test_the_project_tab_lists_users_with_how_they_reach_the_project(
     assert "Inherited from prod (Deployment) Edit at source" in rows["deployment_admin"]
     assert "from .env.db (Environment)" in rows["env_scoped_admin"]
     assert "2 deployments · 6 members" in body
-    assert '<strong class="text-ink">project rentals</strong>, direct or inherited.' in body
+    assert (
+        '<strong class="text-ink">project Fancy Proj. Name</strong>, direct or inherited.' in body
+    )
     assert "A project grant includes the deployments, services and environments" in body
     assert "Superadmins reach everything, so they are not listed." in body
     assert "root" not in rows
     assert 'data-fragment="access-list"' in body and 'id="access-list"' in body
-    assert f'hx-get="/projects/{items.rentals}/access/list"' in body
+    assert f'hx-get="/projects/{items.fancy}/access/list"' in body
     assert 'hx-trigger="grants-changed from:body"' in body
-    assert f'hx-get="/projects/{items.rentals}/access/add"' in body
+    assert f'hx-get="/projects/{items.fancy}/access/add"' in body
     assert 'id="grant-dialog"' in body and 'id="access-remove"' in body
-    assert f'hx-get="/projects/{items.rentals}/access/remove/{items.users["viewer"]}"' in body
+    assert f'hx-get="/projects/{items.fancy}/access/remove/{items.users["viewer"]}"' in body
     assert "Members and access" in body and "Add access" in body
 
 
@@ -228,11 +230,11 @@ async def test_the_deployment_tab_has_the_handoff_header_and_links_back_to_the_p
     assert f'href="/deployments/{items.prod}" ' in body
     assert f'href="/deployments/{items.prod}#hist"' in body
     assert f'href="/deployments/{items.prod}/access" aria-current="page"' in body
-    assert "Project rentals" in plain(body) and "Check dist" not in body
+    assert "Project Fancy Proj. Name" in plain(body) and "Check dist" not in body
     assert f'href="/deployments/{items.prod}/edit"' not in body
     rows = listed(body)
     assert "Direct Includes future items" in rows["deployment_admin"]
-    assert "Inherited from rentals (Project) Edit at source" in rows["admin"]
+    assert "Inherited from Fancy Proj. Name (Project) Edit at source" in rows["admin"]
     assert "from .env.db (Environment)" in rows["env_scoped_viewer"]
     assert "A deployment grant includes the services and environments added later." in body
     assert 'id="grant-dialog"' in body
@@ -248,14 +250,14 @@ async def test_the_service_tab_has_no_grant_controls_and_links_to_the_grant_leve
     body = main_of(response.text)
     assert section_labels(response.text) == ["Environments", "Deploy history", "Access"]
     assert f'href="/services/{items.mysql}" ' in body
-    assert "Deployment prod in rentals" in plain(body)
+    assert "Deployment prod in Fancy Proj. Name" in plain(body)
     assert ">Service</span>" in body and "Deploy service" not in body
     assert "Add access" not in body and "grant-dialog" not in body and "Remove" not in body
     assert "Services are not a grant level" in body
-    assert f'href="/projects/{items.rentals}/access"' in body
+    assert f'href="/projects/{items.fancy}/access"' in body
     assert f'href="/deployments/{items.prod}/access"' in body
     rows = listed(body)
-    assert "from rentals (Project) Edit at source" in rows["admin"]
+    assert "from Fancy Proj. Name (Project) Edit at source" in rows["admin"]
     assert "from prod (Deployment) Edit at source" in rows["deployment_admin"]
     assert "from .env.db (Environment), sees 1 of 3 Edit at source" in rows["env_scoped_admin"]
     assert f'href="/environments/{items.db_env}/access"' in body
@@ -276,7 +278,7 @@ async def test_the_environment_tab_lists_direct_and_inherited_access(
     assert "Direct Remove access for env_scoped_admin" in rows["env_scoped_admin"]
     assert "Includes future items" not in rows["env_scoped_admin"]
     assert "from prod (Deployment)" in rows["deployment_admin"]
-    assert "from rentals (Project)" in rows["viewer"]
+    assert "from Fancy Proj. Name (Project)" in rows["viewer"]
     secrets = await web_client.get(base_of("environment", items.secrets_env))
     assert set(listed(main_of(secrets.text))) == {
         "admin",
@@ -301,7 +303,7 @@ async def test_the_list_fragment_is_exactly_the_panel(
 ) -> None:
     await sign_in(web_client, "root")
     for kind, item_id in (
-        ("project", items.rentals),
+        ("project", items.fancy),
         ("deployment", items.prod),
         ("service", items.mysql),
         ("environment", items.db_env),
@@ -335,7 +337,7 @@ async def disable_everyone_but_root(web_client: httpx.AsyncClient, items: Items)
 @pytest.mark.parametrize(
     ("kind", "item", "note"),
     [
-        ("project", "rentals", "environments added under project rentals later"),
+        ("project", "fancy", "environments added under project Fancy Proj. Name later"),
         ("deployment", "prod", "services and environments added under deployment prod"),
         ("environment", "db_env", "Grants only the named environments."),
     ],
@@ -374,7 +376,7 @@ async def test_the_add_dialog_says_when_everyone_already_has_access(
         "totp_user",
         "totp_user_alt",
     )
-    fragment = (await web_client.get(f"{base_of('project', items.rentals)}/add")).text
+    fragment = (await web_client.get(f"{base_of('project', items.fancy)}/add")).text
     assert "Every active admin and viewer already has access to this project." in fragment
     assert "<select" not in fragment
 
@@ -390,7 +392,7 @@ async def test_adding_a_grant_answers_204_with_the_events_and_writes_one_audited
     assert events_of(response) == {"grants-changed": True, "close-dialogs": True}
     assert await grants_of(web_app, "ungranted_admin") == {("deployment", items.staging)}
     assert await audit_details(web_app, "grant.add") == [
-        {"level": "deployment", "item": "rentals/staging"}
+        {"level": "deployment", "item": "Fancy Proj. Name/staging"}
     ]
     page = (await web_client.get(base_of("deployment", items.staging))).text
     assert "Direct Includes future items" in listed(main_of(page))["ungranted_admin"]
@@ -428,21 +430,21 @@ async def test_a_refused_add_swaps_the_dialog_with_the_reason_and_redraws_the_li
     users = items.users
     cases = [
         (
-            base_of("project", items.rentals),
+            base_of("project", items.fancy),
             users["viewer"],
             "This access changed since the page was loaded. The list shows the current state.",
         ),
         (
             base_of("environment", items.web_env),
             users["viewer"],
-            "Access to this item is already included through rentals.",
+            "Access to this item is already included through Fancy Proj. Name.",
         ),
         (
-            base_of("project", items.rentals),
+            base_of("project", items.fancy),
             users["root"],
             "Superadmins reach every project, so they hold no grants.",
         ),
-        (base_of("project", items.rentals), 987654, "This user no longer exists."),
+        (base_of("project", items.fancy), 987654, "This user no longer exists."),
     ]
     for base, user, reason in cases:
         response = await post(web_client, f"{base}/grants", {"user": user})
@@ -451,7 +453,7 @@ async def test_a_refused_add_swaps_the_dialog_with_the_reason_and_redraws_the_li
         assert 'data-fragment="grant-dialog"' in response.text
         assert 'id="access-list"' in response.text and 'hx-swap-oob="true"' in response.text
         assert "hx-trigger" not in response.headers
-    assert await grants_of(web_app, "viewer") == {("project", items.rentals)}
+    assert await grants_of(web_app, "viewer") == {("project", items.fancy)}
     assert await audit_details(web_app, "grant.add") == []
 
 
@@ -475,14 +477,16 @@ async def test_the_remove_dialog_states_the_effect_and_posts_to_remove(
 ) -> None:
     await sign_in(web_client, "root")
     viewer = items.users["viewer"]
-    base = base_of("project", items.rentals)
+    base = base_of("project", items.fancy)
     response = await web_client.get(f"{base}/remove/{viewer}", headers=HTMX)
     assert response.status_code == 200
     assert_never_cached(response)
     text = plain(response.text)
     assert 'data-fragment="access-remove"' in response.text
     assert "Remove access for viewer" in text
-    assert "viewer loses the grant on project rentals and on the items added under it" in text
+    assert (
+        "viewer loses the grant on project Fancy Proj. Name and on the items added under it" in text
+    )
     assert "including to their API tokens" in text and "Their audit entries stay." in text
     assert f'hx-post="{base}/remove/{viewer}"' in response.text
     assert "hx-swap-oob" not in response.text
@@ -507,16 +511,16 @@ async def test_the_remove_dialog_of_a_redundant_grant_names_what_still_covers_th
         await db.commit()
     base = base_of("environment", items.db_env)
     page = (await web_client.get(base)).text
-    assert "Also included through rentals (Project)" in listed(main_of(page))["viewer"]
+    assert "Also included through Fancy Proj. Name (Project)" in listed(main_of(page))["viewer"]
     response = await web_client.get(f"{base}/remove/{items.users['viewer']}")
-    assert "They keep access through rentals (Project)." in plain(response.text)
+    assert "They keep access through Fancy Proj. Name (Project)." in plain(response.text)
 
 
 async def test_the_remove_dialog_refuses_an_old_page_and_unknown_users(
     web_client: httpx.AsyncClient, items: Items
 ) -> None:
     await sign_in(web_client, "root")
-    base = base_of("project", items.rentals)
+    base = base_of("project", items.fancy)
     stale = await web_client.get(f"{base}/remove/{items.users['ungranted_admin']}")
     assert stale.status_code == 200
     assert "This access changed since the page was loaded." in stale.text
@@ -537,7 +541,7 @@ async def test_removing_a_grant_answers_204_with_the_events_and_audits_it(
     assert events_of(response) == {"grants-changed": True, "close-dialogs": True}
     assert await grants_of(web_app, "env_scoped_admin") == set()
     assert await audit_details(web_app, "grant.remove") == [
-        {"level": "environment", "item": "rentals/prod/mysql/.env.db"}
+        {"level": "environment", "item": "Fancy Proj. Name/prod/mysql/.env.db"}
     ]
     page = (await web_client.get(base_of("environment", items.db_env))).text
     assert "env_scoped_admin" not in listed(main_of(page))
@@ -547,7 +551,7 @@ async def test_removing_a_grant_that_is_gone_is_refused_with_the_current_list(
     web_client: httpx.AsyncClient, items: Items, web_app: FastAPI
 ) -> None:
     await sign_in(web_client, "root")
-    base = base_of("project", items.rentals)
+    base = base_of("project", items.fancy)
     first = await post(web_client, f"{base}/remove/{items.users['viewer']}")
     assert first.status_code == 204
     again = await post(web_client, f"{base}/remove/{items.users['viewer']}")
@@ -581,7 +585,7 @@ async def test_missing_items_answer_404_for_the_superadmin(
 def scope_matrix(role: str, items: Items) -> list[tuple[str, int, int]]:
     """The item and the status each role gets from its Access tab: 403 in scope, else 404."""
     everything = {
-        "project": [items.rentals, items.billing],
+        "project": [items.fancy, items.billing],
         "deployment": [items.prod, items.staging, items.main],
         "service": [items.mysql, items.web, items.staging_web, items.api],
         "environment": [
@@ -595,25 +599,25 @@ def scope_matrix(role: str, items: Items) -> list[tuple[str, int, int]]:
     reach: dict[str, dict[str, list[int]]] = {
         "admin": everything,
         "viewer": {
-            "project": [items.rentals],
+            "project": [items.fancy],
             "deployment": [items.prod, items.staging],
             "service": [items.mysql, items.web, items.staging_web],
             "environment": [items.db_env, items.secrets_env, items.web_env, items.tuning_env],
         },
         "deployment_admin": {
-            "project": [items.rentals],
+            "project": [items.fancy],
             "deployment": [items.prod],
             "service": [items.mysql, items.web],
             "environment": [items.db_env, items.secrets_env, items.web_env],
         },
         "env_scoped_admin": {
-            "project": [items.rentals],
+            "project": [items.fancy],
             "deployment": [items.prod],
             "service": [items.mysql],
             "environment": [items.db_env],
         },
         "env_scoped_viewer": {
-            "project": [items.rentals, items.billing],
+            "project": [items.fancy, items.billing],
             "deployment": [items.prod, items.main],
             "service": [items.mysql, items.api],
             "environment": [items.db_env, items.api_env],
@@ -663,7 +667,7 @@ async def test_only_the_superadmin_reaches_an_access_tab_and_scope_decides_403_o
             assert response.status_code == expected, (role, method, url)
             assert "access-row" not in response.text, (role, method, url)
     assert await grants_of(web_app, "ungranted_admin") == set()
-    assert await grants_of(web_app, "viewer") == {("project", items.rentals)}
+    assert await grants_of(web_app, "viewer") == {("project", items.fancy)}
     assert await audit_details(web_app, "grant.add") == []
     assert await audit_details(web_app, "grant.remove") == []
 
@@ -674,7 +678,7 @@ async def test_no_other_group_sees_an_access_tab_on_any_page(
 ) -> None:
     await sign_in(web_client, role)
     pages = [
-        f"/projects/{items.rentals}",
+        f"/projects/{items.fancy}",
         f"/deployments/{items.prod}",
         f"/services/{items.mysql}",
         f"/environments/{items.db_env}",
@@ -692,8 +696,8 @@ async def test_the_old_members_address_leads_to_the_tab_and_stays_closed_to_othe
     web_client: httpx.AsyncClient, items: Items
 ) -> None:
     await sign_in(web_client, "root")
-    response = await web_client.get(f"/projects/{items.rentals}/members", follow_redirects=False)
+    response = await web_client.get(f"/projects/{items.fancy}/members", follow_redirects=False)
     assert (response.status_code, response.headers["location"]) == (
         307,
-        f"/projects/{items.rentals}/access",
+        f"/projects/{items.fancy}/access",
     )

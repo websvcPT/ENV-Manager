@@ -46,7 +46,11 @@ DEMO_PROJECT_NAME = "demo"
 DEMO_DEPLOYMENT_NAME = "stack"
 # Folder of the Compose stack inside the demo root.
 DEMO_STACK_FOLDER = "stack"
-DEMO_HOOK_COMMAND = "docker compose up -d --no-deps --force-recreate {service_name}"
+DEMO_SERVICE_NAMES = ("api", "db")
+# The stored command of each demo service names that service, as stored commands run literally.
+DEMO_HOOK_COMMANDS = {
+    name: f"docker compose up -d --no-deps --force-recreate {name}" for name in DEMO_SERVICE_NAMES
+}
 
 _API_SETTINGS = (
     "# Demo API settings. Fake values for the demo stack, not secrets.\n"
@@ -99,7 +103,6 @@ DEMO_FILES = (
     DemoFile("db", ".env.db", (_DB_SETTINGS_FIRST, _DB_SETTINGS), "environments/.env.db-dist"),
     DemoFile("db", ".env.db.secrets", (_DB_SECRETS,), "environments/.env.db.secrets-dist"),
 )
-DEMO_SERVICE_NAMES = ("api", "db")
 
 
 @dataclass(frozen=True)
@@ -141,7 +144,7 @@ async def _get_or_create_services(db: AsyncSession, deployment: Deployment) -> d
                 ServiceHook(
                     service_id=found[name].id,
                     type=HookType.POST_DEPLOY,
-                    commands=DEMO_HOOK_COMMAND,
+                    commands=DEMO_HOOK_COMMANDS[name],
                 )
             )
     return found

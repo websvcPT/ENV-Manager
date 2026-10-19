@@ -207,7 +207,7 @@ async def test_the_create_dialog_lists_the_operations_and_only_what_the_caller_r
     assert "A token never exceeds its owner's access." in page
     assert '<option value="">All of my projects</option>' in page
     assert '<optgroup label="Projects">' in page and ">billing</option>" in page
-    assert ">rentals / prod / mysql</option>" in page
+    assert ">Fancy Proj. Name / prod / mysql</option>" in page
     assert 'id="te"' in page and 'type="date"' in page and f'min="{utc_now().date()}"' in page
     assert "Create token" in page and 'data-js="dialog-close"' in page
 
@@ -288,7 +288,7 @@ async def test_the_example_names_the_service_a_restricted_token_is_limited_to(
     assert "-X POST" not in page and "/deploy " not in page
     listed = rows(main_of((await web_client.get("/tokens")).text))
     assert "Read last deployment" in listed["reader"][1]
-    assert "rentals / prod / mysql" in listed["reader"][1]
+    assert "Fancy Proj. Name / prod / mysql" in listed["reader"][1]
 
 
 @pytest.mark.parametrize(

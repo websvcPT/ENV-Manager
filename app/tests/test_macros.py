@@ -242,7 +242,7 @@ def test_grant_tree_offers_projects_deployments_and_environments_with_services_a
     tree = [
         {
             "id": 1,
-            "name": "rentals",
+            "name": "Fancy Proj. Name",
             "deployments": [
                 {
                     "id": 2,

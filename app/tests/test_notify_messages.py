@@ -39,7 +39,7 @@ from app.tests.notify_helpers import SMTP, decoded_text, mime_of, parts_of
 
 NOW = datetime(2026, 10, 18, 14, 30, tzinfo=UTC)
 CONTEXT = MessageContext("https://env.example.com/", DisplayTime("Europe/Lisbon", "iso"), NOW)
-NAMES = ItemNames("rentals", "prod", "web")
+NAMES = ItemNames("Fancy Proj. Name", "prod", "web")
 SENTINELS = (
     "Zq7vK2mPw9",
     "seed-secret",
@@ -123,7 +123,7 @@ async def test_the_deploy_mail_names_the_service_result_actor_and_files() -> Non
     content = content_of(deploy())
     assert content.subject == "[ENV Manager] Deploy failed: web (prod)"
     assert dict(content.facts) == {
-        "Project": "rentals",
+        "Project": "Fancy Proj. Name",
         "Deployment": "prod",
         "Service": "web",
         "Result": "failed",
@@ -227,7 +227,7 @@ async def test_the_text_part_lists_the_facts_the_items_and_the_link() -> None:
     """The plain text reads on its own."""
     mail = render_mail(content_of(deploy()), "alice@example.com")
     assert mail.text.startswith("Deploy failed\n\nA deploy of web in prod failed.\n")
-    assert "Project: rentals\n" in mail.text
+    assert "Project: Fancy Proj. Name\n" in mail.text
     assert "Files:\n- .env.db: written, version 3\n- .env.db.secrets: failed\n" in mail.text
     assert "Open the service: https://env.example.com/services/3\n" in mail.text
     assert mail.text.endswith("--\nSent by ENV Manager.\n")

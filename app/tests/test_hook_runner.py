@@ -26,7 +26,7 @@ from app.services.paths import AllowedPaths
 from app.tests.fake_docker import FakeDocker
 from app.tests.test_hook_process import wait_until_gone
 
-COMMAND = "docker compose up -d --no-deps --force-recreate {service_name}"
+COMMAND = "docker compose up -d --no-deps --force-recreate api"
 APP_ENVIRONMENT = {
     "ENVMANAGER_KEY": "key-material-0123456789",
     "ENVMANAGER_CSRF_SECRET": "csrf-material-0123456789",
@@ -58,8 +58,6 @@ class Setup:
         timeout: int = 30,
         working_directory: str | None = None,
         root: Path | None = None,
-        deployment: str = "stack",
-        service: str = "api",
         scrubber: OutputScrubber | None = None,
     ) -> PostDeployRequest:
         """A request for the service; ``commands`` None means the service has no hook."""
@@ -70,9 +68,7 @@ class Setup:
         )
         return PostDeployRequest(
             service_id=1,
-            service_name=service,
             deployment_id=1,
-            deployment_name=deployment,
             deployment_root=root or self.root,
             hook=hook,
             changed=changed,
@@ -98,7 +94,7 @@ async def test_a_service_without_a_command_has_nothing_to_run(setup: Setup) -> N
     assert setup.fake.calls() == []
 
 
-async def test_the_command_runs_once_in_the_deployment_root_with_placeholders_filled(
+async def test_the_command_runs_once_in_the_deployment_root_as_stored(
     setup: Setup,
 ) -> None:
     result = await setup.run()
@@ -109,26 +105,24 @@ async def test_the_command_runs_once_in_the_deployment_root_with_placeholders_fi
     assert call.working_directory == str(setup.root)
 
 
-async def test_every_placeholder_is_filled_with_its_validated_value(setup: Setup) -> None:
+async def test_names_that_used_to_be_placeholders_reach_docker_as_typed(setup: Setup) -> None:
     command = "docker run --label d={deployment_name} --label p={deployment_path} {service_name}"
-    await setup.run(command, service="web", deployment="stack")
+    await setup.run(command)
     (call,) = setup.fake.calls()
     assert call.arguments == (
         "run",
         "--label",
-        "d=stack",
+        "d={deployment_name}",
         "--label",
-        f"p={setup.root}",
-        "web",
+        "p={deployment_path}",
+        "{service_name}",
     )
 
 
-async def test_a_deployment_path_with_spaces_stays_one_argument(setup: Setup) -> None:
-    spaced = setup.host / "my stack"
-    spaced.mkdir()
-    await setup.run("docker compose --project-directory {deployment_path} up", root=spaced)
+async def test_a_quoted_argument_with_spaces_stays_one_argument(setup: Setup) -> None:
+    await setup.run("docker run --name 'a stack' --label \"x=y z\" alpine")
     (call,) = setup.fake.calls()
-    assert call.arguments == ("compose", "--project-directory", str(spaced), "up")
+    assert call.arguments == ("run", "--name", "a stack", "--label", "x=y z", "alpine")
 
 
 async def test_a_docker_template_and_unknown_braces_reach_docker_unchanged(setup: Setup) -> None:
@@ -218,6 +212,10 @@ async def test_availability_is_checked_again_for_every_run(setup: Setup) -> None
         "docker ps && docker ps",
         "docker ps\nrm -rf x",
         "docker ps 'unclosed",
+        "docker compose down",
+        "docker system prune -af",
+        "docker compose rm -sfv api",
+        "docker ps\n" + "docker ps\n" * 10,
     ],
 )
 async def test_a_stored_command_that_is_not_valid_is_refused_when_it_runs(
@@ -271,9 +269,22 @@ async def test_a_deployment_root_outside_the_allowed_paths_is_refused(
     assert setup.fake.calls() == []
 
 
-async def test_a_name_that_could_become_an_option_is_refused(setup: Setup) -> None:
-    result = await setup.run(service="--all")
-    assert result.status is PostDeployStatus.FAILED
+@pytest.mark.parametrize(
+    ("commands", "rule"),
+    [
+        ("docker compose down", "docker compose down is not allowed"),
+        ("docker system prune -af", "prune commands are not allowed"),
+        ("docker ps\n\ndocker compose rm -sfv api", "Line 3: the -v and --volumes options of rm"),
+        ("docker ps\n" + "docker ps\n" * 10, "Use at most 10 commands"),
+    ],
+)
+async def test_a_stored_command_that_breaks_the_safety_net_fails_with_the_rule_and_runs_nothing(
+    setup: Setup, commands: str, rule: str
+) -> None:
+    result = await setup.run(commands)
+    assert result.status is PostDeployStatus.FAILED and result.exit_code is None
+    assert result.reason is not None
+    assert result.reason.startswith(f"{REFUSED_REASON} ") and rule in result.reason
     assert setup.fake.calls() == []
 
 
@@ -351,7 +362,7 @@ async def test_expected_outcomes_never_log_at_error_level_or_leak_the_command(
     setup: Setup, caplog: pytest.LogCaptureFixture, situation: str
 ) -> None:
     caplog.set_level(logging.DEBUG)
-    command = "docker secret-subcommand-xyz {service_name}"
+    command = "docker secret-subcommand-xyz api"
     if situation == "exit":
         setup.fake.behavior("echo failed; exit 9")
     if situation == "timeout":

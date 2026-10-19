@@ -22,6 +22,7 @@ from app.services.permissions import load_user_scope
 from app.tests.conftest import sign_in
 from app.tests.dist_helpers import link_dist, relocate_deployments
 from app.tests.fake_docker import FakeDocker
+from app.tests.web_helpers import without_csrf_token
 
 HTMX = {"HX-Request": "true"}
 VALUES = ("seed-secret", "3306", EDITOR_SECRET_VALUES[3], EDITOR_SECRET_VALUES[2])
@@ -114,7 +115,7 @@ async def test_no_value_the_command_printed_is_on_any_page_for_any_role(
     bodies = await read_all(web_client, deployed)
     for url, body in bodies.items():
         for value in VALUES:
-            assert value not in body, (user, url, value)
+            assert value not in without_csrf_token(body), (user, url, value)
     service_page = bodies[f"/services/{deployed.service}"]
     if user in OUTPUT_ROLES:
         assert "password **** port **** host db ****" in service_page

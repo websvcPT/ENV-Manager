@@ -12,6 +12,7 @@ import type { APIRequestContext, Locator, Page } from '@playwright/test';
 
 import { createDeployment } from '../deployments-api';
 import { createEnvironment } from '../environments-api';
+import { saveChangedCommands } from '../post-deploy-form';
 import { createService } from '../services-api';
 import { expect, test } from '../tests/scratch-project';
 
@@ -31,7 +32,7 @@ const BASELINE = join(DEMO_ROOT, 'baseline', 'environments');
 const DIST_SUFFIX = '-dist';
 const DEPLOY_WAIT_MS = 90_000;
 const EDITED_LINE = 'DEMO_DB_EDITED_ON_DISK=1\n';
-const COMMAND = 'docker compose up -d --no-deps --force-recreate {service_name}';
+const COMMAND = 'docker compose up -d --no-deps --force-recreate db';
 
 /** Put the target files back to the baseline, as `make demo-reset` does. */
 function restoreBaseline(): void {
@@ -103,7 +104,7 @@ async function stack(page: Page, request: APIRequestContext, projectId: number):
   await page.goto(`/services/${service}`);
   const form = page.locator('#postdeploy-settings');
   await form.locator('#cmds').fill(COMMAND);
-  await form.getByRole('button', { name: 'Save settings' }).click();
+  await saveChangedCommands(form);
   await expect(toast(page)).toContainText('Post-deploy settings saved');
   return { service, environment };
 }

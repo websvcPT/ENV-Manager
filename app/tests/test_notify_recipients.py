@@ -18,10 +18,10 @@ from app.services.notify_recipients import (
 
 
 def mysql_item(seed: SeedData, *environment_ids: int) -> ProjectItem:
-    """The production MySQL service of the rentals project with the given files."""
+    """The production MySQL service of the Fancy Proj. Name project with the given files."""
     return ProjectItem(
-        seed.projects.rentals.id,
-        seed.deployments.rentals_prod.id,
+        seed.projects.fancy.id,
+        seed.deployments.fancy_prod.id,
         seed.services.mysql.id,
         environment_ids,
     )
@@ -93,7 +93,7 @@ async def test_an_admin_with_no_grant_reaching_the_files_gets_nothing(
     seeded_database: AsyncEngine, seed_data: SeedData
 ) -> None:
     """Only the environment scoped admin reaches .env.db; asking for the secrets file leaves
-    them out, and a file of another project leaves out the rentals admins."""
+    them out, and a file of another project leaves out the Fancy Proj. Name admins."""
     envs = seed_data.envs
     async with create_session_factory(seeded_database)() as db:
         secrets_only = await project_admin_recipients(db, mysql_item(seed_data, envs.db_secrets.id))
@@ -198,7 +198,7 @@ async def test_the_extra_addresses_of_a_project_are_told_whatever_the_choice(
 ) -> None:
     """Superadmins, project admins or both, the extras come on top with every file."""
     await set_extras(
-        seeded_database, seed_data.projects.rentals.id, ["team@example.org", "pager@corp.local"]
+        seeded_database, seed_data.projects.fancy.id, ["team@example.org", "pager@corp.local"]
     )
     async with create_session_factory(seeded_database)() as db:
         found = await resolve_recipients(db, choice, mysql_item(seed_data, seed_data.envs.db.id))
@@ -212,7 +212,7 @@ async def test_an_event_about_the_system_never_goes_to_the_extra_addresses(
     seeded_database: AsyncEngine, seed_data: SeedData
 ) -> None:
     """With no item there is no project, so no extras."""
-    await set_extras(seeded_database, seed_data.projects.rentals.id, ["team@example.org"])
+    await set_extras(seeded_database, seed_data.projects.fancy.id, ["team@example.org"])
     async with create_session_factory(seeded_database)() as db:
         for choice in Recipients:
             assert addresses(await resolve_recipients(db, choice, None)) == ["root"]
@@ -235,7 +235,7 @@ async def test_an_extra_address_of_a_scoped_admin_is_told_about_every_file_once(
 ) -> None:
     """The widest set wins, whatever the case of the address and the order of the roles."""
     await set_extras(
-        seeded_database, seed_data.projects.rentals.id, ["Env_Scoped_Admin@example.test"]
+        seeded_database, seed_data.projects.fancy.id, ["Env_Scoped_Admin@example.test"]
     )
     item = mysql_item(seed_data, seed_data.envs.db.id, seed_data.envs.db_secrets.id)
     async with create_session_factory(seeded_database)() as db:
@@ -250,7 +250,7 @@ async def test_a_stored_address_that_is_not_a_plain_address_is_left_out(
     """A list changed by hand cannot send mail to a name with a display part or a space."""
     await set_extras(
         seeded_database,
-        seed_data.projects.rentals.id,
+        seed_data.projects.fancy.id,
         ["Team <team@example.org>", "bad address@example.org", "good@example.org"],
     )
     async with create_session_factory(seeded_database)() as db:

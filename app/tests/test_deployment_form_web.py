@@ -21,7 +21,7 @@ class Layout:
     """A writable allowed host directory with folders, and ids of the seeded rows."""
 
     host: Path
-    rentals: int
+    fancy: int
     prod: int
     legacy: int
 
@@ -40,12 +40,10 @@ async def layout(web_app: FastAPI, tmp_path: Path, monkeypatch: pytest.MonkeyPat
     async with web_app.state.session_factory() as db:
         db.add(AllowedPath(path=str(host)))
         await db.commit()
-        rentals_query = select(Project.id).where(Project.name == "rentals")
-        rentals = (await db.execute(rentals_query)).scalar_one()
+        fancy_query = select(Project.id).where(Project.name == "Fancy Proj. Name")
+        fancy = (await db.execute(fancy_query)).scalar_one()
         deployments = dict((await db.execute(select(Deployment.name, Deployment.id))).all())
-    return Layout(
-        host=host, rentals=rentals, prod=deployments["prod"], legacy=deployments["legacy"]
-    )
+    return Layout(host=host, fancy=fancy, prod=deployments["prod"], legacy=deployments["legacy"])
 
 
 def form_data(layout: Layout, **overrides: str) -> dict[str, str]:
@@ -81,13 +79,13 @@ async def test_new_page_has_the_form_and_the_picker(
     web_client: httpx.AsyncClient, layout: Layout
 ) -> None:
     await sign_in(web_client, "root")
-    response = await web_client.get(f"/projects/{layout.rentals}/deployments/new")
+    response = await web_client.get(f"/projects/{layout.fancy}/deployments/new")
     page = response.text
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"
     assert ">New deployment</h1>" in page and ">Superadmin</span>" in page
     assert "Post-deploy commands are configured per service, not here." in page
-    assert f'hx-post="/projects/{layout.rentals}/deployments"' in page
+    assert f'hx-post="/projects/{layout.fancy}/deployments"' in page
     assert 'id="deployment-form"' in page and 'data-fragment="deployment-form"' in page
     assert page.count('data-fragment="form-section"') == 3
     for field_id in ("name", "root", "mode", "owner", "group"):
@@ -98,11 +96,11 @@ async def test_new_page_has_the_form_and_the_picker(
     assert 'value="block" checked' in page and 'value="halt" checked' in page
     assert 'value="create" checked' in page and 'value="0600"' in page
     assert ">Create deployment</button>" in page
-    assert f'href="/projects/{layout.rentals}"' in page and ">Cancel</a>" in page
+    assert f'href="/projects/{layout.fancy}"' in page and ">Cancel</a>" in page
     assert '<dialog id="path-picker"' in page and str(layout.host) in page
     assert 'data-js="pick-path"' in page
     crumbs = re.search(r'aria-label="Breadcrumb".*?</nav>', page, re.DOTALL)
-    assert crumbs is not None and "rentals" in crumbs.group(0)
+    assert crumbs is not None and "Fancy Proj. Name" in crumbs.group(0)
     assert 'aria-current="page" class="font-semibold text-ink">New deployment' in crumbs.group(0)
 
 
@@ -124,12 +122,12 @@ async def test_admins_and_viewers_get_403_everywhere(
     web_client: httpx.AsyncClient, layout: Layout, user: str
 ) -> None:
     await sign_in(web_client, user)
-    new_url = f"/projects/{layout.rentals}/deployments/new"
+    new_url = f"/projects/{layout.fancy}/deployments/new"
     assert (await web_client.get(new_url)).status_code == 403
     assert (await web_client.get(f"/deployments/{layout.prod}/edit")).status_code == 403
     assert (await web_client.get("/paths/validate?root=/etc")).status_code == 403
     assert (await web_client.get("/paths/browse")).status_code == 403
-    created = await post(web_client, f"/projects/{layout.rentals}/deployments", form_data(layout))
+    created = await post(web_client, f"/projects/{layout.fancy}/deployments", form_data(layout))
     assert created.status_code == 403
     saved = await post(web_client, f"/deployments/{layout.prod}/edit", form_data(layout))
     assert saved.status_code == 403
@@ -139,7 +137,7 @@ async def test_outside_the_scope_is_404_and_paths_stay_closed(
     web_client: httpx.AsyncClient, layout: Layout, web_app: FastAPI
 ) -> None:
     await sign_in(web_client, "ungranted_admin")
-    assert (await web_client.get(f"/projects/{layout.rentals}/deployments/new")).status_code == 404
+    assert (await web_client.get(f"/projects/{layout.fancy}/deployments/new")).status_code == 404
     assert (await web_client.get(f"/deployments/{layout.prod}/edit")).status_code == 404
     assert (await web_client.get("/paths/validate?root=/etc")).status_code == 403
     assert (await web_client.get("/paths/browse")).status_code == 403
@@ -152,7 +150,7 @@ async def test_signed_out_requests_are_refused(
     web_client: httpx.AsyncClient, layout: Layout
 ) -> None:
     for url in (
-        f"/projects/{layout.rentals}/deployments/new",
+        f"/projects/{layout.fancy}/deployments/new",
         f"/deployments/{layout.prod}/edit",
         "/paths/validate?root=/etc",
         "/paths/browse",
@@ -198,7 +196,7 @@ async def test_create_redirects_and_audits(
     await sign_in(web_client, "root")
     response = await post(
         web_client,
-        f"/projects/{layout.rentals}/deployments",
+        f"/projects/{layout.fancy}/deployments",
         form_data(layout, drift_policy="overwrite", file_mode="640", file_owner="www-data"),
     )
     assert response.status_code == 200
@@ -210,7 +208,7 @@ async def test_create_redirects_and_audits(
             await db.execute(select(AuditEntry).where(AuditEntry.action == "deployment.create"))
         ).scalar_one()
     assert response.headers["hx-redirect"] == f"/deployments/{created.id}"
-    assert created.project_id == layout.rentals and created.root_path == str(layout.host / "alpha")
+    assert created.project_id == layout.fancy and created.root_path == str(layout.host / "alpha")
     assert (created.file_mode, created.file_owner, created.drift_policy.value) == (
         "0640",
         "www-data",
@@ -227,7 +225,7 @@ async def test_refused_create_swaps_the_form_with_every_message(
     await sign_in(web_client, "root")
     response = await post(
         web_client,
-        f"/projects/{layout.rentals}/deployments",
+        f"/projects/{layout.fancy}/deployments",
         form_data(layout, name="prod", root="/etc", file_mode="12"),
     )
     page = response.text
@@ -250,7 +248,7 @@ async def test_refused_empty_root_shows_a_message_under_the_field(
 ) -> None:
     await sign_in(web_client, "root")
     response = await post(
-        web_client, f"/projects/{layout.rentals}/deployments", form_data(layout, root="")
+        web_client, f"/projects/{layout.fancy}/deployments", form_data(layout, root="")
     )
     assert response.status_code == 422
     assert "Enter a root path." in response.text

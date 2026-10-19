@@ -162,7 +162,7 @@ async def test_post_deploy_is_called_once_after_everything_was_written(harness: 
     h = harness
     outcome = await deploy_staging(h)
     (request,) = h.runner.requests
-    assert (request.service_name, request.deployment_name) == ("web", "staging")
+    assert request.deployment_id == h.seed.deployments.fancy_staging.id
     assert request.service_id == h.seed.services.staging_web.id
     assert request.deployment_root == h.roots["staging"]
     assert request.changed and not request.force
@@ -289,7 +289,7 @@ async def test_one_event_is_emitted_after_the_lock_is_released(harness: Harness)
         (".env.web.tuning", DeployResultStatus.WRITTEN),
         ("web-ca.pem", DeployResultStatus.WRITTEN),
     }
-    assert event.project_id == h.seed.projects.rentals.id
+    assert event.project_id == h.seed.projects.fancy.id
 
 
 async def test_no_event_is_emitted_for_a_dry_run_or_a_refused_deploy(harness: Harness) -> None:
@@ -321,9 +321,7 @@ async def test_no_secret_value_reaches_results_audit_logs_or_messages(
     assert any(value in target.read_text(encoding="utf-8") for value in EDITOR_SECRET_VALUES)
     target.write_text("EDITED=1\n", encoding="utf-8")
     halted = await h.deploy(h.seed.services.mysql.id, environments=[editor])
-    await set_deployment(
-        h.db, h.seed.deployments.rentals_prod.id, drift_policy=DriftPolicy.OVERWRITE
-    )
+    await set_deployment(h.db, h.seed.deployments.fancy_prod.id, drift_policy=DriftPolicy.OVERWRITE)
     dry = await h.deploy(h.seed.services.mysql.id, environments=[editor], dry_run=True)
 
     rows: list[object] = []

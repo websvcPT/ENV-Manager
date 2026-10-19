@@ -52,7 +52,7 @@ async def test_the_dialog_deploys_api_for_real_and_the_command_recreates_the_wor
     assert badges(page) == {DRIFTED_ENVIRONMENT: "halt", CREATED_ENVIRONMENT: "proceed"}
     assert "Not run because an environment would not be written." in page
     page = (await post(web, f"/services/{api}/deploy/preflight", chosen(ca))).text
-    assert "docker compose up -d --no-deps --force-recreate {service_name}" in page
+    assert "docker compose up -d --no-deps --force-recreate api" in page
     assert "will run <strong>once</strong>" in page
     assert list(demo.targets.glob("demo-ca.pem")) == []
 

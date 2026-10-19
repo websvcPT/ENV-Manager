@@ -20,11 +20,11 @@ async function horizontalOverflow(page: Page): Promise<number> {
 }
 
 function stagingWeb(browser: Browser): Promise<number> {
-  return serviceId(browser, 'rentals', 'staging', 'web');
+  return serviceId(browser, 'Fancy Proj. Name', 'staging', 'web');
 }
 
 function prodMysql(browser: Browser): Promise<number> {
-  return serviceId(browser, 'rentals', 'prod', 'mysql');
+  return serviceId(browser, 'Fancy Proj. Name', 'prod', 'mysql');
 }
 
 function header(page: Page) {
@@ -78,7 +78,7 @@ test.describe('superadmin', () => {
     await expect(header(page).locator('h1')).toHaveText('web');
     await expect(header(page)).toContainText('Service');
     await expect(header(page).locator('[data-status]')).toHaveText(['1 pending']);
-    await expect(header(page).locator('p')).toContainText('Deployment staging in rentals');
+    await expect(header(page).locator('p')).toContainText('Deployment staging in Fancy Proj. Name');
     await expect(header(page).locator('p')).toContainText('/opt/rentals/staging');
     await expect(page.locator('nav[aria-label="Sections"] a')).toHaveText([
       'Environments 4',
@@ -88,7 +88,7 @@ test.describe('superadmin', () => {
     await expect(page.locator('nav[aria-label="Breadcrumb"] li')).toHaveText([
       'Projects',
       '/',
-      'rentals',
+      'Fancy Proj. Name',
       '/',
       'staging',
       '/',
@@ -110,7 +110,7 @@ test.describe('superadmin', () => {
     await expect(postDeploy).toContainText('by admin · exit code 0');
     await expect(postDeploy.locator('pre').first()).toHaveText('web recreated');
     await expect(postDeploy.locator('[data-fragment="postdeploy-settings"]')).toContainText(
-      'docker compose up -d --no-deps {service_name}',
+      'docker compose up -d --no-deps web',
     );
     await expect(postDeploy.getByRole('button')).toHaveText(['Test command', 'Save settings']);
 
@@ -118,7 +118,7 @@ test.describe('superadmin', () => {
   });
 
   test('is reached from the deployment page and lists a failed run', async ({ page, browser }) => {
-    const deployment = await deploymentId(browser, 'rentals', 'prod');
+    const deployment = await deploymentId(browser, 'Fancy Proj. Name', 'prod');
     await page.goto(`/deployments/${deployment}`);
     await page.locator('#services').getByRole('link', { name: 'Open' }).first().click();
     await expect(page).toHaveURL(/\/services\/\d+$/);

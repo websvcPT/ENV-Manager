@@ -36,9 +36,9 @@ def host(tmp_path: Path) -> Path:
 
 @pytest.fixture
 async def relocated(seeded_database: AsyncEngine, seed_data: SeedData, host: Path) -> Path:
-    """Point the seeded rentals prod deployment at the real folder and return the folder."""
+    """Point the seeded prod deployment at the real folder and return the folder."""
     async with create_session_factory(seeded_database)() as db:
-        deployment = await db.get(Deployment, seed_data.deployments.rentals_prod.id)
+        deployment = await db.get(Deployment, seed_data.deployments.fancy_prod.id)
         assert deployment is not None
         deployment.root_path = str(host / "deploy")
         await db.commit()
@@ -67,7 +67,7 @@ async def refused(
     db: AsyncSession, host: Path, seed_data: SeedData, form: EnvironmentForm
 ) -> dict[str, str]:
     """The field errors a form is refused with."""
-    deployment = await db.get(Deployment, seed_data.deployments.rentals_prod.id)
+    deployment = await db.get(Deployment, seed_data.deployments.fancy_prod.id)
     assert deployment is not None
     with pytest.raises(EnvironmentFormError) as caught:
         await validate_environment(db, AllowedPaths([host]), deployment, form)
@@ -77,7 +77,7 @@ async def refused(
 async def test_a_valid_form_gives_clean_values(
     db: AsyncSession, host: Path, seed_data: SeedData
 ) -> None:
-    deployment = await db.get(Deployment, seed_data.deployments.rentals_prod.id)
+    deployment = await db.get(Deployment, seed_data.deployments.fancy_prod.id)
     assert deployment is not None
     form = form_for(
         seed_data,
@@ -99,7 +99,7 @@ async def test_a_valid_form_gives_clean_values(
 async def test_empty_attributes_inherit_the_deployment(
     db: AsyncSession, host: Path, seed_data: SeedData
 ) -> None:
-    deployment = await db.get(Deployment, seed_data.deployments.rentals_prod.id)
+    deployment = await db.get(Deployment, seed_data.deployments.fancy_prod.id)
     assert deployment is not None
     clean = await validate_environment(
         db, AllowedPaths([host]), deployment, form_for(seed_data, content="")
@@ -130,7 +130,7 @@ async def test_environment_names(
 async def test_valid_environment_names(
     db: AsyncSession, host: Path, seed_data: SeedData, name: str
 ) -> None:
-    deployment = await db.get(Deployment, seed_data.deployments.rentals_prod.id)
+    deployment = await db.get(Deployment, seed_data.deployments.fancy_prod.id)
     assert deployment is not None
     await validate_environment(db, AllowedPaths([host]), deployment, form_for(seed_data, name=name))
 
@@ -169,7 +169,7 @@ async def test_a_target_through_a_symlink_that_leaves_the_root_is_refused(
 async def test_a_deployment_root_outside_the_allowed_paths_refuses_targets(
     db: AsyncSession, host: Path, seed_data: SeedData, tmp_path: Path
 ) -> None:
-    deployment = await db.get(Deployment, seed_data.deployments.rentals_prod.id)
+    deployment = await db.get(Deployment, seed_data.deployments.fancy_prod.id)
     assert deployment is not None
     with pytest.raises(EnvironmentFormError) as caught:
         await validate_environment(
@@ -226,7 +226,7 @@ async def test_a_service_of_another_deployment_is_refused(
 async def test_a_typed_new_service_wins_over_the_selection(
     db: AsyncSession, host: Path, seed_data: SeedData
 ) -> None:
-    deployment = await db.get(Deployment, seed_data.deployments.rentals_prod.id)
+    deployment = await db.get(Deployment, seed_data.deployments.fancy_prod.id)
     assert deployment is not None
     clean = await validate_environment(
         db, AllowedPaths([host]), deployment, form_for(seed_data, new_service="redis")
@@ -262,7 +262,7 @@ async def test_paste_is_checked_for_binary_and_size(
 
 
 async def test_upload_rules(db: AsyncSession, host: Path, seed_data: SeedData) -> None:
-    deployment = await db.get(Deployment, seed_data.deployments.rentals_prod.id)
+    deployment = await db.get(Deployment, seed_data.deployments.fancy_prod.id)
     assert deployment is not None
     allowed = AllowedPaths([host])
     ok = await validate_environment(
@@ -284,7 +284,7 @@ async def test_upload_rules(db: AsyncSession, host: Path, seed_data: SeedData) -
 async def test_import_reads_the_target_file(
     db: AsyncSession, host: Path, seed_data: SeedData, relocated: Path
 ) -> None:
-    deployment = await db.get(Deployment, seed_data.deployments.rentals_prod.id)
+    deployment = await db.get(Deployment, seed_data.deployments.fancy_prod.id)
     assert deployment is not None
     (relocated / "environments" / ".env.cache").write_text("CACHE_HOST=live\r\n")
     clean = await validate_environment(
@@ -324,7 +324,7 @@ async def test_create_stores_the_environment_version_one_and_audit(
     seed_data: SeedData,
     crypto: CryptoService,
 ) -> None:
-    deployment = await db.get(Deployment, seed_data.deployments.rentals_prod.id)
+    deployment = await db.get(Deployment, seed_data.deployments.fancy_prod.id)
     assert deployment is not None
     form = form_for(
         seed_data,
@@ -381,7 +381,7 @@ async def test_create_with_a_new_service_is_one_transaction_with_two_audits(
     seed_data: SeedData,
     crypto: CryptoService,
 ) -> None:
-    deployment = await db.get(Deployment, seed_data.deployments.rentals_prod.id)
+    deployment = await db.get(Deployment, seed_data.deployments.fancy_prod.id)
     assert deployment is not None
     form = form_for(seed_data, service=NEW_SERVICE, new_service="redis", name="redis.conf")
     clean = await validate_environment(db, AllowedPaths([host]), deployment, form)
@@ -414,7 +414,7 @@ async def test_a_name_taken_between_validation_and_insert_rolls_everything_back(
     seed_data: SeedData,
     crypto: CryptoService,
 ) -> None:
-    deployment = await db.get(Deployment, seed_data.deployments.rentals_prod.id)
+    deployment = await db.get(Deployment, seed_data.deployments.fancy_prod.id)
     assert deployment is not None
     clean = await validate_environment(db, AllowedPaths([host]), deployment, form_for(seed_data))
     async with create_session_factory(seeded_database)() as other:

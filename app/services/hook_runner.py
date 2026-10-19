@@ -21,13 +21,7 @@ from pathlib import Path
 from app.core.log import get_logger
 from app.models import PostDeployStatus
 from app.services.docker_cli import DockerCli
-from app.services.hook_commands import (
-    Command,
-    CommandError,
-    PlaceholderValues,
-    parse_commands,
-    substitute,
-)
+from app.services.hook_commands import Command, CommandError, parse_commands
 from app.services.hook_process import BoundedOutput, run_process
 from app.services.hooks import PostDeployHook, PostDeployRequest, PostDeployResult
 from app.services.paths import AllowedPaths, PathValidationError, normalize_path
@@ -68,10 +62,9 @@ def resolve_working_directory(
 
 @dataclass(frozen=True)
 class _Plan:
-    """Validated commands with the values for their placeholders and the working directory."""
+    """The validated commands and the working directory they run in."""
 
     commands: tuple[Command, ...]
-    values: PlaceholderValues
     directory: Path
 
 
@@ -82,9 +75,8 @@ def _prepare(request: PostDeployRequest, hook: PostDeployHook) -> _Plan:
     """
     commands = parse_commands(hook.commands)
     root = request.allowed.resolve(request.deployment_root)
-    values = PlaceholderValues.validated(str(root), request.deployment_name, request.service_name)
     directory = resolve_working_directory(request.allowed, root, hook.working_directory)
-    return _Plan(commands, values, directory)
+    return _Plan(commands, directory)
 
 
 def _skipped(reason: str) -> PostDeployResult:
@@ -137,7 +129,7 @@ class DockerHookRunner:
                 output.note(f"[command {number} of {total}]\n")
             try:
                 result = await run_process(
-                    [executable, *substitute(command, plan.values)[1:]],
+                    [executable, *command[1:]],
                     cwd=plan.directory,
                     env=self.cli.environment(),
                     timeout=max(deadline - loop.time(), 0.0),

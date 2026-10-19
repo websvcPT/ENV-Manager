@@ -41,7 +41,7 @@ async def test_superadmin_page_has_members_and_create(web_client: httpx.AsyncCli
     """The superadmin sees every project, the Members column, the create button and dialog."""
     await sign_in(web_client, "root")
     page = (await web_client.get("/projects")).text
-    assert project_names(page) == ["billing", "rentals"]
+    assert project_names(page) == ["billing", "Fancy Proj. Name"]
     assert "Members" in table_html(page)
     assert "All projects." in page
     assert 'data-target="project-new"' in page
@@ -67,7 +67,7 @@ async def test_deployment_scope_never_shows_hidden_names(web_client: httpx.Async
     """A deployment grant lists the project as limited and leaks nothing outside the grant."""
     await sign_in(web_client, "deployment_admin")
     page = (await web_client.get("/projects")).text
-    assert project_names(page) == ["rentals"]
+    assert project_names(page) == ["Fancy Proj. Name"]
     assert "Access limited to prod" in page
     assert "of your scope" in page
     for hidden in ("billing", "staging", "worker", ".env.api"):
@@ -125,8 +125,8 @@ async def test_table_fragment_is_only_the_panel(web_client: httpx.AsyncClient) -
 async def test_search_filters_and_escapes_the_query(web_client: httpx.AsyncClient) -> None:
     """The query narrows the list; with no match the panel says so without echoing markup."""
     await sign_in(web_client, "root")
-    assert project_names((await web_client.get("/projects?q=rent")).text) == ["rentals"]
-    assert 'value="rent"' in (await web_client.get("/projects?q=rent")).text
+    assert project_names((await web_client.get("/projects?q=fancy")).text) == ["Fancy Proj. Name"]
+    assert 'value="fancy"' in (await web_client.get("/projects?q=fancy")).text
     none = (await web_client.get("/projects/table", params={"q": "<script>x"}, headers=HTMX)).text
     assert "No projects match" in none
     assert "<script>" not in none
@@ -162,7 +162,7 @@ async def test_create_project_swaps_the_table_and_closes_the_dialog(
     response = await post_project(web_client, " fleetops ")
     assert response.status_code == 200
     assert response.headers["hx-trigger"] == "close-dialogs"
-    assert project_names(response.text) == ["billing", "fleetops", "rentals"]
+    assert project_names(response.text) == ["billing", "Fancy Proj. Name", "fleetops"]
     async with web_app.state.session_factory() as db:
         entry = (
             await db.execute(select(AuditEntry).where(AuditEntry.action == "project.create"))
@@ -172,7 +172,12 @@ async def test_create_project_swaps_the_table_and_closes_the_dialog(
 
 @pytest.mark.parametrize(
     ("name", "message"),
-    [("", "Enter a project name."), ("Bad Name", "Use 1 to 100"), ("rentals", "already exists")],
+    [
+        ("", "Enter a project name."),
+        ("Bad Name!", "Use 1 to 100 characters"),
+        ("fancy PROJ. name", "already exists"),
+        ("Fancy Proj. Name", "already exists"),
+    ],
 )
 async def test_refused_name_swaps_the_form_with_the_reason(
     web_client: httpx.AsyncClient, name: str, message: str

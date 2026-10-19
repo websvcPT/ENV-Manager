@@ -271,7 +271,7 @@ async def test_the_post_deploy_preview_runs_once_when_docker_is_usable(
 
     preview = (await preflight_of(h, cli=cli, user="superadmin")).preview
     assert preview.state == "run"
-    assert preview.command == "docker compose up -d --no-deps {service_name}"
+    assert preview.command == "docker compose up -d --no-deps web"
 
     admin = (await preflight_of(h, cli=cli, user="admin")).preview
     assert admin.state == "run" and admin.command is None

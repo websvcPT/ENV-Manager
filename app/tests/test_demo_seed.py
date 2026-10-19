@@ -36,7 +36,7 @@ from app.models import (
 from app.seeds import (
     DEMO_DEPLOYMENT_NAME,
     DEMO_FILES,
-    DEMO_HOOK_COMMAND,
+    DEMO_HOOK_COMMANDS,
     DEMO_PROJECT_NAME,
     DEMO_SERVICE_NAMES,
     DEMO_STACK_FOLDER,
@@ -157,16 +157,20 @@ async def test_demo_structure_follows_the_committed_stack(
 async def test_demo_services_store_the_recreate_command(
     engine: AsyncEngine, demo_data: SeedData
 ) -> None:
-    """Each service recreates only its own workload after a deploy."""
+    """Each service recreates only its own workload after a deploy, and its command names it."""
     demo = _demo(demo_data)
+    expected = {
+        demo.api.id: "docker compose up -d --no-deps --force-recreate api",
+        demo.db.id: "docker compose up -d --no-deps --force-recreate db",
+    }
     async with create_session_factory(engine)() as db:
         for service in (demo.api, demo.db):
             hook = await db.scalar(select(ServiceHook).where(ServiceHook.service_id == service.id))
             assert hook is not None
             assert hook.type is HookType.POST_DEPLOY
-            assert hook.commands == DEMO_HOOK_COMMAND
-    assert "{service_name}" in DEMO_HOOK_COMMAND
-    assert DEMO_HOOK_COMMAND.startswith("docker compose up -d --no-deps --force-recreate ")
+            assert hook.commands == expected[service.id]
+            assert hook.commands == DEMO_HOOK_COMMANDS[service.name]
+            assert "{" not in hook.commands
 
 
 async def test_demo_dist_comparison_covers_clean_blocked_and_skipped(

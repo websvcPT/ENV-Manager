@@ -1,13 +1,18 @@
 """The post-deploy command settings of a service: saving them and checking the Compose setup.
 
 Only the superadmin changes commands. A save is refused while the Docker socket, the daemon or
-the compose plugin is not usable, and every line is validated (``app.services.hook_commands``)
-and the working directory resolved against the allowed paths before anything is stored; the
-runner validates again when it executes. Audit entries name the settings that changed, never the
-command text or a path, because admins read the audit log and only the superadmin may see
-commands. The compose check runs ``docker compose config --quiet`` in the working directory.
+the compose plugin is not usable, and every line is validated (``app.services.hook_commands``,
+safety net included) and the working directory resolved against the allowed paths before anything
+is stored; the runner validates again when it executes. Changed commands are stored only after
+the parsed arguments of every line were shown: the first save answers ``HookReviewRequired`` with
+them and a digest of the reviewed text, and the save that sends the digest back stores exactly
+that text. Audit entries name the settings that changed and never a path. A change of the
+commands also records the old and the new command text, which the audit log shows to the
+superadmin only (``app.services.audit_details.COMMAND_TEXT_KEYS``), like the command itself. The
+compose check runs ``docker compose config --quiet`` in the working directory.
 """
 
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -18,7 +23,7 @@ from app.core.crypto import CryptoService
 from app.models import AuditResult, Deployment, HookType, Service, ServiceHook
 from app.services.audit import AuditActor, record_actor_audit
 from app.services.docker_cli import DockerCli
-from app.services.hook_commands import CommandError, normalize_commands, parse_commands
+from app.services.hook_commands import Command, CommandError, normalize_commands, parse_commands
 from app.services.hook_process import BoundedOutput, run_process
 from app.services.hook_runner import WorkingDirectoryError, resolve_working_directory
 from app.services.paths import PathValidationError, load_allowed_paths
@@ -58,14 +63,32 @@ class HookSettingsError(Exception):
         self.errors = errors
 
 
+class HookReviewRequired(Exception):
+    """Changed commands must be looked at before they are stored.
+
+    ``commands`` holds the parsed arguments of each command and ``digest`` identifies the text
+    that was parsed; sending it back with the same commands confirms them.
+    """
+
+    def __init__(self, commands: tuple[Command, ...], digest: str) -> None:
+        """Hold what the review shows."""
+        super().__init__("the commands were not reviewed")
+        self.commands = commands
+        self.digest = digest
+
+
 @dataclass(frozen=True)
 class HookForm:
-    """The settings as typed: text for the three inputs and the checkbox."""
+    """The settings as typed: text for the three inputs and the checkbox.
+
+    ``reviewed`` is the digest of the commands the person was shown the parsed form of.
+    """
 
     working_directory: str = ""
     commands: str = ""
     timeout: str = str(DEFAULT_TIMEOUT_SECONDS)
     run_only_if_changed: bool = True
+    reviewed: str = ""
 
 
 @dataclass(frozen=True)
@@ -97,6 +120,11 @@ async def _load_service(db: AsyncSession, service_id: int) -> tuple[Service, Dep
     return row[0], row[1]
 
 
+def commands_digest(commands: str) -> str:
+    """The digest that identifies a normalized command text in the review."""
+    return hashlib.sha256(commands.encode()).hexdigest()
+
+
 def _parse_timeout(raw: str) -> int | None:
     """The timeout in seconds, None when it is not a whole number in range."""
     text = raw.strip()
@@ -117,8 +145,10 @@ async def save_post_deploy_hook(
     """Validate and store the post-deploy settings of a service, auditing what changed.
 
     Returns the stored hook, None when there is nothing to store (no command and no hook yet).
-    Raises ``HookForbiddenError`` for anyone but the superadmin and ``HookSettingsError`` when
-    the Docker socket is not usable or a field is refused.
+    Raises ``HookForbiddenError`` for anyone but the superadmin, ``HookSettingsError`` when the
+    Docker socket is not usable or a field is refused, and ``HookReviewRequired`` when the
+    commands differ from the stored ones and their digest was not confirmed; nothing is written
+    then.
     """
     _require_superadmin(scope)
     service, deployment = await _load_service(db, service_id)
@@ -155,6 +185,11 @@ async def save_post_deploy_hook(
             ServiceHook.service_id == service.id, ServiceHook.type == HookType.POST_DEPLOY
         )
     )
+    previous_commands = stored.commands if stored is not None else ""
+    if commands and commands != previous_commands:
+        digest = commands_digest(commands)
+        if form.reviewed != digest:
+            raise HookReviewRequired(parse_commands(commands), digest)
     if stored is None:
         if not commands:
             return None
@@ -174,6 +209,14 @@ async def save_post_deploy_hook(
     stored.working_directory = working_directory
     stored.timeout_seconds = timeout
     stored.run_only_if_changed = form.run_only_if_changed
+    details: dict[str, object] = {
+        "hook": HookType.POST_DEPLOY.value,
+        "changed": changed,
+        "commands": command_count,
+    }
+    if "commands" in changed:
+        details["previous_commands"] = previous_commands
+        details["new_commands"] = commands
     if changed:
         await record_actor_audit(
             db,
@@ -186,11 +229,7 @@ async def save_post_deploy_hook(
             project_id=deployment.project_id,
             deployment_id=deployment.id,
             service_id=service.id,
-            details={
-                "hook": HookType.POST_DEPLOY.value,
-                "changed": changed,
-                "commands": command_count,
-            },
+            details=details,
         )
     await db.commit()
     return stored
