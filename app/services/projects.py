@@ -186,14 +186,21 @@ async def _restrictions_below(
 async def delete_project(
     db: AsyncSession, project: Project, *, actor: User, ip_address: str | None = None
 ) -> None:
-    """Delete a project with everything under it, and audit it.
+    """Delete a project with everything under it as a signed-in user, and audit it.
+
+    See ``delete_project_as`` for the refusal and what is removed.
+    """
+    await delete_project_as(db, project, AuditActor.for_user(actor, ip_address))
+
+
+async def delete_project_as(db: AsyncSession, project: Project, who: AuditActor) -> None:
+    """Delete a project with everything under it, and audit it as ``who``.
 
     Refused while a usable API token is restricted to the project or something inside it:
     dropping that restriction would widen the token, so the token must be revoked first. A token
     that is revoked or expired can never be used again, so its restriction rows are removed with
     the project instead of keeping the project from being deleted.
     """
-    who = AuditActor.for_user(actor, ip_address)
     restricting = await _restrictions_below(db, project)
     tokens = sorted({token.name for token, _ in restricting if is_live(token)})
     if tokens:

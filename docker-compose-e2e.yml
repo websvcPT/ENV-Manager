@@ -45,7 +45,12 @@ services:
       # Development dataset login, development and testing only.
       E2E_USER: root
       E2E_PASSWORD: dev-only-password
-    command: sh -c "npm ci --prefix / --no-audit --no-fund && /node_modules/.bin/playwright test"
+    # PLAYWRIGHT_ARGS (the ARGS of make e2e) narrows the run, for example
+    # "--project=desktop tests/users.spec.ts"; quotes in it are read as typed.
+    command:
+      - sh
+      - -c
+      - npm ci --prefix / --no-audit --no-fund && eval "/node_modules/.bin/playwright test $${PLAYWRIGHT_ARGS:-}"
 
   playwright-demo:
     <<: *browser

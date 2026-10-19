@@ -55,6 +55,7 @@ from app.services.backup_view import format_size
 from app.services.deploy import DeployEngine
 from app.services.deploy_recovery import recover_interrupted_runs
 from app.services.deploy_types import DeployOutcome, DeployRequest, DeployRequestError
+from app.services.dev_cleanup import MIN_SCRATCH_AGE, CleanupResult, remove_scratch_data
 from app.services.docker_cli import DockerCli
 from app.services.hook_runner import DockerHookRunner
 from app.services.key_check import ensure_key_check
@@ -497,3 +498,35 @@ def reset_lockouts() -> None:
 
     count = run_command(operation)
     typer.echo(f"cleared {count} login counters")
+
+
+@dev_app.command("cleanup")
+def cleanup_scratch_data() -> None:
+    """Remove the scratch users and projects that browser specs left behind.
+
+    Matches users whose email starts with e2e-u- and projects whose name starts with e2e-, and
+    only those created more than an hour ago, active or not, so rows a running spec may still
+    use stay. A user takes its sessions, grants and tokens with it and leaves the audit history
+    and version authors in place. Projects are deleted like the project delete of the web
+    interface: one that an API token is restricted to is kept and named.
+    """
+    _require_development_environment("cleaning up")
+
+    async def operation(db: AsyncSession) -> CleanupResult:
+        return await remove_scratch_data(db)
+
+    result = run_command(operation)
+    typer.echo(
+        f"removed {result.users_removed} scratch users and "
+        f"{result.projects_removed} scratch projects"
+    )
+    minutes = int(MIN_SCRATCH_AGE.total_seconds() // 60)
+    typer.echo(
+        f"kept {result.users_recent} scratch users and {result.projects_recent} scratch projects "
+        f"created in the last {minutes} minutes"
+    )
+    if result.projects_in_use:
+        typer.echo(
+            f"kept {len(result.projects_in_use)} scratch projects with restricted API tokens: "
+            + ", ".join(result.projects_in_use)
+        )

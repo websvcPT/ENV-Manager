@@ -52,8 +52,10 @@ export async function createUser(
 }
 
 /**
- * Disable a user through the confirmed disable post. Users cannot be deleted, so this is how a
- * spec cleans up after itself; disabling a disabled user changes nothing.
+ * Disable a user through the confirmed disable post. Users cannot be deleted in the application,
+ * so this is how a spec cleans up after itself (disabling a disabled user changes nothing); the
+ * rows themselves are removed later by `envmanager dev cleanup`, which `make e2e` runs before
+ * the specs, and finds them by the `e2e-u-` start of the email that `createUser` gives them.
  */
 export async function disableUser(request: APIRequestContext, id: number): Promise<void> {
   const response = await request.post(`/users/${id}/disable`, {
@@ -65,7 +67,10 @@ export async function disableUser(request: APIRequestContext, id: number): Promi
   }
 }
 
-/** A name no other run or project uses, so specs never meet each other's users. */
+/**
+ * A name no other run or project uses, so specs never meet each other's users. The email of a
+ * user made with it starts with `e2e-u-`, which is what the development cleanup matches on.
+ */
 export function uniqueUserName(projectName: string): string {
   const suffix = Math.random().toString(36).slice(2, 7);
   return `e2e-u-${Date.now()}-${suffix}-${projectName}`;

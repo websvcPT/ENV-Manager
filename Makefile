@@ -1,7 +1,11 @@
 .PHONY: up up-app upforce up-bg wait-app stop destroy logs app app-logs lint format tests \
-	tests-docker migrate revision seed e2e e2e-lock e2e-demo demo-up demo-down demo-reset \
-	frontend-build tailwind-download tailwind-build tailwind-watch static-fetch help
+	tests-docker migrate revision seed dev-cleanup dev-reset e2e e2e-lock e2e-demo demo-up \
+	demo-down demo-reset frontend-build tailwind-download tailwind-build tailwind-watch \
+	static-fetch help
 
+# Extra arguments for `make tests` (pytest) and `make e2e` (playwright test); empty runs everything.
+ARGS ?=
+export ARGS
 TAILWIND_VERSION ?= 4.3.3
 HTMX_VERSION ?= 4.0.0
 # Must equal the @playwright/test pin in playwright/package.json and the image tag in
@@ -72,8 +76,8 @@ lint: ## Lint and type-check
 format: ## Auto-format and fix
 	docker compose exec -T app sh /app/scripts/format.sh
 
-tests: ## Run tests inside the running app container
-	docker compose exec -T app sh /app/scripts/test.sh
+tests: ## Run tests inside the running app container (ARGS="app/tests/test_x.py -k name" narrows the run)
+	docker compose exec -T app sh /app/scripts/test.sh $(ARGS)
 
 tests-docker: ## Run tests in an isolated container
 	docker compose -f docker-compose-testing.yml down --remove-orphans --rmi local -v || true
@@ -83,11 +87,19 @@ tests-docker: ## Run tests in an isolated container
 seed: ## Load the development dataset into the running app (dev-only passwords)
 	docker compose exec -T app envmanager dev seed
 
-e2e: ## Seed the dev dataset and run the Playwright specs against the running stack
+dev-cleanup: ## Remove the scratch users and projects that browser specs left in the development database
+	docker compose exec -T app envmanager dev cleanup
+
+dev-reset: ## Replace the development database with a fresh seeded one (the old one stays as *.before-reset)
+	sh scripts/dev-reset.sh
+	@$(MAKE) --no-print-directory wait-app
+	sh scripts/seed-dev.sh
+
+e2e: ## Seed the dev dataset and run the Playwright specs (ARGS="--project=desktop tests/users.spec.ts" narrows the run)
 	@docker compose ps --status running --services | grep -qx app \
 		|| { echo "the development stack is not running; run make up-bg"; exit 1; }
 	sh scripts/e2e-seed.sh
-	docker compose -f docker-compose-e2e.yml run --rm playwright
+	docker compose -f docker-compose-e2e.yml run --rm -e PLAYWRIGHT_ARGS="$$ARGS" playwright
 
 e2e-lock: ## Regenerate playwright/package-lock.json after changing playwright/package.json
 	docker run --rm --user $(USER_IDS) -e HOME=/tmp -v "$(CURDIR)/playwright":/e2e -w /e2e \
