@@ -14,7 +14,7 @@ copies in ``demo/baseline/environments``:
     .env.api          drift: the target differs from the managed version
     .env.db           identical to the managed version
     .env.db.secrets   identical, but its dist template has a key the managed version lacks (blocked)
-    demo-ca.pem       missing target; its dist template is not env format (comparison skipped)
+    demo-ca.pem       missing target; a certificate, so its dist link is ignored (not applicable)
 
 Grants: ``project_admin`` gets the whole project, ``env_scoped_admin`` only ``.env.db`` (so a
 deploy of ``db`` by that user touches one of the two files). Every value is an obviously fake
@@ -33,6 +33,7 @@ from app.models import (
     AllowedPath,
     Deployment,
     Environment,
+    FileType,
     GrantLevel,
     HookType,
     Project,
@@ -79,12 +80,13 @@ _CERTIFICATE = (
 
 @dataclass(frozen=True)
 class DemoFile:
-    """A managed file of the demo stack: its service, saved versions (oldest first), dist link."""
+    """A managed file of the demo stack: service, saved versions (oldest first), dist link, type."""
 
     service: str
     name: str
     versions: tuple[str, ...]
     dist_path: str
+    file_type: FileType = FileType.ENV
 
     @property
     def target_path(self) -> str:
@@ -99,7 +101,7 @@ class DemoFile:
 
 DEMO_FILES = (
     DemoFile("api", ".env.api", (_API_SETTINGS,), "environments/.env.api-dist"),
-    DemoFile("api", "demo-ca.pem", (_CERTIFICATE,), "environments/demo-ca.pem-dist"),
+    DemoFile("api", "demo-ca.pem", (_CERTIFICATE,), "environments/demo-ca.pem-dist", FileType.CERT),
     DemoFile("db", ".env.db", (_DB_SETTINGS_FIRST, _DB_SETTINGS), "environments/.env.db-dist"),
     DemoFile("db", ".env.db.secrets", (_DB_SECRETS,), "environments/.env.db.secrets-dist"),
 )
@@ -169,6 +171,7 @@ async def _get_or_create_environments(
             environment = Environment(
                 service_id=service.id,
                 name=demo_file.name,
+                file_type=demo_file.file_type,
                 target_path=demo_file.target_path,
                 dist_path=demo_file.dist_path,
             )

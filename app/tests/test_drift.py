@@ -20,6 +20,7 @@ from app.models import (
     DriftPolicy,
     Environment,
     EnvironmentVersion,
+    FileType,
 )
 from app.services.audit import AuditActor
 from app.services.deploy_lock import hold_deploy_lock
@@ -49,6 +50,7 @@ from app.tests.deploy_helpers import (
     set_deployment,
     version_text,
 )
+from app.tests.file_type_helpers import set_file_type
 
 MANAGED = "A=1\nB=2\nSHARED=same\n"
 CERTIFICATE = "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n"
@@ -717,3 +719,88 @@ async def test_the_audit_entries_of_every_action_hold_no_value_or_path(staged: S
         assert value not in " ".join(
             str(entry.details) for entry in rows if entry.action.startswith("environment.")
         )
+
+
+CERT_MANAGED = "-----BEGIN CERTIFICATE-----\nAAAA\nBBBB\n-----END CERTIFICATE-----\n"
+CERT_EDITED = "-----BEGIN CERTIFICATE-----\nAAAA\nCCCC\n-----END CERTIFICATE-----\n"
+
+
+def test_a_certificate_is_compared_line_by_line_even_when_no_line_is_a_variable() -> None:
+    comparison = compare_columns(CERT_EDITED, CERT_MANAGED, CERT_MANAGED, FileType.CERT)
+    assert comparison.by_line and not comparison.whole_file and comparison.unchanged == 3
+    (row,) = comparison.rows
+    assert row.key == "Line 3" and (row.disk_change, row.managed_change) == (
+        DiffChange.CHANGED,
+        None,
+    )
+    assert (row.target, row.deployed, row.managed) == (Presence.SET,) * 3
+    assert "CCCC" not in repr(comparison) and "BBBB" not in repr(comparison)
+    free = compare_columns("a\nb\n", CERT_MANAGED, CERT_MANAGED, FileType.CERT)
+    assert free.by_line and not free.whole_file and len(free.rows) == 4
+
+
+def test_a_certificate_with_more_or_fewer_lines_marks_the_added_and_removed_ones() -> None:
+    longer = CERT_MANAGED + "DDDD\n"
+    comparison = compare_columns(longer, CERT_MANAGED, CERT_MANAGED, FileType.CERT)
+    (row,) = comparison.rows
+    assert (row.key, row.disk_change, row.deployed) == (
+        "Line 5",
+        DiffChange.ADDED,
+        Presence.NOT_SET,
+    )
+    only_marker = "-----BEGIN CERTIFICATE-----\n"
+    shorter = compare_columns(only_marker, CERT_MANAGED, CERT_MANAGED, FileType.CERT)
+    assert [row.disk_change for row in shorter.rows] == [DiffChange.REMOVED] * 3
+
+
+def test_an_env_file_never_compares_by_line() -> None:
+    comparison = compare_columns(CERT_EDITED, CERT_MANAGED, CERT_MANAGED)
+    assert comparison.whole_file and not comparison.by_line
+    assert [row.key for row in comparison.rows] == [WHOLE_FILE_KEY]
+
+
+@pytest.fixture
+async def staged_cert(harness: Harness) -> Staged:
+    """The staging web file as a certificate with CERT_MANAGED as its newest version."""
+    h = harness
+    web = h.seed.envs.staging_web
+    await set_file_type(h.db, web.id, FileType.CERT)
+    await create_version(h.db, h.crypto, web.id, CERT_MANAGED, author=h.seed.users.admin)
+    await h.db.commit()
+    header = await load_editor_header(h.db, await h.scope_of("superadmin"), web.id)
+    assert header is not None and header.file_type is FileType.CERT
+    return Staged(h, web, header)
+
+
+async def test_a_drifted_certificate_lists_the_changed_lines_and_reveals_them_audited(
+    staged_cert: Staged,
+) -> None:
+    assert await staged_cert.deploy() is DeployResultStatus.WRITTEN
+    assert staged_cert.target.read_text(encoding="utf-8") == CERT_MANAGED
+    staged_cert.target.write_text(CERT_EDITED, encoding="utf-8")
+    view = await staged_cert.view()
+    assert view.kind is DriftKind.DRIFT and view.comparison.by_line
+    assert [row.key for row in view.comparison.rows] == ["Line 3"]
+    revealed = await reveal(staged_cert, view=view)
+    assert revealed.values == {0: {"target": "CCCC", "deployed": "BBBB", "managed": "BBBB"}}
+    entries = await audit_of(staged_cert.h.db, "environment.reveal")
+    assert {entry.details["scope"] for entry in entries} == {"drift"}
+    assert all(entry.details["keys"] == ["Line 3"] for entry in entries)
+    assert "CCCC" not in str([entry.details for entry in entries])
+
+
+async def test_a_certificate_target_without_a_pem_block_cannot_be_imported(
+    staged_cert: Staged,
+) -> None:
+    assert await staged_cert.deploy() is DeployResultStatus.WRITTEN
+    staged_cert.target.write_text("A=1\nB=2\n", encoding="utf-8")
+    view = await staged_cert.view()
+    assert view.kind is DriftKind.DRIFT and view.can_overwrite and not view.can_import
+    assert view.import_problem is not None and "PEM block" in view.import_problem
+    before = await staged_cert.versions()
+    with pytest.raises(DriftError, match="PEM block"):
+        await import_it(staged_cert, view)
+    assert await staged_cert.versions() == before
+    staged_cert.target.write_text(CERT_EDITED, encoding="utf-8")
+    imported = await import_it(staged_cert)
+    assert imported.number == before + 1

@@ -32,7 +32,7 @@
 {%- else %}
 <div data-reveal-row data-revealed="false" data-fragment="raw-text" class="group flex flex-col gap-3 px-4 py-4 md:px-5">
 {%- if not content.env_format %}
-<p class="text-[13px] text-ink2">This file is not in KEY=VALUE format, so it is shown and edited as one text.</p>
+<p class="text-[13px] text-ink2">{% if env.file_type.value == "cert" %}This is a certificate, so it is shown and edited as one text.{% else %}This file is not in KEY=VALUE format, so it is shown and edited as one text.{% endif %}</p>
 {%- endif %}
 <div class="min-h-[38px] rounded-ctl border border-line-strong bg-surface2 px-3 py-2 font-mono text-[13px] leading-relaxed text-ink2 group-data-[revealed=true]:border-0 group-data-[revealed=true]:bg-transparent group-data-[revealed=true]:p-0"><div class="group-data-[revealed=true]:hidden">
 {%- if content.env_format and content.rows %}{% for row in content.rows %}<p class="break-all">{{ row.key }}=••••••••••••</p>{% endfor %}
@@ -59,8 +59,9 @@
 {%- set status_text %}{% if env.status == "never" %}Never deployed{% elif env.status == "pending" %}Pending: v{{ env.current }} saved, {% if env.deployed is not none %}v{{ env.deployed }} deployed{% else %}never deployed{% endif %}{% elif env.status == "deployed" %}Deployed: v{{ env.deployed }}{% else %}{{ env.status | capitalize }}: v{{ env.current }} saved{% endif %}{% endset %}
 {%- for label, value, mono in [
   ("Status", status_text, false),
+  ("Type", env.file_type.label, false),
   ("Target path", env.target_path, true),
-  ("Dist file", env.dist_path or "None", env.dist_path is not none),
+  ("Dist file", "Not applicable" if env.file_type.value == "cert" else (env.dist_path or "None"), env.file_type.value != "cert" and env.dist_path is not none),
   ("Mode", env.file_mode, true),
   ("Owner / group", (env.file_owner or "app user") ~ " : " ~ (env.file_group or "app user"), true),
   ("Current version", ("v" ~ env.current ~ " · " ~ env.current_at.strftime("%Y-%m-%d %H:%M")) if env.current is not none else "None", false),

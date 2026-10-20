@@ -86,6 +86,7 @@ from app.models import (
     DeployTrigger,
     Environment,
     EnvironmentVersion,
+    FileType,
     GrantLevel,
     HookType,
     PostDeployStatus,
@@ -307,11 +308,13 @@ async def _environment(
     contents: list[str],
     author: User,
     dist_path: str | None = None,
+    file_type: FileType = FileType.ENV,
 ) -> Environment:
     """An environment with one saved version per content, oldest first."""
     environment = Environment(
         service_id=service.id,
         name=name,
+        file_type=file_type,
         target_path=f"environments/{name}",
         dist_path=dist_path,
     )
@@ -651,6 +654,7 @@ async def ensure_service_figures(
         "web-ca.pem",
         ["-----BEGIN CERTIFICATE-----\nc2VlZA==\n-----END CERTIFICATE-----\n"],
         root,
+        file_type=FileType.CERT,
     )
     db.add(
         ServiceHook(

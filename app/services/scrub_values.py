@@ -7,9 +7,11 @@ environment of the deployment, including environments the deploying user cannot 
 versions the deploy wrote (which can be older than the newest). Decrypted text stays in memory
 for this call only; the scrubber keeps the values, never their names or the file text.
 
-A file in env format contributes the value of each variable; any other text file (a
-certificate) contributes its whole text. A version that cannot be decrypted is skipped and
-logged without any detail.
+A file in env format contributes the value of each variable; any other text file contributes its
+whole text. A certificate contributes the base64 lines of each of its PEM blocks (the BEGIN and
+END lines are not secret); a certificate without a PEM block, which a file whose type changed can
+hold, falls back to its whole text. A version that cannot be decrypted is skipped and logged
+without any detail.
 """
 
 from collections.abc import Iterable
@@ -19,15 +21,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.crypto import CryptoError, CryptoService
 from app.core.log import get_logger
-from app.models import Environment, EnvironmentVersion, Service
+from app.models import Environment, EnvironmentVersion, FileType, Service
 from app.services.env_parser import parse_env
+from app.services.file_types import pem_body_lines
 from app.services.output_scrub import OutputScrubber
 
 log = get_logger("scrub_values")
 
 
-def secret_texts(text: str) -> list[str]:
-    """The strings of one file that count as values: each variable value, or the whole text."""
+def secret_texts(text: str, file_type: FileType = FileType.ENV) -> list[str]:
+    """The strings of one file that count as values: each variable value, or the whole text.
+
+    A certificate gives the base64 body of each PEM block, whose lines the scrubber also removes
+    one by one.
+    """
+    if file_type is FileType.CERT:
+        bodies = pem_body_lines(text)
+        return bodies or [text.strip()]
     parsed = parse_env(text)
     if parsed.is_env_format:
         return [
@@ -38,8 +48,10 @@ def secret_texts(text: str) -> list[str]:
     return [text.strip()]
 
 
-async def _newest_versions(db: AsyncSession, deployment_id: int) -> list[EnvironmentVersion]:
-    """The newest saved version of every environment of the deployment."""
+async def _newest_versions(
+    db: AsyncSession, deployment_id: int
+) -> list[tuple[EnvironmentVersion, FileType]]:
+    """The newest saved version of every environment of the deployment, with its file type."""
     environment_ids = (
         select(Environment.id)
         .join(Service, Service.id == Environment.service_id)
@@ -55,7 +67,9 @@ async def _newest_versions(db: AsyncSession, deployment_id: int) -> list[Environ
         .subquery()
     )
     rows = await db.execute(
-        select(EnvironmentVersion).join(
+        select(EnvironmentVersion, Environment.file_type)
+        .join(Environment, Environment.id == EnvironmentVersion.environment_id)
+        .join(
             newest,
             and_(
                 EnvironmentVersion.environment_id == newest.c.environment_id,
@@ -63,7 +77,7 @@ async def _newest_versions(db: AsyncSession, deployment_id: int) -> list[Environ
             ),
         )
     )
-    return list(rows.scalars())
+    return [(version, file_type) for version, file_type in rows.all()]
 
 
 async def load_scrubber(
@@ -79,7 +93,9 @@ async def load_scrubber(
     ``opened`` maps version ids to text the caller's operation already decrypted: those versions
     are not decrypted again, and each one decrypted here is added to it.
     """
-    versions = {version.id: version for version in await _newest_versions(db, deployment_id)}
+    newest = await _newest_versions(db, deployment_id)
+    versions = {version.id: version for version, _file_type in newest}
+    types = {version.environment_id: file_type for version, file_type in newest}
     for version in written:
         if version is not None:
             versions.setdefault(version.id, version)
@@ -94,5 +110,5 @@ async def load_scrubber(
                 continue
             if opened is not None:
                 opened[version.id] = text
-        values.extend(secret_texts(text))
+        values.extend(secret_texts(text, types.get(version.environment_id, FileType.ENV)))
     return OutputScrubber(values)

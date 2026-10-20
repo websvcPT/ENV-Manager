@@ -19,6 +19,7 @@ from app.core.crypto import CryptoService
 from app.models import (
     Deployment,
     Environment,
+    FileType,
     Service,
     User,
 )
@@ -32,6 +33,12 @@ from app.services.confined_read import (
 )
 from app.services.content import MAX_CONTENT_BYTES, content_problem, normalize_newlines
 from app.services.deployments import FILE_MODE_PATTERN, parse_account
+from app.services.file_types import (
+    CERT_HAS_NO_DIST_MESSAGE,
+    CHOOSE_TYPE_MESSAGE,
+    content_problem_for,
+    parse_file_type,
+)
 from app.services.notify_events import (
     NO_EVENT_NOTIFIER,
     EventNotifier,
@@ -63,13 +70,15 @@ class EnvironmentForm:
     """The submitted add environment values, as typed.
 
     ``service`` is the id of an existing service of the deployment or ``NEW_SERVICE``; a typed
-    ``new_service`` name always wins and creates a service. ``upload`` holds the bytes of the
-    uploaded file, None when no file was chosen.
+    ``new_service`` name always wins and creates a service. ``file_type`` is ``env`` or ``cert``,
+    empty meaning ``env``. ``upload`` holds the bytes of the uploaded file, None when no file
+    was chosen.
     """
 
     service: str = ""
     new_service: str = ""
     name: str = ""
+    file_type: str = ""
     target_path: str = ""
     dist_path: str = ""
     file_mode: str = ""
@@ -103,6 +112,7 @@ class CleanEnvironment:
     file_group: str | None
     source: ContentSource
     content: str
+    file_type: FileType = FileType.ENV
 
 
 def relative_path(
@@ -252,6 +262,11 @@ async def validate_environment(
         if (await db.execute(taken)).first() is not None:
             errors["name"] = f"This service already has a file named {name}."
 
+    file_type = parse_file_type(form.file_type, FileType.ENV)
+    if file_type is None:
+        file_type = FileType.ENV
+        errors["file_type"] = CHOOSE_TYPE_MESSAGE
+
     target_path: str | None = None
     if not form.target_path.strip():
         errors["target_path"] = "Enter a target path."
@@ -266,7 +281,9 @@ async def validate_environment(
             errors["target_path"] = "Another file of this deployment already uses this target path."
 
     dist_path: str | None = None
-    if form.dist_path.strip():
+    if form.dist_path.strip() and file_type is FileType.CERT:
+        errors["dist_path"] = CERT_HAS_NO_DIST_MESSAGE
+    elif form.dist_path.strip():
         dist_path, _, problem = relative_path(allowed, deployment.root_path, form.dist_path, "Dist")
         if problem:
             errors["dist_path"] = problem
@@ -301,7 +318,9 @@ async def validate_environment(
         if problem:
             errors["upload"] = problem
     elif source is ContentSource.DIST:
-        if dist_path is not None:
+        if file_type is FileType.CERT:
+            errors["source"] = CERT_HAS_NO_DIST_MESSAGE
+        elif dist_path is not None:
             content, problem = _imported_text(
                 allowed, deployment.root_path, dist_path, "dist", "copy"
             )
@@ -320,6 +339,13 @@ async def validate_environment(
     elif "target_path" in errors:
         errors["source"] = "Fix the target path to import the file."
 
+    content_field = {
+        ContentSource.PASTE: "content",
+        ContentSource.UPLOAD: "upload",
+    }.get(source, "source")
+    if content_field not in errors and (problem := content_problem_for(file_type, content)):
+        errors[content_field] = problem
+
     if errors or target_path is None:
         raise EnvironmentFormError(errors)
     return CleanEnvironment(
@@ -333,6 +359,7 @@ async def validate_environment(
         file_group=group,
         source=source,
         content=content,
+        file_type=file_type,
     )
 
 
@@ -363,6 +390,7 @@ async def create_environment(
         environment = Environment(
             service_id=service_id,
             name=clean.name,
+            file_type=clean.file_type,
             target_path=clean.target_path,
             dist_path=clean.dist_path,
             file_mode=clean.file_mode,
@@ -391,6 +419,7 @@ async def create_environment(
             ),
             action="environment.create",
             details={
+                "file_type": clean.file_type.value,
                 "target_path": clean.target_path,
                 "dist_path": clean.dist_path,
                 "file_mode": clean.file_mode,

@@ -17,6 +17,7 @@ from app.models import (
     DeployRun,
     Environment,
     EnvironmentVersion,
+    FileType,
     HookType,
     PostDeployStatus,
     ServiceHook,
@@ -86,6 +87,7 @@ class EnvironmentRow:
     id: int
     name: str
     target_path: str
+    file_type: FileType
     dist_linked: bool
     current: int | None
     deployed: int | None
@@ -259,6 +261,7 @@ async def load_environment_rows(
                 id=environment.id,
                 name=environment.name,
                 target_path=environment.target_path,
+                file_type=environment.file_type,
                 dist_linked=bool(environment.dist_path),
                 current=current.get(environment.id),
                 deployed=deployed.get(environment.id),

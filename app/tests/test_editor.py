@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.crypto import CryptoService
-from app.models import AuditEntry, EnvironmentVersion, User
+from app.models import AuditEntry, EnvironmentVersion, FileType, User
 from app.seeds import EDITOR_SECRET_VALUES, SeedData
 from app.services.editor import (
     NO_CHANGES_MESSAGE,
@@ -22,6 +22,7 @@ from app.services.editor import (
 )
 from app.services.permissions import load_user_scope
 from app.services.versions import create_version
+from app.tests.file_type_helpers import set_file_type
 
 
 async def header_for(db: AsyncSession, user: User, environment_id: int) -> EditorHeader | None:
@@ -73,7 +74,7 @@ async def test_header_follows_scope_and_group(db: AsyncSession, seed_data: SeedD
 async def test_masked_content_holds_names_and_sizes_only(
     db: AsyncSession, seed_data: SeedData, crypto: CryptoService
 ) -> None:
-    content = await load_editor_content(db, crypto, seed_data.editor.id)
+    content = await load_editor_content(db, crypto, seed_data.editor.id, FileType.ENV)
     assert content is not None and content.env_format and content.number == 3
     assert [row.key for row in content.rows] == [
         "MYSQL_HOST",
@@ -87,7 +88,9 @@ async def test_masked_content_holds_names_and_sizes_only(
     assert certificate.multiline and certificate.lines == 4
     assert not content.rows[0].multiline
     assert repr(content).count("db.internal") == 0
-    certificate_content = await load_editor_content(db, crypto, seed_data.figures.ca.id)
+    certificate_content = await load_editor_content(
+        db, crypto, seed_data.figures.ca.id, FileType.ENV
+    )
     assert certificate_content is not None
     assert not certificate_content.env_format and certificate_content.rows == ()
     assert certificate_content.line_count == 3
@@ -317,6 +320,7 @@ async def test_key_value_save_is_refused_for_a_file_that_is_not_env_format(
     db: AsyncSession, seed_data: SeedData, crypto: CryptoService
 ) -> None:
     actor = seed_data.users.superadmin
+    await set_file_type(db, seed_data.figures.ca.id, FileType.ENV)
     header = await header_for(db, actor, seed_data.figures.ca.id)
     assert header is not None
     with pytest.raises(EditorError) as error:
@@ -330,7 +334,7 @@ async def test_key_value_save_is_refused_for_a_file_that_is_not_env_format(
             comment="",
             key_values=KeyValueSubmission(added=[("A", "1")]),
         )
-    assert "raw text" in str(error.value)
+    assert "not in KEY=VALUE format" in str(error.value)
     saved = await save_version(
         db,
         crypto,
@@ -391,3 +395,102 @@ async def test_stored_crlf_does_not_make_key_value_and_raw_saves_differ(
             key_values=KeyValueSubmission(replaced=[("B", "3")]),
         )
     assert str(error.value) == NO_CHANGES_MESSAGE
+
+
+async def test_the_header_carries_the_type_of_the_file(
+    db: AsyncSession, seed_data: SeedData
+) -> None:
+    admin = seed_data.users.admin
+    env_header = await header_for(db, admin, seed_data.editor.id)
+    cert_header = await header_for(db, admin, seed_data.figures.ca.id)
+    assert env_header is not None and cert_header is not None
+    assert env_header.file_type is FileType.ENV and cert_header.file_type is FileType.CERT
+    assert cert_header.file_type.label == "Certificate" and env_header.file_type.label == "ENV file"
+
+
+async def test_a_certificate_has_no_variables_whatever_its_text_looks_like(
+    db: AsyncSession, seed_data: SeedData, crypto: CryptoService
+) -> None:
+    ca = seed_data.figures.ca
+    await create_version(db, crypto, ca.id, "A=1\nB=2\n", author=seed_data.users.admin)
+    await db.commit()
+    as_cert = await load_editor_content(db, crypto, ca.id, FileType.CERT)
+    assert as_cert is not None and not as_cert.env_format and as_cert.rows == ()
+    assert as_cert.number == 2 and as_cert.line_count == 2
+    as_env = await load_editor_content(db, crypto, ca.id, FileType.ENV)
+    assert as_env is not None and as_env.env_format
+    assert [row.key for row in as_env.rows] == ["A", "B"]
+
+
+async def test_a_variable_of_a_certificate_cannot_be_revealed(
+    db: AsyncSession, seed_data: SeedData, crypto: CryptoService
+) -> None:
+    admin = seed_data.users.admin
+    ca = seed_data.figures.ca
+    await create_version(db, crypto, ca.id, "A=1\n", author=admin)
+    await db.commit()
+    header = await header_for(db, admin, ca.id)
+    assert header is not None
+    with pytest.raises(VariableNotFoundError):
+        await reveal_value(db, crypto, header, "A", actor=admin, ip_address=None)
+    reveals = await db.execute(select(AuditEntry).where(AuditEntry.action == "environment.reveal"))
+    assert reveals.first() is None
+    text = await reveal_content(db, crypto, header, actor=admin, ip_address=None)
+    assert text == "A=1\n"
+
+
+async def test_a_certificate_is_saved_as_raw_text_that_holds_a_pem_block(
+    db: AsyncSession, seed_data: SeedData, crypto: CryptoService
+) -> None:
+    admin = seed_data.users.admin
+    header = await header_for(db, admin, seed_data.figures.ca.id)
+    assert header is not None
+    with pytest.raises(EditorError, match="edited as raw text"):
+        await save_version(
+            db,
+            crypto,
+            header,
+            actor=admin,
+            ip_address=None,
+            base_number=1,
+            comment="",
+            key_values=KeyValueSubmission(added=[("A", "1")]),
+        )
+    for refused in ("A=1\n", "", "-----BEGIN CERTIFICATE-----\nno end\n"):
+        with pytest.raises(EditorError, match="at least one PEM block") as raised:
+            await save_version(
+                db,
+                crypto,
+                header,
+                actor=admin,
+                ip_address=None,
+                base_number=1,
+                comment="",
+                raw_content=refused,
+            )
+        assert refused.strip() not in str(raised.value) or not refused.strip()
+    pem = "-----BEGIN CERTIFICATE-----\r\nbmV3\r\n-----END CERTIFICATE-----\r\n"
+    version = await save_version(
+        db, crypto, header, actor=admin, ip_address=None, base_number=1, comment="", raw_content=pem
+    )
+    assert version.number == 2
+    assert (await stored_texts(db, crypto, header.id))[2] == pem.replace("\r\n", "\n")
+
+
+async def test_an_env_file_still_saves_text_without_a_pem_block(
+    db: AsyncSession, seed_data: SeedData, crypto: CryptoService
+) -> None:
+    admin = seed_data.users.admin
+    header = await header_for(db, admin, seed_data.envs.db.id)
+    assert header is not None and header.file_type is FileType.ENV
+    version = await save_version(
+        db,
+        crypto,
+        header,
+        actor=admin,
+        ip_address=None,
+        base_number=2,
+        comment="",
+        raw_content="no pem here\n",
+    )
+    assert version.number == 3

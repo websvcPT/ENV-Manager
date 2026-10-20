@@ -27,6 +27,7 @@ from app.models import (
     DeployResultStatus,
     DriftState,
     EnvironmentVersion,
+    FileType,
     PostDeployStatus,
     User,
 )
@@ -45,6 +46,7 @@ from app.services.editor import (
     stored_version,
 )
 from app.services.env_parser import parse_env
+from app.services.file_types import content_problem_for, line_values
 from app.services.notify_events import (
     NO_EVENT_NOTIFIER,
     EventNotifier,
@@ -137,7 +139,8 @@ class Comparison:
     ``whole_file`` is set when a column is not env format, so the only row is the file itself.
     ``text_only`` means the texts differ but no variable does (comments, blank lines, line
     breaks or order). ``columns`` is how many of the three columns hold content; with fewer than
-    two there is nothing to compare.
+    two there is nothing to compare. ``by_line`` is set for a certificate, whose rows are lines
+    (``Line 3``) instead of keys.
     """
 
     rows: tuple[DriftRow, ...]
@@ -145,6 +148,7 @@ class Comparison:
     whole_file: bool
     text_only: bool
     columns: int
+    by_line: bool = False
 
 
 @dataclass(frozen=True)
@@ -242,10 +246,15 @@ class _TargetRead:
     read_at: datetime
 
 
-def _side(text: str | None) -> _Side:
-    """A text with its variables; a text that is not env format has none."""
+def _side(text: str | None, file_type: FileType = FileType.ENV) -> _Side:
+    """A text with its variables; a text that is not env format has none.
+
+    The "variables" of a certificate are its lines, named ``Line 1``, ``Line 2``, ...
+    """
     if text is None:
         return _Side(None, None)
+    if file_type is FileType.CERT:
+        return _Side(text, line_values(text))
     parsed = parse_env(text)
     if not parsed.is_env_format:
         return _Side(text, None)
@@ -316,14 +325,15 @@ def _key_entries(target: _Side, deployed: _Side, managed: _Side, reference: _Sid
 
 
 def _compare(
-    target: str | None, deployed: str | None, managed: str
+    target: str | None, deployed: str | None, managed: str, file_type: FileType = FileType.ENV
 ) -> tuple[list[_Entry], Comparison]:
     """The differing entries with their values and the value-free comparison of the columns.
 
-    A column that is not env format makes the whole comparison go by file content, so no line
-    of a certificate is ever listed as a key. Comments are never part of a result.
+    A column of an ENV file that is not env format makes the whole comparison go by file content,
+    so no line of free text is ever listed as a key. A certificate is compared by line, each
+    line standing in the place of a key. Comments are never part of a result.
     """
-    sides = (_side(target), _side(deployed), _side(managed))
+    sides = (_side(target, file_type), _side(deployed, file_type), _side(managed, file_type))
     target_side, deployed_side, managed_side = sides
     reference = deployed_side if deployed_side.text is not None else managed_side
     whole_file = any(side.text is not None and side.values is None for side in sides)
@@ -352,13 +362,21 @@ def _compare(
         whole_file=whole_file,
         text_only=not entries and texts_differ and not whole_file,
         columns=columns,
+        by_line=file_type is FileType.CERT,
     )
     return entries, comparison
 
 
-def compare_columns(target: str | None, deployed: str | None, managed: str) -> Comparison:
+def compare_columns(
+    target: str | None, deployed: str | None, managed: str, file_type: FileType = FileType.ENV
+) -> Comparison:
     """The value-free comparison of the three texts, None standing for a column without one."""
-    return _compare(target, deployed, managed)[1]
+    return _compare(target, deployed, managed, file_type)[1]
+
+
+def _import_problem(text: str, file_type: FileType) -> str | None:
+    """Why the target text cannot be saved as a version of this file, None when it can."""
+    return content_problem(text) or content_problem_for(file_type, text)
 
 
 async def _read_target(db: AsyncSession, root_path: str, target_path: str) -> _TargetRead:
@@ -459,9 +477,11 @@ async def _load(db: AsyncSession, crypto: CryptoService, header: EditorHeader) -
                     "The target file changed outside the app since the last deploy. "
                     "Choose how to resolve it."
                 )
-    _entries, comparison = _compare(target_text, deployed_text, managed_text)
+    _entries, comparison = _compare(target_text, deployed_text, managed_text, header.file_type)
     changed_outside = kind in (DriftKind.DRIFT, DriftKind.NEVER_DEPLOYED)
-    import_problem = content_problem(target_text) if changed_outside and target_text else None
+    import_problem = (
+        _import_problem(target_text, header.file_type) if changed_outside and target_text else None
+    )
     view = DriftView(
         kind=kind,
         message=message,
@@ -549,7 +569,7 @@ async def reveal_drift(
     ):
         raise DriftChangedError(COMPARISON_CHANGED_MESSAGE)
     entries, comparison = _compare(
-        snapshot.target_text, snapshot.deployed_text, snapshot.managed_text
+        snapshot.target_text, snapshot.deployed_text, snapshot.managed_text, header.file_type
     )
     values: dict[int, dict[str, str]] = {}
     for column, version in (
@@ -607,7 +627,7 @@ async def import_target(
         raise DriftError(NOT_UTF8_MESSAGE)
     if view.target_hash == snapshot.managed_version.content_hash:
         raise DriftError(SAME_CONTENT_MESSAGE)
-    problem = content_problem(snapshot.target_text)
+    problem = _import_problem(snapshot.target_text, header.file_type)
     if problem:
         raise DriftError(problem)
     try:

@@ -15,6 +15,7 @@ from starlette.datastructures import FormData
 
 from app.core.client_address import client_address
 from app.core.templating import render
+from app.models import FileType
 from app.services.access_grid import NodeKind
 from app.services.editor import (
     EditorContent,
@@ -104,7 +105,7 @@ def _panel_context(
 ) -> dict[str, Any]:
     """What the panel needs: the header, names and sizes, the mode and the page's version.
 
-    A file that is not env format can only be edited as raw text.
+    A certificate and a file that is not env format can only be edited as raw text.
     """
     return {
         "env": access.env,
@@ -117,7 +118,9 @@ def _panel_context(
 
 async def _content(db: AsyncSession, request: Request, access: EnvironmentContext) -> EditorContent:
     """Names and sizes of the newest version, or 404 for an environment with no version."""
-    content = await load_editor_content(db, get_crypto(request), access.env.id)
+    content = await load_editor_content(
+        db, get_crypto(request), access.env.id, access.env.file_type
+    )
     if content is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "no version saved")
     return content
@@ -203,7 +206,9 @@ async def new_row(
     request: Request,
     access: Annotated[EnvironmentContext, Depends(environment_access(Capability.EDIT_VALUES))],
 ) -> Response:
-    """A blank row for a new variable."""
+    """A blank row for a new variable; a certificate has no variables."""
+    if access.env.file_type is FileType.CERT:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "variable not found")
     return render(request, ROW_NEW, {"env": access.env})
 
 

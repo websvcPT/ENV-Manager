@@ -102,7 +102,7 @@ test.describe('superadmin on the demo stack', () => {
     await expect(badge(page, '.env.api')).toHaveAttribute('data-status', 'halt');
     await expect(row(page, '.env.api')).toContainText('Drift: Target changed outside the app');
     await expect(badge(page, 'demo-ca.pem')).toHaveAttribute('data-status', 'proceed');
-    await expect(row(page, 'demo-ca.pem')).toContainText('Skipped, not env format');
+    await expect(row(page, 'demo-ca.pem')).toContainText('Skipped, not applicable to a certificate');
     await expect(row(page, 'demo-ca.pem')).toContainText('Drift: Target missing');
     await choose(page, ['demo-ca.pem'], ['.env.api', 'demo-ca.pem']);
 

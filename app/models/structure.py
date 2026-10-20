@@ -6,6 +6,7 @@ from enum import StrEnum
 from sqlalchemy import (
     JSON,
     Boolean,
+    CheckConstraint,
     Enum,
     ForeignKey,
     Index,
@@ -41,6 +42,18 @@ class MissingTargetPolicy(StrEnum):
 
     CREATE = "create"
     HALT = "halt"
+
+
+class FileType(StrEnum):
+    """What a managed file holds: ``env`` is a KEY=VALUE file, ``cert`` is PEM text."""
+
+    ENV = "env"
+    CERT = "cert"
+
+    @property
+    def label(self) -> str:
+        """The name of the type as the screens show it."""
+        return "ENV file" if self is FileType.ENV else "Certificate"
 
 
 class HookType(StrEnum):
@@ -154,12 +167,14 @@ class Environment(Base):
     """One text file under version control with a target path inside its deployment root.
 
     ``file_mode``, ``file_owner`` and ``file_group`` override the deployment's file defaults;
-    None means the deployment default applies.
+    None means the deployment default applies. ``file_type`` decides how the content is edited,
+    compared and scrubbed; a ``cert`` file has no dist file.
     """
 
     __tablename__ = "environments"
     __table_args__ = (
         UniqueConstraint("service_id", "name", name="uq_environments_service_name"),
+        CheckConstraint("file_type IN ('env', 'cert')", name="file_type"),
         {"sqlite_autoincrement": True},
     )
 
@@ -169,6 +184,9 @@ class Environment(Base):
     )
     name: Mapped[str] = mapped_column(String(100))
     target_path: Mapped[str] = mapped_column(String(4096))
+    file_type: Mapped[FileType] = mapped_column(
+        _policy_column(FileType, 10), default=FileType.ENV, server_default=FileType.ENV.value
+    )
     dist_path: Mapped[str | None] = mapped_column(String(4096), default=None)
     dist_missing_policy: Mapped[DistMissingPolicy | None] = mapped_column(
         _policy_column(DistMissingPolicy, 10), default=None

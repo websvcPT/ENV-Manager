@@ -24,6 +24,7 @@ from app.services.environments import (
     target_hint,
     validate_environment,
 )
+from app.services.file_types import CERT_NAME_SUFFIXES
 from app.services.paths import load_allowed_paths
 from app.services.permissions import Capability
 from app.web.dependencies import get_crypto, get_db, get_notifier
@@ -85,6 +86,7 @@ async def _form_context(
         "services": [(str(service_id), name) for service_id, name in rows.all()],
         "deployment": deployment,
         "hint": target_hint(allowed, deployment.root_path, form.target_path),
+        "cert_suffixes": " ".join(CERT_NAME_SUFFIXES),
         "action": f"/services/{access.service.id}/environments/new",
         "cancel_href": f"/services/{access.service.id}",
     }
@@ -144,6 +146,7 @@ async def create_environment_route(
         service=_text(parsed, "service"),
         new_service=_text(parsed, "new_service"),
         name=_text(parsed, "name"),
+        file_type=_text(parsed, "file_type"),
         target_path=_text(parsed, "target_path"),
         dist_path=_text(parsed, "dist_path"),
         file_mode=_text(parsed, "file_mode"),

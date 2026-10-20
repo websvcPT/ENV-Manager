@@ -17,7 +17,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.crypto import CryptoService
-from app.models import EnvironmentVersion, User
+from app.models import EnvironmentVersion, FileType, User
 from app.services.audit import AuditActor, record_environment_audit
 from app.services.editor import (
     STALE_MESSAGE,
@@ -27,6 +27,7 @@ from app.services.editor import (
     stored_version,
 )
 from app.services.env_parser import parse_env
+from app.services.file_types import content_problem_for, line_values
 from app.services.notify_events import (
     NO_EVENT_NOTIFIER,
     EventNotifier,
@@ -81,7 +82,8 @@ class VersionDiff:
     """The difference of two versions, ``left`` older than ``right``.
 
     ``whole_file`` is set when either side is not env format, so the only row is the file
-    itself. ``identical`` means the two versions hold the same content. Keys that did not change
+    itself. ``by_line`` is set for a certificate, whose rows are lines (``Line 3``) instead of
+    keys. ``identical`` means the two versions hold the same content. Keys that did not change
     are counted, not listed.
     """
 
@@ -91,6 +93,7 @@ class VersionDiff:
     unchanged: int
     whole_file: bool
     identical: bool
+    by_line: bool = False
 
 
 @dataclass(frozen=True)
@@ -153,9 +156,40 @@ async def load_versions(db: AsyncSession, header: EditorHeader) -> tuple[Version
     )
 
 
-def _compare(left_text: str, right_text: str) -> tuple[list[_Entry], int, bool]:
+def _compare_lines(left_text: str, right_text: str) -> tuple[list[_Entry], int]:
+    """The differing lines of a certificate in file order and the count of equal ones.
+
+    Lines are compared by position: an inserted line shifts the ones after it, which then differ.
+    """
+    left = line_values(left_text)
+    right = line_values(right_text)
+    entries: list[_Entry] = []
+    unchanged = 0
+    for name in dict.fromkeys([*left, *right]):
+        before, after = left.get(name), right.get(name)
+        if before == after:
+            unchanged += 1
+        elif before is None:
+            entries.append(_Entry(name, DiffChange.ADDED, None, after))
+        elif after is None:
+            entries.append(_Entry(name, DiffChange.REMOVED, before, None))
+        else:
+            entries.append(_Entry(name, DiffChange.CHANGED, before, after))
+    return entries, unchanged
+
+
+def _compare(
+    left_text: str, right_text: str, file_type: FileType
+) -> tuple[list[_Entry], int, bool]:
     """The differing entries (changed, then added, then removed), the unchanged key count and
-    whether the comparison fell back to the whole file."""
+    whether the comparison fell back to the whole file.
+
+    A certificate is compared by line instead: the entries are named by line and come in file
+    order, and the comparison never falls back to the whole file.
+    """
+    if file_type is FileType.CERT:
+        entries, unchanged = _compare_lines(left_text, right_text)
+        return entries, unchanged, False
     left = parse_env(left_text)
     right = parse_env(right_text)
     if not (left.is_env_format and right.is_env_format):
@@ -198,7 +232,9 @@ async def load_diff(
     """The masked key level diff of two versions; values are compared but not kept."""
     older, newer = await _pair(db, header, left, right)
     entries, unchanged, whole_file = _compare(
-        crypto.decrypt_text(older.content_encrypted), crypto.decrypt_text(newer.content_encrypted)
+        crypto.decrypt_text(older.content_encrypted),
+        crypto.decrypt_text(newer.content_encrypted),
+        header.file_type,
     )
     return VersionDiff(
         left=older.number,
@@ -207,6 +243,7 @@ async def load_diff(
         unchanged=unchanged,
         whole_file=whole_file,
         identical=older.content_hash == newer.content_hash,
+        by_line=header.file_type is FileType.CERT,
     )
 
 
@@ -227,7 +264,9 @@ async def reveal_diff(
     """
     older, newer = await _pair(db, header, left, right)
     entries, _unchanged, whole_file = _compare(
-        crypto.decrypt_text(older.content_encrypted), crypto.decrypt_text(newer.content_encrypted)
+        crypto.decrypt_text(older.content_encrypted),
+        crypto.decrypt_text(newer.content_encrypted),
+        header.file_type,
     )
     for stored, other, side in (
         (older, newer, [entry.key for entry in entries if entry.left is not None]),
@@ -276,6 +315,9 @@ async def restore_version(
             f"Version {number} has the same content as the current version. Nothing to restore."
         )
     text = crypto.decrypt_text(source.content_encrypted)
+    problem = content_problem_for(header.file_type, text)
+    if problem:
+        raise RestoreError(f"Version {number} cannot be restored. {problem}")
     try:
         version = await create_version(
             db, crypto, header.id, text, author=actor, comment=f"Restored from version {number}"

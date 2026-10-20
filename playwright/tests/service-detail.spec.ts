@@ -112,6 +112,34 @@ test.describe('superadmin', () => {
     await expect(page.locator('#hist [data-fragment="history-row"]')).toHaveCount(2);
   });
 
+  test('shows the type of each file and no dist file or dist action for a certificate', async ({
+    page,
+    browser,
+  }) => {
+    const id = await stagingWeb(browser);
+    await page.goto(`/services/${id}`);
+    const certificate = visibleRows(page).filter({ hasText: 'web-ca.pem' });
+    await expect(certificate).toContainText('Certificate');
+    await expect(certificate).toContainText(/Not applicable|no dist file/);
+    await expect(actionControls(certificate, 'dist')).toHaveCount(0);
+    const plain = visibleRows(page).filter({ hasText: '.env.web.tuning' });
+    await expect(plain).toContainText('ENV file');
+    if (isWide(page)) {
+      await expect(
+        environmentsPanel(page).locator('thead th'),
+      ).toHaveText([
+        'Environment',
+        'Type',
+        'Target path',
+        'Dist',
+        'Current',
+        'Deployed',
+        'Status',
+        'Actions',
+      ]);
+    }
+  });
+
   test(
     'fits the environments table at 1280px without a sideways scroll',
     { tag: '@wide' },

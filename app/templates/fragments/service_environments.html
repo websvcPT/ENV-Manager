@@ -10,7 +10,7 @@
 {{ row_actions(prefix ~ row.id, row.name, [
   {"key": "edit" if row.can_edit else "view", "label": "Edit" if row.can_edit else "View", "icon": "pencil" if row.can_edit else "eye", "href": "/environments/" ~ row.id, "primary": true},
   {"key": "history", "label": "History", "icon": "clock", "href": "/environments/" ~ row.id ~ "/history"}
-] + ([{"key": "drift", "label": "Open drift view", "icon": "warning", "href": "/environments/" ~ row.id ~ "/drift"}] if row.status == "halted" else []) + ([{"key": "dist", "label": "Compare to dist", "icon": "diff", "href": "/environments/" ~ row.id ~ "/dist"}] if row.can_check_dist else []) + ([
+] + ([{"key": "drift", "label": "Open drift view", "icon": "warning", "href": "/environments/" ~ row.id ~ "/drift"}] if row.status == "halted" else []) + ([{"key": "dist", "label": "Compare to dist", "icon": "diff", "href": "/environments/" ~ row.id ~ "/dist"}] if row.can_check_dist and row.file_type.value == "env" else []) + ([
   {"key": "settings", "label": "Settings", "icon": "settings", "href": "/environments/" ~ row.id ~ "/settings"},
   {"key": "delete", "label": "Delete", "icon": "trash", "danger": true, "attrs": {"data_js": "dialog-open", "data_target": "environment-delete", "aria_haspopup": "dialog", "hx_get": "/environments/" ~ row.id ~ "/delete", "hx_target": "#environment-delete", "hx_swap": "innerHTML"}}
 ] if can_manage_structure else [])) }}
@@ -20,11 +20,12 @@
 {%- if load_failed | default(false) -%}
 {{ inline_error("Could not load environments", "The environments list failed to update. Showing nothing rather than stale data.", hx_get=retry_url, hx_target="#environments", hx_swap="outerHTML", **{"hx-status:503": "swap:outerHTML target:#environments"}) }}
 {%- elif environments -%}
-<div class="relative hidden overflow-x-auto md:block"><table class="w-full text-left"><caption class="sr-only">Environments of service {{ service.name }}</caption><thead><tr>{% for column in ["Environment", "Target path", "Dist", "Current", "Deployed", "Status", "Actions"] %}<th scope="col" class="bg-head px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-head-ink{% if loop.last %} text-right{% endif %}">{{ column }}</th>{% endfor %}</tr></thead><tbody>
+<div class="relative hidden overflow-x-auto md:block"><table class="w-full text-left"><caption class="sr-only">Environments of service {{ service.name }}</caption><thead><tr>{% for column in ["Environment", "Type", "Target path", "Dist", "Current", "Deployed", "Status", "Actions"] %}<th scope="col" class="bg-head px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-head-ink{% if loop.last %} text-right{% endif %}">{{ column }}</th>{% endfor %}</tr></thead><tbody>
 {%- for row in environments %}
 <tr data-fragment="env-row" data-env="{{ row.name }}"><th scope="row" class="border-t border-line px-4 py-3.5 text-left font-semibold"><a href="/environments/{{ row.id }}" class="font-mono text-sm text-ink hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ row.name }}</a></th>
+<td class="border-t border-line px-4 py-3.5 text-ink2">{{ row.file_type.label }}</td>
 <td class="border-t border-line px-4 py-3.5 font-mono text-[13px] break-all text-ink2">{{ row.target_path }}</td>
-<td class="border-t border-line px-4 py-3.5 text-ink2">{{ "Linked" if row.dist_linked else "None" }}</td>
+<td class="border-t border-line px-4 py-3.5 text-ink2">{% if row.file_type.value == "cert" %}Not applicable{% else %}{{ "Linked" if row.dist_linked else "None" }}{% endif %}</td>
 <td class="border-t border-line px-4 py-3.5 font-mono text-[13px]">{% if row.current is not none %}v{{ row.current }}{% else %}None{% endif %}</td>
 <td class="border-t border-line px-4 py-3.5 font-mono text-[13px] text-ink2">{% if row.deployed is not none %}v{{ row.deployed }}{% else %}None{% endif %}</td>
 <td class="border-t border-line px-4 py-3.5">{{ badge(row.status) }}</td>
@@ -33,7 +34,7 @@
 </tbody></table></div>
 <ul class="m-0 list-none md:hidden">
 {%- for row in environments %}
-<li data-fragment="env-row" class="flex flex-col gap-2 border-t border-line p-4"><div class="flex items-center justify-between gap-2"><a href="/environments/{{ row.id }}" class="min-w-0 break-all font-mono text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ row.name }}</a><span class="flex shrink-0 items-center gap-2">{{ badge(row.status) }}{{ environment_actions(row, "env-list-") }}</span></div><p class="break-all font-mono text-xs text-ink2">{{ row.target_path }}</p><p class="text-[13px] text-ink2">Dist {{ "linked" if row.dist_linked else "none" }} · current {% if row.current is not none %}v{{ row.current }}{% else %}None{% endif %} · deployed {% if row.deployed is not none %}v{{ row.deployed }}{% else %}None{% endif %}</p></li>
+<li data-fragment="env-row" class="flex flex-col gap-2 border-t border-line p-4"><div class="flex items-center justify-between gap-2"><a href="/environments/{{ row.id }}" class="min-w-0 break-all font-mono text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ row.name }}</a><span class="flex shrink-0 items-center gap-2">{{ badge(row.status) }}{{ environment_actions(row, "env-list-") }}</span></div><p class="break-all font-mono text-xs text-ink2">{{ row.target_path }}</p><p class="text-[13px] text-ink2">{{ row.file_type.label }} · {% if row.file_type.value == "cert" %}no dist file{% else %}dist {{ "linked" if row.dist_linked else "none" }}{% endif %} · current {% if row.current is not none %}v{{ row.current }}{% else %}None{% endif %} · deployed {% if row.deployed is not none %}v{{ row.deployed }}{% else %}None{% endif %}</p></li>
 {%- endfor %}
 </ul>
 {%- elif can_manage_structure -%}

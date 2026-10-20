@@ -3,7 +3,7 @@
 import pytest
 from sqlalchemy import select
 
-from app.models import EnvironmentVersion
+from app.models import EnvironmentVersion, FileType
 from app.services.hook_process import OUTPUT_PART_BYTES, BoundedOutput
 from app.services.output_scrub import MIN_VALUE_LENGTH, OutputScrubber
 from app.services.scrub_values import load_scrubber, secret_texts
@@ -186,3 +186,91 @@ async def test_a_version_that_cannot_be_read_is_skipped(harness: Harness) -> Non
     await h.db.commit()
     scrubber = await load_scrubber(h.db, h.crypto, h.seed.deployments.fancy_prod.id)
     assert scrubber.scrub_text("s=seed-secret p=3306") == "s=seed-secret p=****"
+
+
+CERTIFICATE_TEXT = (
+    "Bag Attributes\n"
+    "-----BEGIN CERTIFICATE-----\n"
+    "MIIBkTCB+wIJAKHBfpegPjMCMA0GCSqGSIb3DQEBCwUAMBExDzANBgNVBAMMBnNl\n"
+    "cnZlcjAeFw0yNDAxMDEwMDAwMDBaFw0zNDAxMDEwMDAwMDBaMBExDzANBgNVBAMM\n"
+    "AQ==\n"
+    "-----END CERTIFICATE-----\n"
+)
+
+
+def test_a_certificate_contributes_the_base64_body_of_each_pem_block() -> None:
+    assert secret_texts(CERTIFICATE_TEXT, FileType.CERT) == [
+        "MIIBkTCB+wIJAKHBfpegPjMCMA0GCSqGSIb3DQEBCwUAMBExDzANBgNVBAMMBnNl\n"
+        "cnZlcjAeFw0yNDAxMDEwMDAwMDBaFw0zNDAxMDEwMDAwMDBaMBExDzANBgNVBAMM\n"
+        "AQ=="
+    ]
+    two_blocks = (
+        "-----BEGIN KEY-----\nQUJDRA==\n-----END KEY-----\n-----BEGIN X-----\nRUZH\n-----END X-----"
+    )
+    assert secret_texts(two_blocks, FileType.CERT) == ["QUJDRA==", "RUZH"]
+
+
+def test_an_encrypted_key_header_is_not_part_of_the_body() -> None:
+    text = (
+        "-----BEGIN RSA PRIVATE KEY-----\n"
+        "Proc-Type: 4,ENCRYPTED\n"
+        "DEK-Info: AES-128-CBC,0123456789ABCDEF\n"
+        "\n"
+        "c2VjcmV0S2V5Qm9keQ==\n"
+        "-----END RSA PRIVATE KEY-----\n"
+    )
+    assert secret_texts(text, FileType.CERT) == ["c2VjcmV0S2V5Qm9keQ=="]
+
+
+def test_a_certificate_without_a_pem_block_falls_back_to_its_whole_text() -> None:
+    assert secret_texts("A=1\nB=two-value\n", FileType.CERT) == ["A=1\nB=two-value"]
+    assert secret_texts("A=1\nB=two-value\n") == ["1", "two-value"]
+
+
+def test_an_env_file_keeps_its_rules_whatever_it_holds() -> None:
+    assert secret_texts(CERTIFICATE_TEXT) == [CERTIFICATE_TEXT.strip()]
+    assert secret_texts(CERTIFICATE_TEXT, FileType.ENV) == [CERTIFICATE_TEXT.strip()]
+
+
+async def test_the_scrubber_hides_each_base64_line_of_a_certificate_but_not_its_markers(
+    harness: Harness,
+) -> None:
+    h = harness
+    deployment_id = h.seed.deployments.fancy_staging.id
+    author = h.seed.users.superadmin
+    await create_version(h.db, h.crypto, h.seed.figures.ca.id, CERTIFICATE_TEXT, author=author)
+    await h.db.commit()
+    scrubber = await load_scrubber(h.db, h.crypto, deployment_id)
+    printed = (
+        "-----BEGIN CERTIFICATE-----\n"
+        "cnZlcjAeFw0yNDAxMDEwMDAwMDBaFw0zNDAxMDEwMDAwMDBaMBExDzANBgNVBAMM\n"
+        "-----END CERTIFICATE-----\n"
+        "as one value: MIIBkTCB+wIJAKHBfpegPjMCMA0GCSqGSIb3DQEBCwUAMBExDzANBgNVBAMMBnNl\\n"
+        "cnZlcjAeFw0yNDAxMDEwMDAwMDBaFw0zNDAxMDEwMDAwMDBaMBExDzANBgNVBAMM\\nAQ=="
+    )
+    scrubbed = scrubber.scrub_text(printed)
+    assert "cnZlcjAeFw0y" not in scrubbed and "MIIBkTCB" not in scrubbed and "AQ==" not in scrubbed
+    assert scrubbed.startswith("-----BEGIN CERTIFICATE-----\n****\n-----END CERTIFICATE-----\n")
+
+
+async def test_the_type_of_the_file_decides_how_an_older_written_version_is_read(
+    harness: Harness,
+) -> None:
+    h = harness
+    deployment_id = h.seed.deployments.fancy_staging.id
+    author = h.seed.users.superadmin
+    older = await create_version(
+        h.db, h.crypto, h.seed.figures.ca.id, CERTIFICATE_TEXT, author=author
+    )
+    await create_version(
+        h.db,
+        h.crypto,
+        h.seed.figures.ca.id,
+        "-----BEGIN CERTIFICATE-----\nbmV3Ym9keQ==\n-----END CERTIFICATE-----\n",
+        author=author,
+    )
+    await h.db.commit()
+    scrubber = await load_scrubber(h.db, h.crypto, deployment_id, written=[older])
+    second_line = "cnZlcjAeFw0yNDAxMDEwMDAwMDBaFw0zNDAxMDEwMDAwMDBaMBExDzANBgNVBAMM"
+    assert scrubber.scrub_text(second_line) == "****"
+    assert scrubber.scrub_text("bmV3Ym9keQ==") == "****"

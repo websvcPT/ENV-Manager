@@ -341,15 +341,42 @@ test.describe('states', () => {
     expect(content).not.toContain('sample-b');
   });
 
-  test('a certificate compares as one File content row', async ({
+  test('a certificate compares line by line, not by key', async ({
     page,
     request,
     service,
     host,
   }) => {
-    const id = await createEnvironment(request, service, 'drift-ca.pem', PEM);
+    const id = await createEnvironment(request, service, 'drift-ca.pem', PEM, '', 'cert');
     await deploy(request, service, id);
     host.write('environments/drift-ca.pem', PEM_DISK);
+    await page.goto(url(id));
+
+    await expect(badge(page)).toHaveText('Drift');
+    await expect(panel(page).locator('[data-fragment="drift-row"]')).toHaveCount(1);
+    await expect(panel(page).locator('.bg-head')).toContainText('Line');
+    await expect(row(page, 'Line 2').locator('[data-change="disk-changed"]')).toBeVisible();
+    await expect(panel(page)).toContainText('2 unchanged lines hidden');
+    await expectNoValueInPage(page, 'E2EDRIFTMANAGED', 'E2EDRIFTONDISK', 'BEGIN CERTIFICATE');
+    await revealButton(page).click();
+    await expect(row(page, 'Line 2').locator('[data-reveal-value]')).toHaveCount(3);
+    await expect(page.locator('#drift-target-0 [data-reveal-value]')).toContainText(
+      'E2EDRIFTONDISK',
+    );
+    await expect(page.locator('#drift-managed-0 [data-reveal-value]')).toContainText(
+      'E2EDRIFTMANAGED',
+    );
+  });
+
+  test('free text in an ENV file compares as one File content row', async ({
+    page,
+    request,
+    service,
+    host,
+  }) => {
+    const id = await createEnvironment(request, service, 'drift-free.txt', PEM);
+    await deploy(request, service, id);
+    host.write('environments/drift-free.txt', PEM_DISK);
     await page.goto(url(id));
 
     await expect(badge(page)).toHaveText('Drift');

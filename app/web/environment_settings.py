@@ -127,6 +127,7 @@ async def save_settings(
     access: Structure,
     db: Annotated[AsyncSession, Depends(get_db)],
     target_path: Annotated[str, Form()] = "",
+    file_type: Annotated[str, Form()] = "",
     dist_path: Annotated[str, Form()] = "",
     file_mode: Annotated[str, Form()] = "",
     file_owner: Annotated[str, Form()] = "",
@@ -140,6 +141,7 @@ async def save_settings(
     environment, deployment = await _stored(db, access)
     form = EnvironmentSettingsForm(
         target_path=target_path,
+        file_type=file_type,
         dist_path=dist_path,
         file_mode=file_mode,
         file_owner=file_owner,

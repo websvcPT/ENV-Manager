@@ -52,7 +52,7 @@
 </div>
 {% include "fragments/drift_notice.html" %}
 <div class="relative overflow-x-auto"><div class="min-w-[820px]">
-<div class="{{ columns_class }} bg-head text-xs font-semibold uppercase tracking-wide text-head-ink"><span class="px-4 py-2.5">Key</span><span class="px-4 py-2.5">Target on disk<span class="block font-normal normal-case tracking-normal">{{ target_note }}</span></span><span class="px-4 py-2.5">Last deployed{% if view.deployed %} v{{ view.deployed.number }}{% endif %}<span class="block font-normal normal-case tracking-normal">{% if view.deployed %}hash {{ view.deployed.short_hash }}… written {{ view.deployed.at.strftime("%Y-%m-%d") }}{% else %}never deployed{% endif %}</span></span><span class="px-4 py-2.5">Managed v{{ view.managed.number }}<span class="block font-normal normal-case tracking-normal">hash {{ view.managed.short_hash }}… latest version</span></span></div>
+<div class="{{ columns_class }} bg-head text-xs font-semibold uppercase tracking-wide text-head-ink"><span class="px-4 py-2.5">{{ "Line" if comparison.by_line else "Key" }}</span><span class="px-4 py-2.5">Target on disk<span class="block font-normal normal-case tracking-normal">{{ target_note }}</span></span><span class="px-4 py-2.5">Last deployed{% if view.deployed %} v{{ view.deployed.number }}{% endif %}<span class="block font-normal normal-case tracking-normal">{% if view.deployed %}hash {{ view.deployed.short_hash }}… written {{ view.deployed.at.strftime("%Y-%m-%d") }}{% else %}never deployed{% endif %}</span></span><span class="px-4 py-2.5">Managed v{{ view.managed.number }}<span class="block font-normal normal-case tracking-normal">hash {{ view.managed.short_hash }}… latest version</span></span></div>
 {%- for row in comparison.rows %}
 <div data-fragment="drift-row" class="{{ columns_class }} items-start border-t border-line{% if row.disk_change %} bg-accent-soft{% endif %}"><div class="break-all px-4 py-3.5 font-mono text-[13px] font-semibold">{{ row.key }}
 {%- if row.disk_change %}<span data-change="disk-{{ row.disk_change.value }}" class="mt-1 flex items-center gap-1.5 font-sans text-xs font-semibold text-warn-fg">{{ icon("warning", "size-3", "2.6") }}{{ change_words[row.disk_change.value] }} on disk</span>{% endif %}
@@ -61,10 +61,10 @@
 {%- endfor %}
 </div></div>
 {%- if not comparison.rows %}
-<p class="border-t border-line px-5 py-8 text-center text-ink2">{% if comparison.columns < 2 %}Nothing to compare. Only the managed version is available.{% elif comparison.text_only %}No variables differ. The files differ only in comments, blank lines, line breaks or order.{% else %}No keys differ between the columns.{% endif %}</p>
+<p class="border-t border-line px-5 py-8 text-center text-ink2">{% if comparison.columns < 2 %}Nothing to compare. Only the managed version is available.{% elif comparison.by_line %}{% if comparison.text_only %}No lines differ. The files differ only in line breaks.{% else %}No lines differ between the columns.{% endif %}{% elif comparison.text_only %}No variables differ. The files differ only in comments, blank lines, line breaks or order.{% else %}No keys differ between the columns.{% endif %}</p>
 {%- endif %}
 {%- if comparison.unchanged or not env.can_reveal %}
-<p class="border-t border-line bg-surface2 px-5 py-3 text-[13px] text-ink2">{% if comparison.unchanged %}{{ comparison.unchanged }} unchanged {{ "key" if comparison.unchanged == 1 else "keys" }} hidden{% if not env.can_reveal %}. {% endif %}{% endif %}{% if not env.can_reveal %}Values are masked for the Viewer group.{% endif %}</p>
+<p class="border-t border-line bg-surface2 px-5 py-3 text-[13px] text-ink2">{% if comparison.unchanged %}{{ comparison.unchanged }} unchanged {% if comparison.by_line %}{{ "line" if comparison.unchanged == 1 else "lines" }}{% else %}{{ "key" if comparison.unchanged == 1 else "keys" }}{% endif %} hidden{% if not env.can_reveal %}. {% endif %}{% endif %}{% if not env.can_reveal %}Values are masked for the Viewer group.{% endif %}</p>
 {%- endif %}
 </section>
 {%- if can_overwrite %}

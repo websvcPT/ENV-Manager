@@ -194,20 +194,27 @@ test.describe('superadmin report', () => {
     scratch,
   }) => {
     const { service } = await deploymentWithService(request, scratch.id);
-    const certificate = await createEnvironment(request, service, 'e2e-ca.pem', PEM);
+    const certificate = await createEnvironment(request, service, 'e2e-ca.pem', PEM, '', 'cert');
+    const freeText = await createEnvironment(request, service, '.env.freetext', PEM);
     const unlinked = await createEnvironment(request, service, '.env.unlinked', 'A=1\n');
     const textDist = await createEnvironment(request, service, '.env.textdist', 'A=1\n', TEXT_DIST);
 
     await page.goto(`/environments/${certificate}/dist`);
     await expect(header(page).locator('[data-status="never"]')).toHaveText('Skipped');
-    await expect(header(page)).toContainText('Dist file none linked');
+    await expect(header(page)).toContainText('Dist file not applicable');
     await expect(report(page).locator('[role="note"]')).toHaveText(
-      'This file is not env format (certificate). Key comparison is skipped for it.',
+      'A certificate has no dist file. The comparison does not apply to it.',
     );
     await expect(summary(page)).toHaveCount(0);
     await expect(addButton(page)).toHaveCount(0);
     await expectNoValueInPage(page, 'E2EDISTBODY', 'BEGIN CERTIFICATE');
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+
+    await page.goto(`/environments/${freeText}/dist`);
+    await expect(header(page)).toContainText('Dist file none linked');
+    await expect(report(page).locator('[role="note"]')).toHaveText(
+      'This file is not env format (certificate). Key comparison is skipped for it.',
+    );
 
     await page.goto(`/environments/${unlinked}/dist`);
     await expect(header(page).locator('[data-status="never"]')).toHaveText('Skipped');
@@ -353,7 +360,7 @@ test.describe('deployment overview', () => {
     const { deployment, service } = await deploymentWithService(request, scratch.id);
     const blocked = await createEnvironment(request, service, '.env.one', ENV_TEXT, BLOCKED_DIST);
     await createEnvironment(request, service, '.env.two', COMPLETE_TEXT, MATCHING_DIST);
-    await createEnvironment(request, service, 'e2e-ca.pem', PEM);
+    await createEnvironment(request, service, 'e2e-ca.pem', PEM, '', 'cert');
     await createEnvironment(request, service, '.env.gone', 'A=1\n', 'environments/e2e-nonexistent-dist');
 
     await page.goto(`/projects/${scratch.id}`);
@@ -371,6 +378,7 @@ test.describe('deployment overview', () => {
     await expect(rows.nth(2).locator('[data-status="proceed"]')).toBeVisible();
     await expect(rows.nth(3)).toContainText('e2e-ca.pem');
     await expect(rows.nth(3).locator('[data-status="never"]')).toBeVisible();
+    await expect(rows.nth(3)).toContainText('Not applicable');
     if (isWide(page)) {
       await expect(rows.nth(1).locator('td').nth(2)).toHaveText('2');
     } else {

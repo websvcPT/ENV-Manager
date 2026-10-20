@@ -10,7 +10,14 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.core.crypto import CryptoService
 from app.core.db import create_session_factory
-from app.models import AuditEntry, Deployment, Environment, EnvironmentVersion, Service
+from app.models import (
+    AuditEntry,
+    Deployment,
+    Environment,
+    EnvironmentVersion,
+    FileType,
+    Service,
+)
 from app.seeds import SeedData
 from app.services.content import MAX_CONTENT_BYTES
 from app.services.environments import (
@@ -553,3 +560,107 @@ def test_target_hint_states(host: Path) -> None:
     assert good.ok and good.text == f"Resolves to {root}/environments/.env.cache"
     bad = target_hint(allowed, root, "../../etc/cache.env")
     assert not bad.ok and bad.text == OUTSIDE_MESSAGE
+
+
+CERT_TEXT = "-----BEGIN CERTIFICATE-----\nc2VlZA==\n-----END CERTIFICATE-----\n"
+
+
+async def test_the_type_is_env_unless_a_certificate_is_chosen(
+    db: AsyncSession, host: Path, seed_data: SeedData
+) -> None:
+    deployment = await db.get(Deployment, seed_data.deployments.fancy_prod.id)
+    assert deployment is not None
+    allowed = AllowedPaths([host])
+    assert (await validate_environment(db, allowed, deployment, form_for(seed_data))).file_type == (
+        FileType.ENV
+    )
+    explicit = form_for(seed_data, file_type="env")
+    assert (await validate_environment(db, allowed, deployment, explicit)).file_type is FileType.ENV
+    cert = form_for(seed_data, name="tls.pem", target_path="tls.pem", **cert_values())
+    assert (await validate_environment(db, allowed, deployment, cert)).file_type is FileType.CERT
+    for unknown in ("certificate", "ENV", "x"):
+        errors = await refused(db, host, seed_data, form_for(seed_data, file_type=unknown))
+        assert errors == {"file_type": "Choose the type of the file."}
+
+
+def cert_values(**overrides: Any) -> dict[str, Any]:
+    """Form values for a valid certificate pasted as version 1."""
+    return {"file_type": "cert", "content": CERT_TEXT, **overrides}
+
+
+async def test_a_certificate_has_no_dist_file_and_cannot_copy_one(
+    db: AsyncSession, host: Path, seed_data: SeedData
+) -> None:
+    errors = await refused(
+        db,
+        host,
+        seed_data,
+        form_for(seed_data, **cert_values(dist_path="environments/tls.pem-dist")),
+    )
+    assert errors == {"dist_path": "A certificate has no dist file."}
+    errors = await refused(db, host, seed_data, form_for(seed_data, **cert_values(source="dist")))
+    assert errors == {"source": "A certificate has no dist file."}
+
+
+async def test_a_certificate_needs_a_pem_block_from_every_source(
+    db: AsyncSession, host: Path, seed_data: SeedData, relocated: Path
+) -> None:
+    deployment = await db.get(Deployment, seed_data.deployments.fancy_prod.id)
+    assert deployment is not None
+    allowed = AllowedPaths([host])
+    pem_message = "A certificate must hold at least one PEM block"
+    errors = await refused(db, host, seed_data, form_for(seed_data, **cert_values(content="A=1\n")))
+    assert errors["content"].startswith(pem_message)
+    errors = await refused(db, host, seed_data, form_for(seed_data, **cert_values(content="")))
+    assert errors["content"].startswith(pem_message)
+    upload = form_for(seed_data, **cert_values(source="upload", upload=b"A=1\n"))
+    assert (await refused(db, host, seed_data, upload))["upload"].startswith(pem_message)
+    good_upload = form_for(seed_data, **cert_values(source="upload", upload=CERT_TEXT.encode()))
+    assert (await validate_environment(db, allowed, deployment, good_upload)).content == CERT_TEXT
+    target = relocated / "environments" / ".env.cache"
+    target.write_text("A=1\n")
+    importing = form_for(seed_data, **cert_values(source="import"))
+    assert (await refused(db, host, seed_data, importing))["source"].startswith(pem_message)
+    target.write_text(CERT_TEXT)
+    clean = await validate_environment(db, allowed, deployment, importing)
+    assert clean.content == CERT_TEXT and clean.source is ContentSource.IMPORT
+
+
+async def test_an_env_file_takes_any_text_from_every_source(
+    db: AsyncSession, host: Path, seed_data: SeedData
+) -> None:
+    deployment = await db.get(Deployment, seed_data.deployments.fancy_prod.id)
+    assert deployment is not None
+    clean = await validate_environment(
+        db, AllowedPaths([host]), deployment, form_for(seed_data, content="not a pem block")
+    )
+    assert clean.file_type is FileType.ENV and clean.content == "not a pem block"
+
+
+async def test_creating_a_certificate_stores_its_type_and_audits_it(
+    seeded_database: AsyncEngine,
+    db: AsyncSession,
+    host: Path,
+    seed_data: SeedData,
+    crypto: CryptoService,
+) -> None:
+    deployment = await db.get(Deployment, seed_data.deployments.fancy_prod.id)
+    assert deployment is not None
+    form = form_for(seed_data, name="tls.pem", target_path="tls.pem", **cert_values())
+    clean = await validate_environment(db, AllowedPaths([host]), deployment, form)
+    created = await create_environment(
+        db, crypto, deployment, clean, actor=seed_data.users.superadmin, ip_address=None
+    )
+    async with create_session_factory(seeded_database)() as check:
+        stored = await check.get(Environment, created.id)
+        assert stored is not None and stored.file_type is FileType.CERT
+        assert stored.dist_path is None
+        entry = (
+            await check.execute(
+                select(AuditEntry).where(
+                    AuditEntry.action == "environment.create",
+                    AuditEntry.environment_id == created.id,
+                )
+            )
+        ).scalar_one()
+        assert entry.details["file_type"] == "cert" and "c2VlZA" not in str(entry.details)

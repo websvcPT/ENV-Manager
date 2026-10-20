@@ -677,3 +677,63 @@ async def test_the_project_name_index_is_added_and_removed_in_place_and_keeps_pr
         assert back.scalar_one() == 1
     finally:
         await engine.dispose()
+
+
+async def test_the_file_type_is_added_for_every_file_checked_and_removed_on_the_way_back(
+    database_path: Path, backup_dir: Path
+) -> None:
+    """Migration 0019 makes the files that exist ENV files, refuses a type it does not know,
+    keeps ids, versions, grants and the autoincrement sequence, and the way back drops the type
+    and the check while keeping the rows."""
+    engine = create_engine(database_path)
+    try:
+        await _migrate(engine, "0018")
+        async with engine.begin() as connection:
+            for statement in TREE_STATEMENTS:
+                await connection.execute(text(statement))
+        await migrate_database(engine, database_path, backup_dir)
+        async with engine.begin() as connection:
+            columns = (await connection.execute(text("PRAGMA table_info(environments)"))).all()
+            added = next(row for row in columns if row[1] == "file_type")
+            assert added[3] == 1 and added[4] == "'env'"
+            stored = await connection.execute(text("SELECT id, name, file_type FROM environments"))
+            assert [tuple(row) for row in stored.all()] == [(1, "e", "env")]
+            table_sql = (
+                await connection.execute(
+                    text("SELECT sql FROM sqlite_master WHERE name = 'environments'")
+                )
+            ).scalar_one()
+            assert "AUTOINCREMENT" in table_sql and "ck_environments_file_type" in table_sql
+            kept = [
+                (await connection.execute(text(f"SELECT count(*) FROM {table}"))).scalar_one()  # noqa: S608
+                for table in ("environment_versions", "access_grants")
+            ]
+            violations = (await connection.execute(text("PRAGMA foreign_key_check"))).all()
+            assert kept == [1, 1] and violations == []
+            await connection.execute(text("UPDATE environments SET file_type = 'cert'"))
+        with pytest.raises(IntegrityError):
+            async with engine.begin() as connection:
+                await connection.execute(text("UPDATE environments SET file_type = 'binary'"))
+        await _migrate(engine, "0018", down=True)
+        async with engine.connect() as connection:
+            columns = (await connection.execute(text("PRAGMA table_info(environments)"))).all()
+            table_sql = (
+                await connection.execute(
+                    text("SELECT sql FROM sqlite_master WHERE name = 'environments'")
+                )
+            ).scalar_one()
+            rows = (await connection.execute(text("SELECT id, name FROM environments"))).all()
+            kept = [
+                (await connection.execute(text(f"SELECT count(*) FROM {table}"))).scalar_one()  # noqa: S608
+                for table in ("environment_versions", "access_grants")
+            ]
+            violations = (await connection.execute(text("PRAGMA foreign_key_check"))).all()
+        assert "file_type" not in [row[1] for row in columns]
+        assert "AUTOINCREMENT" in table_sql and "ck_environments_file_type" not in table_sql
+        assert [tuple(row) for row in rows] == [(1, "e")] and kept == [1, 1] and violations == []
+        await _migrate(engine, "head")
+        async with engine.connect() as connection:
+            again = await connection.execute(text("SELECT file_type FROM environments"))
+        assert again.scalar_one() == "env"
+    finally:
+        await engine.dispose()

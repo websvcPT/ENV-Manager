@@ -43,11 +43,12 @@ async function prepare(
   projectId: number,
   name: string,
   versions: string[],
+  fileType: 'env' | 'cert' = 'env',
 ): Promise<number> {
   const unique = Math.random().toString(36).slice(2, 8);
   const deployment = await createDeployment(request, projectId, `dep-${unique}`, SAMPLE_A);
   const service = await createService(request, deployment, 'cache');
-  const id = await createEnvironment(request, service, name, versions[0]);
+  const id = await createEnvironment(request, service, name, versions[0], '', fileType);
   for (let index = 1; index < versions.length; index += 1) {
     await saveRaw(request, id, index, versions[index]);
   }
@@ -330,12 +331,34 @@ test.describe('superadmin history', () => {
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
   });
 
-  test('a certificate is compared as one file and revealed as whole texts', async ({
+  test('a certificate is compared line by line and revealed as the differing lines', async ({
     page,
     request,
     scratch,
   }) => {
-    const id = await prepare(request, scratch.id, 'ca.pem', [PEM_OLD, PEM_NEW]);
+    const id = await prepare(request, scratch.id, 'ca.pem', [PEM_OLD, PEM_NEW], 'cert');
+    await page.goto(`/environments/${id}/history`);
+    await expect(panel(page).locator('.bg-head')).toContainText('Line');
+    await expect(diffRow(page, 'Line 2').locator('[data-status="changed"]')).toBeVisible();
+    await expect(panel(page).locator('[data-fragment="diff-row"]')).toHaveCount(1);
+    await expect(panel(page)).toContainText('2 unchanged lines hidden');
+    await expectNoValueInPage(page, 'E2EOLDBODY', 'E2ENEWBODY', 'BEGIN CERTIFICATE');
+    await revealButton(page).click();
+    await expect(diffRow(page, 'Line 2').locator('[data-reveal-value]')).toHaveText([
+      'E2EOLDBODY',
+      'E2ENEWBODY',
+    ]);
+    await hideButton(page).click();
+    await expectNoValueInPage(page, 'E2EOLDBODY', 'E2ENEWBODY');
+    expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+  });
+
+  test('free text in an ENV file is compared as one file and revealed as whole texts', async ({
+    page,
+    request,
+    scratch,
+  }) => {
+    const id = await prepare(request, scratch.id, 'free.txt', [PEM_OLD, PEM_NEW]);
     await page.goto(`/environments/${id}/history`);
     await expect(diffRow(page, 'File content').locator('[data-status="changed"]')).toBeVisible();
     await expectNoValueInPage(page, 'E2EOLDBODY', 'E2ENEWBODY', 'BEGIN CERTIFICATE');

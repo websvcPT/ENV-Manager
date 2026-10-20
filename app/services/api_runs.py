@@ -11,7 +11,7 @@ from collections.abc import Collection
 from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import DeployResult, DeployRun, EnvironmentVersion
+from app.models import DeployResult, DeployRun, Environment, EnvironmentVersion
 from app.schemas.api import EnvironmentResult, PostDeployInfo, RunResult, ServiceInfo
 
 
@@ -23,8 +23,9 @@ async def _result_of(
     ``environment_ids`` of None lists every file of the run.
     """
     query = (
-        select(DeployResult, EnvironmentVersion.number)
+        select(DeployResult, EnvironmentVersion.number, Environment.file_type)
         .outerjoin(EnvironmentVersion, EnvironmentVersion.id == DeployResult.version_id)
+        .outerjoin(Environment, Environment.id == DeployResult.environment_id)
         .where(DeployResult.run_id == run.id)
         .order_by(DeployResult.id)
     )
@@ -42,14 +43,15 @@ async def _result_of(
             EnvironmentResult(
                 id=result.environment_id,
                 name=result.environment_name,
+                file_type=file_type,
                 version=number,
                 status=result.status,
                 dist=result.dist_outcome,
                 drift=result.drift_state,
                 message=result.message,
             )
-            for result, number in rows
-            if result.environment_id is not None
+            for result, number, file_type in rows
+            if result.environment_id is not None and file_type is not None
         ],
         post_deploy=PostDeployInfo(
             status=run.post_deploy_status,

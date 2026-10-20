@@ -54,6 +54,50 @@ test.describe('environment settings', () => {
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
   });
 
+  test('changes the type of a file and clears its dist path for a certificate', async ({
+    page,
+    request,
+    scratch,
+    host,
+  }) => {
+    const deployment = await createDeployment(request, scratch.id, 'cfg', host.root);
+    const service = await createService(request, deployment, 'app');
+    const environment = await createEnvironment(
+      request,
+      service,
+      'tls.pem',
+      '-----BEGIN CERTIFICATE-----\nE2ESETTINGSCERT\n-----END CERTIFICATE-----\n',
+      'environments/tls.pem-dist',
+    );
+    await page.goto(`/environments/${environment}/settings`);
+    const type = page.locator('#ft');
+    await expect(type).toHaveValue('env');
+    await expect(type.locator('option')).toHaveText(['ENV file', 'Certificate']);
+    await expect(page.locator('#dp')).toHaveValue('environments/tls.pem-dist');
+
+    await type.selectOption('cert');
+    await expect(page.locator('[data-dist-field]')).toBeHidden();
+    await expect(page.locator('#dp')).toBeDisabled();
+    await page.locator('#env-settings button[type="submit"]').click();
+    await expect(page).toHaveURL(new RegExp(`/environments/${environment}\\?updated=true$`));
+    const details = page.locator('[data-fragment="file-sidepanel"]');
+    await expect(details).toContainText('Certificate');
+    await expect(details).toContainText('Not applicable');
+
+    await page.goto(`/environments/${environment}/settings`);
+    await expect(type).toHaveValue('cert');
+    await expect(page.locator('[data-dist-field]')).toBeHidden();
+    await expect(page.locator('#dp')).toHaveValue('');
+    await type.selectOption('env');
+    await expect(page.locator('[data-dist-field]')).toBeVisible();
+    await expect(page.locator('#dp')).toBeEnabled();
+    await page.locator('#env-settings button[type="submit"]').click();
+    await expect(page).toHaveURL(new RegExp(`/environments/${environment}\\?updated=true$`));
+    await expect(details).toContainText('ENV file');
+    await expect(details).toContainText('None');
+    expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+  });
+
   test('saves the overrides and the file attributes and shows them again', async ({
     page,
     request,

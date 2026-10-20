@@ -17,12 +17,15 @@ from app.models import (
     Deployment,
     Environment,
     EnvironmentVersion,
+    FileType,
     Service,
 )
 from app.services.notify_events import FileChange, FileChanged
 from app.tests.conftest import sign_in
 from app.tests.notify_helpers import RecordingEvents
 from app.tests.web_helpers import HTMX, post
+
+CERT_TEXT = "-----BEGIN CERTIFICATE-----\nc2VlZA==\n-----END CERTIFICATE-----\n"
 
 
 @dataclass(frozen=True)
@@ -564,3 +567,76 @@ async def test_adding_an_environment_announces_the_file_to_the_notifier(
         env_data(layout, name=".env.cache", target_path="environments/.env.cache2"),
     )
     assert bad.status_code == 422 and len(recorder.events) == 1
+
+
+async def test_the_form_has_a_type_select_and_the_name_endings_that_select_a_certificate(
+    web_client: httpx.AsyncClient, layout: Layout
+) -> None:
+    await sign_in(web_client, "root")
+    page = (await web_client.get(f"/services/{layout.mysql}/environments/new")).text
+    assert 'id="ft"' in page and 'name="file_type"' in page and 'data-js="file-type"' in page
+    assert '<option value="env" selected>ENV file</option>' in page
+    assert '<option value="cert">Certificate</option>' in page
+    assert 'data-js="file-name"' in page and 'data-cert-suffixes=".pem .crt .cer .key"' in page
+    assert "names ending in .pem, .crt, .cer, .key" in page
+    assert "<div data-dist-field>" in page and "data-dist-cert hidden>" in page
+
+
+async def test_a_certificate_is_created_with_its_type_and_no_dist_file(
+    web_client: httpx.AsyncClient, layout: Layout, web_app: FastAPI
+) -> None:
+    await sign_in(web_client, "root")
+    pem = "-----BEGIN CERTIFICATE-----\r\nc2VlZA==\r\n-----END CERTIFICATE-----"
+    response = await post(
+        web_client,
+        f"/services/{layout.mysql}/environments/new",
+        env_data(
+            layout,
+            name="tls.pem",
+            target_path="environments/tls.pem",
+            file_type="cert",
+            content=pem,
+        ),
+    )
+    assert response.status_code == 200
+    async with web_app.state.session_factory() as db:
+        environment = (
+            await db.execute(select(Environment).where(Environment.name == "tls.pem"))
+        ).scalar_one()
+        assert environment.file_type is FileType.CERT and environment.dist_path is None
+        entry = (
+            await db.execute(
+                select(AuditEntry).where(
+                    AuditEntry.action == "environment.create",
+                    AuditEntry.environment_id == environment.id,
+                )
+            )
+        ).scalar_one()
+        assert entry.details["file_type"] == "cert"
+    page = await web_client.get(f"/environments/{environment.id}")
+    assert "Certificate" in page.text and "Not applicable" in page.text
+
+
+async def test_a_refused_certificate_swaps_the_form_with_the_type_kept(
+    web_client: httpx.AsyncClient, layout: Layout, web_app: FastAPI
+) -> None:
+    await sign_in(web_client, "root")
+    url = f"/services/{layout.mysql}/environments/new"
+    not_pem = await post(web_client, url, env_data(layout, file_type="cert"))
+    assert not_pem.status_code == 422
+    assert "A certificate must hold at least one PEM block" in not_pem.text
+    assert '<option value="cert" selected>Certificate</option>' in not_pem.text
+    assert "<div data-dist-field hidden>" in not_pem.text
+    assert "CACHE_HOST" in not_pem.text
+    dist_choice = re.search(r'<input type="radio" name="source" value="dist"[^>]*>', not_pem.text)
+    assert dist_choice is not None and " disabled" in dist_choice.group(0)
+    with_dist = await post(
+        web_client,
+        url,
+        env_data(layout, file_type="cert", dist_path="environments/x-dist", content=CERT_TEXT),
+    )
+    assert with_dist.status_code == 422 and "A certificate has no dist file." in with_dist.text
+    unknown = await post(web_client, url, env_data(layout, file_type="certificate"))
+    assert unknown.status_code == 422 and "Choose the type of the file." in unknown.text
+    assert "tls.pem" not in await environment_names(web_app)
+    assert ".env.cache" not in await environment_names(web_app)

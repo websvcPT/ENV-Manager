@@ -13,6 +13,7 @@ from app.models import (
     Deployment,
     DistMissingPolicy,
     Environment,
+    FileType,
     Project,
 )
 from app.seeds import EDITOR_SECRET_VALUES
@@ -20,6 +21,7 @@ from app.services.notify_events import FileChange, FileChanged
 from app.tests.audit_helpers import web_audit_entries
 from app.tests.conftest import sign_in
 from app.tests.dist_helpers import link_dist, relocate_deployments, write_dist
+from app.tests.file_type_helpers import set_web_file_type
 from app.tests.notify_helpers import RecordingEvents, file_event_ids
 from app.tests.web_helpers import (
     EnvironmentIds,
@@ -48,6 +50,7 @@ SECRET_TEXTS = (
 )
 CERTIFICATE = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"
 CERTIFICATE_SKIPPED = "This file is not env format (certificate). Key comparison is skipped for it."
+CERTIFICATE_NOT_APPLICABLE = "A certificate has no dist file. The comparison does not apply to it."
 
 
 @pytest.fixture
@@ -172,10 +175,17 @@ async def test_skipped_states_name_their_reason_and_read_nothing(
     web_client: httpx.AsyncClient, web_app: FastAPI, ids: EnvironmentIds, roots: dict[str, Path]
 ) -> None:
     await sign_in(web_client, "root")
+    await link(web_app, ids.ca, "environments/web-ca.pem-dist")
     certificate = main_of((await web_client.get(f"/environments/{ids.ca}/dist")).text)
-    assert ">Skipped<" in certificate and "none linked" in certificate
-    assert CERTIFICATE_SKIPPED in certificate
+    assert ">Skipped<" in certificate and "Dist file not applicable" in certificate
+    assert "environments/web-ca.pem-dist" not in certificate and "none linked" not in certificate
+    assert CERTIFICATE_NOT_APPLICABLE in certificate
     assert 'role="note"' in certificate and 'aria-label="Summary"' not in certificate
+    assert "Add missing keys" not in certificate
+
+    await set_web_file_type(web_app, ids.ca, FileType.ENV)
+    free_text = main_of((await web_client.get(f"/environments/{ids.ca}/dist")).text)
+    assert ">Skipped<" in free_text and CERTIFICATE_SKIPPED in free_text
 
     unlinked = main_of((await web_client.get(f"/environments/{ids.tuning}/dist")).text)
     assert "No dist file is linked to this file. Key comparison is skipped for it." in unlinked

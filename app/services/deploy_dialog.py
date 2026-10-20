@@ -54,6 +54,7 @@ _DIST_SKIPPED = {
     DistSkipReason.ENVIRONMENT_NOT_ENV_FORMAT: "Skipped, not env format",
     DistSkipReason.DIST_NOT_ENV_FORMAT: "Skipped, dist file is not env format",
     DistSkipReason.NO_DIST_LINKED: "Skipped, no dist file linked",
+    DistSkipReason.NOT_APPLICABLE: "Skipped, not applicable to a certificate",
 }
 _DRIFT_TEXT = {
     DriftState.IN_SYNC: "Drift: None",

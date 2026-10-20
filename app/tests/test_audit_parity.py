@@ -682,6 +682,7 @@ EXPECTED: list[Row] = [
         "redis.conf",
         (FANCY, "prod", "redis", "redis.conf"),
         {
+            "file_type": "env",
             "target_path": "environments/redis.conf",
             "dist_path": None,
             "file_mode": None,

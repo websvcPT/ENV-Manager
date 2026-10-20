@@ -24,6 +24,7 @@ from app.models import (
     DistOutcome,
     Environment,
     EnvironmentVersion,
+    FileType,
     Service,
     User,
 )
@@ -78,6 +79,9 @@ SKIP_MESSAGES = {
     DistSkipReason.NO_DIST_LINKED: (
         "No dist file is linked to this file. Key comparison is skipped for it."
     ),
+    DistSkipReason.NOT_APPLICABLE: (
+        "A certificate has no dist file. The comparison does not apply to it."
+    ),
 }
 
 
@@ -92,6 +96,7 @@ class DistSubject:
     deployment_id: int
     project_id: int
     dist_path: str | None
+    file_type: FileType = FileType.ENV
 
 
 @dataclass(frozen=True)
@@ -148,6 +153,7 @@ def _subject_of(
         deployment_id=deployment.id,
         project_id=deployment.project_id,
         dist_path=environment.dist_path,
+        file_type=environment.file_type,
     )
     policy = environment.dist_missing_policy or deployment.dist_missing_policy
     return subject, deployment.root_path, policy
@@ -187,9 +193,10 @@ async def evaluate_dist(
     """Compare a saved version of an environment with its dist file, without auditing.
 
     The version is the one with ``version_number``, else the newest; a deploy names the version it
-    is about to write so a save made meanwhile cannot change what was checked. A file that is not
-    env format is skipped before anything is read from the host, and so is a file without a dist
-    link. Otherwise the dist file is read with allowed paths loaded now. Every refusal to read
+    is about to write so a save made meanwhile cannot change what was checked. A certificate is
+    skipped as not applicable whatever dist path is stored. A file that is not env format is
+    skipped before anything is read from the host, and so is a file without a dist link.
+    Otherwise the dist file is read with allowed paths loaded now. Every refusal to read
     becomes a failed check; nothing here raises for them.
 
     ``opened`` maps version ids to text already decrypted by the caller's operation: a version
@@ -270,6 +277,8 @@ async def _evaluate_dist(
             checked_by=checked_by,
         )
 
+    if subject.file_type is FileType.CERT:
+        return finish(DistOutcome.SKIPPED, DistReport(DistSkipReason.NOT_APPLICABLE, (), (), ()))
     if latest is None:
         return finish(DistOutcome.FAILED, problem=DistProblem.NO_VERSION)
     text = opened.get(latest.id) if opened is not None else None

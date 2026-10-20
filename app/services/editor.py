@@ -21,12 +21,14 @@ from app.models import (
     DeployResultStatus,
     DeployRun,
     EnvironmentVersion,
+    FileType,
     User,
 )
 from app.services.audit import AuditActor, record_environment_audit
 from app.services.content import content_problem, normalize_newlines
 from app.services.env_parser import parse_env
 from app.services.env_text import VARIABLE_NAME, EnvEditError, VariableChanges, apply_changes
+from app.services.file_types import CERT_KEY_VALUE_MESSAGE, content_problem_for
 from app.services.notify_events import (
     NO_EVENT_NOTIFIER,
     EventNotifier,
@@ -69,7 +71,8 @@ class EditorHeader:
     successful write, None when nothing was written yet. ``status`` is a badge key.
     File mode, owner and group are the effective values (the environment's own or the
     deployment default); an empty owner or group means the application user.
-    ``can_manage_grants`` is True for the superadmin, who gets the Access tab, and so is
+    ``file_type`` is the type of the file: a certificate is edited as raw text only and has no
+    dist file. ``can_manage_grants`` is True for the superadmin, who gets the Access tab, and so is
     ``can_manage_structure``, which shows the settings and delete controls. ``deployment_root``
     is the folder of the deployment for the code that reads the host. ``root_path`` is the same
     folder for display and is None unless the caller has access to the whole deployment, so a
@@ -85,6 +88,7 @@ class EditorHeader:
     project_id: int
     project_name: str
     target_path: str
+    file_type: FileType
     dist_path: str | None
     file_mode: str
     file_owner: str
@@ -221,6 +225,7 @@ async def load_editor_header(
         project_id=service.project_id,
         project_name=service.project_name,
         target_path=environment.target_path,
+        file_type=environment.file_type,
         dist_path=environment.dist_path,
         file_mode=environment.file_mode or deployment.file_mode,
         file_owner=(
@@ -267,13 +272,20 @@ def _line_count(text: str) -> int:
 
 
 async def load_editor_content(
-    db: AsyncSession, crypto: CryptoService, environment_id: int
+    db: AsyncSession, crypto: CryptoService, environment_id: int, file_type: FileType
 ) -> EditorContent | None:
-    """Names and sizes of the newest version, or None when nothing was saved yet."""
+    """Names and sizes of the newest version, or None when nothing was saved yet.
+
+    A certificate is one text: it has no variables whatever its lines look like.
+    """
     version = await stored_version(db, environment_id)
     if version is None:
         return None
     text = crypto.decrypt_text(version.content_encrypted)
+    if file_type is FileType.CERT:
+        return EditorContent(
+            number=version.number, env_format=False, rows=(), line_count=_line_count(text)
+        )
     parsed = parse_env(text)
     rows = tuple(
         VariableRow(key=key, index=index, lines=variable.value.count("\n") + 1)
@@ -288,10 +300,10 @@ async def load_editor_content(
 
 
 async def variable_row(
-    db: AsyncSession, crypto: CryptoService, environment_id: int, key: str
+    db: AsyncSession, crypto: CryptoService, environment_id: int, file_type: FileType, key: str
 ) -> VariableRow | None:
     """The masked row of one variable of the newest version, None when it does not exist."""
-    content = await load_editor_content(db, crypto, environment_id)
+    content = await load_editor_content(db, crypto, environment_id, file_type)
     if content is None:
         return None
     return next((row for row in content.rows if row.key == key), None)
@@ -339,7 +351,7 @@ async def reveal_value(
     or key; nothing is audited then.
     """
     stored = await stored_version(db, header.id, version)
-    if stored is None:
+    if stored is None or header.file_type is FileType.CERT:
         raise VariableNotFoundError
     parsed = parse_env(crypto.decrypt_text(stored.content_encrypted))
     variable = parsed.variables.get(key) if parsed.is_env_format else None
@@ -458,10 +470,12 @@ async def save_version(
     if raw_content is not None:
         text = normalize_newlines(raw_content)
     elif key_values is not None:
+        if header.file_type is FileType.CERT:
+            raise EditorError(CERT_KEY_VALUE_MESSAGE)
         text, changed_keys = _key_value_text(current, key_values)
     else:
         raise EditorError("Reveal the raw text to edit it.")
-    problem = content_problem(text)
+    problem = content_problem(text) or content_problem_for(header.file_type, text)
     if problem:
         raise EditorError(problem)
     if text == current:

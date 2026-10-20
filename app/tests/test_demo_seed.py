@@ -27,6 +27,7 @@ from app.models import (
     DistOutcome,
     Environment,
     EnvironmentVersion,
+    FileType,
     HookType,
     Project,
     Service,
@@ -199,7 +200,8 @@ async def test_demo_dist_comparison_covers_clean_blocked_and_skipped(
 async def test_demo_dist_checks_read_the_committed_templates(
     engine: AsyncEngine, demo_data: SeedData, crypto: CryptoService
 ) -> None:
-    """A real check of each demo file: two pass, the secrets file blocks, the certificate skips."""
+    """A real check of each demo file: two pass, the secrets file blocks, the certificate has no
+    dist file to compare, whatever dist link it keeps."""
     demo = _demo(demo_data)
     outcomes = {}
     async with create_session_factory(engine)() as db:
@@ -210,7 +212,11 @@ async def test_demo_dist_checks_read_the_committed_templates(
     blocked = outcomes[".env.db.secrets"]
     assert blocked.outcome is DistOutcome.BLOCKED
     assert blocked.report is not None and blocked.report.missing == ("DEMO_DB_BACKUP_PASSWORD",)
-    assert outcomes["demo-ca.pem"].outcome is DistOutcome.SKIPPED
+    certificate = outcomes["demo-ca.pem"]
+    assert certificate.outcome is DistOutcome.SKIPPED
+    assert certificate.report is not None
+    assert certificate.report.skipped is DistSkipReason.NOT_APPLICABLE
+    assert demo.env_ca.file_type is FileType.CERT and demo.env_api.file_type is FileType.ENV
 
 
 async def test_demo_baseline_has_one_drifted_identical_and_missing_targets(

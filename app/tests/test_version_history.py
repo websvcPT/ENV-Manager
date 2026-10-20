@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.crypto import CryptoService
-from app.models import AuditEntry, EnvironmentVersion, User
+from app.models import AuditEntry, EnvironmentVersion, FileType, User
 from app.seeds import EDITOR_SECRET_VALUES, SeedData
 from app.services.editor import STALE_MESSAGE, EditorHeader, load_editor_header
 from app.services.permissions import load_user_scope
@@ -22,6 +22,7 @@ from app.services.version_history import (
     reveal_diff,
 )
 from app.services.versions import create_version
+from app.tests.file_type_helpers import set_file_type
 
 CERTIFICATE_BODY = "MIIDdzCCAl7sentinelCertBody"
 
@@ -212,6 +213,7 @@ async def test_a_file_that_is_not_env_format_is_compared_as_a_whole(
     db: AsyncSession, seed_data: SeedData, crypto: CryptoService
 ) -> None:
     ca = seed_data.figures.ca
+    await set_file_type(db, ca.id, FileType.ENV)
     header = await header_for(db, seed_data.users.admin, ca.id)
     await add_version(
         db,
@@ -295,6 +297,7 @@ async def test_reveal_of_a_whole_file_audits_a_file_scope(
 ) -> None:
     admin = seed_data.users.admin
     ca = seed_data.figures.ca
+    await set_file_type(db, ca.id, FileType.ENV)
     header = await header_for(db, admin, ca.id)
     await add_version(
         db, crypto, ca.id, "-----BEGIN CERTIFICATE-----\nbmV3\n-----END CERTIFICATE-----\n", admin
@@ -416,3 +419,76 @@ async def _version_count(db: AsyncSession, environment_id: int) -> int:
             )
         ).all()
     )
+
+
+CERT_V1 = "-----BEGIN CERTIFICATE-----\nc2VlZA==\n-----END CERTIFICATE-----\n"
+CERT_V2 = "-----BEGIN CERTIFICATE-----\nbmV3Ym9keQ==\nZXh0cmE=\n-----END CERTIFICATE-----\n"
+
+
+async def test_a_certificate_is_compared_line_by_line_and_never_by_key(
+    db: AsyncSession, seed_data: SeedData, crypto: CryptoService
+) -> None:
+    ca = seed_data.figures.ca
+    header = await header_for(db, seed_data.users.admin, ca.id)
+    assert header.file_type is FileType.CERT
+    await add_version(db, crypto, ca.id, CERT_V2, seed_data.users.admin)
+    diff = await load_diff(db, crypto, header, 1, 2)
+    assert diff.by_line and not diff.whole_file and not diff.identical
+    assert [(row.key, row.change) for row in diff.rows] == [
+        ("Line 2", DiffChange.CHANGED),
+        ("Line 3", DiffChange.CHANGED),
+        ("Line 4", DiffChange.ADDED),
+    ]
+    assert diff.unchanged == 1
+    assert "bmV3Ym9keQ" not in repr(diff) and "c2VlZA" not in repr(diff)
+
+
+async def test_a_certificate_diff_reveals_the_differing_lines_and_audits_line_names(
+    db: AsyncSession, seed_data: SeedData, crypto: CryptoService
+) -> None:
+    admin = seed_data.users.admin
+    ca = seed_data.figures.ca
+    header = await header_for(db, admin, ca.id)
+    await add_version(db, crypto, ca.id, CERT_V2, admin)
+    revealed = await reveal_diff(db, crypto, header, 1, 2, actor=admin, ip_address=None)
+    assert revealed.values[0] == ("c2VlZA==", "bmV3Ym9keQ==")
+    assert revealed.values[1] == ("-----END CERTIFICATE-----", "ZXh0cmE=")
+    assert revealed.values[2] == (None, "-----END CERTIFICATE-----")
+    entries = await reveal_entries(db)
+    assert [entry.details for entry in entries] == [
+        {"version": 1, "scope": "diff", "compared_with": 2, "keys": ["Line 2", "Line 3"]},
+        {
+            "version": 2,
+            "scope": "diff",
+            "compared_with": 1,
+            "keys": ["Line 2", "Line 3", "Line 4"],
+        },
+    ]
+    stored = repr([entry.details for entry in entries])
+    assert "bmV3Ym9keQ" not in stored and "c2VlZA" not in stored
+
+
+async def test_two_certificate_versions_that_differ_only_in_line_breaks_list_no_line(
+    db: AsyncSession, seed_data: SeedData, crypto: CryptoService
+) -> None:
+    ca = seed_data.figures.ca
+    header = await header_for(db, seed_data.users.admin, ca.id)
+    await add_version(db, crypto, ca.id, CERT_V1.rstrip("\n"), seed_data.users.admin)
+    diff = await load_diff(db, crypto, header, 1, 2)
+    assert diff.by_line and diff.rows == () and not diff.identical and diff.unchanged == 3
+
+
+async def test_a_certificate_version_without_a_pem_block_cannot_be_restored(
+    db: AsyncSession, seed_data: SeedData, crypto: CryptoService
+) -> None:
+    admin = seed_data.users.admin
+    ca = seed_data.figures.ca
+    header = await header_for(db, admin, ca.id)
+    await add_version(db, crypto, ca.id, "just some words\n", admin)
+    await add_version(db, crypto, ca.id, CERT_V2, admin)
+    with pytest.raises(RestoreError, match="PEM block"):
+        await restore_version(db, crypto, header, 2, base_number=3, actor=admin, ip_address=None)
+    restored = await restore_version(
+        db, crypto, header, 1, base_number=3, actor=admin, ip_address=None
+    )
+    assert restored.number == 4

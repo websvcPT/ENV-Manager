@@ -6,7 +6,7 @@
    row, row toggle, tree toggle, copy, dismiss, history back, picking a path into a field,
    limiting the version comparison to two versions, closing dialogs when the server asks,
    the deploy dialog (loading content, chosen environments, closing when the load fails), the
-   dist file source of the add environment form, and a toast when an htmx request fails (an access grid checkbox goes back to the stored state). */
+   dist file fields and the type suggestion of the file forms, and a toast when an htmx request fails (an access grid checkbox goes back to the stored state). */
 (function () {
   'use strict';
 
@@ -375,28 +375,63 @@
         : button.getAttribute('data-label-many').replace('{count}', String(count));
   });
 
-  /* The "Copy the dist file" source of the add environment form is available only while the dist
-     path field holds a path. Emptying the field while the source is chosen goes back to pasting. */
-  document.addEventListener('input', function (event) {
-    var field = event.target;
-    if (!(field instanceof HTMLInputElement) || field.getAttribute('data-js') !== 'dist-path') {
-      return;
+  /* The dist file of a file form depends on its type. A certificate has no dist file: the dist
+     path field is hidden and disabled (so it is not sent) and the "Copy the dist file" source of
+     the add form is unavailable. For an ENV file that source is available only while the dist
+     path field holds a path. Losing the source while it is chosen goes back to pasting. */
+  function syncDistFields(form) {
+    var type = form.querySelector('[data-js=file-type]');
+    var field = form.querySelector('[data-js=dist-path]');
+    var cert = type instanceof HTMLSelectElement && type.value === 'cert';
+    if (field instanceof HTMLInputElement) {
+      field.disabled = cert;
+      form.querySelectorAll('[data-dist-field]').forEach(function (wrapper) { wrapper.hidden = cert; });
     }
-    var form = field.closest('form');
-    var choice = form && form.querySelector('[data-js=dist-source]');
+    var choice = form.querySelector('[data-js=dist-source]');
     if (!(choice instanceof HTMLInputElement)) { return; }
-    var empty = field.value.trim() === '';
-    choice.disabled = empty;
+    var empty = !(field instanceof HTMLInputElement) || field.value.trim() === '';
+    var unavailable = cert || empty;
+    choice.disabled = unavailable;
     var option = choice.closest('label');
     if (option) {
-      option.classList.toggle('cursor-not-allowed', empty);
-      option.classList.toggle('opacity-60', empty);
-      option.classList.toggle('cursor-pointer', !empty);
-      option.querySelectorAll('[data-dist-ready]').forEach(function (hint) { hint.hidden = empty; });
-      option.querySelectorAll('[data-dist-missing]').forEach(function (hint) { hint.hidden = !empty; });
+      option.classList.toggle('cursor-not-allowed', unavailable);
+      option.classList.toggle('opacity-60', unavailable);
+      option.classList.toggle('cursor-pointer', !unavailable);
+      option.querySelectorAll('[data-dist-ready]').forEach(function (hint) { hint.hidden = unavailable; });
+      option.querySelectorAll('[data-dist-missing]').forEach(function (hint) { hint.hidden = cert || !empty; });
+      option.querySelectorAll('[data-dist-cert]').forEach(function (hint) { hint.hidden = !cert; });
     }
     var paste = form.querySelector('#src-paste');
-    if (empty && choice.checked && paste instanceof HTMLInputElement) { paste.checked = true; }
+    if (unavailable && choice.checked && paste instanceof HTMLInputElement) { paste.checked = true; }
+  }
+
+  /* The add environment form selects Certificate for a name that ends like a certificate file,
+     until the person chooses the type themselves. */
+  function suggestFileType(form, name) {
+    var type = form.querySelector('[data-js=file-type]');
+    if (!(type instanceof HTMLSelectElement) || type.hasAttribute('data-chosen')) { return; }
+    var suffixes = (name.getAttribute('data-cert-suffixes') || '').split(' ').filter(Boolean);
+    var typed = name.value.trim().toLowerCase();
+    var cert = suffixes.some(function (suffix) { return typed.endsWith(suffix); });
+    type.value = cert ? 'cert' : 'env';
+    syncDistFields(form);
+  }
+
+  document.addEventListener('input', function (event) {
+    var field = event.target;
+    if (!(field instanceof HTMLInputElement) || !field.form) { return; }
+    var kind = field.getAttribute('data-js');
+    if (kind === 'dist-path') { syncDistFields(field.form); }
+    if (kind === 'file-name') { suggestFileType(field.form, field); }
+  });
+
+  document.addEventListener('change', function (event) {
+    var select = event.target;
+    if (!(select instanceof HTMLSelectElement) || select.getAttribute('data-js') !== 'file-type') {
+      return;
+    }
+    select.setAttribute('data-chosen', 'true');
+    if (select.form) { syncDistFields(select.form); }
   });
 
   document.addEventListener('click', function (event) {

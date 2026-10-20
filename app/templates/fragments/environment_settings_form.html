@@ -4,9 +4,10 @@
     check (target path line and notice), action and cancel_href. -#}
 {% from "macros/buttons.html" import button %}
 {% from "macros/feedback.html" import note %}
-{% from "macros/forms.html" import field, radio_option, save_button %}
+{% from "macros/forms.html" import field, radio_option, save_button, select_field %}
 {% from "macros/panels.html" import panel %}
 {% set target_error = errors.get("target_path") %}
+{% set is_cert = form.file_type == "cert" %}
 {% set policy_groups = [
   ("dist_missing_policy", "Dist keys missing from environment", form.dist_missing_policy, deployment.dist_missing_policy.value, [
     ("block", "Block", "Stop the deploy."),
@@ -23,7 +24,8 @@
 {% call panel("File", "env-settings-file-title", fragment="form-section") %}
 <div class="flex flex-col gap-4 px-4 pb-5 md:px-5">
 <div class="flex flex-col gap-1.5 max-w-xl"><label for="tp" class="text-[13px] font-semibold">Target path, relative to the deployment root</label><input id="tp" name="target_path" type="text" value="{{ form.target_path }}" aria-describedby="tp-m"{% if target_error %} aria-invalid="true"{% endif %} autocomplete="off" spellcheck="false" class="h-10 w-full rounded-ctl border {{ "border-danger" if target_error else "border-line-strong" }} bg-surface px-3 text-sm text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus font-mono text-[13px]"><div id="tp-m" hx-get="/environments/{{ env.id }}/settings/target-check" hx-trigger="input changed delay:400ms from:#tp" hx-include="#tp" hx-swap="innerHTML" aria-live="polite">{% include "fragments/environment_target_check.html" %}</div></div>
-{{ field("dp", "Dist file path (optional)", name="dist_path", value=form.dist_path, mono=true, hint="Read from the target for comparison. Never written.", error=errors.get("dist_path"), extra_class="max-w-xl", autocomplete="off", spellcheck="false") }}
+{{ select_field("ft", "Type", [("env", "ENV file"), ("cert", "Certificate")], selected="cert" if is_cert else "env", name="file_type", hint="A certificate is edited as raw text, has no dist file (a stored dist path is cleared) and is compared line by line. Changing the type keeps the saved versions.", error=errors.get("file_type"), extra_class="max-w-xl", data_js="file-type") }}
+<div data-dist-field{% if is_cert %} hidden{% endif %}>{{ field("dp", "Dist file path (optional)", name="dist_path", value=form.dist_path, mono=true, hint="Read from the target for comparison. Never written.", error=errors.get("dist_path"), extra_class="max-w-xl", autocomplete="off", spellcheck="false", disabled=is_cert, data_js="dist-path") }}</div>
 <div class="grid gap-4 sm:grid-cols-3">
 {{ field("m", "Mode", name="file_mode", value=form.file_mode, placeholder=deployment.file_mode, mono=true, error=errors.get("file_mode"), autocomplete="off", maxlength="4") }}
 {{ field("o", "Owner", name="file_owner", value=form.file_owner, placeholder=deployment.file_owner or "app user", mono=true, error=errors.get("file_owner"), autocomplete="off", maxlength="64") }}

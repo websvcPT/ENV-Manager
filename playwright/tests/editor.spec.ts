@@ -31,10 +31,11 @@ async function prepare(
   projectId: number,
   name: string,
   content: string,
+  fileType: 'env' | 'cert' = 'env',
 ): Promise<number> {
   const deployment = await createDeployment(request, projectId, 'scratch-dep', SAMPLE_A);
   const service = await createService(request, deployment, 'cache');
-  return createEnvironment(request, service, name, content);
+  return createEnvironment(request, service, name, content, '', fileType);
 }
 
 function row(page: Page, key: string) {
@@ -303,21 +304,56 @@ test.describe('superadmin editor', () => {
   });
 
   test('a certificate is edited as raw text only', async ({ page, request, scratch }) => {
-    const id = await prepare(request, scratch.id, 'e2e-ca.pem', PEM);
+    const id = await prepare(request, scratch.id, 'e2e-ca.pem', PEM, 'cert');
     await page.goto(`/environments/${id}`);
     await expect(page.locator('[role="group"][aria-label]')).toHaveCount(0);
     await expect(page.locator('[data-fragment="raw-text"]')).toContainText('3 lines');
     await expect(page.locator('[data-fragment="raw-text"]')).toContainText(
-      'not in KEY=VALUE format',
+      'This is a certificate, so it is shown and edited as one text.',
     );
+    await expect(page.locator('[data-fragment="file-sidepanel"]')).toContainText('Certificate');
+    await expect(page.locator('[data-fragment="file-sidepanel"]')).toContainText('Not applicable');
     await expect(page.locator('input[name="mode"]')).toHaveValue('raw');
     await expectNoValueInPage(page, CERTIFICATE_BODY);
+    await page.goto(`/environments/${id}?mode=kv`);
+    await expect(page.locator('input[name="mode"]')).toHaveValue('raw');
+    await expect(page.locator('#kv-list')).toHaveCount(0);
     await page.locator('button[hx-post*="/reveal-raw"]').click();
     await expect(page.locator('textarea[name="content"]')).toHaveValue(PEM);
     await page.locator('textarea[name="content"]').fill(`${PEM}# renewed\n`);
     await saveButton(page).click();
     await expect(page).toHaveURL(/\?saved=2$/);
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+  });
+
+  test('a certificate save without a PEM block is refused and keeps the typed text', async ({
+    page,
+    request,
+    scratch,
+  }) => {
+    const id = await prepare(request, scratch.id, 'e2e-bad.pem', PEM, 'cert');
+    await page.goto(`/environments/${id}`);
+    await page.locator('button[hx-post*="/reveal-raw"]').click();
+    await page.locator('textarea[name="content"]').fill('KEY=value\n');
+    await saveButton(page).click();
+    await expect(page.locator('#editor-save-error')).toContainText(
+      'A certificate must hold at least one PEM block',
+    );
+    await expect(page.locator('textarea[name="content"]')).toHaveValue('KEY=value\n');
+    await expect(page).toHaveURL(new RegExp(`/environments/${id}$`));
+  });
+
+  test('free text in an ENV file is edited as raw text with its own note', async ({
+    page,
+    request,
+    scratch,
+  }) => {
+    const id = await prepare(request, scratch.id, 'e2e-free.txt', PEM);
+    await page.goto(`/environments/${id}`);
+    await expect(page.locator('[data-fragment="raw-text"]')).toContainText(
+      'not in KEY=VALUE format',
+    );
+    await expect(page.locator('[data-fragment="file-sidepanel"]')).toContainText('ENV file');
   });
 });
 

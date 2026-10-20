@@ -35,7 +35,7 @@
 </div>
 {%- if diff and diff.rows %}
 <div class="relative overflow-x-auto"><div class="min-w-[760px]">
-<div class="{{ grid_classes }} bg-head text-xs font-semibold uppercase tracking-wide text-head-ink"><span class="px-4 py-2.5">Change</span><span class="px-4 py-2.5">Key</span><span class="px-4 py-2.5">v{{ diff.left }}</span><span class="px-4 py-2.5">v{{ diff.right }}</span></div>
+<div class="{{ grid_classes }} bg-head text-xs font-semibold uppercase tracking-wide text-head-ink"><span class="px-4 py-2.5">Change</span><span class="px-4 py-2.5">{{ "Line" if diff.by_line else "Key" }}</span><span class="px-4 py-2.5">v{{ diff.left }}</span><span class="px-4 py-2.5">v{{ diff.right }}</span></div>
 {%- for row in diff.rows %}
 <div data-fragment="diff-row" class="{{ grid_classes }} items-start border-t border-line"><div class="px-4 py-3">{{ badge(row.change.value) }}</div><div class="break-all px-4 py-3.5 font-mono text-[13px] font-semibold">{{ row.key }}</div>
 <div class="px-4 py-3.5 font-mono text-[13px] text-ink2">{% if row.change.value == "added" %}<span class="text-ink3">not set</span>{% else %}<span class="group-data-[revealed=true]:hidden">••••••••</span><span id="diff-left-{{ row.index }}" data-value class="hidden whitespace-pre-wrap break-all group-data-[revealed=true]:inline"></span>{% endif %}</div>
@@ -49,10 +49,10 @@
 {%- elif diff.identical %}
 <p class="border-t border-line px-5 py-8 text-center text-ink2">These versions have the same content.</p>
 {%- else %}
-<p class="border-t border-line px-5 py-8 text-center text-ink2">No variables differ. The versions differ only in comments, blank lines or order.</p>
+<p class="border-t border-line px-5 py-8 text-center text-ink2">{% if diff.by_line %}No lines differ. The versions differ only in line breaks.{% else %}No variables differ. The versions differ only in comments, blank lines or order.{% endif %}</p>
 {%- endif %}
 {%- if diff and (diff.unchanged or not env.can_reveal) %}
-<p class="border-t border-line bg-surface2 px-5 py-3 text-[13px] text-ink2">{% if diff.unchanged %}{{ diff.unchanged }} unchanged {{ "key" if diff.unchanged == 1 else "keys" }} hidden{% if not env.can_reveal %}. {% endif %}{% endif %}{% if not env.can_reveal %}Values are masked for the Viewer group.{% endif %}</p>
+<p class="border-t border-line bg-surface2 px-5 py-3 text-[13px] text-ink2">{% if diff.unchanged %}{{ diff.unchanged }} unchanged {% if diff.by_line %}{{ "line" if diff.unchanged == 1 else "lines" }}{% else %}{{ "key" if diff.unchanged == 1 else "keys" }}{% endif %} hidden{% if not env.can_reveal %}. {% endif %}{% endif %}{% if not env.can_reveal %}Values are masked for the Viewer group.{% endif %}</p>
 {%- endif %}
 {%- if env.can_edit and diff %}
 {% set number = diff.left %}

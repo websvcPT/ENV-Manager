@@ -179,10 +179,29 @@ async def test_dist_and_versions_read_from_the_stored_figures(
         ".env.db.app": "never",
         ".env.db.secrets": "failed",
     }
-    assert "Dist linked · current v2 · deployed None" in page
-    assert "Dist none · current v1 · deployed None" in page
+    assert "ENV file · dist linked · current v2 · deployed None" in page
+    assert "ENV file · dist none · current v1 · deployed None" in page
     assert "&mdash;" not in page and "\u2014" not in page
     assert "deploy did not finish" in page and "exit code" not in page
+
+
+@pytest.mark.parametrize("role", ["root", "admin", "viewer"])
+async def test_a_certificate_row_shows_its_type_and_has_no_dist(
+    web_client: httpx.AsyncClient, ids: ServiceIds, role: str
+) -> None:
+    """The type column, no dist file for a certificate, and no Compare to dist action."""
+    await sign_in(web_client, role)
+    page = (await web_client.get(f"/services/{ids.staging_web}")).text
+    found = re.findall(r'<tr data-fragment="env-row" data-env="([^"]+)">(.*?)</tr>', page, re.S)
+    rows = dict(found)
+    certificate = rows["web-ca.pem"]
+    assert ">Type</th>" in page and "Certificate</td>" in certificate
+    assert "Not applicable</td>" in certificate and "Linked" not in certificate
+    assert "ENV file</td>" in rows[".env.web"]
+    assert "dist" not in row_actions(page, "web-ca.pem")
+    assert "Certificate · no dist file · current v1 · deployed None" in page
+    if role != "viewer":
+        assert "dist" in row_actions(page, ".env.web")
 
 
 async def test_admin_reads_output_but_not_the_command(

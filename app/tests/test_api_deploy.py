@@ -17,6 +17,7 @@ from app.models import (
     DeployTrigger,
     Environment,
     EnvironmentVersion,
+    FileType,
     RestrictionLevel,
     User,
 )
@@ -40,6 +41,7 @@ from app.tests.api_helpers import (
 )
 from app.tests.deploy_helpers import version_text
 from app.tests.dist_helpers import link_dist, write_dist
+from app.tests.file_type_helpers import set_file_type
 
 DB = ".env.db"
 SECRETS = ".env.db.secrets"
@@ -55,7 +57,7 @@ RUN_KEYS = {
     "environments",
     "post_deploy",
 }
-ENVIRONMENT_KEYS = {"id", "name", "version", "status", "dist", "drift", "message"}
+ENVIRONMENT_KEYS = {"id", "name", "file_type", "version", "status", "dist", "drift", "message"}
 
 
 async def run_count(world: ApiWorld) -> int:
@@ -127,7 +129,7 @@ async def test_a_deploy_writes_the_files_and_answers_the_run(
     assert answer["post_deploy"] == {"status": "ran", "exit_code": 0, "reason": None}
     assert names(response) == FILES
     for item in answer["environments"]:
-        assert set(item) == ENVIRONMENT_KEYS
+        assert set(item) == ENVIRONMENT_KEYS and item["file_type"] == "env"
         assert (item["status"], item["drift"], item["dist"]) == ("written", "missing", "skipped")
         assert item["id"] == world.environments[f"mysql/{item['name']}"]
         assert item["version"] == await newest_number(world, item["name"])
@@ -166,6 +168,21 @@ async def test_a_dry_run_reports_without_writing(api_world: ApiWorld) -> None:
     assert answer["post_deploy"] == {"status": "none", "exit_code": None, "reason": None}
     untouched(world)
     assert (await newest_run(world)).dry_run is True
+
+
+async def test_every_answered_file_carries_its_type(api_world: ApiWorld) -> None:
+    """The deploy answer and the last result name the type of each file, never its content."""
+    world = api_world
+    secret = await make_token(world, "admin")
+    async with world.session() as db:
+        await set_file_type(db, world.environments[f"mysql/{DB}"], FileType.CERT)
+    mysql = world.services["prod/mysql"]
+    response = await deploy(world, secret, mysql, {})
+    assert response.status_code == 200
+    types = {item["name"]: item["file_type"] for item in response.json()["environments"]}
+    assert types == {DB: "cert", APP: "env", SECRETS: "env"}
+    again = await last(world, secret, mysql)
+    assert {item["name"]: item["file_type"] for item in again.json()["environments"]} == types
 
 
 async def test_environments_are_named_by_file_name_or_by_id(api_world: ApiWorld) -> None:

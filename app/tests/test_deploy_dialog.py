@@ -111,7 +111,7 @@ async def test_the_preflight_lists_every_file_in_scope_with_the_dry_run_outcome(
     assert (tuning.version, tuning.newest) == (2, 2)
     assert tuning.dist_text == "Skipped, no dist file linked"
     assert tuning.drift_text == "Drift: Target missing"
-    assert row_of(preflight, "web-ca.pem").dist_text == "Skipped, not env format"
+    assert row_of(preflight, "web-ca.pem").dist_text == "Skipped, not applicable to a certificate"
 
 
 async def test_pending_and_never_deployed_files_are_preselected_by_default(

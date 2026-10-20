@@ -6,10 +6,12 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
+from app.models import FileType
 from app.seeds import EDITOR_SECRET_VALUES
 from app.services.notify_events import FileChange, FileChanged
 from app.tests.audit_helpers import web_audit_entries
 from app.tests.conftest import sign_in
+from app.tests.file_type_helpers import set_web_file_type
 from app.tests.notify_helpers import RecordingEvents, file_event_ids
 from app.tests.web_helpers import (
     HTMX,
@@ -77,6 +79,25 @@ async def test_masked_certificate_history_never_contains_its_body(
             assert_never_cached(response)
             for hidden in ("c2VlZA", "bmV3Ym9keQ", "BEGIN CERTIFICATE"):
                 assert hidden not in response.text
+    panel = (await web_client.get(f"/environments/{ids.ca}/diff?v=1&v=2")).text
+    assert "Line 2" in panel and "Changed" in panel and "File content" not in panel
+    assert ">Line</span>" in panel and "unchanged" in panel and "unchanged lines hidden" in panel
+
+
+@pytest.mark.parametrize("role", ["root", "admin", "viewer"])
+async def test_masked_free_text_history_of_an_env_file_compares_the_whole_file(
+    web_client: httpx.AsyncClient, ids: EnvironmentIds, web_app: FastAPI, role: str
+) -> None:
+    await set_web_file_type(web_app, ids.ca, FileType.ENV)
+    await add_version(
+        web_app, ids.ca, "-----BEGIN CERTIFICATE-----\nbmV3Ym9keQ==\n-----END CERTIFICATE-----\n"
+    )
+    await sign_in(web_client, role)
+    for url in (f"/environments/{ids.ca}/history", f"/environments/{ids.ca}/diff?v=1&v=2"):
+        response = await web_client.get(url)
+        assert response.status_code == 200
+        for hidden in ("c2VlZA", "bmV3Ym9keQ", "BEGIN CERTIFICATE"):
+            assert hidden not in response.text
     panel = (await web_client.get(f"/environments/{ids.ca}/diff?v=1&v=2")).text
     assert "File content" in panel and "Changed" in panel
 
@@ -269,9 +290,26 @@ async def test_reveal_escapes_values_and_marks_empty_ones(
     assert "Empty value" in response.text
 
 
+async def test_certificate_reveal_returns_the_differing_lines_of_both_versions(
+    web_client: httpx.AsyncClient, ids: EnvironmentIds, web_app: FastAPI
+) -> None:
+    await sign_in(web_client, "root")
+    await add_version(
+        web_app, ids.ca, "-----BEGIN CERTIFICATE-----\nbmV3Ym9keQ==\n-----END CERTIFICATE-----\n"
+    )
+    response = await post(web_client, f"/environments/{ids.ca}/history/reveal?v=1&v=2")
+    assert "c2VlZA==" in response.text and "bmV3Ym9keQ==" in response.text
+    assert "BEGIN CERTIFICATE" not in response.text
+    assert response.text.count("<template") == 2
+    entries = await web_audit_entries(web_app, "environment.reveal")
+    assert [entry.details["scope"] for entry in entries] == ["diff", "diff"]
+    assert [entry.details["keys"] for entry in entries] == [["Line 2"], ["Line 2"]]
+
+
 async def test_whole_file_reveal_returns_both_texts(
     web_client: httpx.AsyncClient, ids: EnvironmentIds, web_app: FastAPI
 ) -> None:
+    await set_web_file_type(web_app, ids.ca, FileType.ENV)
     await sign_in(web_client, "root")
     await add_version(
         web_app, ids.ca, "-----BEGIN CERTIFICATE-----\nbmV3Ym9keQ==\n-----END CERTIFICATE-----\n"

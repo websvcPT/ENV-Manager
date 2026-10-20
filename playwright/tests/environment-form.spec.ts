@@ -300,8 +300,96 @@ test.describe('superadmin add environment', () => {
       .filter({ visible: true });
     await expect(row).toContainText('environments/.env.cache');
     await expect(row).toContainText('v1');
-    await expect(row).toContainText(/Dist\s+linked|Linked/);
+    await expect(row).toContainText(/[Dd]ist\s+linked|Linked/);
     await expect(row).toContainText(/Never deployed/);
+  });
+
+  test('the type follows the file name until it is chosen, and a certificate has no dist file', async ({
+    page,
+    request,
+    scratch,
+  }) => {
+    const { service } = await prepare(request, scratch.id);
+    await page.goto(`/services/${service}/environments/new`);
+    const type = page.locator('#ft');
+    await expect(type).toHaveValue('env');
+    await expect(type.locator('option')).toHaveText(['ENV file', 'Certificate']);
+    await expect(page.locator('#ft-h')).toContainText('names ending in .pem, .crt, .cer, .key');
+    await expect(page.locator('[data-dist-field]')).toBeVisible();
+
+    for (const [name, expected] of [
+      ['tls.pem', 'cert'],
+      ['server.CRT', 'cert'],
+      ['ca.cer', 'cert'],
+      ['private.key', 'cert'],
+      ['.env.cache', 'env'],
+      ['tls.pem.bak', 'env'],
+    ]) {
+      await page.locator('#en').fill(name);
+      await expect(type).toHaveValue(expected);
+    }
+
+    await page.locator('#dp').fill('environments/x-dist');
+    await page.locator('#en').fill('tls.pem');
+    await expect(type).toHaveValue('cert');
+    await expect(page.locator('[data-dist-field]')).toBeHidden();
+    await expect(page.locator('#dp')).toBeDisabled();
+    await expect(page.locator('#src-dist')).toBeDisabled();
+    await expect(page.locator('[data-dist-cert]')).toBeVisible();
+    await expect(page.locator('[data-dist-ready]')).toBeHidden();
+    await expect(page.locator('[data-dist-missing]')).toBeHidden();
+    await type.selectOption('env');
+    await expect(page.locator('[data-dist-field]')).toBeVisible();
+    await expect(page.locator('#dp')).toBeEnabled();
+    await expect(page.locator('#src-dist')).toBeEnabled();
+    await expect(page.locator('[data-dist-ready]')).toBeVisible();
+
+    await page.locator('#en').fill('other.pem');
+    await expect(type).toHaveValue('env');
+    expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+  });
+
+  test('a certificate is created with its type and shows as one in the service', async ({
+    page,
+    request,
+    scratch,
+  }) => {
+    const { service } = await prepare(request, scratch.id);
+    await page.goto(`/services/${service}/environments/new`);
+    await fillFile(page, 'tls.pem', 'environments/tls.pem');
+    await expect(page.locator('#ft')).toHaveValue('cert');
+    await page
+      .locator('#content')
+      .fill('-----BEGIN CERTIFICATE-----\nE2ECERT\n-----END CERTIFICATE-----');
+    await submit(page);
+
+    await expect(page).toHaveURL(new RegExp(`/services/${service}\\?added=environment$`));
+    const row = page
+      .locator('#environments')
+      .locator('tr[data-env="tls.pem"], li[data-fragment="env-row"]')
+      .filter({ visible: true });
+    await expect(row).toContainText('Certificate');
+    await expect(row).toContainText(/Not applicable|no dist file/);
+    await expect(row).toContainText('environments/tls.pem');
+  });
+
+  test('a certificate without a PEM block is refused and keeps the typed text', async ({
+    page,
+    request,
+    scratch,
+  }) => {
+    const { service } = await prepare(request, scratch.id);
+    await page.goto(`/services/${service}/environments/new`);
+    await fillFile(page, 'tls.pem', 'environments/tls.pem');
+    await page.locator('#content').fill('KEY=value');
+    await submit(page);
+    await expect(page.locator('#content-e')).toContainText(
+      'A certificate must hold at least one PEM block',
+    );
+    await expect(page.locator('#content')).toHaveValue('KEY=value');
+    await expect(page.locator('#ft')).toHaveValue('cert');
+    await expect(page.locator('[data-dist-field]')).toBeHidden();
+    await expect(page).toHaveURL(new RegExp(`/services/${service}/environments/new$`));
   });
 
   test('refuses a second file with the same name or target', async ({

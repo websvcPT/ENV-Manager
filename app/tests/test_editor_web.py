@@ -8,10 +8,12 @@ import pytest
 from fastapi import FastAPI
 from sqlalchemy import select
 
-from app.models import AuditEntry, EnvironmentVersion
+from app.models import AuditEntry, EnvironmentVersion, FileType
 from app.seeds import EDITOR_ENVIRONMENT_NAME, EDITOR_SECRET_VALUES
 from app.services.notify_events import FileChange, FileChanged
+from app.tests.audit_helpers import web_audit_entries
 from app.tests.conftest import sign_in
+from app.tests.file_type_helpers import set_web_file_type
 from app.tests.notify_helpers import RecordingEvents, file_event_ids
 from app.tests.web_helpers import (
     HTMX,
@@ -205,8 +207,81 @@ async def test_certificate_opens_as_raw_text_only(
     await sign_in(web_client, "admin")
     page = main_of((await web_client.get(f"/environments/{ids.ca}")).text)
     assert "Key / value" not in page and "Raw text" not in page
+    assert "This is a certificate, so it is shown and edited as one text." in page
+    assert "not in KEY=VALUE format" not in page
+    assert "Reveal raw text" in page and 'name="mode" value="raw"' in page
+    assert re.search(r"<dt[^>]*>Type</dt><dd[^>]*>Certificate</dd>", page)
+    assert re.search(r"<dt[^>]*>Dist file</dt><dd[^>]*>Not applicable</dd>", page)
+    kv = main_of((await web_client.get(f"/environments/{ids.ca}?mode=kv")).text)
+    assert 'name="mode" value="raw"' in kv and "kv-list" not in kv
+
+
+async def test_free_text_in_an_env_file_still_says_it_is_not_key_value_format(
+    web_client: httpx.AsyncClient, ids: EnvironmentIds, web_app: FastAPI
+) -> None:
+    await set_web_file_type(web_app, ids.ca, FileType.ENV)
+    await sign_in(web_client, "admin")
+    page = main_of((await web_client.get(f"/environments/{ids.ca}")).text)
+    assert "Key / value" not in page and "Raw text" not in page
     assert "not in KEY=VALUE format" in page and "Reveal raw text" in page
-    assert 'name="mode" value="raw"' in page
+    assert re.search(r"<dt[^>]*>Type</dt><dd[^>]*>ENV file</dd>", page)
+
+
+async def test_a_certificate_has_no_variables_to_reveal_edit_or_add(
+    web_client: httpx.AsyncClient, ids: EnvironmentIds, web_app: FastAPI
+) -> None:
+    await sign_in(web_client, "admin")
+    base = f"/environments/{ids.ca}"
+    assert (await web_client.get(f"{base}/rows/TLS_CA_CERT")).status_code == 404
+    assert (await web_client.get(f"{base}/rows/TLS_CA_CERT/edit")).status_code == 404
+    assert (await web_client.get(f"{base}/new-row")).status_code == 404
+    assert (await post(web_client, f"{base}/reveal/TLS_CA_CERT")).status_code == 404
+    assert await web_audit_entries(web_app, "environment.reveal") == []
+    whole = await post(web_client, f"{base}/reveal-raw")
+    assert whole.status_code == 200 and CERTIFICATE_BODY in whole.text
+    assert [entry.details for entry in await web_audit_entries(web_app, "environment.reveal")] == [
+        {"version": 1, "scope": "file"}
+    ]
+
+
+async def test_a_certificate_save_is_checked_for_a_pem_block_and_never_by_key(
+    web_client: httpx.AsyncClient, ids: EnvironmentIds
+) -> None:
+    await sign_in(web_client, "admin")
+    base = f"/environments/{ids.ca}"
+    by_key = await post(
+        web_client,
+        f"{base}/versions",
+        {"mode": "kv", "base_version": "1", "new_key": "A", "new_value": "1"},
+    )
+    assert by_key.status_code == 422 and "A certificate is edited as raw text." in by_key.text
+    not_pem = await post(
+        web_client, f"{base}/versions", {"mode": "raw", "base_version": "1", "content": "A=1\n"}
+    )
+    assert not_pem.status_code == 422 and "must hold at least one PEM block" in not_pem.text
+    assert "A=1" not in not_pem.text
+    pem = "-----BEGIN CERTIFICATE-----\nbmV3\n-----END CERTIFICATE-----\r\n"
+    saved = await post(
+        web_client, f"{base}/versions", {"mode": "raw", "base_version": "1", "content": pem}
+    )
+    assert saved.headers["hx-redirect"] == f"{base}?saved=2"
+
+
+@pytest.mark.parametrize("role", ["root", "admin", "viewer"])
+async def test_a_masked_certificate_never_contains_its_text(
+    web_client: httpx.AsyncClient, ids: EnvironmentIds, role: str
+) -> None:
+    await sign_in(web_client, role)
+    for url in (f"/environments/{ids.ca}", f"/environments/{ids.ca}/panel?mode=kv"):
+        for headers in ({}, HTMX):
+            response = await web_client.get(url, headers=headers)
+            assert response.status_code == 200
+            assert CERTIFICATE_BODY not in response.text
+            assert "BEGIN CERTIFICATE" not in response.text
+            assert "•••••••••••• 3 lines" in response.text
+    if role == "viewer":
+        denied = await post(web_client, f"/environments/{ids.ca}/reveal-raw")
+        assert denied.status_code == 403 and CERTIFICATE_BODY not in denied.text
 
 
 async def test_admin_reveal_returns_only_that_value_and_is_audited(

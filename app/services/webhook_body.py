@@ -16,6 +16,7 @@ from app.models import (
     DeployStatus,
     DistOutcome,
     DriftState,
+    FileType,
     PostDeployStatus,
     Project,
 )
@@ -74,6 +75,7 @@ def sample_document(event_id: str, now: datetime) -> bytes:
             EnvironmentResult(
                 id=0,
                 name=".env.test",
+                file_type=FileType.ENV,
                 version=1,
                 status=DeployResultStatus.WRITTEN,
                 dist=DistOutcome.PASSED,

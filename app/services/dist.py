@@ -49,6 +49,7 @@ class DistSkipReason(StrEnum):
     ENVIRONMENT_NOT_ENV_FORMAT = "environment_not_env_format"
     DIST_NOT_ENV_FORMAT = "dist_not_env_format"
     NO_DIST_LINKED = "no_dist_linked"
+    NOT_APPLICABLE = "not_applicable"
 
 
 @dataclass(frozen=True)

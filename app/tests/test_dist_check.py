@@ -15,6 +15,7 @@ from app.models import (
     DistMissingPolicy,
     DistOutcome,
     EnvironmentVersion,
+    FileType,
 )
 from app.seeds import SeedData
 from app.services.dist import DistError, DistProblem, DistSkipReason
@@ -37,6 +38,7 @@ from app.tests.dist_helpers import (
     set_deployment_policy,
     write_dist,
 )
+from app.tests.file_type_helpers import set_file_type
 
 DIST_DEFAULT_VALUE = "dist-default-Qw83"
 DB_DIST = "environments/.env.db-dist"
@@ -140,6 +142,7 @@ async def test_the_latest_version_is_the_one_compared(
 async def test_a_file_that_is_not_env_format_is_skipped_without_reading_the_host(
     db: AsyncSession, seed_data: SeedData, crypto: CryptoService
 ) -> None:
+    await set_file_type(db, seed_data.figures.ca.id, FileType.ENV)
     await link_dist(db, seed_data.figures.ca, "environments/web-ca.pem-dist")
     await db.execute(delete(AllowedPath))
     await db.commit()
@@ -148,6 +151,42 @@ async def test_a_file_that_is_not_env_format_is_skipped_without_reading_the_host
     assert check.report is not None
     assert check.report.skipped is DistSkipReason.ENVIRONMENT_NOT_ENV_FORMAT
     assert check.skip_message is not None and "certificate" in check.skip_message
+
+
+async def test_a_certificate_is_not_applicable_whatever_dist_path_it_holds(
+    db: AsyncSession, seed_data: SeedData, crypto: CryptoService
+) -> None:
+    """Nothing is read from the host and the stored path is ignored, even one outside the roots."""
+    ca = seed_data.figures.ca
+    await link_dist(db, ca, "environments/web-ca.pem-dist")
+    await db.execute(delete(AllowedPath))
+    await db.commit()
+    check = await evaluate_dist(db, crypto, ca.id, checked_by="root")
+    assert check.outcome is DistOutcome.SKIPPED and check.problem is None
+    assert check.report is not None and check.report.skipped is DistSkipReason.NOT_APPLICABLE
+    assert check.skip_message is not None and "no dist file" in check.skip_message
+    assert check.subject.file_type is FileType.CERT
+    await run_dist_check(db, crypto, ca.id, actor=seed_data.users.superadmin, ip_address=None)
+    entry = (await audit_entries(db, "environment.dist_check"))[-1]
+    assert entry.details["outcome"] == "skipped" and entry.details["skipped"] == "not_applicable"
+
+
+async def test_the_deployment_overview_lists_a_certificate_as_skipped(
+    db: AsyncSession, seed_data: SeedData, crypto: CryptoService, roots: dict[str, Path]
+) -> None:
+    scope = await load_user_scope(db, seed_data.users.superadmin)
+    checks = await run_deployment_dist_checks(
+        db,
+        crypto,
+        scope,
+        seed_data.deployments.fancy_staging.id,
+        actor=seed_data.users.superadmin,
+        ip_address=None,
+    )
+    by_name = {check.subject.name: check for check in checks}
+    ca = by_name["web-ca.pem"]
+    assert ca.outcome is DistOutcome.SKIPPED
+    assert ca.report is not None and ca.report.skipped is DistSkipReason.NOT_APPLICABLE
 
 
 async def test_a_file_without_a_dist_link_is_skipped(

@@ -20,7 +20,14 @@ from pydantic import (
     field_validator,
 )
 
-from app.models import DeployResultStatus, DeployStatus, DistOutcome, DriftState, PostDeployStatus
+from app.models import (
+    DeployResultStatus,
+    DeployStatus,
+    DistOutcome,
+    DriftState,
+    FileType,
+    PostDeployStatus,
+)
 
 MAX_ID = 2**63 - 1
 MAX_BODY_BYTES = 64 * 1024
@@ -185,12 +192,13 @@ class ServiceInfo(BaseModel):
 class EnvironmentResult(BaseModel):
     """What one run did with one environment.
 
-    ``message`` is a fixed sentence about the outcome; it never holds a value, a path or any
-    file content.
+    ``file_type`` is the type of the file (``env`` or ``cert``). ``message`` is a fixed sentence
+    about the outcome; it never holds a value, a path or any file content.
     """
 
     id: int
     name: str
+    file_type: FileType
     version: int | None
     status: DeployResultStatus
     dist: DistOutcome | None
