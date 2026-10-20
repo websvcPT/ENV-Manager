@@ -96,6 +96,9 @@ class Deployment(Base):
 
     ``file_mode`` is the octal mode written files get, ``file_owner`` and ``file_group`` the names
     (or numeric ids) they are given; both are empty when the files keep the app user.
+    ``compose_files`` holds the Compose files the services and files were imported from, as paths
+    relative to the root with the base file first; it is None for a deployment that was not
+    imported from Compose files.
     """
 
     __tablename__ = "deployments"
@@ -122,6 +125,7 @@ class Deployment(Base):
     file_mode: Mapped[str] = mapped_column(String(4), default="0600", server_default="0600")
     file_owner: Mapped[str | None] = mapped_column(String(64), default=None)
     file_group: Mapped[str | None] = mapped_column(String(64), default=None)
+    compose_files: Mapped[list[str] | None] = mapped_column(JSON, default=None)
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utc_now, onupdate=utc_now)
 

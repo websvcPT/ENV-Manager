@@ -737,3 +737,50 @@ async def test_the_file_type_is_added_for_every_file_checked_and_removed_on_the_
         assert again.scalar_one() == "env"
     finally:
         await engine.dispose()
+
+
+async def test_the_compose_files_column_is_added_and_removed_in_place_and_keeps_deployments(
+    database_path: Path, backup_dir: Path
+) -> None:
+    """Migration 0020 gives a deployment that existed before it no Compose files, keeps what a
+    later import stores until the way back drops the column, and keeps the rows and the
+    autoincrement ids both ways."""
+    engine = create_engine(database_path)
+    try:
+        await _migrate(engine, "0019")
+        async with engine.begin() as connection:
+            for statement in TREE_STATEMENTS:
+                await connection.execute(text(statement))
+        await migrate_database(engine, database_path, backup_dir)
+        async with engine.begin() as connection:
+            columns = (await connection.execute(text("PRAGMA table_info(deployments)"))).all()
+            added = next(row for row in columns if row[1] == "compose_files")
+            assert added[3] == 0 and added[4] is None
+            stored = await connection.execute(text("SELECT id, compose_files FROM deployments"))
+            assert [tuple(row) for row in stored.all()] == [(1, None)]
+            await connection.execute(
+                text("UPDATE deployments SET compose_files = :files"),
+                {"files": '["compose.yaml", "compose.override.yaml"]'},
+            )
+            violations = (await connection.execute(text("PRAGMA foreign_key_check"))).all()
+            assert violations == []
+        await _migrate(engine, "0019", down=True)
+        async with engine.connect() as connection:
+            names = [
+                row[1]
+                for row in (await connection.execute(text("PRAGMA table_info(deployments)"))).all()
+            ]
+            kept = (await connection.execute(text("SELECT id, name FROM deployments"))).all()
+            table_sql = (
+                await connection.execute(
+                    text("SELECT sql FROM sqlite_master WHERE name = 'deployments'")
+                )
+            ).scalar_one()
+        assert "compose_files" not in names and [tuple(row) for row in kept] == [(1, "d")]
+        assert "AUTOINCREMENT" in table_sql
+        await _migrate(engine, "head")
+        async with engine.connect() as connection:
+            again = await connection.execute(text("SELECT compose_files FROM deployments"))
+        assert again.scalar_one() is None
+    finally:
+        await engine.dispose()
