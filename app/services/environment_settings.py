@@ -1,11 +1,11 @@
 """Environment settings edit, superadmin only and audited.
 
-The settings are the target and dist paths, the type of the file, the file mode, owner and group,
-and the three policy overrides the deploy engine and the dist check read before the deployment's
-own policies. The paths follow the rules of the add environment form; a certificate has no dist
-path. Changing the type keeps the saved content, which the next save is checked against. A target
-path change leaves the file at the old path alone and makes the file count as never deployed at
-the new one.
+The settings are the target and dist paths, the file mode, owner and group, and the three policy
+overrides the deploy engine and the dist check read before the deployment's own policies. The
+paths follow the rules of the add environment form; a certificate has no dist path. The type of
+a file is chosen when it is created and never changes: a submitted type other than the stored
+one is refused. A target path change leaves the file at the old path alone and makes the file
+count as never deployed at the new one.
 """
 
 from dataclasses import dataclass, fields
@@ -32,7 +32,7 @@ from app.services.environments import (
     relative_path,
     target_in_use,
 )
-from app.services.file_types import CERT_HAS_NO_DIST_MESSAGE, CHOOSE_TYPE_MESSAGE, parse_file_type
+from app.services.file_types import CERT_HAS_NO_DIST_MESSAGE, TYPE_FIXED_MESSAGE
 from app.services.paths import AllowedPaths
 
 NOT_ACKNOWLEDGED = (
@@ -45,7 +45,7 @@ class EnvironmentSettingsForm:
     """The submitted settings as typed. An empty policy means the deployment's own policy.
 
     ``acknowledge_move`` is the confirmation a changed target path of a deployed file needs.
-    ``file_type`` is ``env`` or ``cert``, empty meaning the type the file has now.
+    ``file_type`` is only checked: empty or the stored type is accepted, anything else refused.
     """
 
     target_path: str = ""
@@ -64,7 +64,6 @@ class EnvironmentSettingsForm:
         """The form as it reads for the stored settings."""
         return cls(
             target_path=environment.target_path,
-            file_type=environment.file_type.value,
             dist_path=environment.dist_path or "",
             file_mode=environment.file_mode or "",
             file_owner=environment.file_owner or "",
@@ -85,7 +84,6 @@ class CleanSettings:
     """Validated settings ready to store; None means the deployment's own value."""
 
     target_path: str
-    file_type: FileType
     dist_path: str | None
     file_mode: str | None
     file_owner: str | None
@@ -170,13 +168,11 @@ async def validate_settings(
         ):
             errors["acknowledge_move"] = NOT_ACKNOWLEDGED
 
-    file_type = parse_file_type(form.file_type, environment.file_type)
-    if file_type is None:
-        file_type = environment.file_type
-        errors["file_type"] = CHOOSE_TYPE_MESSAGE
+    if form.file_type.strip() not in ("", environment.file_type.value):
+        errors["file_type"] = TYPE_FIXED_MESSAGE
 
     dist_path: str | None = None
-    if form.dist_path.strip() and file_type is FileType.CERT:
+    if form.dist_path.strip() and environment.file_type is FileType.CERT:
         errors["dist_path"] = CERT_HAS_NO_DIST_MESSAGE
     elif form.dist_path.strip():
         dist_path, _, problem = relative_path(allowed, deployment.root_path, form.dist_path, "Dist")
@@ -207,7 +203,6 @@ async def validate_settings(
         raise EnvironmentFormError(errors)
     return CleanSettings(
         target_path=target_path,
-        file_type=file_type,
         dist_path=dist_path,
         file_mode=file_mode,
         file_owner=owner,

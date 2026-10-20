@@ -20,8 +20,9 @@ inside the deployment root and the allowed paths.
 
 ## File types
 
-Every file has a type, chosen when it is added and changed in the file settings (the change is
-audited with the old and new type, and the saved versions are kept):
+Every file has a type, chosen when it is added and never changed afterwards: the file settings show
+it as plain text and the server refuses a different type. To change it, delete the file and add it
+again:
 
 - **ENV file** is KEY=VALUE text. It has the key and value editor and the raw text editor, is
   compared with its dist file key by key, and history, drift and deploy output scrubbing work per

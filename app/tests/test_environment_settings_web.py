@@ -308,80 +308,58 @@ async def test_a_file_that_was_never_deployed_moves_without_a_confirmation(
     assert (await stored(web_app, editor)).target_path == moved["target_path"]
 
 
-async def test_the_form_has_a_type_select_with_the_stored_type(
+async def test_the_form_shows_the_stored_type_as_text_and_has_no_type_control(
     web_client: httpx.AsyncClient, layout: Layout
 ) -> None:
     await sign_in(web_client, "root")
     env_form = (await web_client.get(f"/environments/{layout.ids.db}/settings")).text
-    assert '<option value="env" selected>ENV file</option>' in env_form
-    assert '<option value="cert">Certificate</option>' in env_form
-    assert 'name="file_type"' in env_form and 'data-js="file-type"' in env_form
-    assert "<div data-dist-field>" in env_form
+    assert re.search(r'<p id="ft"[^>]*>ENV file</p>', env_form)
+    assert "To change it, delete the file and create it again." in env_form
+    assert 'name="file_type"' not in env_form and "<select" not in env_form
+    assert 'id="dp"' in env_form
     cert_form = (await web_client.get(f"/environments/{layout.ids.ca}/settings")).text
-    assert '<option value="cert" selected>Certificate</option>' in cert_form
-    assert "<div data-dist-field hidden>" in cert_form
-    dist_input = re.search(r'<input id="dp"[^>]*>', cert_form)
-    assert dist_input is not None and " disabled" in dist_input.group(0)
+    assert re.search(r'<p id="ft"[^>]*>Certificate</p>', cert_form)
+    assert 'name="file_type"' not in cert_form and 'id="dp"' not in cert_form
 
 
-async def test_changing_the_type_is_saved_and_audited_with_the_old_and_new_value(
-    web_client: httpx.AsyncClient, web_app: FastAPI, layout: Layout
+@pytest.mark.parametrize("submitted", ["cert", "certificate", "ENV", " cert "])
+async def test_a_submitted_type_other_than_the_stored_one_is_refused(
+    web_client: httpx.AsyncClient, web_app: FastAPI, layout: Layout, submitted: str
 ) -> None:
     await sign_in(web_client, "root")
     url = f"/environments/{layout.ids.db}/settings"
-    response = await post(web_client, url, values(file_type="cert"))
-    assert response.status_code == 200
-    assert (await stored(web_app, layout.ids.db)).file_type is FileType.CERT
-    (entry,) = await entries(web_app, "environment.update")
-    assert changes_of(entry) == {
-        "file_type": {"from": "env", "to": "cert"},
-        "dist_path": {"from": "environments/.env.db-dist", "to": None},
-    }
-    assert entry.details["changed"] == ["file_type", "dist_path"]
-    same = await post(web_client, url, values(file_type="cert"))
-    assert same.status_code == 200 and len(await entries(web_app, "environment.update")) == 1
-    kept = await post(web_client, url, values())
-    assert kept.status_code == 200
-    assert (await stored(web_app, layout.ids.db)).file_type is FileType.CERT
-    back = await post(web_client, url, values(file_type="env"))
-    assert back.status_code == 200
+    refused = await post(web_client, url, values(file_type=submitted))
+    assert refused.status_code == 422
+    assert "The type of a file cannot be changed." in refused.text
     assert (await stored(web_app, layout.ids.db)).file_type is FileType.ENV
-    assert changes_of((await entries(web_app, "environment.update"))[-1]) == {
-        "file_type": {"from": "cert", "to": "env"}
-    }
+    assert await entries(web_app, "environment.update") == []
 
 
-async def test_changing_to_a_certificate_without_its_dist_path_clears_the_path(
+async def test_a_certificate_keeps_its_type_and_the_stored_type_is_accepted(
     web_client: httpx.AsyncClient, web_app: FastAPI, layout: Layout
 ) -> None:
     await sign_in(web_client, "root")
-    url = f"/environments/{layout.ids.db}/settings"
-    await post(web_client, url, values(dist_path="environments/.env.db-dist"))
-    cleared = await post(web_client, url, values(file_type="cert"))
-    assert cleared.status_code == 200
-    environment = await stored(web_app, layout.ids.db)
-    assert environment.file_type is FileType.CERT and environment.dist_path is None
-    assert changes_of((await entries(web_app, "environment.update"))[-1]) == {
-        "file_type": {"from": "env", "to": "cert"},
-        "dist_path": {"from": "environments/.env.db-dist", "to": None},
-    }
+    cert_url = f"/environments/{layout.ids.ca}/settings"
+    target = (await stored(web_app, layout.ids.ca)).target_path
+    to_env = await post(web_client, cert_url, values(target_path=target, file_type="env"))
+    assert to_env.status_code == 422
+    assert "The type of a file cannot be changed." in to_env.text
+    assert (await stored(web_app, layout.ids.ca)).file_type is FileType.CERT
+    same = await post(web_client, cert_url, values(target_path=target, file_type="cert"))
+    assert same.status_code == 200
+    assert (await stored(web_app, layout.ids.ca)).file_type is FileType.CERT
+    env_url = f"/environments/{layout.ids.db}/settings"
+    assert (await post(web_client, env_url, values(file_type="env"))).status_code == 200
+    assert (await stored(web_app, layout.ids.db)).file_type is FileType.ENV
 
 
-async def test_a_certificate_with_a_dist_path_or_an_unknown_type_is_refused(
+async def test_a_certificate_with_a_dist_path_is_refused(
     web_client: httpx.AsyncClient, web_app: FastAPI, layout: Layout
 ) -> None:
     await sign_in(web_client, "root")
-    url = f"/environments/{layout.ids.db}/settings"
-    with_dist = await post(
-        web_client, url, values(file_type="cert", dist_path="environments/.env.db-dist")
-    )
-    assert with_dist.status_code == 422 and "A certificate has no dist file." in with_dist.text
     stored_cert = await post(
         web_client, f"/environments/{layout.ids.ca}/settings", values(dist_path="x-dist")
     )
     assert stored_cert.status_code == 422
     assert "A certificate has no dist file." in stored_cert.text
-    unknown = await post(web_client, url, values(file_type="certificate"))
-    assert unknown.status_code == 422 and "Choose the type of the file." in unknown.text
-    assert (await stored(web_app, layout.ids.db)).file_type is FileType.ENV
-    assert await entries(web_app, "environment.update") == []
+    assert (await stored(web_app, layout.ids.ca)).dist_path is None

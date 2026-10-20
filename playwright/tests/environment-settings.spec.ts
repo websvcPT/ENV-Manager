@@ -6,6 +6,7 @@ import { createDeployment } from '../deployments-api';
 import { createEnvironment, seededEnvironmentId } from '../environments-api';
 import { stateFile } from '../global-setup';
 import { createHostFolder, type HostFolder } from '../host-files';
+import { csrfHeaders } from '../http';
 import { createService, serviceId } from '../services-api';
 import { horizontalOverflow } from '../viewport';
 import { actionControls, rowAction } from './row-actions';
@@ -54,7 +55,7 @@ test.describe('environment settings', () => {
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
   });
 
-  test('changes the type of a file and clears its dist path for a certificate', async ({
+  test('shows the type of a file as text and refuses a different type', async ({
     page,
     request,
     scratch,
@@ -62,40 +63,41 @@ test.describe('environment settings', () => {
   }) => {
     const deployment = await createDeployment(request, scratch.id, 'cfg', host.root);
     const service = await createService(request, deployment, 'app');
-    const environment = await createEnvironment(
+    const env = await createEnvironment(
+      request,
+      service,
+      '.env.typed',
+      'A=1\n',
+      'environments/.env.typed-dist',
+    );
+    const cert = await createEnvironment(
       request,
       service,
       'tls.pem',
       '-----BEGIN CERTIFICATE-----\nE2ESETTINGSCERT\n-----END CERTIFICATE-----\n',
-      'environments/tls.pem-dist',
+      '',
+      'cert',
     );
-    await page.goto(`/environments/${environment}/settings`);
-    const type = page.locator('#ft');
-    await expect(type).toHaveValue('env');
-    await expect(type.locator('option')).toHaveText(['ENV file', 'Certificate']);
-    await expect(page.locator('#dp')).toHaveValue('environments/tls.pem-dist');
 
-    await type.selectOption('cert');
-    await expect(page.locator('[data-dist-field]')).toBeHidden();
-    await expect(page.locator('#dp')).toBeDisabled();
-    await page.locator('#env-settings button[type="submit"]').click();
-    await expect(page).toHaveURL(new RegExp(`/environments/${environment}\\?updated=true$`));
-    const details = page.locator('[data-fragment="file-sidepanel"]');
-    await expect(details).toContainText('Certificate');
-    await expect(details).toContainText('Not applicable');
+    await page.goto(`/environments/${env}/settings`);
+    await expect(page.locator('#ft')).toHaveText('ENV file');
+    await expect(page.locator('#env-settings select[name="file_type"]')).toHaveCount(0);
+    await expect(page.locator('#dp')).toHaveValue('environments/.env.typed-dist');
 
-    await page.goto(`/environments/${environment}/settings`);
-    await expect(type).toHaveValue('cert');
-    await expect(page.locator('[data-dist-field]')).toBeHidden();
-    await expect(page.locator('#dp')).toHaveValue('');
-    await type.selectOption('env');
-    await expect(page.locator('[data-dist-field]')).toBeVisible();
-    await expect(page.locator('#dp')).toBeEnabled();
-    await page.locator('#env-settings button[type="submit"]').click();
-    await expect(page).toHaveURL(new RegExp(`/environments/${environment}\\?updated=true$`));
-    await expect(details).toContainText('ENV file');
-    await expect(details).toContainText('None');
+    await page.goto(`/environments/${cert}/settings`);
+    await expect(page.locator('#ft')).toHaveText('Certificate');
+    await expect(page.locator('#env-settings select[name="file_type"]')).toHaveCount(0);
+    await expect(page.locator('#dp')).toHaveCount(0);
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+
+    const refused = await request.post(`/environments/${cert}/settings`, {
+      form: { target_path: 'environments/tls.pem', file_type: 'env' },
+      headers: await csrfHeaders(request),
+    });
+    expect(refused.status()).toBe(422);
+    expect(await refused.text()).toContain('The type of a file cannot be changed.');
+    await page.goto(`/environments/${cert}`);
+    await expect(page.locator('[data-fragment="file-sidepanel"]')).toContainText('Certificate');
   });
 
   test('saves the overrides and the file attributes and shows them again', async ({

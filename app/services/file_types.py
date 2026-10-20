@@ -18,6 +18,9 @@ NOT_PEM_MESSAGE = (
 CERT_HAS_NO_DIST_MESSAGE = "A certificate has no dist file."
 CERT_KEY_VALUE_MESSAGE = "A certificate is edited as raw text."
 CHOOSE_TYPE_MESSAGE = "Choose the type of the file."
+TYPE_FIXED_MESSAGE = (
+    "The type of a file cannot be changed. Delete the file and create it again with the other type."
+)
 
 _PEM_BLOCK = re.compile(r"-----BEGIN ([A-Z0-9 ]+)-----(.*?)-----END \1-----", re.DOTALL)
 _BASE64_LINE = re.compile(r"[A-Za-z0-9+/=]+")
