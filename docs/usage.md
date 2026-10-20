@@ -1,7 +1,43 @@
 # Using ENV Manager
 
-Command line deploys, the drift view, users, accounts and post-deploy commands. API tokens and the
-API are in [api.md](api.md).
+Adding files, file types, command line deploys, the drift view, users, accounts and post-deploy
+commands. API tokens and the API are in [api.md](api.md).
+
+## Adding a file
+
+The superadmin adds a file to a service from its page (Add environment). The form takes the
+service (or a new one), the file name, its type, the target path below the deployment root, an
+optional dist file path, the mode, owner and group, and where version 1 comes from:
+
+- **Paste text** or **Upload a text file** (UTF-8, up to 256 KiB).
+- **Import the current target file** reads the file that is already at the target path.
+- **Copy the dist file** reads the dist file of the dist path field and saves it as version 1
+  (comment "Initial content (copied from the dist file)"). It is available while the dist path
+  field holds a path, and not for a certificate.
+
+The target and dist paths are read through the same confined reader as a deploy: they must stay
+inside the deployment root and the allowed paths.
+
+## File types
+
+Every file has a type, chosen when it is added and changed in the file settings (the change is
+audited with the old and new type, and the saved versions are kept):
+
+- **ENV file** is KEY=VALUE text. It has the key and value editor and the raw text editor, is
+  compared with its dist file key by key, and history, drift and deploy output scrubbing work per
+  variable.
+- **Certificate** is PEM text: a certificate, a key or a chain. It is edited and revealed as raw
+  text only, as one value. It has no dist file: the field is hidden, a dist path is refused and
+  the dist check reports the file as not applicable (also in the deployment overview and the
+  deploy dialog). History and the drift view compare it line by line, each row named by its
+  position (`Line 3`), never by content; a line added or removed in the middle shifts the lines
+  after it. A save, restore, upload, import or drift import must contain at least one PEM block
+  (`-----BEGIN ...-----` to `-----END ...-----`), otherwise it is refused. The output of a
+  post-deploy command has every base64 line of the stored certificate replaced by `****`.
+
+The add form selects Certificate by itself while a file name ending in `.pem`, `.crt`, `.cer` or
+`.key` is typed, until you choose the type yourself. The type shows in the Details panel of a
+file and as a column of the service page, and the API answers carry it as `file_type`.
 
 ## Deploying from the command line
 

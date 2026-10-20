@@ -415,8 +415,8 @@ without SMTP.
     "started_at": "2026-10-18T12:00:00.123456Z",
     "finished_at": "2026-10-18T12:00:01.234567Z",
     "environments": [
-      {"id": 12, "name": ".env.api", "version": 3, "status": "written", "dist": "passed",
-       "drift": "in_sync", "message": null}
+      {"id": 12, "name": ".env.api", "file_type": "env", "version": 3, "status": "written",
+       "dist": "passed", "drift": "in_sync", "message": null}
     ],
     "post_deploy": {"status": "ran", "exit_code": 0, "reason": null},
     "event": "deploy.finished",

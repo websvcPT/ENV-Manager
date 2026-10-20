@@ -77,8 +77,9 @@ Deploy and last deployment answer the same shape (a deploy answers the run it ma
   "started_at": "2026-10-18T12:00:00.123456Z",
   "finished_at": "2026-10-18T12:00:01.234567Z",
   "environments": [
-    {"id": 12, "name": ".env.api", "version": 3, "status": "halted", "dist": "passed",
-     "drift": "drift", "message": "The target changed outside the app and the drift policy halts."}
+    {"id": 12, "name": ".env.api", "file_type": "env", "version": 3, "status": "halted",
+     "dist": "passed", "drift": "drift",
+     "message": "The target changed outside the app and the drift policy halts."}
   ],
   "post_deploy": {"status": "skipped", "exit_code": null,
                   "reason": "Not run because an environment was not deployed."}
@@ -87,10 +88,10 @@ Deploy and last deployment answer the same shape (a deploy answers the run it ma
 
 - `status`: `success`, `halted`, `blocked`, `failed` or `post_deploy_failed`. A halted or blocked
   deploy is a result (200), not an error.
-- per file `status`: `written`, `unchanged`, `would_write`, `blocked`, `halted` or `failed`;
-  `dist`: `passed`, `warning`, `blocked`, `skipped` or `failed` (null when no check ran);
-  `drift`: `in_sync`, `drift` or `missing` (null when the file was not examined); `message` is a
-  fixed sentence about the outcome.
+- per file `file_type`: `env` or `cert`; `status`: `written`, `unchanged`, `would_write`, `blocked`,
+  `halted` or `failed`; `dist`: `passed`, `warning`, `blocked`, `skipped` or `failed` (null when no
+  check ran; a certificate is always `skipped`); `drift`: `in_sync`, `drift` or `missing` (null
+  when the file was not examined); `message` is a fixed sentence about the outcome.
 - `post_deploy.status`: `none`, `skipped` (with the reason), `ran`, `failed` or `running` (the
   command has not ended, `finished_at` is null); `exit_code` is set when a command ended.
 - No answer holds a value, file content, host path, command text or command output.

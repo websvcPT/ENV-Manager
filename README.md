@@ -33,10 +33,12 @@ https://www.buymeacoffee.com/websvc
   owner and group you set, atomically, and optionally run a post-deploy Docker command such as
   recreating the Compose service.
 - **Drift protection.** If the file on disk changed outside the app, the deploy halts. A drift
-  view compares the file on disk, the last deployed version and the managed version key by key,
-  and lets you import the file or overwrite it deliberately.
-- **Dist comparison.** Compare a file against its dist template (such as `.env.api-dist`) and block or
-  warn on missing, extra or empty keys.
+  view compares the file on disk, the last deployed version and the managed version key by key
+  (line by line for a certificate), and lets you import the file or overwrite it deliberately.
+- **File types.** A file is an ENV file (edited key by key) or a certificate (PEM text, edited and
+  revealed as one value, compared line by line, with no dist file).
+- **Dist comparison.** Compare an ENV file against its dist template (such as `.env.api-dist`), or
+  create the file from that template, and block or warn on missing, extra or empty keys.
 - **Audit log.** Every sign-in, reveal, change, deploy and setting change is recorded, filterable
   and exportable to CSV.
 - **Roles and scoped access.** Superadmin, admin and viewer groups, with grants down to a single
