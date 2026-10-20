@@ -77,6 +77,18 @@ test.describe('icon buttons from md up', { tag: '@wide' }, () => {
     await expect(page.locator('[data-row-action][style], [data-row-menu-button][style]')).toHaveCount(0);
   });
 
+  test('Edit in an environment row is an icon with the Edit tooltip', async ({ page, browser }) => {
+    await page.goto(`/services/${await stagingWeb(browser)}`);
+    const edit = environmentRow(page, '.env.web.tuning').locator('[data-row-action="edit"]');
+    await expect(edit).toHaveAttribute('aria-label', 'Edit');
+    await expect(edit.locator('svg')).toHaveCount(1);
+    await expect(edit).toHaveText('');
+    await expectTooltip(edit, false);
+    await edit.hover();
+    await expectTooltip(edit, true);
+    expect((await tooltipOf(edit)).content).toBe('"Edit"');
+  });
+
   test('a tooltip shows on keyboard focus and follows the focus', async ({ page, browser }) => {
     await page.goto(`/services/${await stagingWeb(browser)}`);
     const row = environmentRow(page, '.env.web.tuning');

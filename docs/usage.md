@@ -39,7 +39,8 @@ again:
 
 The add form selects Certificate by itself while a file name ending in `.pem`, `.crt`, `.cer` or
 `.key` is typed, until you choose the type yourself. The type shows in the Details panel of a
-file and as a column of the service page, and the API answers carry it as `file_type`.
+file and under the file name in the environments table of the service page, and the API answers
+carry it as `file_type`.
 
 ## Deploying from the command line
 

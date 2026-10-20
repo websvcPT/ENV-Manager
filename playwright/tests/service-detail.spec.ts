@@ -119,17 +119,16 @@ test.describe('superadmin', () => {
     const id = await stagingWeb(browser);
     await page.goto(`/services/${id}`);
     const certificate = visibleRows(page).filter({ hasText: 'web-ca.pem' });
-    await expect(certificate).toContainText('Certificate');
-    await expect(certificate).toContainText(/Not applicable|no dist file/);
+    await expect(certificate.locator('[data-file-type]')).toHaveText('Certificate');
+    await expect(certificate).toContainText(isWide(page) ? 'N/A' : 'no dist file');
     await expect(actionControls(certificate, 'dist')).toHaveCount(0);
     const plain = visibleRows(page).filter({ hasText: '.env.web.tuning' });
-    await expect(plain).toContainText('ENV file');
+    await expect(plain.locator('[data-file-type]')).toHaveText('ENV file');
     if (isWide(page)) {
       await expect(
         environmentsPanel(page).locator('thead th'),
       ).toHaveText([
         'Environment',
-        'Type',
         'Target path',
         'Dist',
         'Current',
@@ -159,6 +158,16 @@ test.describe('superadmin', () => {
         ]);
         expect(scrolls, `service ${id}`).toBeLessThanOrEqual(shows);
         expect(await horizontalOverflow(page), `service ${id}`).toBeLessThanOrEqual(0);
+        const wrapped = await environmentsPanel(page)
+          .locator('tbody tr td:nth-child(2)')
+          .evaluateAll((cells) =>
+            cells.filter((cell) => {
+              const range = document.createRange();
+              range.selectNodeContents(cell);
+              return range.getBoundingClientRect().height > 25;
+            }).length,
+          );
+        expect(wrapped, `target paths of service ${id} on one line`).toBe(0);
       }
     },
   );

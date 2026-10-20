@@ -179,8 +179,8 @@ async def test_dist_and_versions_read_from_the_stored_figures(
         ".env.db.app": "never",
         ".env.db.secrets": "failed",
     }
-    assert "ENV file · dist linked · current v2 · deployed None" in page
-    assert "ENV file · dist none · current v1 · deployed None" in page
+    assert "dist linked · current v2 · deployed None" in page
+    assert "dist none · current v1 · deployed None" in page
     assert "&mdash;" not in page and "\u2014" not in page
     assert "deploy did not finish" in page and "exit code" not in page
 
@@ -189,19 +189,40 @@ async def test_dist_and_versions_read_from_the_stored_figures(
 async def test_a_certificate_row_shows_its_type_and_has_no_dist(
     web_client: httpx.AsyncClient, ids: ServiceIds, role: str
 ) -> None:
-    """The type column, no dist file for a certificate, and no Compare to dist action."""
+    """The type under the file name, N/A for the dist of a certificate, no Compare to dist."""
     await sign_in(web_client, role)
     page = (await web_client.get(f"/services/{ids.staging_web}")).text
     found = re.findall(r'<tr data-fragment="env-row" data-env="([^"]+)">(.*?)</tr>', page, re.S)
     rows = dict(found)
     certificate = rows["web-ca.pem"]
-    assert ">Type</th>" in page and "Certificate</td>" in certificate
-    assert "Not applicable</td>" in certificate and "Linked" not in certificate
-    assert "ENV file</td>" in rows[".env.web"]
+    assert ">Type</th>" not in page
+    assert re.search(r"</a><span data-file-type[^>]*>Certificate</span></th>", certificate)
+    assert "N/A</td>" in certificate and "Not applicable" not in certificate
+    assert "Linked" not in certificate
+    assert re.search(r"<span data-file-type[^>]*>ENV file</span></th>", rows[".env.web"])
     assert "dist" not in row_actions(page, "web-ca.pem")
-    assert "Certificate · no dist file · current v1 · deployed None" in page
+    assert re.search(
+        r"web-ca\.pem</a><span data-file-type[^>]*>Certificate</span></div>.*?"
+        r"no dist file · current v1 · deployed None",
+        page,
+        re.S,
+    )
     if role != "viewer":
         assert "dist" in row_actions(page, ".env.web")
+
+
+async def test_edit_is_an_icon_action_and_the_target_path_breaks_only_at_slashes(
+    web_client: httpx.AsyncClient, ids: ServiceIds
+) -> None:
+    """Edit is a labelled icon like the other row actions, not a text link."""
+    await sign_in(web_client, "root")
+    page = (await web_client.get(f"/services/{ids.staging_web}")).text
+    edit = re.search(r'<a href="/environments/\d+" id="env-\d+-edit"[^>]*>(.*?)</a>', page, re.S)
+    assert edit is not None
+    assert 'aria-label="Edit"' in edit.group(0) and 'data-row-action="edit"' in edit.group(0)
+    assert "<svg" in edit.group(1) and "text-link" not in edit.group(0)
+    assert re.search(r"<td[^>]*font-mono[^>]*>environments/<wbr>\.env\.web</td>", page)
+    assert "break-all" not in re.search(r"<table.*?</table>", page, re.S).group(0)  # type: ignore[union-attr]
 
 
 async def test_admin_reads_output_but_not_the_command(
