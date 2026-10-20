@@ -7,7 +7,7 @@ import pytest
 
 from app.models import FileType
 from app.services import compose_scan
-from app.services.compose_config import REMOTE_MESSAGE, ComposeScanError
+from app.services.compose_config import ComposeScanError
 from app.services.compose_scan import (
     CERT_EMPTY_REASON,
     FILE_NAME_REASON,
@@ -417,7 +417,22 @@ async def test_a_remote_include_stops_the_scan(harness: Harness, tmp_path: Path)
     )
     with pytest.raises(ComposeScanError) as caught:
         await scan_compose(harness.db, real_cli(tmp_path), deployment, ["compose.yaml"])
-    assert str(caught.value) == REMOTE_MESSAGE
+    assert "git@example.invalid:team/stack.git" in str(caught.value)
+    assert "remote source" in str(caught.value)
+
+
+async def test_an_include_outside_the_deployment_folder_stops_the_scan(
+    harness: Harness, tmp_path: Path
+) -> None:
+    deployment, root = await add_stack(
+        harness,
+        {"compose.yaml": "include:\n  - ../elsewhere.yaml\nservices: {}\n"},
+    )
+    (root.parent / "elsewhere.yaml").write_text("services:\n  other:\n    image: x\n")
+    with pytest.raises(ComposeScanError) as caught:
+        await scan_compose(harness.db, real_cli(tmp_path), deployment, ["compose.yaml"])
+    assert '"../elsewhere.yaml"' in str(caught.value)
+    assert "outside the deployment folder" in str(caught.value)
 
 
 async def test_a_scan_holds_names_and_attributes_but_no_content(

@@ -23,11 +23,14 @@ Compose v5.6.0 in the app image, on fixture projects:
 - A git include (an ``https`` address ending in ``.git``, ``git@host:path`` or ``git://``) and an
   ``oci://`` include connect to the network. A plain ``https://x.yaml`` is read as a local path.
   ``COMPOSE_EXPERIMENTAL_GIT_REMOTE=false`` and ``COMPOSE_EXPERIMENTAL_OCI_REMOTE=false`` make
-  Compose refuse them before any connection, which backs up the check of the text that runs first.
+  Compose refuse them before any connection, which backs up the check of the parsed Compose files
+  (``compose_includes``) that runs first.
 
-Compose reads the files an ``include`` or an ``extends`` names wherever they are, as the command
-does on the host; the files and paths such a file adds are then judged against the root and the
-allowed paths like any other.
+Compose reads the files an ``include`` or an ``extends`` names wherever they are, and the
+``env_file`` of a long form include. ``compose_includes`` parses the Compose files first and
+refuses every such target that is remote, holds a variable (Compose expands it) or lies outside
+the deployment root and the allowed paths, so the command never starts on one. The files and
+paths such a file adds are then judged against the root and the allowed paths like any other.
 
 Compose's own messages are never shown: they can quote file content, so a failure is reduced to a
 fixed sentence (the name of a missing required variable is the one detail kept).
@@ -43,8 +46,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from app.core.log import get_logger
+from app.services.compose_includes import ComposeReferenceError, check_compose_references
 from app.services.docker_cli import CLI_MISSING_REASON, DockerCli
 from app.services.hook_process import BoundedOutput, run_process
+from app.services.paths import AllowedPaths
 
 log = get_logger("compose_config")
 
@@ -64,11 +69,8 @@ MISSING_FILE_MESSAGE = "A file named by the Compose files (an include or an exte
 UNREADABLE_MESSAGE = "Docker Compose could not read the Compose files."
 OUTPUT_MESSAGE = "Docker Compose gave an answer that could not be read."
 
-_INCLUDE_KEY = re.compile(r"""^["']?include["']?\s*:(.*)$""")
-_REMOTE_REFERENCE = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://|[\w.-]+@[\w.-]+:|\.git(?:[?#]|$)")
 _REQUIRED_VARIABLE = re.compile(r"required variable (\w+) is missing")
 _YAML_ERROR = re.compile(r"go-yaml|(?:^|\s)yaml:")
-_COMMENT = re.compile(r"\s#.*$")
 
 
 class ComposeScanError(Exception):
@@ -112,43 +114,6 @@ class ComposeModel:
     services: tuple[ComposeService, ...]
     secret_files: dict[str, str]
     config_files: dict[str, str]
-
-
-def has_remote_include(text: str) -> bool:
-    """Whether the ``include`` section of a Compose file names a remote source.
-
-    The text is read, not parsed: the lines of the top-level ``include`` key are searched for an
-    address with a scheme, a ``user@host:`` form or a name ending in ``.git``. A file written as
-    one flow mapping is searched as a whole. It errs toward refusing; a remote include that
-    hides in a file this misses is stopped by Compose itself (see the module notes).
-    """
-    if text.lstrip().startswith("{"):
-        return _REMOTE_REFERENCE.search(text) is not None
-    inside = False
-    for line in text.splitlines():
-        if not inside:
-            matched = _INCLUDE_KEY.match(line)
-            if matched is None:
-                continue
-            inside = True
-            region = matched.group(1)
-        elif not line.strip() or line[0] in " \t-#":
-            region = line
-        else:
-            inside = False
-            continue
-        if _REMOTE_REFERENCE.search(_COMMENT.sub("", region).strip().strip("'\"")):
-            return True
-    return False
-
-
-def _read_compose_text(path: Path) -> str:
-    """The text of a Compose file, empty when it cannot be read (Compose reports that)."""
-    try:
-        with path.open("rb") as handle:
-            return handle.read(MAX_COMPOSE_FILE_BYTES).decode("utf-8", errors="replace")
-    except OSError:
-        return ""
 
 
 def _text_of(value: object) -> str | None:
@@ -273,20 +238,34 @@ def _read_document(path: Path) -> object:
 
 
 async def read_compose_model(
-    cli: DockerCli, project_directory: Path, files: Sequence[Path]
+    cli: DockerCli,
+    allowed: AllowedPaths,
+    root: Path,
+    project_directory: Path,
+    files: Sequence[Path],
 ) -> ComposeModel:
     """Run ``docker compose config`` on the real paths of the Compose files and keep its structure.
 
-    ``project_directory`` and ``files`` are real paths the caller already checked against the
-    allowed paths; ``files`` start with the base file. A remote include is refused before the
-    command runs. Raises ``ComposeScanError`` with a fixed message.
+    ``root``, ``project_directory`` and ``files`` are real paths the caller already checked
+    against the allowed paths (freshly loaded in ``allowed``); ``files`` start with the base
+    file. Every file the Compose files include or extend must lie inside the root and the
+    allowed paths and be local, or the command is not started. Raises ``ComposeScanError`` with a
+    fixed message.
     """
     executable = cli.executable
     if executable is None:
         raise ComposeScanError(CLI_MISSING_REASON)
-    texts = await asyncio.to_thread(lambda: [_read_compose_text(path) for path in files])
-    if any(has_remote_include(text) for text in texts):
-        raise ComposeScanError(REMOTE_MESSAGE)
+    try:
+        await asyncio.to_thread(
+            check_compose_references,
+            allowed,
+            root,
+            project_directory,
+            files,
+            max_bytes=MAX_COMPOSE_FILE_BYTES,
+        )
+    except ComposeReferenceError as error:
+        raise ComposeScanError(YAML_MESSAGE if error.not_yaml else str(error)) from error
     work = Path(tempfile.mkdtemp(prefix="scan-", dir=cli.scratch))
     target = work / "config.json"
     arguments = [

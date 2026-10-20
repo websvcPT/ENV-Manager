@@ -694,7 +694,7 @@ async def scan_compose(
     resolved = await asyncio.to_thread(
         resolve_compose_files, allowed, deployment.root_path, compose_files
     )
-    model = await read_compose_model(cli, resolved.project_directory, resolved.paths)
     root = _root_of(allowed, deployment.root_path)
+    model = await read_compose_model(cli, allowed, root, resolved.project_directory, resolved.paths)
     defaults = file_defaults(deployment)
     return await asyncio.to_thread(build_scan, allowed, root, resolved, model, defaults)

@@ -25,6 +25,7 @@ dependencies = [
     "segno==1.6.6",
     "httpx==0.28.1",
     "sentry-sdk[fastapi]==2.72.0",
+    "pyyaml==6.0.3",
 ]
 
 [dependency-groups]
@@ -95,5 +96,5 @@ select = ["E", "F", "W", "I", "B", "UP", "S", "C4", "SIM", "RUF"]
 "app/real_scenarios/**" = ["S101", "S105", "S106"]
 
 [[tool.mypy.overrides]]
-module = ["apscheduler.*"]
+module = ["apscheduler.*", "yaml"]
 ignore_missing_imports = true

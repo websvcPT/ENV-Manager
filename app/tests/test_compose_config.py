@@ -19,10 +19,10 @@ from app.services.compose_config import (
     EnvFileRef,
     extract_model,
     failure_message,
-    has_remote_include,
     read_compose_model,
 )
 from app.services.docker_cli import CLI_MISSING_REASON, DockerCli
+from app.services.paths import AllowedPaths
 from app.tests.fake_docker import FakeDocker
 
 
@@ -45,7 +45,7 @@ def cli(tmp_path: Path) -> DockerCli:
 async def read(cli: DockerCli, root: Path, *names: str) -> ComposeModel:
     """Run the real Compose on the named files of a project, the first being the base file."""
     files = [root / name for name in names]
-    return await read_compose_model(cli, files[0].parent, files)
+    return await read_compose_model(cli, AllowedPaths([root]), root, files[0].parent, files)
 
 
 def service(model: ComposeModel, name: str) -> compose_config.ComposeService:
@@ -257,41 +257,62 @@ async def test_a_remote_include_is_refused_before_the_command_runs(
     )
     with pytest.raises(ComposeScanError) as caught:
         await read(fake.cli(), root, "compose.yaml")
-    assert str(caught.value) == REMOTE_MESSAGE
+    assert address in str(caught.value) and "remote source" in str(caught.value)
     assert fake.calls() == []
 
 
-@pytest.mark.parametrize(
-    "text",
-    [
-        "include:\n  - path: git@example.invalid:a/b.git\n    env_file: x.env\n",
-        "include:\n- oci://example.invalid/a:1\n",
-        "include: [https://example.invalid/a.git]\n",
-        "'include':\n  - path:\n      - ./local.yaml\n      - git://example.invalid/a\n",
-        '{"include": ["oci://example.invalid/a:1"], "services": {}}',
-        "include:\n  # a note\n  - 'git@example.invalid:a/b.git'  # remote\n",
-    ],
-)
-def test_remote_includes_are_found_in_every_written_form(text: str) -> None:
-    assert has_remote_include(text) is True
-
-
-@pytest.mark.parametrize(
-    "text",
-    [
-        "services:\n  web:\n    healthcheck:\n      test: curl http://localhost/health\n",
-        "include:\n  - ./other.yaml\n  - path: ./third.yaml\n    env_file: ./third.env\n"
-        "services:\n  web:\n    image: x\n    labels:\n      doc: https://example.invalid/a.git\n",
-        "services:\n  web:\n    image: x\n",
-    ],
-)
-def test_local_includes_and_urls_outside_the_include_section_are_not_remote(text: str) -> None:
-    assert has_remote_include(text) is False
-
-
-async def test_a_remote_include_inside_an_included_file_is_stopped_by_compose_without_connecting(
+async def test_nested_includes_and_extends_resolve_as_the_check_reads_them(
     cli: DockerCli, tmp_path: Path
 ) -> None:
+    root = project(
+        tmp_path / "stack",
+        {
+            "compose.yaml": (
+                "include:\n"
+                "  - path: parts/a.yaml\n"
+                "  - path: folder/d.yaml\n    project_directory: folder/inner\n"
+                "services:\n"
+                "  web:\n    image: x\n"
+                "    extends:\n      file: shared/base.yaml\n      service: base\n"
+            ),
+            "parts/a.yaml": "include:\n  - deeper/e.yaml\nservices:\n  a:\n    image: x\n",
+            "parts/deeper/e.yaml": "services:\n  e:\n    image: x\n",
+            "folder/d.yaml": "include:\n  - f.yaml\nservices:\n  d:\n    image: x\n",
+            "folder/inner/f.yaml": "services:\n  f:\n    image: x\n",
+            "shared/base.yaml": (
+                "services:\n  base:\n    image: b\n"
+                "  mid:\n    extends:\n      file: nested/more.yaml\n      service: m\n"
+            ),
+            "shared/nested/more.yaml": "services:\n  m:\n    image: x\n",
+        },
+    )
+    model = await read(cli, root, "compose.yaml")
+    assert [item.name for item in model.services] == ["a", "d", "e", "f", "web"]
+
+
+async def test_an_include_that_leaves_the_folder_by_a_symlink_never_starts_the_command(
+    tmp_path: Path,
+) -> None:
+    fake = FakeDocker(tmp_path / "fake")
+    root = project(
+        tmp_path / "site" / "stack",
+        {"compose.yaml": "include:\n  - linked/part.yaml\nservices: {}\n"},
+    )
+    (tmp_path / "site" / "elsewhere").mkdir()
+    (tmp_path / "site" / "elsewhere" / "part.yaml").write_text("services: {}\n", encoding="utf-8")
+    (root / "linked").symlink_to(tmp_path / "site" / "elsewhere", target_is_directory=True)
+    with pytest.raises(ComposeScanError) as caught:
+        await read_compose_model(
+            fake.cli(), AllowedPaths([root.parent]), root, root, [root / "compose.yaml"]
+        )
+    assert '"linked/part.yaml"' in str(caught.value)
+    assert fake.calls() == []
+
+
+async def test_a_remote_include_the_check_missed_is_stopped_by_compose_without_connecting(
+    cli: DockerCli, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(compose_config, "check_compose_references", lambda *args, **kwargs: None)
     listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     listener.bind(("127.0.0.1", 0))
     listener.listen(1)
@@ -381,7 +402,9 @@ async def test_the_command_runs_without_a_shell_in_the_project_folder_with_a_min
     fake.behavior('for last; do :; done; printf \'{"services": {}}\' > "$last"')
     root = project(tmp_path / "stack", {"stack/compose.yaml": "services: {}\n"})
     cli = fake.cli(mounted=False)
-    await read_compose_model(cli, root / "stack", [root / "stack/compose.yaml"])
+    await read_compose_model(
+        cli, AllowedPaths([root]), root, root / "stack", [root / "stack/compose.yaml"]
+    )
     (call,) = fake.calls()
     arguments = call.arguments
     assert arguments[:3] == ("compose", "--project-directory", str(root / "stack"))

@@ -25,7 +25,6 @@ from app.models import (
 )
 from app.services import compose_import
 from app.services.api_runs import load_last_run_result
-from app.services.compose_config import REMOTE_MESSAGE
 from app.services.compose_import import (
     EMPTY_COMMENT,
     HAS_SERVICES_MESSAGE,
@@ -597,5 +596,6 @@ async def test_a_scan_that_fails_refuses_the_import(harness: Harness, tmp_path: 
     before = await counts(h)
     with pytest.raises(ComposeImportError) as caught:
         await run_import(h, deployment, selection(("web",), ()), tmp_path)
-    assert str(caught.value) == REMOTE_MESSAGE
+    assert "oci://example.invalid/team/stack:1" in str(caught.value)
+    assert "remote source" in str(caught.value)
     assert await counts(h) == before
