@@ -32,6 +32,10 @@ https://www.buymeacoffee.com/websvc
 - **Deploys to host paths.** Write a version to the folder a deployment reads, with the mode,
   owner and group you set, atomically, and optionally run a post-deploy Docker command such as
   recreating the Compose service.
+- **Import from Docker Compose.** Create the services and files of a new deployment from its
+  Compose files: the real `docker compose config` finds the `env_file`, secret, config and bind
+  mount files, you review them in a preview, and the files that exist become version 1 with the
+  drift check starting from them. Includes and extends that leave the deployment folder are refused.
 - **Drift protection.** If the file on disk changed outside the app, the deploy halts. A drift
   view compares the file on disk, the last deployed version and the managed version key by key
   (line by line for a certificate), and lets you import the file or overwrite it deliberately.

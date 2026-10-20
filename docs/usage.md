@@ -1,7 +1,7 @@
 # Using ENV Manager
 
-Adding files, file types, command line deploys, the drift view, users, accounts and post-deploy
-commands. API tokens and the API are in [api.md](api.md).
+Adding files, importing from Docker Compose, file types, command line deploys, the drift view,
+users, accounts and post-deploy commands. API tokens and the API are in [api.md](api.md).
 
 ## Adding a file
 
@@ -17,6 +17,81 @@ optional dist file path, the mode, owner and group, and where version 1 comes fr
 
 The target and dist paths are read through the same confined reader as a deploy: they must stay
 inside the deployment root and the allowed paths.
+
+## Importing from Docker Compose
+
+A deployment that has no services yet can get its services and files from its Compose files. The
+superadmin starts it with **Import from Docker Compose** on the deployment page, which is offered
+only while the deployment has no services and lies inside the allowed paths. It is a one time
+action: it is refused as soon as the deployment has a service.
+
+1. **Choose the Compose files.** The files named `compose.yaml`, `compose.yml`,
+   `docker-compose.yaml` or `docker-compose.yml`, and their `.override` forms, in the deployment
+   folder and in the folders directly below it are listed (hidden folders and symbolic links are
+   not). Tick the ones to read, or type another path relative to the deployment folder. The first
+   file is the base and the ones after it override it, as Compose merges them.
+2. **Review the preview.** It lists the services and the files they read, each to tick or untick,
+   with the owner service, the file type and an optional dist file per file. Nothing is changed
+   yet.
+3. **Confirm.** The confirmation scans the files again and says what will be created. After the
+   import the deployment page shows a toast with the counts.
+
+What is found:
+
+- The services of the merged Compose files, including those under a profile. A service name is
+  made a lowercase slug, and a service whose name cannot be used (or repeats another one) is
+  listed as not importable.
+- The files a service reads: each `env_file` entry, a bind mount of a single file, a secret or a
+  config that has a `file`, and the project `.env`. A folder, a socket, a path that does not exist
+  and a file outside the deployment folder or the allowed paths are listed as not offered or
+  disabled with the reason, and are never read.
+- A file used by several services belongs to the owner you choose (the first service in
+  alphabetical order by default). The project `.env` has no owner until you choose one, so it
+  starts unticked.
+- A file name ending in `.pem`, `.crt`, `.cer` or `.key` is offered as a certificate and any other
+  as an ENV file. A type the text does not fit (a certificate without a PEM block, for example) is
+  disabled in the type select and the file starts unticked. The type cannot be changed after the
+  import. A sibling named
+  `<name>-dist`, `<name>.example` or `<name>.dist` is offered, unticked, as the dist file. No
+  post-deploy command is set.
+
+What the import creates, in one transaction (all or nothing):
+
+- The ticked services and files, each file with the mode, owner and group it has on the host
+  (owner and group are kept only when they differ from the deployment defaults and the app user).
+  A file that exists becomes version 1 with its exact text (comment "Imported from Docker
+  Compose"); a file that does not exist yet becomes an empty version 1 (comment "Created empty
+  from Docker Compose") and is never written to the host by the import. A certificate cannot be
+  created empty.
+- For each imported service that had files on the host, one run in Deploy history with the
+  trigger shown as **Imported from Compose** and an unchanged result per file. It records version
+  1 as the content the file held, which is the starting point of the drift check: a version 2
+  saved before the first deploy deploys without a drift halt under the default Halt policy, while
+  a file edited on the host after the import still halts it. The run is not a deploy: nothing is
+  written, no post-deploy command runs, no webhook is sent and the metrics do not count it, but it
+  is the last deployment of the service until a real one follows. The API reports it with
+  `trigger` set to `compose`.
+- The Compose files are stored on the deployment, and one `deployment.import_compose` audit entry
+  lists the choices and what was skipped, never a file's text.
+
+How the files are read, and the limits:
+
+- The real `docker compose config` reads them, with no shell, a minimal environment, no Docker
+  daemon or socket and a 30 second limit. Relative paths resolve against the folder of the base
+  file. Variables are filled in from the project `.env` file only: a variable that is set only in
+  the shell of the operator reads as empty, and a required variable (`${NAME:?message}`) that is
+  missing stops the scan with a message naming it.
+- Only the structure is kept: paths, names and counts. Values from `environment`, images and
+  ports are dropped, and Compose's own messages are never shown, because they can quote a file.
+- Every file named by an `include` (all its forms, with its `env_file` and `project_directory`)
+  or by an `extends` file, at any depth (8 levels, 50 files), must be a local file inside the
+  deployment folder and the allowed paths, symbolic links followed. A remote source (git, http or
+  OCI) and a path that holds a variable (`$`, which Compose would expand) are refused, naming the
+  entry, before Compose runs.
+- At most 8 Compose files of up to 1 MiB each are read. A file to import must be UTF-8 text no
+  larger than a file added by hand, and the app must be able to read it.
+- An app that does not run as root cannot give a file to another account, so a deploy of an
+  imported file whose owner is another account is refused with the usual owner message.
 
 ## File types
 
