@@ -378,7 +378,7 @@ test.describe('deployment overview', () => {
     await expect(rows.nth(2).locator('[data-status="proceed"]')).toBeVisible();
     await expect(rows.nth(3)).toContainText('e2e-ca.pem');
     await expect(rows.nth(3).locator('[data-status="never"]')).toBeVisible();
-    await expect(rows.nth(3)).toContainText('Not applicable');
+    await expect(rows.nth(3)).toContainText(isWide(page) ? 'Not applicable' : 'not applicable');
     if (isWide(page)) {
       await expect(rows.nth(1).locator('td').nth(2)).toHaveText('2');
     } else {

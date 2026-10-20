@@ -4,7 +4,7 @@ import { createDeployment, deploymentId } from '../deployments-api';
 import { stateFile } from '../global-setup';
 import { expectItemHeader } from '../item-header';
 import { createService, serviceId } from '../services-api';
-import { horizontalOverflow, usesMenus } from '../viewport';
+import { horizontalOverflow, isWide, usesMenus } from '../viewport';
 import { expect, test } from './scratch-project';
 
 const SAMPLE_A = '/srv/deployments/sample-a';
@@ -368,8 +368,8 @@ test.describe('superadmin add environment', () => {
       .locator('#environments')
       .locator('tr[data-env="tls.pem"], li[data-fragment="env-row"]')
       .filter({ visible: true });
-    await expect(row).toContainText('Certificate');
-    await expect(row).toContainText(/Not applicable|no dist file/);
+    await expect(row.locator('[data-file-type]')).toHaveText('Certificate');
+    await expect(row).toContainText(isWide(page) ? 'N/A' : 'no dist file');
     await expect(row).toContainText('environments/tls.pem');
   });
 

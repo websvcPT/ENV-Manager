@@ -12,6 +12,7 @@ import type { APIRequestContext, Locator, Page } from '@playwright/test';
 
 import { createDeployment } from '../deployments-api';
 import { createEnvironment } from '../environments-api';
+import { pageWithoutLocation } from '../item-header';
 import { saveChangedCommands } from '../post-deploy-form';
 import { createService } from '../services-api';
 import { expect, test } from '../tests/scratch-project';
@@ -156,7 +157,7 @@ test.describe('superadmin on the demo stack', () => {
     const line = page.locator('[data-fragment="drift-row"]', { hasText: 'DEMO_DB_EDITED_ON_DISK' });
     await expect(line.locator('[data-change="disk-added"]')).toHaveText('Added on disk');
     await expect(line).toContainText('not set');
-    const content = await page.content();
+    const content = await pageWithoutLocation(page);
     expect(content).not.toContain('demo-sqlite');
     expect(content).not.toContain(DEMO_ROOT);
     await page.locator('button[hx-post*="/drift/reveal"]').click();

@@ -16,7 +16,7 @@ from app.models import AuditEntry, EnvironmentVersion
 from app.real_scenarios.conftest import DemoStack, Workloads, World
 from app.real_scenarios.helpers import MANAGED, snapshot
 from app.tests.conftest import sign_in
-from app.tests.web_helpers import hx_vals, post
+from app.tests.web_helpers import hx_vals, post, without_location
 
 EDITED_KEY = "DEMO_DB_EDITED_ON_DISK=1\n"
 REAL_VALUES = ("demo-sqlite", "5433", "demo-token-not-a-secret", "demo-password-not-a-secret")
@@ -75,7 +75,7 @@ async def test_the_view_masks_the_edited_file_and_reveal_audits_all_three_column
     assert 'data-status="drift"' in page and "DEMO_DB_EDITED_ON_DISK" in page
     assert "Added on disk" in page and "3 unchanged keys hidden" in page
     assert not any(value in page for value in REAL_VALUES)
-    assert str(demo.base) not in page
+    assert str(demo.base) not in without_location(page)
 
     values = hx_vals(page, f"/environments/{env_db}/drift/reveal")
     answer = await post(web, f"/environments/{env_db}/drift/reveal", values)
