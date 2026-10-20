@@ -170,6 +170,10 @@ test.describe('import from Docker Compose', () => {
     await expect(rows.locator('th a')).toHaveText(['api', 'web']);
     await expect(rows.filter({ hasText: 'web' }).locator('td').first()).toHaveText('3');
     await expect(page.locator('#import-compose-open')).toHaveCount(0);
+    // Each service with files found on the host has one run in the history, labelled as an
+    // import, and the files stay as they were.
+    await expect(page.locator('#hist [data-fragment="history-row"]')).toHaveCount(2);
+    await expect(page.locator('#hist [data-history-trigger]')).toHaveCount(2);
     expect(host.read('.env.web')).toBe(FILES['.env.web']);
     expect(host.read('.env.shared')).toBe(FILES['.env.shared']);
 
