@@ -87,7 +87,13 @@ async def test_superadmin_sees_everything_and_the_command_settings(
     assert response.headers["vary"] == "HX-Request"
     header = item_header_of(page)
     assert (header.type, header.title) == ("service", "Service: web")
-    assert header.subtitle == "Deployment staging in Fancy Proj. Name · /opt/fancy/staging"
+    assert header.subtitle is None
+    assert dict(header.location) == {
+        "parents": "Project: Fancy Proj. Name, Deployment: staging",
+        "root": "Project path: /opt/fancy/staging",
+    }
+    assert re.fullmatch(r"/deployments/\d+", header.links["Deployment"])
+    assert re.fullmatch(r"/projects/\d+", header.links["Project"])
     assert ">Service</span>" not in page and ">1 pending</span>" in page
     assert section_links(page) == ["Environments 4", "Deploy history", "AccessSuperadmin"]
     assert f'href="/services/{ids.staging_web}/access"' in page
@@ -228,7 +234,9 @@ async def test_environment_grant_sees_a_name_only_view_with_notes(
         in body
     )
     assert "This service also loads environments outside your access." in body
-    assert "Deployment <strong" in body and "Fancy Proj. Name" in body
+    assert dict(item_header_of(body).location) == {
+        "parents": "Project: Fancy Proj. Name, Deployment: prod"
+    }
     assert "deploy did not finish" in body
     assert "Command text and settings are visible to the superadmin only." in body
     for hidden in (".env.db.secrets", "/opt/fancy", "Add environment", "Read-only view"):

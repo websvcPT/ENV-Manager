@@ -49,7 +49,12 @@ async def test_superadmin_sees_everything_and_the_edit_actions(
     assert response.headers["vary"] == "HX-Request"
     header = item_header_of(page)
     assert (header.type, header.title) == ("deployment", "Deployment: prod")
-    assert header.subtitle == "Project Fancy Proj. Name · /opt/fancy/prod"
+    assert header.subtitle is None
+    assert dict(header.location) == {
+        "parents": "Project: Fancy Proj. Name",
+        "root": "Project path: /opt/fancy/prod",
+    }
+    assert re.fullmatch(r"/projects/\d+", header.links["Project"])
     assert header.details is None
     assert ">Failed<" in page
     assert section_links(page) == ["Services", "Deploy history", "AccessSuperadmin"]
@@ -112,7 +117,7 @@ async def test_environment_grant_gets_a_name_only_view_with_a_note(
     assert "Post-deploy exit code n/a, output truncated." in body
     for hidden in (".env.db.secrets", ".env.web", "web</a>", "/opt/fancy", "Policies"):
         assert hidden not in body
-    assert item_header_of(body).subtitle == "Project Fancy Proj. Name"
+    assert dict(item_header_of(body).location) == {"parents": "Project: Fancy Proj. Name"}
 
 
 async def test_outside_allowed_path_disables_the_check_and_says_why(

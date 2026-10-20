@@ -59,6 +59,7 @@ async def test_superadmin_sees_all_tabs_and_actions(
     header = item_header_of(page)
     assert (header.type, header.title) == ("project", "Project: Fancy Proj. Name")
     assert header.subtitle == "2 deployments · 6 members"
+    assert not header.location and not header.links
     assert "2 deployments · 6 members" in page
     assert "1 needs attention" in page
     assert f'href="/projects/{fancy}/deployments/new"' in page

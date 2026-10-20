@@ -4,7 +4,7 @@ import { expect, test } from '@playwright/test';
 
 import { deploymentId } from '../deployments-api';
 import { stateFile } from '../global-setup';
-import { expectItemHeader } from '../item-header';
+import { expectItemHeader, expectLocation } from '../item-header';
 import { serviceId } from '../services-api';
 import { horizontalOverflow, isWide } from '../viewport';
 import { actionControls, rowAction } from './row-actions';
@@ -73,8 +73,10 @@ test.describe('superadmin', () => {
 
     await expectItemHeader(page, 'service', 'web');
     await expect(header(page).locator('[data-status]')).toHaveText(['1 pending']);
-    await expect(header(page).locator('p')).toContainText('Deployment staging in Fancy Proj. Name');
-    await expect(header(page).locator('p')).toContainText('/opt/fancy/staging');
+    await expectLocation(page, 'service', {
+      parents: 'Project: Fancy Proj. Name, Deployment: staging',
+      root: 'Project path: /opt/fancy/staging',
+    });
     await expect(page.locator('nav[aria-label="Sections"] a')).toHaveText([
       'Environments 4',
       'Deploy history',
@@ -260,7 +262,7 @@ test.describe('environment grant', () => {
     await expect(page.locator('#postdeploy')).toContainText(
       'This service also loads environments outside your access.',
     );
-    await expect(header(page).locator('p')).not.toContainText('/opt/fancy');
+    await expectLocation(page, 'service', { parents: 'Project: Fancy Proj. Name, Deployment: prod' });
     await expect(page.locator('main')).not.toContainText('.env.db.secrets');
   });
 });
@@ -271,7 +273,10 @@ test.describe('deployment grant', () => {
   test('sees the root path and every file of the service', async ({ page, browser }) => {
     const id = await prodMysql(browser);
     await page.goto(`/services/${id}`);
-    await expect(header(page).locator('p')).toContainText('/opt/fancy/prod');
+    await expectLocation(page, 'service', {
+      parents: 'Project: Fancy Proj. Name, Deployment: prod',
+      root: 'Project path: /opt/fancy/prod',
+    });
     await expect(visibleRows(page)).toHaveCount(3);
     await expect(page.locator('[role="note"]')).toHaveCount(0);
   });

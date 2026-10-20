@@ -34,7 +34,7 @@ test.describe('superadmin', () => {
     const id = await deploymentId(browser, 'demo', 'stack');
     await page.goto(`/deployments/${id}`);
     await expect(page.locator('[data-fragment="page-header"] h1')).toHaveText('Deployment: stack');
-    await expect(page.locator('[data-fragment="page-header"] p')).toContainText('Project demo');
+    await expect(page.locator('[data-location="parents"]')).toHaveText('Project: demo');
     const services = page.locator('#services [data-fragment="service-row"]');
     await expect(services.locator('th a')).toHaveText(['api', 'db']);
     await expect(services.filter({ hasText: 'api' }).locator('td').first()).toHaveText('2');

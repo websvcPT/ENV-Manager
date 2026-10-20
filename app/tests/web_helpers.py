@@ -128,12 +128,19 @@ def section_links(page: str) -> list[str]:
 
 @dataclass(frozen=True)
 class ItemHeader:
-    """The visible text of the header of a project, deployment, service or environment page."""
+    """The visible text of the header of a project, deployment, service or environment page.
+
+    ``subtitle`` is the line of a project (None on the other types). ``location`` maps the key of
+    each location line (``parents``, ``root``, ``target``) to its text and ``links`` maps the
+    label of each parent to the address its name links to.
+    """
 
     type: str
     title: str
-    subtitle: str
+    subtitle: str | None
     details: str | None
+    location: Mapping[str, str]
+    links: Mapping[str, str]
 
 
 def _text(markup: str) -> str:
@@ -142,7 +149,7 @@ def _text(markup: str) -> str:
 
 
 def item_header_of(page: str) -> ItemHeader:
-    """The item header of a page: its type, the title, the subtitle and the details line."""
+    """The item header of a page: its type, title, subtitle, location lines and details line."""
     header = re.search(
         r'<section data-fragment="page-header" data-item-type="(\w+)".*?</section>',
         page,
@@ -153,12 +160,15 @@ def item_header_of(page: str) -> ItemHeader:
     title = re.search(r"<h1[^>]*>(.*?)</h1>", markup, re.DOTALL)
     subtitle = re.search(r'<p class="mt-1.5 text-ink2">(.*?)</p>', markup, re.DOTALL)
     details = re.search(r"<div data-header-details[^>]*>(.*?)</div>", markup, re.DOTALL)
-    assert title is not None and subtitle is not None
+    assert title is not None
+    lines = re.findall(r'<p data-location="(\w+)">(.*?)</p>', markup, re.DOTALL)
     return ItemHeader(
         header.group(1),
         _text(title.group(1)),
-        _text(subtitle.group(1)),
+        _text(subtitle.group(1)) if subtitle else None,
         _text(details.group(1)) if details else None,
+        {key: _text(line) for key, line in lines},
+        dict(re.findall(r'(\w+): <a href="([^"]+)"', markup)),
     )
 
 
@@ -240,3 +250,12 @@ async def stage_deployments(
     docker = FakeDocker(tmp_path / "fake-docker")
     web_app.state.docker_cli = docker.cli()
     return StagedDeployments(roots, docker, projects, deployments, services, environments)
+
+
+def without_location(markup: str) -> str:
+    """The page without the location lines of its item header, which name the deployment root.
+
+    Screens that print fixed, path-free copy for every problem assert on this, so the header
+    (which shows the root only to a caller with access to the whole deployment) stays out of it.
+    """
+    return re.sub(r"<div data-item-location.*?</div>", "", markup, flags=re.DOTALL)

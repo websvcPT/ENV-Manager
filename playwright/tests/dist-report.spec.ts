@@ -4,7 +4,7 @@ import { createDeployment, deploymentId } from '../deployments-api';
 import { createEnvironment, saveRaw, seededEnvironmentId } from '../environments-api';
 import { stateFile } from '../global-setup';
 import { csrfHeaders } from '../http';
-import { expectItemHeader } from '../item-header';
+import { expectItemHeader, pageWithoutLocation } from '../item-header';
 import { createService } from '../services-api';
 import { horizontalOverflow, isWide } from '../viewport';
 import { rowAction } from './row-actions';
@@ -86,7 +86,7 @@ function toast(page: Page) {
 }
 
 async function expectNoValueInPage(page: Page, ...values: string[]): Promise<void> {
-  const html = await page.content();
+  const html = await pageWithoutLocation(page);
   for (const value of values) {
     expect(html).not.toContain(value);
   }

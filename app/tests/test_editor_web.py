@@ -419,6 +419,46 @@ async def test_the_header_of_a_scoped_user_names_the_parents_and_no_sibling_file
     page = (await web_client.get(f"/environments/{ids.db}")).text
     header = item_header_of(main_of(page))
     assert (header.type, header.title) == ("environment", "Environment: .env.db")
-    assert header.subtitle.startswith("Service mysql in deployment prod in Fancy Proj. Name · ")
+    assert header.subtitle is None
+    assert dict(header.location) == {
+        "parents": "Project: Fancy Proj. Name, Deployment: prod, Service: mysql",
+        "target": "Target: environments/.env.db",
+    }
     assert header.details is not None and header.details.startswith("Version ")
-    assert EDITOR_ENVIRONMENT_NAME not in f"{header.subtitle} {header.details}"
+    assert EDITOR_ENVIRONMENT_NAME not in f"{header.location} {header.details}"
+    assert "/opt/fancy" not in page
+
+
+async def test_every_page_of_a_file_shows_the_same_location_lines(
+    web_client: httpx.AsyncClient, ids: EnvironmentIds
+) -> None:
+    """The editor, history, dist, drift and access pages share one header: parents, path, target."""
+    await sign_in(web_client, "root")
+    expected = {
+        "parents": "Project: Fancy Proj. Name, Deployment: prod, Service: mysql",
+        "root": "Project path: /opt/fancy/prod",
+        "target": "Target: /opt/fancy/prod/environments/.env.db",
+    }
+    for suffix in ("", "/history", "/dist", "/drift", "/access"):
+        response = await web_client.get(f"/environments/{ids.db}{suffix}")
+        assert response.status_code == 200, suffix
+        header = item_header_of(main_of(response.text))
+        assert dict(header.location) == expected, suffix
+        assert header.subtitle is None
+        assert re.fullmatch(r"/projects/\d+", header.links["Project"])
+        assert re.fullmatch(r"/deployments/\d+", header.links["Deployment"])
+        assert header.links["Service"].startswith("/services/")
+
+
+async def test_a_file_scoped_user_sees_no_root_on_any_page_of_the_file(
+    web_client: httpx.AsyncClient, ids: EnvironmentIds
+) -> None:
+    """Without the whole deployment there is no path line and the target stays relative."""
+    await sign_in(web_client, "env_scoped_admin")
+    for suffix in ("", "/history", "/dist", "/drift"):
+        response = await web_client.get(f"/environments/{ids.db}{suffix}")
+        assert response.status_code == 200, suffix
+        header = item_header_of(main_of(response.text))
+        assert set(header.location) == {"parents", "target"}, suffix
+        assert header.location["target"] == "Target: environments/.env.db"
+        assert "/opt/fancy" not in response.text, suffix

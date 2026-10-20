@@ -2,7 +2,7 @@ import type { APIRequestContext, Browser, Locator, Page } from '@playwright/test
 
 import { SESSION_USERS, stateFile, SUPERADMIN_STATE } from '../global-setup';
 import { csrfHeaders } from '../http';
-import { expectItemHeader } from '../item-header';
+import { expectItemHeader, expectLocation } from '../item-header';
 import { listProjects } from '../projects-api';
 import { disableUser, listUsers, seededEmail, type CreatedUser } from '../users-api';
 import { horizontalOverflow, isWide, TOUCH_TARGET } from '../viewport';
@@ -294,10 +294,11 @@ test.describe('superadmin: deployment Access tab', () => {
     const added = await makeUser('admin');
     await openTab(page, 'deployment', scratch.depA);
     await expectItemHeader(page, 'deployment', 'dep-a');
-    await expect(page.locator('[data-fragment="page-header"] p')).toContainText(
-      `Project ${scratch.projectName}`,
-    );
-    await expect(page.locator('[data-fragment="page-header"] a, [data-fragment="page-header"] button')).toHaveCount(0);
+    await expectLocation(page, 'deployment', {
+      parents: `Project: ${scratch.projectName}`,
+      root: 'Project path: /srv/deployments/sample-a',
+    });
+    await expect(page.locator('[data-fragment="page-header"] button')).toHaveCount(0);
     await expect(sections(page)).toHaveText(['Services', 'Deploy history', 'AccessSuperadmin']);
     await expect(sections(page).nth(0)).toHaveAttribute('href', `/deployments/${scratch.depA}`);
     await expect(sections(page).nth(1)).toHaveAttribute('href', `/deployments/${scratch.depA}#hist`);
@@ -397,9 +398,10 @@ test.describe('superadmin: service Access tab', () => {
     const viaFile = await makeUser('viewer', [`environment:${scratch.envA1}`]);
     await openTab(page, 'service', scratch.serviceA);
     await expectItemHeader(page, 'service', 'cache');
-    await expect(page.locator('[data-fragment="page-header"] p')).toContainText(
-      `Deployment dep-a in ${scratch.projectName}`,
-    );
+    await expectLocation(page, 'service', {
+      parents: `Project: ${scratch.projectName}, Deployment: dep-a`,
+      root: 'Project path: /srv/deployments/sample-a',
+    });
     await expect(sections(page)).toHaveText(['Environments', 'Deploy history', 'AccessSuperadmin']);
     await expect(sections(page).nth(0)).toHaveAttribute('href', `/services/${scratch.serviceA}`);
     await expect(list(page)).toContainText('Services are not a grant level');

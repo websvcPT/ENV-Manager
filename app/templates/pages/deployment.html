@@ -8,7 +8,7 @@
 {% from "macros/deploy.html" import deploy_shell %}
 {% from "macros/dialogs.html" import loaded_dialog %}
 {% from "macros/feedback.html" import note, toast %}
-{% from "macros/panels.html" import item_chain, item_header, panel, text_link %}
+{% from "macros/panels.html" import deployment_location, item_header, panel, text_link %}
 {% set active_nav = "projects" %}
 {% set breadcrumbs = [("Projects", "/projects"), (deployment.project_name, "/projects/" ~ deployment.project_id), (deployment.name, none)] %}
 {% set run = deployment.last_run %}
@@ -20,7 +20,7 @@
 {% block content %}
 {% set header_badges %}{% for flag in deployment.flags %}{{ deploy_status_badge(flag.value) }}{% endfor %}{% endset %}
 {% set header_actions %}{% if deployment.can_check_dist %}{{ button("Check dist", href=none if deployment.outside_allowed else "/deployments/" ~ deployment.id ~ "/dist", icon_name="check", icon_stroke="2.4", disabled=deployment.outside_allowed) }}{% endif %}{% if can_manage_structure %}{{ button("Edit", href="/deployments/" ~ deployment.id ~ "/edit") }}{{ button("Delete…", kind="danger", icon_name="trash", icon_stroke="2", id="deployment-delete-open", data_js="dialog-open", data_target="deployment-delete", aria_haspopup="dialog", hx_get="/deployments/" ~ deployment.id ~ "/delete", hx_target="#deployment-delete", hx_swap="innerHTML") }}{% endif %}{% endset %}
-{{ item_header("deployment", deployment.name, item_chain([("Project", deployment.project_name)], deployment.root_path), badges=header_badges, actions=header_actions) }}
+{{ item_header("deployment", deployment.name, location=deployment_location(deployment), badges=header_badges, actions=header_actions) }}
 {% if deployment.outside_allowed %}{{ note("This deployment is outside the allowed paths. It cannot be deployed or checked until the path is allowed again or the deployment is moved.", tone="warn") }}{% elif not deployment.full %}{{ note("You have access to " ~ ("one environment" if deployment.services | map(attribute="environments") | sum == 1 else "selected environments") ~ " of this deployment. Only " ~ ("its service is" if deployment.services | length == 1 else "their services are") ~ " shown.") }}{% endif %}
 {{ deployment_tabs(deployment, can_manage_grants) }}
 <section aria-label="Status" data-fragment="status-strip" class="grid divide-line overflow-hidden rounded-panel border border-line bg-surface shadow-panel sm:grid-cols-2 lg:grid-cols-4">

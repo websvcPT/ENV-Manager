@@ -243,7 +243,11 @@ async def test_the_deployment_tab_has_the_handoff_header_and_links_back_to_the_p
     assert f'href="/deployments/{items.prod}" ' in body
     assert f'href="/deployments/{items.prod}#hist"' in body
     assert f'href="/deployments/{items.prod}/access" aria-current="page"' in body
-    assert "Project Fancy Proj. Name" in plain(body) and "Check dist" not in body
+    assert dict(item_header_of(body).location) == {
+        "parents": "Project: Fancy Proj. Name",
+        "root": "Project path: /opt/fancy/prod",
+    }
+    assert "Check dist" not in body
     assert f'href="/deployments/{items.prod}/edit"' not in body
     rows = listed(body)
     assert "Direct Includes future items" in rows["deployment_admin"]
@@ -264,7 +268,7 @@ async def test_the_service_tab_has_no_grant_controls_and_links_to_the_grant_leve
     body = main_of(response.text)
     assert section_labels(response.text) == ["Environments", "Deploy history", "Access"]
     assert f'href="/services/{items.mysql}" ' in body
-    assert "Deployment prod in Fancy Proj. Name" in plain(body)
+    assert item_header_of(body).location["parents"] == "Project: Fancy Proj. Name, Deployment: prod"
     assert item_header_of(body).title == "Service: mysql" and "Deploy service" not in body
     assert "Add access" not in body and "grant-dialog" not in body and "Remove" not in body
     assert "Services are not a grant level" in body
@@ -290,7 +294,11 @@ async def test_the_environment_tab_lists_direct_and_inherited_access(
     assert f'href="/environments/{items.db_env}/access" aria-current="page"' in body
     header = item_header_of(body)
     assert (header.type, header.title) == ("environment", "Environment: .env.db")
-    assert header.subtitle.startswith("Service mysql in deployment prod in Fancy Proj. Name · ")
+    assert dict(header.location) == {
+        "parents": "Project: Fancy Proj. Name, Deployment: prod, Service: mysql",
+        "root": "Project path: /opt/fancy/prod",
+        "target": "Target: /opt/fancy/prod/environments/.env.db",
+    }
     assert header.details is not None and header.details.startswith("Version ")
     rows = listed(body)
     assert "Direct" in rows["env_scoped_admin"]

@@ -15,35 +15,54 @@
 {%- endmacro %}
 
 {#- `badges` and `actions` are optional pre-rendered blocks (`{% set x %}...{% endset %}`).
-    `details` is a secondary line under the subtitle and `item_type` marks the header of a
+    `location` is the pre-rendered lines of where an item lives (see `item_location`), `details`
+    is a secondary line under the subtitle and the location, and `item_type` marks the header of a
     project, deployment, service or environment page (see `item_header`). -#}
-{% macro page_header(title, subtitle=none, mono=false, badges=none, actions=none, item_type=none, details=none) -%}
-<section data-fragment="page-header"{% if item_type %} data-item-type="{{ item_type }}"{% endif %} class="flex flex-col gap-3 md:flex-row md:items-start md:gap-6"><div class="min-w-0 flex-1"><div class="flex flex-wrap items-center gap-3"><h1 class="{{ h1_class(mono) }}">{{ title }}</h1>{% if badges %}{{ badges }}{% endif %}</div>{% if subtitle %}<p class="mt-1.5 text-ink2">{{ subtitle }}</p>{% endif %}{% if details %}<div data-header-details class="mt-1 text-[13px] text-ink2">{{ details }}</div>{% endif %}</div>{% if actions %}<div class="flex flex-wrap items-center gap-2.5">{{ actions }}</div>{% endif %}</section>
+{% macro page_header(title, subtitle=none, mono=false, badges=none, actions=none, item_type=none, details=none, location=none) -%}
+<section data-fragment="page-header"{% if item_type %} data-item-type="{{ item_type }}"{% endif %} class="flex flex-col gap-3 md:flex-row md:items-start md:gap-6"><div class="min-w-0 flex-1"><div class="flex flex-wrap items-center gap-3"><h1 class="{{ h1_class(mono) }}">{{ title }}</h1>{% if badges %}{{ badges }}{% endif %}</div>{% if subtitle %}<p class="mt-1.5 text-ink2">{{ subtitle }}</p>{% endif %}{% if location %}{{ location }}{% endif %}{% if details %}<div data-header-details class="mt-1 text-[13px] text-ink2">{{ details }}</div>{% endif %}</div>{% if actions %}<div class="flex flex-wrap items-center gap-2.5">{{ actions }}</div>{% endif %}</section>
 {%- endmacro %}
 
 {#- The header of a project, deployment, service or environment page: the type as a label before
     the name ("Deployment: prod", the label in regular weight and the name bold, mono for
-    everything but a project), then the subtitle with the parents, then the details line with
-    the status. The same on every page of the type. -#}
-{% macro item_header(kind, name, subtitle=none, details=none, badges=none, actions=none) -%}
+    everything but a project), then the subtitle (a project's counts) or the location lines of
+    the other types, then the details line with the status. The same on every page of the type. -#}
+{% macro item_header(kind, name, subtitle=none, details=none, badges=none, actions=none, location=none) -%}
 {% set title %}<span class="font-normal">{{ kind | capitalize }}:</span> <span data-item-name{% if kind != "project" %} class="font-mono"{% endif %}>{{ name }}</span>{% endset %}
-{{ page_header(title, subtitle, badges=badges, actions=actions, item_type=kind, details=details) }}
+{{ page_header(title, subtitle, badges=badges, actions=actions, item_type=kind, details=details, location=location) }}
 {%- endmacro %}
 
-{#- The parents of an item from the nearest to the farthest as one phrase, then its path on the
-    host: "Service mysql in deployment prod in Fancy · /srv/app/.env.db". `parents` is a list of
-    (label, name) pairs, the project last. -#}
-{% macro item_chain(parents, path=none) -%}
-{%- for label, name in parents -%}
-{%- if loop.first %}{{ label }} {% elif label == "Project" %} in {% else %} in {{ label | lower }} {% endif -%}
-<strong class="text-ink">{{ name }}</strong>
-{%- endfor -%}
-{%- if path %} · <span class="font-mono text-[13px] break-all text-ink2">{{ path }}</span>{% endif -%}
+{#- The lines that say where an item lives, one fact per label: its parents on one line from the
+    farthest ("Project: Fancy, Deployment: prod, Service: db", each name a link), then
+    "Project path" (the folder of the Docker Compose project, the deployment root) and, for a
+    file, "Target". `parents` is a list of (label, name, href); a line without a value is left
+    out, so a caller who may not see the root gets no path lines. -#}
+{% macro item_location(parents, root=none, target=none) -%}
+<div data-item-location class="mt-1.5 flex flex-col gap-0.5 text-ink2">
+{%- if parents -%}
+<p data-location="parents">{% for label, name, href in parents %}{% if not loop.first %}, {% endif %}{{ label }}: <a href="{{ href }}" class="font-semibold text-link hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ name }}</a>{% endfor %}</p>
+{%- endif -%}
+{%- if root -%}
+<p data-location="root">Project path: <span class="font-mono text-[13px] break-all text-ink">{{ root }}</span></p>
+{%- endif -%}
+{%- if target -%}
+<p data-location="target">Target: <span class="font-mono text-[13px] break-all text-ink">{{ target }}</span></p>
+{%- endif -%}
+</div>
 {%- endmacro %}
 
-{#- The subtitle of an environment page, from the header of the environment. -#}
-{% macro environment_chain(env) -%}
-{{ item_chain([("Service", env.service_name), ("Deployment", env.deployment_name), ("Project", env.project_name)], env.target_path) }}
+{#- The location lines of a deployment page, from its detail. -#}
+{% macro deployment_location(deployment) -%}
+{{ item_location([("Project", deployment.project_name, "/projects/" ~ deployment.project_id)], deployment.root_path) }}
+{%- endmacro %}
+
+{#- The location lines of a service page, from its header. -#}
+{% macro service_location(service) -%}
+{{ item_location([("Project", service.project_name, "/projects/" ~ service.project_id), ("Deployment", service.deployment_name, "/deployments/" ~ service.deployment_id)], service.root_path) }}
+{%- endmacro %}
+
+{#- The location lines of an environment page, from the header of the environment. -#}
+{% macro environment_location(env) -%}
+{{ item_location([("Project", env.project_name, "/projects/" ~ env.project_id), ("Deployment", env.deployment_name, "/deployments/" ~ env.deployment_id), ("Service", env.service_name, "/services/" ~ env.service_id)], env.root_path, env.shown_target) }}
 {%- endmacro %}
 
 {#- A titled panel; the call block is the body. `fragment` names the swappable unit, and

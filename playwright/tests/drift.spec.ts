@@ -5,7 +5,7 @@ import type { APIRequestContext, Locator, Page } from '@playwright/test';
 import { createDeployment } from '../deployments-api';
 import { createEnvironment, saveRaw, seededEnvironmentId } from '../environments-api';
 import { stateFile } from '../global-setup';
-import { expectItemHeader } from '../item-header';
+import { expectItemHeader, pageWithoutLocation } from '../item-header';
 import { createHostFolder, type HostFolder } from '../host-files';
 import { csrfHeaders } from '../http';
 import { createService } from '../services-api';
@@ -291,7 +291,7 @@ test.describe('states', () => {
     await page.goto(url(id));
     await expect(badge(page)).toHaveText('Target missing');
     await expect(header(page)).toContainText('The target folder does not exist.');
-    expect(await page.content()).not.toContain(host.root);
+    expect(await pageWithoutLocation(page)).not.toContain(host.root);
   });
 
   test('a target that cannot be read reads Cannot read target with a fixed sentence', async ({
@@ -315,7 +315,7 @@ test.describe('states', () => {
     await page.goto(url(binary));
     await expect(badge(page)).toHaveText('Cannot read target');
     await expect(header(page)).toContainText('The target file is not valid UTF-8 text');
-    const content = await page.content();
+    const content = await pageWithoutLocation(page);
     expect(content).not.toContain(host.root);
     expect(content).not.toContain('/etc/hostname');
   });
@@ -336,7 +336,7 @@ test.describe('states', () => {
     await expect(header(page)).toContainText('The target path leaves the deployment folder.');
     await expect(panel(page).locator('.bg-head')).toContainText('outside the allowed paths');
     await expect(overwriteButton(page)).toHaveCount(0);
-    const content = await page.content();
+    const content = await pageWithoutLocation(page);
     expect(content).not.toContain(host.root);
     expect(content).not.toContain('sample-b');
   });
@@ -648,7 +648,7 @@ test.describe('viewer', () => {
     await expect(page.getByRole('button', { name: /Reveal|Hide|Import|Overwrite/ })).toHaveCount(0);
     await expect(page.locator('#overwrite-dialog')).toHaveCount(0);
     await expect(header(page).getByRole('link', { name: 'Back to service' })).toBeVisible();
-    const content = await page.content();
+    const content = await pageWithoutLocation(page);
     expect(content).not.toContain('/opt/');
     expect(content).not.toContain('/srv/');
 

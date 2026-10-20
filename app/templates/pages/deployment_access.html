@@ -3,13 +3,13 @@
 {% extends "layouts/app.html" %}
 {% from "macros/access.html" import access_dialogs, deployment_tabs %}
 {% from "macros/badges.html" import deploy_status_badge %}
-{% from "macros/panels.html" import item_chain, item_header %}
+{% from "macros/panels.html" import deployment_location, item_header %}
 {% set active_nav = "projects" %}
 {% set breadcrumbs = [("Projects", "/projects"), (deployment.project_name, "/projects/" ~ deployment.project_id), (deployment.name, none)] %}
 {% block title %}{{ deployment.name }}{% endblock %}
 {% block content %}
 {% set header_badges %}{% for flag in deployment.flags %}{{ deploy_status_badge(flag.value) }}{% endfor %}{% endset %}
-{{ item_header("deployment", deployment.name, item_chain([("Project", deployment.project_name)], deployment.root_path), badges=header_badges) }}
+{{ item_header("deployment", deployment.name, location=deployment_location(deployment), badges=header_badges) }}
 {{ deployment_tabs(deployment, can_manage_grants, on_access=true) }}
 {% include "fragments/access_list.html" %}
 {{ access_dialogs() }}

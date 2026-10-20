@@ -3,7 +3,7 @@
     env, check. -#}
 {% from "macros/badges.html" import dist_badge %}
 {% from "macros/buttons.html" import button %}
-{% from "macros/panels.html" import environment_chain, item_header %}
+{% from "macros/panels.html" import environment_location, item_header %}
 {% set details %}Dist file <span class="font-mono text-[13px]">{{ check.subject.dist_path or "none linked" }}</span> · checked {{ check.checked_at.strftime("%Y-%m-%d %H:%M") }} by {{ check.checked_by }}{% endset %}
 {% set actions %}{{ button("Run check again", icon_name="check", icon_stroke="2.4", extra_class="max-md:h-11", hx_post="/environments/" ~ env.id ~ "/dist-check", hx_target="#dist-report", hx_swap="outerHTML") }}{% endset %}
-{{ item_header("environment", env.name, environment_chain(env), details=details, badges=dist_badge(check.outcome.value), actions=actions) }}
+{{ item_header("environment", env.name, location=environment_location(env), details=details, badges=dist_badge(check.outcome.value), actions=actions) }}

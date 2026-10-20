@@ -36,6 +36,7 @@ from app.tests.web_helpers import (
     hx_vals,
     main_of,
     post,
+    without_location,
 )
 
 EDITORS = ("root", "admin", "project_admin", "deployment_admin")
@@ -165,7 +166,7 @@ async def test_the_masked_page_never_contains_a_value_for_any_role(
             assert key in response.text, key
         assert "SAME_KEY" not in response.text
         assert "BEGIN" not in response.text and "<textarea" not in response.text
-        assert str(world.root) not in response.text
+        assert str(world.root) not in without_location(response.text)
     assert await count(web_app, DeployRun) == runs
     assert await web_audit_entries(web_app, "environment.reveal") == []
 
@@ -484,7 +485,8 @@ async def test_every_state_reads_in_path_free_words_with_no_action_where_none_ca
     page = (await web_client.get(drift_url(world.environment))).text
     assert f'data-status="{badge}"' in page and f">{label}<" in page
     assert sentence in page
-    assert str(world.root) not in page and str(tmp_path) not in page
+    stripped = without_location(page)
+    assert str(world.root) not in stripped and str(tmp_path) not in stripped
     actionable = setup == "never"
     assert ("Overwrite target…" in page) is actionable
     assert ("Import target as new version" in page) is actionable

@@ -2,7 +2,7 @@ import type { Browser, Page } from '@playwright/test';
 
 import { deploymentId } from '../deployments-api';
 import { stateFile } from '../global-setup';
-import { expectItemHeader } from '../item-header';
+import { expectItemHeader, expectLocation, locationLinks } from '../item-header';
 import { horizontalOverflow, isWide } from '../viewport';
 import { actionControls, rowAction } from './row-actions';
 import { expect, test } from './scratch-project';
@@ -37,7 +37,11 @@ test.describe('superadmin', () => {
 
     await expectItemHeader(page, 'deployment', 'prod');
     await expect(header(page).locator('[data-status]')).toHaveText(['Failed']);
-    await expect(header(page).locator('p')).toContainText('Project Fancy Proj. Name · /opt/fancy/prod');
+    await expectLocation(page, 'deployment', {
+      parents: 'Project: Fancy Proj. Name',
+      root: 'Project path: /opt/fancy/prod',
+    });
+    expect(await locationLinks(page, 'deployment')).toEqual([expect.stringMatching(/^\/projects\/\d+$/)]);
     await expect(header(page).getByRole('link', { name: 'Check dist' })).toHaveAttribute(
       'href',
       `/deployments/${id}/dist`,
@@ -188,7 +192,9 @@ test.describe('superadmin', () => {
   }) => {
     const id = await deploymentId(browser, 'billing', 'legacy');
     await page.goto(`/deployments/${id}`);
-    await expect(header(page).locator('p')).toContainText('/srv/old/legacy');
+    await expect(header(page).locator('[data-location="root"]')).toHaveText(
+      'Project path: /srv/old/legacy',
+    );
     await expect(page.locator('[role="note"]')).toHaveText(
       'This deployment is outside the allowed paths. It cannot be deployed or checked until the path is allowed again or the deployment is moved.',
     );
@@ -232,7 +238,7 @@ test.describe('viewer', () => {
     const id = await prod(browser);
     await page.goto(`/deployments/${id}`);
     await expectItemHeader(page, 'deployment', 'prod');
-    await expect(header(page).getByRole('link')).toHaveCount(0);
+    await expect(header(page).getByRole('link')).toHaveCount(1);
     await expect(header(page).getByRole('button')).toHaveCount(0);
     await expect(serviceRows(page).locator('th a')).toHaveText(['mysql', 'web']);
     await expect(actionControls(serviceRows(page), 'deploy')).toHaveCount(0);
@@ -257,7 +263,10 @@ test.describe('scoped users', () => {
     test('sees the whole deployment it was granted', async ({ page, browser }) => {
       await page.goto(`/deployments/${await prod(browser)}`);
       await expect(serviceRows(page).locator('th a')).toHaveText(['mysql', 'web']);
-      await expect(header(page).locator('p')).toContainText('/opt/fancy/prod');
+      await expectLocation(page, 'deployment', {
+        parents: 'Project: Fancy Proj. Name',
+        root: 'Project path: /opt/fancy/prod',
+      });
       await expect(page.locator('[data-fragment="policies-panel"]')).toBeVisible();
       await expect(page.locator('[role="note"]')).toHaveCount(0);
     });
@@ -271,7 +280,7 @@ test.describe('scoped users', () => {
       browser,
     }) => {
       await page.goto(`/deployments/${await prod(browser)}`);
-      await expect(header(page).locator('p')).toHaveText('Project Fancy Proj. Name');
+      await expectLocation(page, 'deployment', { parents: 'Project: Fancy Proj. Name' });
       await expect(page.locator('[role="note"]')).toHaveText(
         'You have access to one environment of this deployment. Only its service is shown.',
       );
@@ -299,7 +308,7 @@ test.describe('scoped users', () => {
     test('has no check or deploy on its file', async ({ page, browser }) => {
       await page.goto(`/deployments/${await prod(browser)}`);
       await expect(serviceRows(page).locator('th a')).toHaveText(['mysql']);
-      await expect(header(page).getByRole('link')).toHaveCount(0);
+      await expect(header(page).getByRole('link')).toHaveCount(1);
       await expect(actionControls(serviceRows(page), 'deploy')).toHaveCount(0);
     });
   });

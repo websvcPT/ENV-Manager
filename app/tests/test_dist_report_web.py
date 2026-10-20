@@ -29,6 +29,7 @@ from app.tests.web_helpers import (
     section_links,
     version_numbers,
     without_csrf_token,
+    without_location,
 )
 
 DIST_DEFAULT_VALUE = "dist-default-Qw83"
@@ -111,7 +112,7 @@ async def test_blocked_report_shows_key_names_lines_and_counts_never_a_value(
     assert "Dist file <span" in body and DB_DIST in body
     assert "Add missing keys to the editor" in body
     assert DIST_DEFAULT_VALUE not in page and "3306" not in without_csrf_token(page)
-    assert str(roots["prod"]) not in page
+    assert str(roots["prod"]) not in without_location(page)
     access_tab = ["AccessSuperadmin"] if role == "root" else []
     assert section_links(body) == ["Edit", "History", "Compare to dist", *access_tab]
     assert f'<a href="/environments/{ids.db}/dist" aria-current="page"' in body
@@ -194,7 +195,7 @@ async def test_a_missing_dist_file_is_a_failed_check_with_fixed_copy(
     assert "The check could not run" in body and ">Check failed<" in body
     assert "The dist file does not exist or is not a regular file." in body
     assert 'aria-label="Summary"' not in body and "Add missing keys" not in body
-    assert str(roots["prod"]) not in page
+    assert str(roots["prod"]) not in without_location(page)
 
 
 async def test_a_scoped_admin_never_sees_the_deployment_root_even_when_it_is_outside(

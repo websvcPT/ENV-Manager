@@ -175,13 +175,14 @@ def test_dialog_and_confirm_dialog() -> None:
     assert 'hx-delete="/x"' in page and "border-danger" in page
 
 
-def test_the_item_header_names_the_type_before_the_item_and_its_parents_after() -> None:
-    """Label in regular weight, name in its own style, parents nearest first, details apart."""
+def test_the_item_header_names_the_type_before_the_item_and_its_location_after() -> None:
+    """Label in regular weight, name in its own style, labelled location lines, details apart."""
     page = render_snippet(
-        "{% from 'macros/panels.html' import item_header, item_chain %}"
-        "{{ item_header('environment', '.env.<db>', item_chain([('Service', 'mysql'),"
-        " ('Deployment', 'prod'), ('Project', 'Fancy & Co')], '/srv/x/.env'),"
-        " details='Version 2 saved') }}"
+        "{% from 'macros/panels.html' import item_header, item_location %}"
+        "{{ item_header('environment', '.env.<db>', details='Version 2 saved',"
+        " location=item_location([('Project', 'Fancy & Co', '/projects/1'),"
+        " ('Deployment', 'prod', '/deployments/2'), ('Service', 'mysql', '/services/3')],"
+        " '/srv/x', '/srv/x/.env')) }}"
         "{{ item_header('project', 'Fancy', 'two deployments') }}"
     )
     assert page.count('data-item-type="') == 2 and 'data-item-type="environment"' in page
@@ -189,15 +190,27 @@ def test_the_item_header_names_the_type_before_the_item_and_its_parents_after() 
     assert '<span class="font-normal">Environment:</span> ' in page
     assert '<span data-item-name class="font-mono">.env.&lt;db&gt;</span>' in page
     assert "<span data-item-name>Fancy</span>" in page
-    text = re.sub(r"<[^>]+>", " ", page.split("</h1>", 1)[1].split("</section>", 1)[0])
-    assert " ".join(text.split()) == (
-        "Service mysql in deployment prod in Fancy &amp; Co · /srv/x/.env Version 2 saved"
-    )
+    environment = page.split("</h1>", 1)[1].split("</section>", 1)[0]
+    lines = {
+        key: " ".join(re.sub(r"<[^>]+>", "", text).split())
+        for key, text in re.findall(r'<p data-location="(\w+)">(.*?)</p>', environment)
+    }
+    assert lines == {
+        "parents": "Project: Fancy &amp; Co, Deployment: prod, Service: mysql",
+        "root": "Project path: /srv/x",
+        "target": "Target: /srv/x/.env",
+    }
+    assert 'Project: <a href="/projects/1"' in environment
+    assert 'Service: <a href="/services/3"' in environment
+    assert environment.index("Target:") < environment.index("Version 2 saved")
     assert page.count("data-header-details") == 1
-    chain = render_snippet(
-        "{% from 'macros/panels.html' import item_chain %}{{ item_chain([('Project', 'Fancy')]) }}"
+    parents_only = render_snippet(
+        "{% from 'macros/panels.html' import item_location %}"
+        "{{ item_location([('Project', 'Fancy', '/projects/1')]) }}"
     )
-    assert re.sub(r"<[^>]+>", "", chain) == "Project Fancy" and " · " not in chain
+    assert 'data-location="parents"' in parents_only
+    assert 'data-location="root"' not in parents_only
+    assert 'data-location="target"' not in parents_only
 
 
 def test_the_load_more_row_replaces_itself_with_the_next_rows() -> None:

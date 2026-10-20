@@ -6,7 +6,7 @@
 {% from "macros/badges.html" import badge %}
 {% from "macros/buttons.html" import button %}
 {% from "macros/dialogs.html" import loaded_dialog %}
-{% from "macros/panels.html" import environment_chain, item_header, tabs %}
+{% from "macros/panels.html" import environment_location, item_header, tabs %}
 {% set active_nav = "projects" %}
 {% set breadcrumbs = [("Projects", "/projects"), (env.project_name, "/projects/" ~ env.project_id), (env.deployment_name, "/deployments/" ~ env.deployment_id), (env.service_name, "/services/" ~ env.service_id), (env.name, none)] %}
 {% block title %}{{ env.name }}{% endblock %}
@@ -14,7 +14,7 @@
 {% block header %}
 {% set details %}{% if env.current is not none %}Version {{ env.current }} saved, {% if env.deployed is not none %}version {{ env.deployed }} deployed{% else %}never deployed{% endif %}{% else %}No version saved{% endif %}{% if env.current_author %} · last edited by {{ env.current_author }}{% endif %}{% endset %}
 {% set header_actions %}{% if env.can_manage_structure %}{{ button("Settings", href="/environments/" ~ env.id ~ "/settings", icon_name="settings", icon_stroke="2", id="environment-settings-open") }}{{ button("Delete…", kind="danger", icon_name="trash", icon_stroke="2", id="environment-delete-open", data_js="dialog-open", data_target="environment-delete", aria_haspopup="dialog", hx_get="/environments/" ~ env.id ~ "/delete", hx_target="#environment-delete", hx_swap="innerHTML") }}{% endif %}{% endset %}
-{{ item_header("environment", env.name, environment_chain(env), details=details, badges=badge(env.status), actions=header_actions) }}
+{{ item_header("environment", env.name, location=environment_location(env), details=details, badges=badge(env.status), actions=header_actions) }}
 {% endblock %}
 {% set section_links = [{"label": "View" if is_viewer else "Edit", "href": "/environments/" ~ env.id}, {"label": "History", "href": "/environments/" ~ env.id ~ "/history"}] %}
 {% if env.can_check_dist %}{% set section_links = section_links + [{"label": "Compare to dist", "href": "/environments/" ~ env.id ~ "/dist"}] %}{% endif %}

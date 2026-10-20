@@ -3,12 +3,12 @@
     service (a ServiceHeader), can_manage_grants, access (an AccessList) and base. -#}
 {% extends "layouts/app.html" %}
 {% from "macros/access.html" import service_tabs %}
-{% from "macros/panels.html" import item_chain, item_header %}
+{% from "macros/panels.html" import item_header, service_location %}
 {% set active_nav = "projects" %}
 {% set breadcrumbs = [("Projects", "/projects"), (service.project_name, "/projects/" ~ service.project_id), (service.deployment_name, "/deployments/" ~ service.deployment_id), (service.name, none)] %}
 {% block title %}{{ service.name }}{% endblock %}
 {% block content %}
-{{ item_header("service", service.name, item_chain([("Deployment", service.deployment_name), ("Project", service.project_name)], service.root_path)) }}
+{{ item_header("service", service.name, location=service_location(service)) }}
 {{ service_tabs(service, can_manage_grants, on_access=true) }}
 {% include "fragments/access_list.html" %}
 {% endblock %}

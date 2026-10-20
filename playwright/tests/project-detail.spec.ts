@@ -1,7 +1,7 @@
 import type { Browser, Page } from '@playwright/test';
 
 import { stateFile, SUPERADMIN_STATE } from '../global-setup';
-import { expectItemHeader } from '../item-header';
+import { expectItemHeader, expectLocation } from '../item-header';
 import { listProjects } from '../projects-api';
 import { seededEmail } from '../users-api';
 import { horizontalOverflow, isWide } from '../viewport';
@@ -40,6 +40,7 @@ test.describe('superadmin', () => {
     await page.locator('[data-fragment="project-row"] th a', { hasText: /^Fancy Proj\. Name$/ }).click();
     await expect(page).toHaveURL(new RegExp(`/projects/${fancy}$`));
     await expectItemHeader(page, 'project', 'Fancy Proj. Name');
+    await expectLocation(page, 'project', {});
     await expect(page.locator('[data-fragment="page-header"] p')).toHaveText(
       /^2 deployments · \d+ members$/,
     );

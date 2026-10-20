@@ -9,6 +9,7 @@ audit entry or an error message.
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import PurePosixPath
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -70,7 +71,9 @@ class EditorHeader:
     deployment default); an empty owner or group means the application user.
     ``can_manage_grants`` is True for the superadmin, who gets the Access tab, and so is
     ``can_manage_structure``, which shows the settings and delete controls. ``deployment_root``
-    is the folder of the deployment for the code that reads the host; no page shows it.
+    is the folder of the deployment for the code that reads the host. ``root_path`` is the same
+    folder for display and is None unless the caller has access to the whole deployment, so a
+    caller scoped to files never learns it.
     """
 
     id: int
@@ -98,7 +101,15 @@ class EditorHeader:
     item: ItemRef
     can_manage_grants: bool
     can_manage_structure: bool
+    root_path: str | None
     deployment_root: str = field(repr=False)
+
+    @property
+    def shown_target(self) -> str:
+        """The target for display: below the root when the root may be shown, else as stored."""
+        if self.root_path is None:
+            return self.target_path
+        return str(PurePosixPath(self.root_path) / self.target_path)
 
     @property
     def can_deploy(self) -> bool:
@@ -232,6 +243,7 @@ async def load_editor_header(
         item=item,
         can_manage_grants=scope.can(Capability.MANAGE_GRANTS),
         can_manage_structure=scope.can(Capability.MANAGE_STRUCTURE),
+        root_path=service.root_path,
         deployment_root=deployment.root_path,
     )
 

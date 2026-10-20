@@ -3,7 +3,7 @@ import type { APIRequestContext, Browser, Page } from '@playwright/test';
 import { createDeployment } from '../deployments-api';
 import { createEnvironment, saveRaw, seededEnvironmentId } from '../environments-api';
 import { stateFile } from '../global-setup';
-import { expectItemHeader } from '../item-header';
+import { expectItemHeader, expectLocation } from '../item-header';
 import { csrfHeaders } from '../http';
 import { createService } from '../services-api';
 import { horizontalOverflow } from '../viewport';
@@ -77,7 +77,11 @@ test.describe('superadmin editor', () => {
     await page.goto(`/environments/${id}`);
     await expectItemHeader(page, 'environment', '.env.masked');
     await expect(header(page).locator('[data-status]')).toHaveAttribute('data-status', 'never');
-    await expect(header(page)).toContainText('Service cache');
+    await expectLocation(page, 'environment', {
+      parents: `Project: ${scratch.name}, Deployment: scratch-dep, Service: cache`,
+      root: `Project path: ${SAMPLE_A}`,
+      target: `Target: ${SAMPLE_A}/environments/.env.masked`,
+    });
     await expect(header(page)).toContainText('Version 1 saved, never deployed');
     await expect(page.locator('nav[aria-label="Sections"] a')).toHaveText([
       'Edit',
