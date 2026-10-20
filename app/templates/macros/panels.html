@@ -6,7 +6,7 @@
 {#- The last row of a paged table while more rows remain: loading it replaces the row with the
     next rows and the next one of these. `fragment` names the row, `columns` is the width. -#}
 {% macro more_row(href, columns, fragment) -%}
-<tr data-fragment="{{ fragment }}"><td colspan="{{ columns }}" class="border-t border-line px-4 py-3.5 text-center">{{ button("Load more", hx_get=href, hx_target="closest tr", hx_swap="outerHTML", hx_sync="this:drop", extra_class="h-11 md:h-10") }}</td></tr>
+<tr data-fragment="{{ fragment }}"><td colspan="{{ columns }}" class="border-t border-line px-4 py-3.5 text-center">{{ button("Load more", hx_get=href, hx_target="closest tr", hx_swap="outerHTML", hx_sync="this:drop", extra_class="h-11 md:h-ctl") }}</td></tr>
 {%- endmacro %}
 
 {#- The classes of the page title, the same on every page: 26 px on a phone, 30 px from `md`. -#}

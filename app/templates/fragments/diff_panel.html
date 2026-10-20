@@ -8,7 +8,7 @@
 {% from "macros/dialogs.html" import dialog %}
 {% from "macros/icons.html" import icon %}
 {% set grid_classes = "grid grid-cols-[120px_230px_minmax(0,1fr)_minmax(0,1fr)]" %}
-{% set reveal_classes = "h-10 max-md:h-11 items-center gap-2 rounded-btn border border-line-strong bg-surface px-4 text-sm font-semibold text-ink hover:bg-surface2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus" %}
+{% set reveal_classes = "h-10 md:h-ctl max-md:h-11 items-center gap-2 rounded-btn border border-line-strong bg-surface px-4 text-sm font-semibold text-ink hover:bg-surface2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus" %}
 <section data-fragment="diff-panel" id="diff-panel" data-reveal-row data-revealed="false" aria-labelledby="dt" class="group overflow-hidden rounded-panel border border-line bg-surface shadow-panel">
 <div class="flex flex-wrap items-center gap-3 p-4 md:px-5">
 {%- if diff %}

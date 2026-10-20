@@ -18,5 +18,5 @@
 </ul></nav>
 {% if picker.truncated %}<p class="text-[13px] text-ink2">Only the first folders are listed. Type the path to use a folder that is not shown.</p>{% endif %}
 {% endcall %}
-{% call dialog_footer() %}{{ button("Cancel", extra_class="h-11", data_js="dialog-close") }}{{ button("Use this path", kind="primary", data_js="pick-path", data_target="root", data_path=picker.current, disabled=not picker.current) }}{% endcall %}
+{% call dialog_footer() %}{{ button("Cancel", extra_class="h-11 md:h-ctl-lg", data_js="dialog-close") }}{{ button("Use this path", kind="primary", data_js="pick-path", data_target="root", data_path=picker.current, disabled=not picker.current) }}{% endcall %}
 </div>

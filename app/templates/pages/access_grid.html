@@ -4,7 +4,7 @@
 {% from "macros/panels.html" import page_header %}
 {% set active_nav = "users" %}
 {% set breadcrumbs = [("Users", "/users"), ("Access grid", none)] %}
-{% set select_classes = "h-11 rounded-ctl border border-line-strong bg-surface px-3 text-sm text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus md:h-10" %}
+{% set select_classes = "h-11 rounded-ctl border border-line-strong bg-surface px-3 text-sm text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus md:h-ctl" %}
 {% block title %}Access grid{% endblock %}
 {% block content %}
 {{ page_header("Access grid", "Rows are projects, deployments, services and environments. Columns are users.") }}

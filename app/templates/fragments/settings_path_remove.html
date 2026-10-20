@@ -8,7 +8,7 @@
 {{ dialog_head("path-remove", "Path already removed" if gone else "Remove " ~ path) }}
 {%- if gone %}
 {% call dialog_body() %}{{ note("This path is no longer in the list.") }}{% endcall %}
-{% call dialog_footer() %}{{ button("Close", extra_class="h-11", data_js="dialog-close") }}{% endcall %}
+{% call dialog_footer() %}{{ button("Close", extra_class="h-11 md:h-ctl-lg", data_js="dialog-close") }}{% endcall %}
 {%- else %}
 <form hx-post="/settings/paths/{{ path_id }}/remove" hx-target="#path-remove" hx-swap="innerHTML">
 {% call dialog_body() %}<p class="text-[15px]">Nothing is deleted.

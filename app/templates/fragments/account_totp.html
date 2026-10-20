@@ -23,12 +23,12 @@
 {%- endif %}
 {{ field("tp", "Current password", name="current_password", type="password", error=totp_errors.current_password, extra_class="max-w-xs", autocomplete="current-password") }}
 {{ field("tc", "Authentication code", name="code", placeholder="000000", mono=true, error=totp_errors.code, extra_class="max-w-xs", autocomplete="one-time-code", inputmode="numeric", maxlength="7") }}
-<div class="flex gap-2.5">{{ button("Enable two-factor", kind="primary-sm", type="submit", extra_class="h-11 md:h-10") }}{{ button("Cancel", extra_class="h-11 md:h-10", hx_get="/account/totp", hx_target="closest [data-fragment=account-totp]", hx_swap="outerHTML") }}</div>
+<div class="flex gap-2.5">{{ button("Enable two-factor", kind="primary-sm", type="submit", extra_class="h-11 md:h-ctl") }}{{ button("Cancel", extra_class="h-11 md:h-ctl", hx_get="/account/totp", hx_target="closest [data-fragment=account-totp]", hx_swap="outerHTML") }}</div>
 </form>
 {%- elif state == "on" %}
 <div class="flex flex-col gap-4 px-4 pb-5 md:px-5">
 <p class="flex items-center gap-2">{{ badge("deployed", "Enabled") }}<span class="text-ink2">Authenticator app configured{% if current_user.totp_enabled_at %} on <time datetime="{{ current_user.totp_enabled_at.strftime('%Y-%m-%dT%H:%M:%SZ') }}" title="UTC">{{ current_user.totp_enabled_at.strftime("%Y-%m-%d") }}</time>{% endif %}.</span></p>
-<div>{{ button("Remove two-factor", kind="danger", extra_class="h-11 md:h-10", data_js="dialog-open", data_target="totp-remove", aria_haspopup="dialog", hx_get="/account/totp/remove", hx_target="#totp-remove", hx_swap="innerHTML") }}</div>
+<div>{{ button("Remove two-factor", kind="danger", extra_class="h-11 md:h-ctl", data_js="dialog-open", data_target="totp-remove", aria_haspopup="dialog", hx_get="/account/totp/remove", hx_target="#totp-remove", hx_swap="innerHTML") }}</div>
 </div>
 {%- else %}
 <div class="flex flex-col gap-4 px-4 pb-5 md:px-5">
@@ -36,7 +36,7 @@
 <div role="status">{{ note("The setup took too long and was dropped. Start again.", "warn") }}</div>
 {%- endif %}
 <p class="flex items-center gap-2">{{ badge("never", "Not enabled") }}<span class="text-ink2">Optional. Adds a code from an authenticator app at sign-in.</span></p>
-<div>{{ button("Set up two-factor", extra_class="h-11 md:h-10", hx_post="/account/totp/setup", hx_target="closest [data-fragment=account-totp]", hx_swap="outerHTML") }}</div>
+<div>{{ button("Set up two-factor", extra_class="h-11 md:h-ctl", hx_post="/account/totp/setup", hx_target="closest [data-fragment=account-totp]", hx_swap="outerHTML") }}</div>
 </div>
 {%- endif %}
 {% endcall %}

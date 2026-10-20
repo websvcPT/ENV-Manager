@@ -117,7 +117,7 @@ test.describe('the tab', () => {
         TOUCH_TARGET,
       );
     }
-    expect(await height(page.locator('#sh'))).toBeGreaterThanOrEqual(40);
+    expect(await height(page.locator('#sh'))).toBeGreaterThanOrEqual(isWide(page) ? 37 : 40);
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
   });
 });

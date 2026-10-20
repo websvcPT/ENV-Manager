@@ -6,12 +6,22 @@
 
 {% macro button(label, kind="secondary", href=none, type="button", icon_name=none, icon_stroke="2", extra_class="", disabled=false) -%}
 {%- set kinds = {
-  "primary": "inline-flex h-11 items-center justify-center gap-2 rounded-btn bg-accent px-5 text-base font-bold text-accent-ink hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
-  "primary-sm": "inline-flex h-10 items-center justify-center gap-2 rounded-btn bg-accent px-5 text-base font-bold text-accent-ink hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
-  "secondary": "inline-flex h-10 items-center justify-center gap-2 rounded-btn border border-line-strong bg-surface px-4 text-sm font-semibold text-ink hover:bg-surface2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
-  "danger": "inline-flex h-10 items-center justify-center gap-2 rounded-btn border border-danger bg-danger-soft px-4 text-sm font-bold text-danger hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+  "primary": "inline-flex items-center justify-center gap-2 rounded-btn bg-accent px-5 text-base font-bold text-accent-ink hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
+  "primary-sm": "inline-flex items-center justify-center gap-2 rounded-btn bg-accent px-5 text-base font-bold text-accent-ink hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
+  "secondary": "inline-flex items-center justify-center gap-2 rounded-btn border border-line-strong bg-surface px-4 text-sm font-semibold text-ink hover:bg-surface2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
+  "danger": "inline-flex items-center justify-center gap-2 rounded-btn border border-danger bg-danger-soft px-4 text-sm font-bold text-danger hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
 } -%}
-{%- set classes = kinds[kind] ~ (" " ~ extra_class if extra_class else "") ~ (" disabled:cursor-not-allowed disabled:opacity-60" if disabled else "") -%}
+{#- The height of a kind: its phone height, and from md up the matching control height. An
+    `extra_class` that sets its own height (`h-11 md:h-ctl-lg`) replaces it, so two heights
+    never compete in one element. -#}
+{%- set heights = {
+  "primary": "h-11 md:h-ctl-lg",
+  "primary-sm": "h-10 md:h-ctl",
+  "secondary": "h-10 md:h-ctl",
+  "danger": "h-10 md:h-ctl"
+} -%}
+{%- set own_height = " h-" in (" " ~ extra_class) -%}
+{%- set classes = kinds[kind] ~ ("" if own_height else " " ~ heights[kind]) ~ (" " ~ extra_class if extra_class else "") ~ (" disabled:cursor-not-allowed disabled:opacity-60" if disabled else "") -%}
 {%- if href -%}
 <a href="{{ href }}" class="{{ classes }}"{{ attrs(kwargs) }}>{% if icon_name %}{{ icon(icon_name, "size-4", icon_stroke) }}{% endif %}{{ label }}</a>
 {%- else -%}
@@ -22,9 +32,9 @@
 {#- Icon-only button; the label becomes the accessible name. -#}
 {% macro icon_button(label, icon_name, shape="round", icon_classes="size-4", icon_stroke="2") -%}
 {%- set shapes = {
-  "round": "inline-flex size-10 shrink-0 items-center justify-center rounded-full border border-line-strong text-ink hover:bg-surface2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
-  "square": "inline-flex size-9 items-center justify-center rounded-ctl border border-line-strong text-ink hover:bg-surface2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
-  "plain": "inline-flex size-8 shrink-0 items-center justify-center rounded-ctl text-ink2 hover:bg-surface2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+  "round": "inline-flex size-10 md:size-ctl shrink-0 items-center justify-center rounded-full border border-line-strong text-ink hover:bg-surface2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
+  "square": "inline-flex size-9 md:size-ctl-md items-center justify-center rounded-ctl border border-line-strong text-ink hover:bg-surface2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
+  "plain": "inline-flex size-8 md:size-ctl-sm shrink-0 items-center justify-center rounded-ctl text-ink2 hover:bg-surface2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
 } -%}
 <button type="button" aria-label="{{ label }}" class="{{ shapes[shape] }}"{{ attrs(kwargs) }}>{{ icon(icon_name, icon_classes, icon_stroke) }}</button>
 {%- endmacro %}

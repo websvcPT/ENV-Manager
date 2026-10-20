@@ -35,7 +35,7 @@
 {% endset %}
 {% set target_note %}{% if view.target.short_hash %}hash {{ view.target.short_hash }}… read {{ view.target.read_at.strftime("%H:%M") }}{% else %}{{ {"missing": "file not found", "outside": "outside the allowed paths", "unreadable": "cannot be read"}.get(view.kind.value, "not read") }}{% endif %}{% endset %}
 {% set columns_class = "grid grid-cols-[230px_repeat(3,minmax(0,1fr))]" %}
-{% set reveal_classes = "h-10 max-md:h-11 items-center gap-2 rounded-btn border border-line-strong bg-surface px-4 text-sm font-semibold text-ink hover:bg-surface2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus" %}
+{% set reveal_classes = "h-10 md:h-ctl max-md:h-11 items-center gap-2 rounded-btn border border-line-strong bg-surface px-4 text-sm font-semibold text-ink hover:bg-surface2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus" %}
 {% set change_words = {"changed": "Changed", "added": "Added", "removed": "Removed"} %}
 {% macro cell(column, row, presence, absent_label, extra_class) -%}
 <div class="px-4 py-3.5 font-mono text-[13px]{{ extra_class }}">{% if presence.value == "set" %}<span class="group-data-[revealed=true]:hidden">••••••••</span><span id="drift-{{ column }}-{{ row.index }}" data-value class="hidden whitespace-pre-wrap break-all group-data-[revealed=true]:inline"></span>{% elif presence.value == "not_set" %}<span class="text-ink3">not set</span>{% else %}<span class="text-ink3">{{ absent_label }}</span>{% endif %}</div>

@@ -14,5 +14,16 @@
   --text-5xl--line-height: 1.5;
 }
 
+/* The height of a control from the md breakpoint up, 3 px under the touch sizes a phone keeps
+   (40, 44, 36 and 32 px): ctl is a button, field or select, ctl-lg a primary or dialog button,
+   ctl-md a square icon button, a row action or a compact editor control, ctl-sm a plain icon
+   button. Controls write them as md:h-ctl, md:size-ctl-md and so on. */
+@theme {
+  --spacing-ctl: 37px;
+  --spacing-ctl-lg: 41px;
+  --spacing-ctl-md: 33px;
+  --spacing-ctl-sm: 29px;
+}
+
 @source "../templates";
 @source "../static/app.js";

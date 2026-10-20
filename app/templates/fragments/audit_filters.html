@@ -1,8 +1,8 @@
 {#- The filter form of the audit log. Changing a control requests the results for the new
     filters. Only values from the option lists are offered, which come from the caller's own
     entries. Context: filters (AuditFilters), options (FilterOptions) and scoped. -#}
-{% set select_classes = "h-11 min-w-0 max-w-full rounded-ctl border border-line-strong bg-surface px-3 text-sm text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus md:h-10" %}
-{% set date_classes = "h-11 rounded-ctl border border-line-strong bg-surface px-2.5 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus md:h-10" %}
+{% set select_classes = "h-11 min-w-0 max-w-full rounded-ctl border border-line-strong bg-surface px-3 text-sm text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus md:h-ctl" %}
+{% set date_classes = "h-11 rounded-ctl border border-line-strong bg-surface px-2.5 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus md:h-ctl" %}
 {% set label_classes = "shrink-0 text-[13px] font-semibold text-ink2" %}
 <form id="audit-filters" action="/audit" method="get" hx-get="/audit/table" hx-target="#audit-results" hx-swap="outerHTML" hx-trigger="change, submit" hx-sync="this:replace" hx-indicator="#audit-table" class="flex flex-wrap items-end gap-3">
 <div class="flex min-w-0 max-w-full items-center gap-2"><label for="f-p" class="{{ label_classes }}">Project</label><select id="f-p" name="project" class="{{ select_classes }}"><option value="">{{ "All assigned" if scoped else "All" }}</option>{% for project_id, name in options.projects %}<option value="{{ project_id }}"{% if project_id == filters.project_id %} selected{% endif %}>{{ name }}</option>{% endfor %}</select></div>

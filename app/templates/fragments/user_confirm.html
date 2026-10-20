@@ -21,13 +21,13 @@
 {{ dialog_head("user-action", title) }}
 {%- if refusal == "last_active_superadmin" %}
 {% call dialog_body() %}{{ inline_error("Cannot " ~ ("disable" if action == "disable" else "demote") ~ " the last active superadmin", "Create or enable another superadmin first. The last active superadmin cannot be disabled or demoted.", in_dialog=true, hx_get=confirm_url, hx_target="#user-action", hx_swap="innerHTML") }}{% endcall %}
-{% call dialog_footer() %}{{ button("Close", extra_class="h-11", data_js="dialog-close") }}{% endcall %}
+{% call dialog_footer() %}{{ button("Close", extra_class="h-11 md:h-ctl-lg", data_js="dialog-close") }}{% endcall %}
 {%- elif refusal == "self" %}
 {% call dialog_body() %}{{ note("This is your own account. Remove two-factor from your Account page, which asks for your password and a code.") }}{% endcall %}
-{% call dialog_footer() %}{{ button("Close", extra_class="h-11", data_js="dialog-close") }}{% endcall %}
+{% call dialog_footer() %}{{ button("Close", extra_class="h-11 md:h-ctl-lg", data_js="dialog-close") }}{% endcall %}
 {%- elif refusal == "unchanged" %}
 {% call dialog_body() %}{{ note(unchanged_message) }}{% endcall %}
-{% call dialog_footer() %}{{ button("Close", extra_class="h-11", data_js="dialog-close") }}{% endcall %}
+{% call dialog_footer() %}{{ button("Close", extra_class="h-11 md:h-ctl-lg", data_js="dialog-close") }}{% endcall %}
 {%- else %}
 <form hx-post="/users/{{ user_id }}/{{ action }}" hx-target="#user-action" hx-swap="innerHTML">
 <input type="hidden" name="from" value="{{ origin }}">{% if action == "group" %}<input type="hidden" name="group" value="{{ target_value }}">{% endif %}
@@ -42,7 +42,7 @@ Two-factor sign-in is turned off for {{ user_name }}, so they sign in with their
 Move {{ user_name }} from {{ current_group }} to {{ target_group }}. The change applies now. {{ GROUP_EFFECTS[target_value] }}{% if is_self %} This is your own account, so you may lose access to this page.{% endif %}
 {%- endif -%}
 </p></div>{% endcall %}
-{% call dialog_footer() %}{{ button("Cancel", extra_class="h-11", data_js="dialog-close") }}{% if action == "disable" %}{{ button("Disable user", kind="danger", type="submit", extra_class="h-11 text-[15px]") }}{% elif action == "enable" %}{{ button("Enable user", kind="primary", type="submit") }}{% elif action == "reset-2fa" %}{{ button("Reset two-factor", kind="danger", type="submit", extra_class="h-11 text-[15px]") }}{% else %}{{ button("Change group", kind="primary", type="submit") }}{% endif %}{% endcall %}
+{% call dialog_footer() %}{{ button("Cancel", extra_class="h-11 md:h-ctl-lg", data_js="dialog-close") }}{% if action == "disable" %}{{ button("Disable user", kind="danger", type="submit", extra_class="h-11 md:h-ctl-lg text-[15px]") }}{% elif action == "enable" %}{{ button("Enable user", kind="primary", type="submit") }}{% elif action == "reset-2fa" %}{{ button("Reset two-factor", kind="danger", type="submit", extra_class="h-11 md:h-ctl-lg text-[15px]") }}{% else %}{{ button("Change group", kind="primary", type="submit") }}{% endif %}{% endcall %}
 </form>
 {%- endif %}
 </div>

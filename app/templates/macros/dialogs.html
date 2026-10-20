@@ -66,8 +66,8 @@
 {% macro confirm_footer(confirm_label, type="button", cancel=none, working=false) -%}
 {%- set confirm_attrs = kwargs -%}
 {%- set cancel_attrs = cancel if cancel else {"data_js": "dialog-close"} -%}
-{%- set confirm_class = "h-11 text-[15px] group-[.htmx-request]:opacity-60" if working else "h-11 text-[15px]" -%}
-{% call dialog_footer() %}{% if working %}{{ working_status() }}<span class="flex-1"></span>{% endif %}{{ button("Cancel", extra_class="h-11", **cancel_attrs) }}{{ button(confirm_label, kind="danger", type=type, extra_class=confirm_class, **confirm_attrs) }}{% endcall %}
+{%- set confirm_class = "h-11 md:h-ctl-lg text-[15px] group-[.htmx-request]:opacity-60" if working else "h-11 md:h-ctl-lg text-[15px]" -%}
+{% call dialog_footer() %}{% if working %}{{ working_status() }}<span class="flex-1"></span>{% endif %}{{ button("Cancel", extra_class="h-11 md:h-ctl-lg", **cancel_attrs) }}{{ button(confirm_label, kind="danger", type=type, extra_class=confirm_class, **confirm_attrs) }}{% endcall %}
 {%- endmacro %}
 
 {#- Confirmation for a destructive or overriding action: states the effect, Cancel first and

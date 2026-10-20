@@ -11,6 +11,6 @@
 {{ field("ap", "Absolute path", name="path", value=value, placeholder="/opt/example", error=error | default(none), mono=true, autocomplete="off", spellcheck="false") }}
 <ul id="ap-v" class="m-0 flex list-none flex-col gap-1.5" hx-get="/settings/paths/validate" hx-trigger="input changed delay:400ms from:#ap" hx-include="#ap" hx-swap="innerHTML" aria-live="polite">{% include "fragments/settings_path_checks.html" %}</ul>
 {% endcall %}
-{% call dialog_footer() %}{{ button("Cancel", extra_class="h-11", data_js="dialog-close") }}{{ button("Add path", kind="primary", type="submit", disabled=not check.ok, id="path-add-submit") }}{% endcall %}
+{% call dialog_footer() %}{{ button("Cancel", extra_class="h-11 md:h-ctl-lg", data_js="dialog-close") }}{{ button("Add path", kind="primary", type="submit", disabled=not check.ok, id="path-add-submit") }}{% endcall %}
 </form>
 </div>

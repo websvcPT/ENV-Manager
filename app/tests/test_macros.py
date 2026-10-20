@@ -88,6 +88,34 @@ def test_button_kinds_links_and_attributes() -> None:
     assert "disabled:opacity-60" in page
 
 
+@pytest.mark.parametrize(
+    ("kind", "heights"),
+    [
+        ("primary", "h-11 md:h-ctl-lg"),
+        ("primary-sm", "h-10 md:h-ctl"),
+        ("secondary", "h-10 md:h-ctl"),
+        ("danger", "h-10 md:h-ctl"),
+    ],
+)
+def test_a_button_has_its_phone_height_and_a_lower_one_from_md(kind: str, heights: str) -> None:
+    page = render_snippet(
+        "{% from 'macros/buttons.html' import button %}" + "{{ button('Go', kind=kind) }}",
+        kind=kind,
+    )
+    assert f' {heights}"' in page
+
+
+def test_an_extra_class_with_its_own_height_replaces_the_height_of_the_kind() -> None:
+    page = render_snippet(
+        "{% from 'macros/buttons.html' import button %}"
+        "{{ button('A', extra_class='h-11 md:h-ctl-lg') }}"
+        "{{ button('B', extra_class='max-md:h-11') }}"
+    )
+    first, second = page.split("</button>")[:2]
+    assert "h-11 md:h-ctl-lg" in first and "h-10" not in first
+    assert "h-10 md:h-ctl max-md:h-11" in second
+
+
 def test_icon_button_uses_the_label_as_accessible_name() -> None:
     """Icon-only buttons carry an aria-label."""
     page = render_snippet(
@@ -477,13 +505,15 @@ def test_confirm_footer_has_cancel_first_and_the_danger_button_last() -> None:
     page = render_snippet(imported + "{{ confirm_footer('Delete', type='submit') }}")
     assert page.count("<button") == 2 and 'data-js="dialog-close"' in page
     assert page.index(">Cancel<") < page.index(">Delete<")
-    assert '<button type="submit" class="inline-flex h-10' in page.split(">Cancel<")[1]
+    danger = page.split(">Cancel<")[1]
+    assert '<button type="submit" class="inline-flex ' in danger and "h-11 md:h-ctl-lg" in danger
+    assert "h-10" not in page
     assert "border-danger" in page and "group-[.htmx-request]" not in page
     assert "Working." not in page
     request = render_snippet(imported + "{{ confirm_footer('Delete', hx_delete='/x') }}")
     assert (
         'hx-delete="/x"' in request
-        and '<button type="button" class="inline-flex h-10' in (request.split(">Cancel<")[1])
+        and '<button type="button" class="inline-flex ' in (request.split(">Cancel<")[1])
     )
 
 
