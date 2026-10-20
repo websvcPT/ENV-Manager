@@ -14,7 +14,7 @@ copies in ``demo/baseline/environments``:
     .env.api          drift: the target differs from the managed version
     .env.db           identical to the managed version
     .env.db.secrets   identical, but its dist template has a key the managed version lacks (blocked)
-    demo-ca.pem       missing target; a certificate, so its dist link is ignored (not applicable)
+    demo-ca.pem       missing target; a certificate has no dist file (not applicable)
 
 Grants: ``project_admin`` gets the whole project, ``env_scoped_admin`` only ``.env.db`` (so a
 deploy of ``db`` by that user touches one of the two files). Every value is an obviously fake
@@ -80,12 +80,14 @@ _CERTIFICATE = (
 
 @dataclass(frozen=True)
 class DemoFile:
-    """A managed file of the demo stack: service, saved versions (oldest first), dist link, type."""
+    """A managed file of the demo stack: service, saved versions (oldest first), dist link, type.
+
+    A certificate has no dist link."""
 
     service: str
     name: str
     versions: tuple[str, ...]
-    dist_path: str
+    dist_path: str | None
     file_type: FileType = FileType.ENV
 
     @property
@@ -101,7 +103,7 @@ class DemoFile:
 
 DEMO_FILES = (
     DemoFile("api", ".env.api", (_API_SETTINGS,), "environments/.env.api-dist"),
-    DemoFile("api", "demo-ca.pem", (_CERTIFICATE,), "environments/demo-ca.pem-dist", FileType.CERT),
+    DemoFile("api", "demo-ca.pem", (_CERTIFICATE,), None, FileType.CERT),
     DemoFile("db", ".env.db", (_DB_SETTINGS_FIRST, _DB_SETTINGS), "environments/.env.db-dist"),
     DemoFile("db", ".env.db.secrets", (_DB_SECRETS,), "environments/.env.db.secrets-dist"),
 )

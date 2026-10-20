@@ -24,7 +24,6 @@ BASELINE_NAMES = {
     ".env.db-dist",
     ".env.db.secrets",
     ".env.db.secrets-dist",
-    "demo-ca.pem-dist",
 }
 
 

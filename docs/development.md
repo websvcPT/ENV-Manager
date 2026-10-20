@@ -46,9 +46,8 @@ mounts the Docker socket.
 - `demo/stack/compose.yaml` runs two workloads (`api` and `db`) on a pinned `alpine` image.
   They load their files with `env_file` from `environments/`, only sleep, and print the names
   (never the values) of the `DEMO_` variables they received.
-- `demo/stack/environments/` holds the committed dist templates (`.env.*-dist`, plus a fake,
-  clearly labelled non-secret certificate for a comparison that is skipped). The real target
-  files next to them are written by the app or restored by `make demo-reset`, and are ignored by
+- `demo/stack/environments/` holds the committed dist templates (`.env.*-dist`; the certificate
+  has none, as a certificate has no dist file). The real target files next to them are written by the app or restored by `make demo-reset`, and are ignored by
   git, as in a real deployment.
 - `demo/baseline/environments/` is the known target state `make demo-reset` restores
   (files written with mode 0600): `.env.api` drifted from its managed version, `.env.db` and

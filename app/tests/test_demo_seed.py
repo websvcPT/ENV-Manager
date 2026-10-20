@@ -152,7 +152,11 @@ async def test_demo_structure_follows_the_committed_stack(
         assert environment.service_id == service.id
         assert environment.target_path == demo_file.target_path
         assert environment.dist_path == demo_file.dist_path
-        assert (STACK_DIR / demo_file.dist_path).is_file()
+        if demo_file.file_type is FileType.CERT:
+            assert environment.dist_path is None
+        else:
+            assert (STACK_DIR / str(demo_file.dist_path)).is_file()
+    assert [path.name for path in (STACK_DIR / "environments").glob("demo-ca.pem*")] == []
 
 
 async def test_demo_services_store_the_recreate_command(
@@ -174,34 +178,33 @@ async def test_demo_services_store_the_recreate_command(
             assert "{" not in hook.commands
 
 
-async def test_demo_dist_comparison_covers_clean_blocked_and_skipped(
+async def test_demo_dist_comparison_covers_clean_and_blocked(
     engine: AsyncEngine, demo_data: SeedData, crypto: CryptoService
 ) -> None:
-    """One file has a dist key the managed version lacks; the certificate skips the comparison."""
+    """One file has a dist key the managed version lacks; the certificate has no dist file."""
     demo = _demo(demo_data)
     reports = {}
     async with create_session_factory(engine)() as db:
         for name, environment in _environments(demo).items():
-            dist_text = (STACK_DIR / str(environment.dist_path)).read_text(encoding="utf-8")
+            if environment.dist_path is None:
+                continue
+            dist_text = (STACK_DIR / environment.dist_path).read_text(encoding="utf-8")
             text = await _latest_text(db, crypto, environment.id)
             reports[name] = compare_text_to_dist(text, dist_text)
+    assert sorted(reports) == [".env.api", ".env.db", ".env.db.secrets"]
     for name in (".env.api", ".env.db"):
         assert reports[name].clean, name
     blocked = reports[".env.db.secrets"]
     assert blocked.skipped is None
     assert blocked.missing == ("DEMO_DB_BACKUP_PASSWORD",)
     assert (blocked.extra, blocked.empty) == ((), ())
-    skipped = reports["demo-ca.pem"]
-    assert skipped.skipped is DistSkipReason.ENVIRONMENT_NOT_ENV_FORMAT
-    dist_certificate = (STACK_DIR / "environments" / "demo-ca.pem-dist").read_text(encoding="utf-8")
-    assert not parse_env(dist_certificate).is_env_format
 
 
 async def test_demo_dist_checks_read_the_committed_templates(
     engine: AsyncEngine, demo_data: SeedData, crypto: CryptoService
 ) -> None:
     """A real check of each demo file: two pass, the secrets file blocks, the certificate has no
-    dist file to compare, whatever dist link it keeps."""
+    dist file and is not applicable."""
     demo = _demo(demo_data)
     outcomes = {}
     async with create_session_factory(engine)() as db:
