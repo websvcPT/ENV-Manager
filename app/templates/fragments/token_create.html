@@ -25,6 +25,6 @@
 </select>{{ field_message("tp", "Optional. Narrow to a project, deployment or service.", errors.restriction) }}</div>
 {{ field("te", "Expiry", name="expires", type="date", value=values.expires, hint="Optional. The token works through the end of this day, in UTC.", error=errors.expires, min=today) }}
 </div>{% endcall %}
-{% call dialog_footer() %}{{ button("Cancel", extra_class="h-11 md:h-ctl-lg", data_js="dialog-close") }}{{ button("Create token", kind="primary", type="submit") }}{% endcall %}
+{% call dialog_footer() %}{{ button("Cancel", extra_class="h-11 md:h-ctl", data_js="dialog-close") }}{{ button("Create token", kind="primary", type="submit") }}{% endcall %}
 </form>
 </div>

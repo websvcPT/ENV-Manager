@@ -47,5 +47,5 @@
 <div id="upload-field" class="hidden flex-col gap-1.5 group-has-[#src-upload:checked]:flex"><label for="upload" class="text-[13px] font-semibold">Text file</label><input id="upload" name="upload" type="file"{% if errors.get("upload") %} aria-describedby="upload-e" aria-invalid="true"{% else %} aria-describedby="upload-h"{% endif %} class="w-full max-w-xl text-sm text-ink file:mr-3 file:h-10 md:file:h-ctl file:cursor-pointer file:rounded-btn file:border file:border-line-strong file:bg-surface file:px-4 file:text-sm file:font-semibold file:text-ink hover:file:bg-surface2">{{ field_message("upload", "A UTF-8 text file up to 256 KiB.", errors.get("upload")) }}</div>
 </div>
 {% endcall %}
-<div class="flex flex-wrap gap-3">{{ button("Add environment", kind="primary", type="submit") }}{{ button("Cancel", href=cancel_href, extra_class="h-11 md:h-ctl-lg") }}</div>
+<div class="flex flex-wrap gap-3">{{ button("Add environment", kind="primary", type="submit") }}{{ button("Cancel", href=cancel_href, extra_class="h-11 md:h-ctl") }}</div>
 </form>

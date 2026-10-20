@@ -12,7 +12,7 @@
 {{ dialog_head("grant-dialog", "Add access", access.subtitle) }}
 {%- if not access.candidates %}
 {% call dialog_body() %}{{ note("Every active admin and viewer already has access to this " ~ kind ~ ".") }}{% endcall %}
-{% call dialog_footer() %}{{ button("Close", extra_class="h-11 md:h-ctl-lg", data_js="dialog-close") }}{% endcall %}
+{% call dialog_footer() %}{{ button("Close", extra_class="h-11 md:h-ctl", data_js="dialog-close") }}{% endcall %}
 {%- else %}
 <form hx-post="{{ base }}/grants" hx-target="#grant-dialog" hx-swap="innerHTML">
 {% call dialog_body() %}
@@ -22,7 +22,7 @@
 {%- elif kind == "deployment" %}{{ note("Includes future items: services and environments added under deployment " ~ access.node.name ~ " later are visible to this user automatically.") }}
 {%- else %}{{ note("Grants only the named environments. A newly added environment stays invisible to this user until a grant is added for it.") }}{% endif %}
 {% endcall %}
-{% call dialog_footer() %}{{ button("Cancel", extra_class="h-11 md:h-ctl-lg", data_js="dialog-close") }}{{ button("Add access", kind="primary", type="submit") }}{% endcall %}
+{% call dialog_footer() %}{{ button("Cancel", extra_class="h-11 md:h-ctl", data_js="dialog-close") }}{{ button("Add access", kind="primary", type="submit") }}{% endcall %}
 </form>
 {%- endif %}
 {%- if refresh %}{% include "fragments/access_list.html" %}{% endif %}

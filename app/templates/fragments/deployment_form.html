@@ -38,5 +38,5 @@
 {{ field("group", "Group", name="file_group", value=form.file_group, mono=true, placeholder="app user", error=errors.get("file_group"), autocomplete="off", maxlength="64") }}
 </div>
 {% endcall %}
-<div class="flex flex-wrap gap-3">{{ button(submit_label, kind="primary", type="submit") }}{{ button("Cancel", href=cancel_href, extra_class="h-11 md:h-ctl-lg") }}</div>
+<div class="flex flex-wrap gap-3">{{ button(submit_label, kind="primary", type="submit") }}{{ button("Cancel", href=cancel_href, extra_class="h-11 md:h-ctl") }}</div>
 </form>

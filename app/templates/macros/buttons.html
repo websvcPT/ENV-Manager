@@ -12,10 +12,10 @@
   "danger": "inline-flex items-center justify-center gap-2 rounded-btn border border-danger bg-danger-soft px-4 text-sm font-bold text-danger hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
 } -%}
 {#- The height of a kind: its phone height, and from md up the matching control height. An
-    `extra_class` that sets its own height (`h-11 md:h-ctl-lg`) replaces it, so two heights
+    `extra_class` that sets its own height (`h-11 md:h-ctl`) replaces it, so two heights
     never compete in one element. -#}
 {%- set heights = {
-  "primary": "h-11 md:h-ctl-lg",
+  "primary": "h-11 md:h-ctl",
   "primary-sm": "h-10 md:h-ctl",
   "secondary": "h-10 md:h-ctl",
   "danger": "h-10 md:h-ctl"

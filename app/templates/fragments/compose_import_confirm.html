@@ -20,7 +20,7 @@
 </ul>
 {%- endif %}
 {% endcall %}
-{% call dialog_footer() %}{{ button("Close", extra_class="h-11 md:h-ctl-lg", data_js="dialog-close") }}{% endcall %}
+{% call dialog_footer() %}{{ button("Close", extra_class="h-11 md:h-ctl", data_js="dialog-close") }}{% endcall %}
 </div>
 {%- else %}
 <form data-fragment="import-confirm" hx-post="{{ action }}" hx-target="#import-confirm" hx-swap="innerHTML" hx-sync="this:drop" class="group">
@@ -47,6 +47,6 @@
 {%- endif %}
 {{ note("Nothing is deployed. No file on the host is written or changed: a file that exists is saved as version 1 as it is, and a missing one starts empty. No post-deploy command is set.") }}
 {% endcall %}
-{% call dialog_footer() %}{{ working_status("Working. Scanning the Compose files and importing can take up to 30 seconds.") }}<span class="flex-1"></span>{{ button("Cancel", extra_class="h-11 md:h-ctl-lg", data_js="dialog-close") }}{{ button("Import", kind="primary", type="submit", id="import-confirm-submit", extra_class="group-[.htmx-request]:opacity-60") }}{% endcall %}
+{% call dialog_footer() %}{{ working_status("Working. Scanning the Compose files and importing can take up to 30 seconds.") }}<span class="flex-1"></span>{{ button("Cancel", extra_class="h-11 md:h-ctl", data_js="dialog-close") }}{{ button("Import", kind="primary", type="submit", id="import-confirm-submit", extra_class="group-[.htmx-request]:opacity-60") }}{% endcall %}
 </form>
 {%- endif %}

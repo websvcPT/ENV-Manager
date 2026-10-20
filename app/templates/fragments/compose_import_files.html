@@ -38,6 +38,6 @@
 {{ field("cf-extra", "Another Compose file (optional)", name="extra_path", value=typed, mono=true, hint="A path relative to the deployment folder, for a file the list does not show. It is read after the files ticked above.", extra_class="max-w-xl", autocomplete="off", spellcheck="false", maxlength="500") }}
 </div>
 {% endcall %}
-<div class="flex flex-wrap items-center gap-3">{{ button("Scan the files", kind="primary", type="submit", extra_class="group-[.htmx-request]:opacity-60") }}{{ button("Cancel", href="/deployments/" ~ deployment.id, extra_class="h-11 md:h-ctl-lg") }}{{ working_status("Working. Reading the Compose files can take up to 30 seconds.") }}</div>
+<div class="flex flex-wrap items-center gap-3">{{ button("Scan the files", kind="primary", type="submit", extra_class="group-[.htmx-request]:opacity-60") }}{{ button("Cancel", href="/deployments/" ~ deployment.id, extra_class="h-11 md:h-ctl") }}{{ working_status("Working. Reading the Compose files can take up to 30 seconds.") }}</div>
 </form>
 {%- endif %}
