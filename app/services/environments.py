@@ -19,6 +19,7 @@ from app.core.crypto import CryptoService
 from app.models import (
     Deployment,
     Environment,
+    EnvironmentVersion,
     FileType,
     Service,
     User,
@@ -173,7 +174,7 @@ def _uploaded_text(upload: bytes | None) -> tuple[str, str | None]:
     return text, content_problem(text)
 
 
-def _imported_text(
+def imported_text(
     allowed: AllowedPaths, root: str, relative: str, label: str, verb: str
 ) -> tuple[str, str | None]:
     """The text of the file below the root and None, or an empty text and the message to show.
@@ -321,7 +322,7 @@ async def validate_environment(
         if file_type is FileType.CERT:
             errors["source"] = CERT_HAS_NO_DIST_MESSAGE
         elif dist_path is not None:
-            content, problem = _imported_text(
+            content, problem = imported_text(
                 allowed, deployment.root_path, dist_path, "dist", "copy"
             )
             if problem:
@@ -331,7 +332,7 @@ async def validate_environment(
         else:
             errors["source"] = "Enter the dist file path to copy the file."
     elif target_path is not None:
-        content, problem = _imported_text(
+        content, problem = imported_text(
             allowed, deployment.root_path, target_path, "target", "import"
         )
         if problem:
@@ -363,6 +364,100 @@ async def validate_environment(
     )
 
 
+async def add_environment(
+    db: AsyncSession,
+    crypto: CryptoService,
+    deployment: Deployment,
+    clean: CleanEnvironment,
+    *,
+    actor: User,
+    ip_address: str | None = None,
+    comment: str | None = None,
+) -> tuple[Environment, EnvironmentVersion]:
+    """Add the environment, its optional new service and version 1 to the session, uncommitted.
+
+    The caller commits and announces. ``comment`` replaces the automatic comment of version 1.
+    Audit entries carry paths, attributes and the content source, never the content.
+    """
+    service_id = clean.service_id
+    service_created = clean.new_service_name is not None
+    if clean.new_service_name is not None:
+        service = await add_service(
+            db, deployment, clean.new_service_name, actor=actor, ip_address=ip_address
+        )
+        service_id = service.id
+    if service_id is None:
+        raise EnvironmentFormError({"service": "Choose a service."})
+    environment = Environment(
+        service_id=service_id,
+        name=clean.name,
+        file_type=clean.file_type,
+        target_path=clean.target_path,
+        dist_path=clean.dist_path,
+        file_mode=clean.file_mode,
+        file_owner=clean.file_owner,
+        file_group=clean.file_group,
+    )
+    db.add(environment)
+    await db.flush()
+    version = await create_version(
+        db,
+        crypto,
+        environment.id,
+        clean.content,
+        author=actor,
+        comment=comment
+        or (
+            "Initial content (copied from the dist file)"
+            if clean.source is ContentSource.DIST
+            else f"Initial content ({clean.source.value})"
+        ),
+    )
+    await record_environment_audit(
+        db,
+        AuditActor.for_user(actor, ip_address),
+        EnvironmentRef(
+            environment.id, environment.name, deployment.project_id, deployment.id, service_id
+        ),
+        action="environment.create",
+        details={
+            "file_type": clean.file_type.value,
+            "target_path": clean.target_path,
+            "dist_path": clean.dist_path,
+            "file_mode": clean.file_mode,
+            "file_owner": clean.file_owner,
+            "file_group": clean.file_group,
+            "source": clean.source.value,
+            "service_created": service_created,
+        },
+        version_ids=[version.id],
+    )
+    return environment, version
+
+
+async def announce_created(
+    notifier: EventNotifier,
+    deployment: Deployment,
+    environment: Environment,
+    version: EnvironmentVersion,
+    actor: User,
+) -> None:
+    """Tell the notifier that the environment was created with this first version."""
+    await announce_event(
+        notifier,
+        FileChanged(
+            deployment.project_id,
+            deployment.id,
+            environment.service_id,
+            environment.id,
+            environment.name,
+            version.number,
+            FileChange.CREATED,
+            actor.name,
+        ),
+    )
+
+
 async def create_environment(
     db: AsyncSession,
     crypto: CryptoService,
@@ -378,57 +473,8 @@ async def create_environment(
     Audit entries carry paths, attributes and the content source, never the content.
     """
     try:
-        service_id = clean.service_id
-        service_created = clean.new_service_name is not None
-        if clean.new_service_name is not None:
-            service = await add_service(
-                db, deployment, clean.new_service_name, actor=actor, ip_address=ip_address
-            )
-            service_id = service.id
-        if service_id is None:
-            raise EnvironmentFormError({"service": "Choose a service."})
-        environment = Environment(
-            service_id=service_id,
-            name=clean.name,
-            file_type=clean.file_type,
-            target_path=clean.target_path,
-            dist_path=clean.dist_path,
-            file_mode=clean.file_mode,
-            file_owner=clean.file_owner,
-            file_group=clean.file_group,
-        )
-        db.add(environment)
-        await db.flush()
-        version = await create_version(
-            db,
-            crypto,
-            environment.id,
-            clean.content,
-            author=actor,
-            comment=(
-                "Initial content (copied from the dist file)"
-                if clean.source is ContentSource.DIST
-                else f"Initial content ({clean.source.value})"
-            ),
-        )
-        await record_environment_audit(
-            db,
-            AuditActor.for_user(actor, ip_address),
-            EnvironmentRef(
-                environment.id, environment.name, deployment.project_id, deployment.id, service_id
-            ),
-            action="environment.create",
-            details={
-                "file_type": clean.file_type.value,
-                "target_path": clean.target_path,
-                "dist_path": clean.dist_path,
-                "file_mode": clean.file_mode,
-                "file_owner": clean.file_owner,
-                "file_group": clean.file_group,
-                "source": clean.source.value,
-                "service_created": service_created,
-            },
-            version_ids=[version.id],
+        environment, version = await add_environment(
+            db, crypto, deployment, clean, actor=actor, ip_address=ip_address
         )
         await db.commit()
     except IntegrityError as error:
@@ -436,17 +482,5 @@ async def create_environment(
         raise EnvironmentFormError(
             {"name": f"This service already has a file named {clean.name}."}
         ) from error
-    await announce_event(
-        notifier,
-        FileChanged(
-            deployment.project_id,
-            deployment.id,
-            environment.service_id,
-            environment.id,
-            environment.name,
-            version.number,
-            FileChange.CREATED,
-            actor.name,
-        ),
-    )
+    await announce_created(notifier, deployment, environment, version, actor)
     return environment
