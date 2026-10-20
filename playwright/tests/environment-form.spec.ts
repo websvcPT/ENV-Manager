@@ -9,6 +9,7 @@ import { expect, test } from './scratch-project';
 
 const SAMPLE_A = '/srv/deployments/sample-a';
 const OUTSIDE = 'Resolves outside the deployment root and the allowed paths.';
+const VERSION_ROW = '[data-fragment="version-row"]';
 
 interface Prepared {
   deployment: number;
@@ -425,6 +426,83 @@ test.describe('superadmin add environment', () => {
     await expect(page.locator('input[name="source"]:checked')).toHaveValue('import');
     await page.goto(`/services/${service}`);
     await expect(environmentLink(page, 'escape.conf')).toHaveCount(0);
+  });
+
+  test('the dist source is available only while the dist path has a path', async ({
+    page,
+    request,
+    scratch,
+  }) => {
+    const { service } = await prepare(request, scratch.id);
+    await page.goto(`/services/${service}/environments/new`);
+    const dist = page.locator('#src-dist');
+    const content = page.locator('#content-field');
+    await expect(dist).toBeDisabled();
+    await expect(page.locator('[data-dist-missing]')).toBeVisible();
+    await expect(page.locator('[data-dist-ready]')).toBeHidden();
+
+    await page.locator('#dp').fill('import-source.env');
+    await expect(dist).toBeEnabled();
+    await expect(page.locator('[data-dist-ready]')).toBeVisible();
+    await expect(page.locator('[data-dist-missing]')).toBeHidden();
+    await dist.check();
+    await expect(content).toBeHidden();
+    await expect(page.locator('#upload-field')).toBeHidden();
+
+    await page.locator('#dp').fill('');
+    await expect(dist).toBeDisabled();
+    await expect(page.locator('input[name="source"]:checked')).toHaveValue('paste');
+    await expect(content).toBeVisible();
+    expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+  });
+
+  test('copies the dist file as version 1 and says so in the history', async ({
+    page,
+    request,
+    scratch,
+  }) => {
+    const { service } = await prepare(request, scratch.id);
+    await page.goto(`/services/${service}/environments/new`);
+    await fillFile(page, 'copied.env', 'copied.env');
+    await page.locator('#dp').fill('import-source.env');
+    await page.locator('#src-dist').check();
+    await submit(page);
+    await expect(page).toHaveURL(new RegExp(`/services/${service}\\?added=environment$`));
+    await environmentLink(page, 'copied.env').click();
+    await expect(page.locator('[data-fragment="kv-row"]')).toHaveCount(2);
+    await expect(page.locator('[data-fragment="kv-row"][data-key="IMPORTED_KEY"]')).toBeVisible();
+    await page.getByRole('link', { name: 'History', exact: true }).click();
+    await expect(page.locator(VERSION_ROW)).toHaveCount(1);
+    await expect(page.locator(VERSION_ROW)).toContainText(
+      'Initial content (copied from the dist file)',
+    );
+  });
+
+  test('the dist source refuses a missing file and a symlink that leaves the allowed paths', async ({
+    page,
+    request,
+    scratch,
+  }) => {
+    const { service } = await prepare(request, scratch.id);
+    await page.goto(`/services/${service}/environments/new`);
+    await fillFile(page, 'no-dist.env', 'no-dist.env');
+    await page.locator('#dp').fill('not-there.env-dist');
+    await page.locator('#src-dist').check();
+    await submit(page);
+    await expect(page.locator('#env-form [role="alert"]').filter({ hasText: 'does not exist' }))
+      .toHaveText('The dist file does not exist or is not a regular file.');
+    await expect(page.locator('input[name="source"]:checked')).toHaveValue('dist');
+    await expect(page.locator('#src-dist')).toBeEnabled();
+
+    await page.locator('#dp').fill('escape.conf');
+    await submit(page);
+    await expect(page.locator('#dp-e')).toHaveText(OUTSIDE);
+    await expect(
+      page.locator('#env-form [role="alert"]').filter({ hasText: 'Fix the dist file path' }),
+    ).toHaveText('Fix the dist file path to copy the file.');
+    await expect(page.locator('#en')).toHaveValue('no-dist.env');
+    await page.goto(`/services/${service}`);
+    await expect(environmentLink(page, 'no-dist.env')).toHaveCount(0);
   });
 
   test('refuses an oversized paste', async ({

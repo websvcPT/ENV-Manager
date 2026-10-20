@@ -2,7 +2,8 @@
 
 An environment is created together with its first version. The target and dist paths are
 resolved against the real deployment root and the allowed paths when the form is submitted, and
-the importable target file is read through the confined read shared with the dist check.
+the importable target file and the copied dist file are read through the confined read shared
+with the dist check.
 """
 
 import re
@@ -54,6 +55,7 @@ class ContentSource(StrEnum):
     PASTE = "paste"
     UPLOAD = "upload"
     IMPORT = "import"
+    DIST = "dist"
 
 
 @dataclass(frozen=True)
@@ -161,20 +163,24 @@ def _uploaded_text(upload: bytes | None) -> tuple[str, str | None]:
     return text, content_problem(text)
 
 
-def _imported_text(allowed: AllowedPaths, root: str, target_path: str) -> tuple[str, str | None]:
-    """The text of the current target file and None, or an empty text and the message to show."""
+def _imported_text(
+    allowed: AllowedPaths, root: str, relative: str, label: str, verb: str
+) -> tuple[str, str | None]:
+    """The text of the file below the root and None, or an empty text and the message to show.
+
+    ``label`` is ``target`` or ``dist`` (it names the file in the messages) and ``verb`` is what
+    the form does with it (``import`` or ``copy``).
+    """
     try:
-        text = read_confined_text(
-            allowed, root, target_path, label="target", max_bytes=MAX_CONTENT_BYTES
-        )
+        text = read_confined_text(allowed, root, relative, label=label, max_bytes=MAX_CONTENT_BYTES)
     except ConfinedReadError as error:
         messages = {
-            PathProblem.NOT_A_FILE: "The target file does not exist or is not a regular file.",
-            PathProblem.TOO_LARGE: "The target file is too large to import.",
-            PathProblem.NOT_UTF8: "The target file is not valid UTF-8 text.",
+            PathProblem.NOT_A_FILE: f"The {label} file does not exist or is not a regular file.",
+            PathProblem.TOO_LARGE: f"The {label} file is too large to {verb}.",
+            PathProblem.NOT_UTF8: f"The {label} file is not valid UTF-8 text.",
             PathProblem.LEAVES_ROOT: OUTSIDE_MESSAGE,
         }
-        return "", messages.get(error.problem, "The target file cannot be read.")
+        return "", messages.get(error.problem, f"The {label} file cannot be read.")
     return text, content_problem(text)
 
 
@@ -294,8 +300,21 @@ async def validate_environment(
         content, problem = _uploaded_text(form.upload)
         if problem:
             errors["upload"] = problem
+    elif source is ContentSource.DIST:
+        if dist_path is not None:
+            content, problem = _imported_text(
+                allowed, deployment.root_path, dist_path, "dist", "copy"
+            )
+            if problem:
+                errors["source"] = problem
+        elif "dist_path" in errors:
+            errors["source"] = "Fix the dist file path to copy the file."
+        else:
+            errors["source"] = "Enter the dist file path to copy the file."
     elif target_path is not None:
-        content, problem = _imported_text(allowed, deployment.root_path, target_path)
+        content, problem = _imported_text(
+            allowed, deployment.root_path, target_path, "target", "import"
+        )
         if problem:
             errors["source"] = problem
     elif "target_path" in errors:
@@ -358,7 +377,11 @@ async def create_environment(
             environment.id,
             clean.content,
             author=actor,
-            comment=f"Initial content ({clean.source.value})",
+            comment=(
+                "Initial content (copied from the dist file)"
+                if clean.source is ContentSource.DIST
+                else f"Initial content ({clean.source.value})"
+            ),
         )
         await record_environment_audit(
             db,

@@ -317,6 +317,109 @@ async def test_import_refusals(
     assert bad_target["source"] == "Fix the target path to import the file."
 
 
+async def test_the_dist_source_copies_the_dist_file(
+    db: AsyncSession, host: Path, seed_data: SeedData, relocated: Path
+) -> None:
+    deployment = await db.get(Deployment, seed_data.deployments.fancy_prod.id)
+    assert deployment is not None
+    (relocated / "environments" / ".env.cache-dist").write_text("CACHE_HOST=\r\nCACHE_PORT=\r\n")
+    clean = await validate_environment(
+        db,
+        AllowedPaths([host]),
+        deployment,
+        form_for(
+            seed_data, source="dist", dist_path="environments/.env.cache-dist", content="ignored"
+        ),
+    )
+    assert clean.content == "CACHE_HOST=\r\nCACHE_PORT=\r\n" and clean.source is ContentSource.DIST
+    assert clean.dist_path == "environments/.env.cache-dist"
+
+
+async def test_the_dist_source_refusals(
+    db: AsyncSession, host: Path, seed_data: SeedData, relocated: Path, tmp_path: Path
+) -> None:
+    dist = relocated / "environments" / ".env.cache-dist"
+    form = form_for(seed_data, source="dist", dist_path="environments/.env.cache-dist")
+    missing = await refused(db, host, seed_data, form)
+    assert missing["source"] == "The dist file does not exist or is not a regular file."
+    assert "dist_path" not in missing
+    dist.mkdir()
+    directory = await refused(db, host, seed_data, form)
+    assert directory["dist_path"] == "Dist path is a directory, not a file."
+    assert directory["source"] == "Fix the dist file path to copy the file."
+    dist.rmdir()
+    outside = tmp_path / "secret.txt"
+    outside.write_text("SECRET=1\n")
+    dist.symlink_to(outside)
+    escaped = await refused(db, host, seed_data, form)
+    assert escaped["dist_path"] == OUTSIDE_MESSAGE
+    assert escaped["source"] == "Fix the dist file path to copy the file."
+    dist.unlink()
+    dist.write_bytes(b"\xff\xfe")
+    binary = await refused(db, host, seed_data, form)
+    assert binary["source"] == "The dist file is not valid UTF-8 text."
+    dist.write_bytes(b"A" * (MAX_CONTENT_BYTES + 1))
+    big = await refused(db, host, seed_data, form)
+    assert big["source"] == "The dist file is too large to copy."
+    dist.write_bytes(b"A\x00B")
+    binary_text = await refused(db, host, seed_data, form)
+    assert binary_text["source"] == "Binary content is not supported."
+    empty = await refused(db, host, seed_data, form_for(seed_data, source="dist"))
+    assert empty["source"] == "Enter the dist file path to copy the file."
+    outside_path = await refused(
+        db, host, seed_data, form_for(seed_data, source="dist", dist_path="../x")
+    )
+    assert outside_path["source"] == "Fix the dist file path to copy the file."
+    same = await refused(
+        db,
+        host,
+        seed_data,
+        form_for(seed_data, source="dist", dist_path="environments/.env.cache"),
+    )
+    assert same["dist_path"] == "The dist file must be a different file from the target."
+    assert same["source"] == "Fix the dist file path to copy the file."
+
+
+async def test_creating_from_the_dist_file_says_so_in_the_comment_and_the_audit(
+    seeded_database: AsyncEngine,
+    db: AsyncSession,
+    host: Path,
+    seed_data: SeedData,
+    crypto: CryptoService,
+    relocated: Path,
+) -> None:
+    deployment = await db.get(Deployment, seed_data.deployments.fancy_prod.id)
+    assert deployment is not None
+    (relocated / "environments" / ".env.cache-dist").write_text("CACHE_SECRET=hunter2\n")
+    form = form_for(
+        seed_data, source="dist", dist_path="environments/.env.cache-dist", content="ignored"
+    )
+    clean = await validate_environment(db, AllowedPaths([host]), deployment, form)
+    created = await create_environment(
+        db, crypto, deployment, clean, actor=seed_data.users.superadmin
+    )
+    async with create_session_factory(seeded_database)() as check:
+        version = (
+            await check.execute(
+                select(EnvironmentVersion).where(EnvironmentVersion.environment_id == created.id)
+            )
+        ).scalar_one()
+        assert crypto.decrypt_text(version.content_encrypted) == "CACHE_SECRET=hunter2\n"
+        assert version.number == 1
+        assert version.comment == "Initial content (copied from the dist file)"
+        entry = (
+            await check.execute(
+                select(AuditEntry).where(
+                    AuditEntry.action == "environment.create",
+                    AuditEntry.environment_id == created.id,
+                )
+            )
+        ).scalar_one()
+        assert entry.details["source"] == "dist"
+        assert entry.details["dist_path"] == "environments/.env.cache-dist"
+        assert "hunter2" not in str(entry.details)
+
+
 async def test_create_stores_the_environment_version_one_and_audit(
     seeded_database: AsyncEngine,
     db: AsyncSession,

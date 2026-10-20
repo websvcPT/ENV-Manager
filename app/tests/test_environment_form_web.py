@@ -110,10 +110,15 @@ async def test_new_environment_page_has_every_field(
     assert 'placeholder="0600"' in page and 'placeholder="www-data"' in page
     assert f"Resolves to {layout.deploy}/" in page
     assert f'hx-get="/services/{layout.mysql}/environments/target-check"' in page
-    for source in ("paste", "upload", "import"):
+    for source in ("paste", "upload", "import", "dist"):
         assert f'id="src-{source}"' in page
     assert re.search(r'name="source" value="paste" checked', page)
     assert "Reads the file from the target and saves it as version 1." in page
+    assert "Copy the dist file" in page
+    dist_choice = re.search(r'<input type="radio" name="source" value="dist"[^>]*>', page)
+    assert dist_choice is not None and " disabled" in dist_choice.group(0)
+    assert "<span data-dist-missing>Enter a dist file path above to copy it.</span>" in page
+    assert re.search(r"<span data-dist-ready hidden>", page)
     assert ">Add environment</button>" in page
     assert f'href="/services/{layout.mysql}"' in page and ">Cancel</a>" in page
     crumbs = re.search(r'aria-label="Breadcrumb".*?</nav>', page, re.DOTALL)
@@ -317,6 +322,73 @@ async def test_import_reads_the_target_file_and_refuses_an_escaping_symlink(
         ).scalar_one()
         assert web_app.state.crypto.decrypt_text(content) == "LIVE=1\n"
     assert "linked" not in await environment_names(web_app)
+
+
+async def test_the_dist_source_copies_the_dist_file_as_version_one(
+    web_client: httpx.AsyncClient, layout: Layout, web_app: FastAPI
+) -> None:
+    await sign_in(web_client, "root")
+    (layout.deploy / "environments" / ".env.cache-dist").write_text("CACHE_HOST=\nCACHE_PORT=\n")
+    response = await post(
+        web_client,
+        f"/services/{layout.mysql}/environments/new",
+        env_data(
+            layout, source="dist", dist_path="environments/.env.cache-dist", content="ignored"
+        ),
+    )
+    assert response.status_code == 200 and "hx-redirect" in response.headers
+    async with web_app.state.session_factory() as db:
+        environment = (
+            await db.execute(select(Environment).where(Environment.name == ".env.cache"))
+        ).scalar_one()
+        assert environment.dist_path == "environments/.env.cache-dist"
+        version = (
+            await db.execute(
+                select(EnvironmentVersion).where(
+                    EnvironmentVersion.environment_id == environment.id
+                )
+            )
+        ).scalar_one()
+        assert web_app.state.crypto.decrypt_text(version.content_encrypted) == (
+            "CACHE_HOST=\nCACHE_PORT=\n"
+        )
+        assert version.comment == "Initial content (copied from the dist file)"
+        entry = (
+            await db.execute(
+                select(AuditEntry).where(
+                    AuditEntry.action == "environment.create",
+                    AuditEntry.environment_id == environment.id,
+                )
+            )
+        ).scalar_one()
+        assert entry.details["source"] == "dist"
+
+
+async def test_the_dist_source_refusals_swap_the_form_and_enable_the_choice(
+    web_client: httpx.AsyncClient, layout: Layout, web_app: FastAPI, tmp_path: Path
+) -> None:
+    await sign_in(web_client, "root")
+    url = f"/services/{layout.mysql}/environments/new"
+    no_path = await post(web_client, url, env_data(layout, source="dist"))
+    assert no_path.status_code == 422
+    assert "Enter the dist file path to copy the file." in no_path.text
+    assert re.search(r'name="source" value="dist" checked', no_path.text)
+    data = env_data(layout, source="dist", dist_path="environments/.env.cache-dist")
+    missing = await post(web_client, url, data)
+    assert missing.status_code == 422
+    assert "The dist file does not exist or is not a regular file." in missing.text
+    choice = re.search(r'<input type="radio" name="source" value="dist"[^>]*>', missing.text)
+    assert choice is not None
+    assert " disabled" not in choice.group(0) and " checked" in choice.group(0)
+    secret = tmp_path / "secret.txt"
+    secret.write_text("SECRET=1\n")
+    (layout.deploy / "environments" / ".env.cache-dist").symlink_to(secret)
+    escaped = await post(web_client, url, data)
+    assert escaped.status_code == 422
+    assert "Resolves outside the deployment root and the allowed paths." in escaped.text
+    assert "Fix the dist file path to copy the file." in escaped.text
+    assert "SECRET" not in escaped.text
+    assert ".env.cache" not in await environment_names(web_app)
 
 
 async def test_refused_values_swap_the_form_with_messages_and_keep_input(

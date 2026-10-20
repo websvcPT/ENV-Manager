@@ -5,8 +5,8 @@
    action controls of the row), sidebar collapse, reveal hide and timer, removing a new variable
    row, row toggle, tree toggle, copy, dismiss, history back, picking a path into a field,
    limiting the version comparison to two versions, closing dialogs when the server asks,
-   the deploy dialog (loading content, chosen environments, closing when the load fails), and a
-   toast when an htmx request fails (an access grid checkbox goes back to the stored state). */
+   the deploy dialog (loading content, chosen environments, closing when the load fails), the
+   dist file source of the add environment form, and a toast when an htmx request fails (an access grid checkbox goes back to the stored state). */
 (function () {
   'use strict';
 
@@ -373,6 +373,30 @@
     button.textContent = count === 0 ? button.getAttribute('data-label-none')
       : count === 1 ? button.getAttribute('data-label-one')
         : button.getAttribute('data-label-many').replace('{count}', String(count));
+  });
+
+  /* The "Copy the dist file" source of the add environment form is available only while the dist
+     path field holds a path. Emptying the field while the source is chosen goes back to pasting. */
+  document.addEventListener('input', function (event) {
+    var field = event.target;
+    if (!(field instanceof HTMLInputElement) || field.getAttribute('data-js') !== 'dist-path') {
+      return;
+    }
+    var form = field.closest('form');
+    var choice = form && form.querySelector('[data-js=dist-source]');
+    if (!(choice instanceof HTMLInputElement)) { return; }
+    var empty = field.value.trim() === '';
+    choice.disabled = empty;
+    var option = choice.closest('label');
+    if (option) {
+      option.classList.toggle('cursor-not-allowed', empty);
+      option.classList.toggle('opacity-60', empty);
+      option.classList.toggle('cursor-pointer', !empty);
+      option.querySelectorAll('[data-dist-ready]').forEach(function (hint) { hint.hidden = empty; });
+      option.querySelectorAll('[data-dist-missing]').forEach(function (hint) { hint.hidden = !empty; });
+    }
+    var paste = form.querySelector('#src-paste');
+    if (empty && choice.checked && paste instanceof HTMLInputElement) { paste.checked = true; }
   });
 
   document.addEventListener('click', function (event) {
