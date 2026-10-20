@@ -22,7 +22,7 @@
 {{ field("sf", "From address", name="from_address", value=form.from_address, extra_class="max-w-md", error=errors.get("from_address"), autocomplete="off", spellcheck="false") }}
 <div class="flex flex-wrap items-center gap-3 border-t border-line pt-4">
 {{ field("st", "Send test mail to", name="test_to", value=test_to, extra_class="w-72 max-w-full", autocomplete="off", spellcheck="false") }}
-{{ button("Send test mail", hx_post="/settings/smtp/test", hx_include="#st", hx_target="#smtp-test", extra_class="self-end max-md:h-11") }}
+{{ button("Send test mail", hx_post="/settings/smtp/test", hx_include="#st", hx_target="#smtp-test", extra_class="self-end") }}
 <div id="smtp-test" aria-live="polite" class="self-end"></div>
 <p class="basis-full text-xs text-ink2">The test mail uses the saved settings, so save a change before testing it.</p>
 </div>

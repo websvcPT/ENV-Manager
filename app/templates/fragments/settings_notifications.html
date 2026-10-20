@@ -19,10 +19,10 @@
 {%- call cell() %}<label class="flex size-11 items-center justify-center md:size-auto md:justify-start"><input type="checkbox" name="{{ row.kind.value }}" value="on"{% if item.enabled %} checked{% endif %} aria-label="Enable {{ row.label }}" class="block size-[18px] accent-accent"></label>{% endcall %}
 {%- call cell() %}
 {%- if row.project %}
-<select name="{{ row.kind.value }}_to" aria-label="Recipients for {{ row.label }}"{% if errors.get(row.kind.value ~ "_to") %} aria-invalid="true"{% endif %} class="h-9 md:h-ctl-md rounded-ctl border {{ "border-danger" if errors.get(row.kind.value ~ "_to") else "border-line-strong" }} bg-surface px-2.5 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus max-md:h-11">{% for value, label in recipient_choices %}<option value="{{ value }}"{% if value == item.recipients %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+<select name="{{ row.kind.value }}_to" aria-label="Recipients for {{ row.label }}"{% if errors.get(row.kind.value ~ "_to") %} aria-invalid="true"{% endif %} class="h-11 md:h-ctl rounded-ctl border {{ "border-danger" if errors.get(row.kind.value ~ "_to") else "border-line-strong" }} bg-surface px-2.5 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{% for value, label in recipient_choices %}<option value="{{ value }}"{% if value == item.recipients %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
 {%- if errors.get(row.kind.value ~ "_to") %}<p role="alert" class="mt-1.5 flex items-center gap-1.5 text-[13px] font-semibold text-danger">{{ icon("warning", "size-3.5", "2.4") }}{{ errors[row.kind.value ~ "_to"] }}</p>{% endif %}
 {%- else %}
-<span class="inline-flex h-9 md:h-ctl-md items-center text-sm">Superadmins</span>
+<span class="inline-flex h-11 md:h-ctl items-center text-sm">Superadmins</span>
 {%- endif %}
 {%- endcall %}
 </tr>
@@ -42,7 +42,7 @@
 {%- endif %}
 <label class="flex items-start gap-2.5 text-[13px] font-semibold"><input id="we" type="checkbox" name="webhook_enabled"{% if form.webhook_enabled %} checked{% endif %} class="mt-0.5 size-[18px] shrink-0 accent-accent"><span>Send deploy results to the webhook<span class="block font-normal text-ink2">Every real deploy, whatever its result, is posted as signed JSON. Dry runs are never sent.</span></span></label>
 <div class="flex flex-wrap items-center gap-3 border-t border-line pt-4">
-{{ button("Send test event", hx_post="/settings/notifications/webhook/test", hx_target="#webhook-test", extra_class="max-md:h-11") }}
+{{ button("Send test event", hx_post="/settings/notifications/webhook/test", hx_target="#webhook-test") }}
 <div id="webhook-test" aria-live="polite"></div>
 <p class="basis-full text-xs text-ink2">The test event uses the saved settings and works while the webhook is off, so save a change before testing it.</p>
 </div>

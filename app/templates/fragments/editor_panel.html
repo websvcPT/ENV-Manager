@@ -3,8 +3,8 @@
     raw), version and error (optional). -#}
 {% from "macros/buttons.html" import button %}
 {% from "macros/icons.html" import icon %}
-{% set segment_classes = "h-9 md:h-ctl px-4 text-[13px] font-semibold focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus" %}
-{% set button_classes = "h-9 md:h-ctl items-center gap-1.5 rounded-ctl border border-line-strong bg-surface px-3 text-[13px] font-semibold text-ink hover:bg-surface2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus" %}
+{% set segment_classes = "h-11 md:h-ctl px-4 text-[13px] font-semibold focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus" %}
+{% set button_classes = "h-11 md:h-ctl items-center gap-1.5 rounded-ctl border border-line-strong bg-surface px-3 text-[13px] font-semibold text-ink hover:bg-surface2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus" %}
 <div data-fragment="editor-panel" id="editor-panel" class="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_300px] lg:gap-6">
 <section aria-label="Variables" class="overflow-hidden rounded-panel border border-line bg-surface shadow-panel">
 <div class="flex flex-wrap items-center gap-3 border-b border-line px-4 py-3.5 md:px-5">
@@ -27,14 +27,14 @@
 {%- endfor %}
 </ul>
 {%- if env.can_edit %}
-<div class="border-t border-line px-4 py-3 md:px-5">{{ button("Add variable", icon_name="plus", icon_stroke="2.2", extra_class="h-9 md:h-ctl rounded-ctl text-[13px]", hx_get="/environments/" ~ env.id ~ "/new-row", hx_target="#kv-list", hx_swap="beforeend") }}</div>
+<div class="border-t border-line px-4 py-3 md:px-5">{{ button("Add variable", icon_name="plus", icon_stroke="2.2", extra_class="rounded-ctl text-[13px]", hx_get="/environments/" ~ env.id ~ "/new-row", hx_target="#kv-list", hx_swap="beforeend") }}</div>
 {%- endif %}
 {%- else %}
 <div data-reveal-row data-revealed="false" data-fragment="raw-text" class="group flex flex-col gap-3 px-4 py-4 md:px-5">
 {%- if not content.env_format %}
 <p class="text-[13px] text-ink2">{% if env.file_type.value == "cert" %}This is a certificate, so it is shown and edited as one text.{% else %}This file is not in KEY=VALUE format, so it is shown and edited as one text.{% endif %}</p>
 {%- endif %}
-<div class="min-h-[38px] rounded-ctl border border-line-strong bg-surface2 px-3 py-2 font-mono text-[13px] leading-relaxed text-ink2 group-data-[revealed=true]:border-0 group-data-[revealed=true]:bg-transparent group-data-[revealed=true]:p-0"><div class="group-data-[revealed=true]:hidden">
+<div class="min-h-11 rounded-ctl border border-line-strong bg-surface2 px-3 py-2.5 font-mono md:min-h-ctl md:py-[7px] text-[13px] leading-relaxed text-ink2 group-data-[revealed=true]:border-0 group-data-[revealed=true]:bg-transparent group-data-[revealed=true]:p-0"><div class="group-data-[revealed=true]:hidden">
 {%- if content.env_format and content.rows %}{% for row in content.rows %}<p class="break-all">{{ row.key }}=••••••••••••</p>{% endfor %}
 {%- else %}<p>•••••••••••• {{ content.line_count }} line{{ "" if content.line_count == 1 else "s" }}</p>{% endif -%}
 </div><div id="raw-value" data-value class="hidden group-data-[revealed=true]:block"></div></div>

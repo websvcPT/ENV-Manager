@@ -9,7 +9,7 @@
 {{ dialog_head("token-revoke", "Revoke token " ~ token_name, ("Owner " ~ owner_label) if owner_label else none) }}
 {%- if refusal == "revoked" %}
 {% call dialog_body() %}{{ note(token_name ~ " is already revoked.") }}{% endcall %}
-{% call dialog_footer() %}{{ button("Close", extra_class="h-11 md:h-ctl", data_js="dialog-close") }}{% endcall %}
+{% call dialog_footer() %}{{ button("Close", data_js="dialog-close") }}{% endcall %}
 {%- else %}
 <form hx-post="/tokens/{{ token_id }}/revoke" hx-target="#token-revoke" hx-swap="innerHTML">
 {% call dialog_body() %}{% call confirm_message() %}The token stops working immediately. Calls made with it stay in the audit log.{% endcall %}{% endcall %}

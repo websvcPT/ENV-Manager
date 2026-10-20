@@ -35,7 +35,7 @@
 <p class="text-xs text-ink2">At most one push an hour, and only when a file or its structure changed since the last push. Nothing is pushed after each save or deploy.</p>
 </fieldset>
 <div class="flex flex-wrap items-center gap-3 border-t border-line pt-4">
-{{ button("Test connection", hx_post="/settings/git/test", hx_target="#git-test", hx_swap="outerHTML", extra_class="max-md:h-11") }}
+{{ button("Test connection", hx_post="/settings/git/test", hx_target="#git-test", hx_swap="outerHTML") }}
 <div id="git-test" aria-live="polite">
 {%- if status.failing %}
 {{ badge("failed", "Last push failed " ~ status.last_failure) }}<p class="mt-1.5 max-w-md text-xs text-ink2">{{ status.last_error }}</p>

@@ -10,7 +10,7 @@
 {% block title %}Import from Docker Compose · {{ deployment.name }}{% endblock %}
 {% block content %}
 {% set superadmin_tag %}<span class="rounded-md bg-mute-bg px-1.5 py-px text-[11px] font-semibold text-mute-fg">Superadmin</span>{% endset %}
-{% set actions %}{{ button("Back to deployment", href="/deployments/" ~ deployment.id, extra_class="max-md:h-11") }}{% endset %}
+{% set actions %}{{ button("Back to deployment", href="/deployments/" ~ deployment.id) }}{% endset %}
 {{ item_header("deployment", deployment.name, location=deployment_location(deployment), details="Import the services and files of the Docker Compose project in this folder.", badges=superadmin_tag, actions=actions) }}
 <div id="import-compose" data-fragment="import-compose" class="flex flex-col gap-5">
 {% include "fragments/compose_import_files.html" %}

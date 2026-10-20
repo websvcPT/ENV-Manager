@@ -9,7 +9,7 @@
 {% from "macros/panels.html" import cell, panel, table %}
 {% from "macros/row_actions.html" import row_actions %}
 {% from "macros/time.html" import moment with context %}
-{% set run_button %}{{ button("Run now", kind="primary-sm", extra_class="max-md:h-11", hx_post="/settings/backups", hx_target="#backups", hx_swap="outerHTML", hx_sync="this:drop") }}{% endset %}
+{% set run_button %}{{ button("Run now", kind="primary-sm", hx_post="/settings/backups", hx_target="#backups", hx_swap="outerHTML", hx_sync="this:drop") }}{% endset %}
 {% call panel("Backups", "backups-title", fragment="backup-list", actions=run_button, id="backups") %}
 {%- if backups.rows %}
 {% call table("Backups", ["Time", "Size", "Status", "Actions"], right_columns=[3], min_width_class="min-w-[620px]") %}

@@ -20,7 +20,7 @@
 {% call panel("General", "deployment-general-title", fragment="form-section") %}
 <div class="flex flex-col gap-4 px-4 pb-5 md:px-5">
 {{ field("name", "Name", name="name", value=form.name, placeholder="deployment-a", error=errors.get("name"), extra_class="max-w-md", autocomplete="off", maxlength="100") }}
-<div class="flex flex-col gap-1.5"><label for="root" class="text-[13px] font-semibold">Root path</label><div class="flex gap-2"><input id="root" name="root" type="text" value="{{ form.root }}" placeholder="/var/www/vhosts/…" aria-describedby="root-v"{% if errors.get("root") %} aria-invalid="true"{% endif %} autocomplete="off" spellcheck="false" class="h-10 md:h-ctl w-full rounded-ctl border {{ "border-danger" if errors.get("root") else "border-line-strong" }} bg-surface px-3 text-sm text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus font-mono text-[13px]">{{ button("Browse…", data_js="dialog-open", data_target="path-picker", aria_haspopup="dialog") }}</div>
+<div class="flex flex-col gap-1.5"><label for="root" class="text-[13px] font-semibold">Root path</label><div class="flex gap-2"><input id="root" name="root" type="text" value="{{ form.root }}" placeholder="/var/www/vhosts/…" aria-describedby="root-v"{% if errors.get("root") %} aria-invalid="true"{% endif %} autocomplete="off" spellcheck="false" class="h-11 md:h-ctl w-full rounded-ctl border {{ "border-danger" if errors.get("root") else "border-line-strong" }} bg-surface px-3 text-sm text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus font-mono text-[13px]">{{ button("Browse…", data_js="dialog-open", data_target="path-picker", aria_haspopup="dialog") }}</div>
 <ul id="root-v" class="m-0 flex list-none flex-col gap-1" hx-get="/paths/validate" hx-trigger="input changed delay:400ms from:#root" hx-include="#root" hx-swap="innerHTML" aria-live="polite">{% with root_error = errors.get("root") %}{% include "fragments/path_checks.html" %}{% endwith %}</ul></div>
 </div>
 {% endcall %}
@@ -38,5 +38,5 @@
 {{ field("group", "Group", name="file_group", value=form.file_group, mono=true, placeholder="app user", error=errors.get("file_group"), autocomplete="off", maxlength="64") }}
 </div>
 {% endcall %}
-<div class="flex flex-wrap gap-3">{{ button(submit_label, kind="primary", type="submit") }}{{ button("Cancel", href=cancel_href, extra_class="h-11 md:h-ctl") }}</div>
+<div class="flex flex-wrap gap-3">{{ button(submit_label, kind="primary", type="submit") }}{{ button("Cancel", href=cancel_href) }}</div>
 </form>

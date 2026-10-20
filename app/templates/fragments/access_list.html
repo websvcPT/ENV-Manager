@@ -8,7 +8,7 @@
 {% from "macros/feedback.html" import empty_state %}
 {% from "macros/panels.html" import panel, table %}
 {% set node = access.node %}
-{% set add_access %}{% if access.grantable %}{{ button("Add access", icon_name="plus", icon_stroke="2.2", extra_class="max-md:h-11", data_js="dialog-open", data_target="grant-dialog", aria_haspopup="dialog", hx_get=base ~ "/add", hx_target="#grant-dialog", hx_swap="innerHTML") }}{% endif %}{% endset %}
+{% set add_access %}{% if access.grantable %}{{ button("Add access", icon_name="plus", icon_stroke="2.2", data_js="dialog-open", data_target="grant-dialog", aria_haspopup="dialog", hx_get=base ~ "/add", hx_target="#grant-dialog", hx_swap="innerHTML") }}{% endif %}{% endset %}
 {% call panel("Access", "access-title", fragment="access-list", id="access-list", hx_get=base ~ "/list", hx_trigger="grants-changed from:body", hx_swap="outerHTML", hx_swap_oob=("true" if oob | default(false) else none), actions=add_access) %}
 <p class="px-4 pb-3 text-[13px] text-ink2 md:px-5">Users with access to <strong class="text-ink">{{ access.subtitle }}</strong>, direct or inherited.
 {%- if node.kind.value == "project" %} A project grant includes the deployments, services and environments added later.

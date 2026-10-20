@@ -10,10 +10,10 @@
 {{ dialog_head("totp-remove", "Remove two-factor") }}
 {%- if state == "off" %}
 {% call dialog_body() %}{{ note("Two-factor authentication is not on.") }}{% endcall %}
-{% call dialog_footer() %}{{ button("Close", extra_class="h-11 md:h-ctl", data_js="dialog-close") }}{% endcall %}
+{% call dialog_footer() %}{{ button("Close", data_js="dialog-close") }}{% endcall %}
 {%- elif state == "locked" %}
 {% call dialog_body() %}<div role="alert">{{ note("Too many failed attempts. Try again in " ~ wait ~ ".", "error") }}</div>{% endcall %}
-{% call dialog_footer() %}{{ button("Close", extra_class="h-11 md:h-ctl", data_js="dialog-close") }}{% endcall %}
+{% call dialog_footer() %}{{ button("Close", data_js="dialog-close") }}{% endcall %}
 {%- else %}
 <form id="totp-remove-form" hx-post="/account/totp/remove" hx-target="#totp-remove" hx-swap="innerHTML">
 {% call dialog_body() %}{% call confirm_message() %}Signing in will need only your password again. Enter your current password and a code from your authenticator app to confirm.{% endcall %}

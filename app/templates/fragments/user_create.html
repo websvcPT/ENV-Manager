@@ -15,6 +15,6 @@
 <div><p class="mb-2 text-[13px] font-semibold">Access grants</p>{{ grant_tree(tree, granted) }}{% if errors.grants %}<div class="mt-2">{{ field_message("grants", none, errors.grants) }}</div>{% endif %}</div>
 <p class="text-xs text-ink2">A 16-character password is generated and shown once after creation.</p></div>
 {% endcall %}
-{% call dialog_footer() %}{{ button("Cancel", extra_class="h-11 md:h-ctl", data_js="dialog-close") }}{{ button("Create user", kind="primary", type="submit") }}{% endcall %}
+{% call dialog_footer() %}{{ button("Cancel", data_js="dialog-close") }}{{ button("Create user", kind="primary", type="submit") }}{% endcall %}
 </form>
 </div>

@@ -6,5 +6,5 @@
 {% from "macros/forms.html" import field %}
 <form id="project-new-form" data-fragment="project-new-form" hx-post="/projects" hx-target="#projects-table" hx-swap="outerHTML" hx-status:422="swap:outerHTML target:#project-new-form"{% if form_oob | default(false) %} hx-swap-oob="true"{% endif %}>
 {% call dialog_body() %}{{ field("pn", "Project name", name="name", value=form_value | default(""), placeholder="e.g. acme-shop", hint=name_rule, error=form_error | default(none), autocomplete="off", maxlength="100", required=true) }}{% endcall %}
-{% call dialog_footer() %}{{ button("Cancel", extra_class="h-11 md:h-ctl", data_js="dialog-close") }}{{ button("Create project", kind="primary", type="submit") }}{% endcall %}
+{% call dialog_footer() %}{{ button("Cancel", data_js="dialog-close") }}{{ button("Create project", kind="primary", type="submit") }}{% endcall %}
 </form>

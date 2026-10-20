@@ -25,13 +25,13 @@
 {%- if review %}
 {{ command_review(review) }}
 {%- endif %}
-<div class="flex flex-wrap items-center gap-x-6 gap-y-3"><label class="flex items-center gap-2 text-[13px] font-semibold">Timeout<input id="timeout" name="timeout" type="number" inputmode="numeric" value="{{ form.timeout }}"{% if errors.get("timeout") %} aria-describedby="timeout-e" aria-invalid="true"{% endif %}{% if off %} disabled{% endif %} class="h-9 md:h-ctl-md w-20 rounded-ctl border {{ "border-danger" if errors.get("timeout") else "border-line-strong" }} bg-surface px-2.5 font-mono text-[13px] disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus max-md:h-11">s</label>{{ checkbox("run_only_if_changed", "Run only if at least one environment changed", checked=form.run_only_if_changed, disabled=off, extra_class="max-md:min-h-11 max-md:items-center") }}</div>
+<div class="flex flex-wrap items-center gap-x-6 gap-y-3"><label class="flex items-center gap-2 text-[13px] font-semibold">Timeout<input id="timeout" name="timeout" type="number" inputmode="numeric" value="{{ form.timeout }}"{% if errors.get("timeout") %} aria-describedby="timeout-e" aria-invalid="true"{% endif %}{% if off %} disabled{% endif %} class="h-11 md:h-ctl w-20 rounded-ctl border {{ "border-danger" if errors.get("timeout") else "border-line-strong" }} bg-surface px-2.5 font-mono text-[13px] disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">s</label>{{ checkbox("run_only_if_changed", "Run only if at least one environment changed", checked=form.run_only_if_changed, disabled=off, extra_class="max-md:min-h-11 max-md:items-center") }}</div>
 {%- if errors.get("timeout") %}
 <p id="timeout-e" role="alert" class="-mt-1.5 flex items-center gap-1.5 text-[13px] font-semibold text-danger">{{ icon("warning", "size-3.5", "2.4") }}{{ errors.get("timeout") }}</p>
 {%- endif %}
 {%- if errors.get("form") %}
 <p role="alert" class="flex items-center gap-1.5 text-[13px] font-semibold text-danger">{{ icon("warning", "size-3.5", "2.4") }}{{ errors.get("form") }}</p>
 {%- endif %}
-<div class="flex gap-2.5">{{ button("Test command", disabled=off, extra_class="max-md:h-11", hx_post="/services/" ~ service.id ~ "/postdeploy/test", hx_target="#test-result", hx_swap="outerHTML", hx_include="closest form") }}{{ save_button("Confirm and save" if review else "Save settings", disabled=off) }}</div>
+<div class="flex gap-2.5">{{ button("Test command", disabled=off, hx_post="/services/" ~ service.id ~ "/postdeploy/test", hx_target="#test-result", hx_swap="outerHTML", hx_include="closest form") }}{{ save_button("Confirm and save" if review else "Save settings", disabled=off) }}</div>
 {% include "fragments/service_test_result.html" %}{{ saved_toast(saved) }}
 </form>

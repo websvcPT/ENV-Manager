@@ -40,7 +40,7 @@
   ("empty", "Keys with empty values", "Note", report.empty)
 ] %}
 {%- for kind, title, detail_column, keys in tables if keys %}
-{% set add_action %}{% if kind == "missing" and can_edit %}{{ button("Add missing keys to the editor", kind="primary-sm", icon_name="plus", icon_stroke="2.4", extra_class="max-md:h-11", hx_post="/environments/" ~ env.id ~ "/add-missing?base=" ~ check.version, hx_target="#dist-report", hx_swap="outerHTML") }}{% endif %}{% endset %}
+{% set add_action %}{% if kind == "missing" and can_edit %}{{ button("Add missing keys to the editor", kind="primary-sm", icon_name="plus", icon_stroke="2.4", hx_post="/environments/" ~ env.id ~ "/add-missing?base=" ~ check.version, hx_target="#dist-report", hx_swap="outerHTML") }}{% endif %}{% endset %}
 {% call panel(title, "dist-" ~ kind ~ "-title", fragment="dist-table", actions=add_action) %}
 {% call table(title, ["Key", detail_column], min_width_class="min-w-[480px]") %}
 {%- for key in keys %}

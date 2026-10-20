@@ -21,6 +21,6 @@
 {%- else %}
 {{ dialog_head("session-revoke", "Sign out other sessions") }}
 {% call dialog_body() %}{{ note("There are no other sessions.") }}{% endcall %}
-{% call dialog_footer() %}{{ button("Close", extra_class="h-11 md:h-ctl", data_js="dialog-close") }}{% endcall %}
+{% call dialog_footer() %}{{ button("Close", data_js="dialog-close") }}{% endcall %}
 {%- endif %}
 </div>

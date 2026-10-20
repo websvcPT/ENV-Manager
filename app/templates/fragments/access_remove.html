@@ -10,7 +10,7 @@
 {{ dialog_head("access-remove", "Remove access for " ~ user_name, access.subtitle) }}
 {%- if notice %}
 {% call dialog_body() %}{{ inline_error("Access was not removed", notice, in_dialog=true, retry=false) }}{% endcall %}
-{% call dialog_footer() %}{{ button("Close", extra_class="h-11 md:h-ctl", data_js="dialog-close") }}{% endcall %}
+{% call dialog_footer() %}{{ button("Close", data_js="dialog-close") }}{% endcall %}
 {%- else %}
 <form hx-post="{{ base }}/remove/{{ user_id }}" hx-target="#access-remove" hx-swap="innerHTML">
 {% call dialog_body() %}{% call confirm_message() %}

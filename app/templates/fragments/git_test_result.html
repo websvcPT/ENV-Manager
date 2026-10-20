@@ -18,7 +18,7 @@
 <p class="text-xs text-ink2">{{ check.host }} presents this host key. Compare the fingerprint with the one its owner gives you before you trust it.</p>
 <p class="break-all font-mono text-[13px]"><span class="text-ink2">{{ check.key.key_type }}</span> {{ check.key.fingerprint }}</p>
 {% set pin_vals = {"key_type": check.key.key_type, "fingerprint": check.key.fingerprint} | tojson | forceescape %}
-{{ button("Trust this key and test again", extra_class="max-md:h-11", hx_post="/settings/git/pin", hx_target="#git-test", hx_swap="outerHTML", hx_sync="this:drop", hx_vals=pin_vals) }}
+{{ button("Trust this key and test again", hx_post="/settings/git/pin", hx_target="#git-test", hx_swap="outerHTML", hx_sync="this:drop", hx_vals=pin_vals) }}
 </div>
 {%- elif check.state.value == "key_changed" -%}
 <div class="flex max-w-xl flex-col items-start gap-2.5">

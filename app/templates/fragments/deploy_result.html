@@ -33,5 +33,5 @@
 {%- if result.drift_environment is not none %}<a href="/environments/{{ result.drift_environment }}/drift" class="font-semibold text-link hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">Open drift view</a>{% endif %}
 {%- if result.dist_environment is not none %}<a href="/environments/{{ result.dist_environment }}/dist" class="font-semibold text-link hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">Open dist report</a>{% endif %}
 {%- if result.retry %}<form hx-post="/services/{{ service.id }}/deploy/preflight" hx-target="#deploy-dialog" hx-swap="innerHTML">{{ selection_fields(selected_ids, versions) }}<button type="submit" class="font-semibold text-link hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">Retry deploy</button></form>{% endif %}
-{{ button("Close", extra_class="h-11 md:h-ctl", data_js="dialog-close") }}</div>
+{{ button("Close", data_js="dialog-close") }}</div>
 </div>

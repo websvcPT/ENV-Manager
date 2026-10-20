@@ -11,5 +11,5 @@
 {{ field("svc-name", "Service name", name="name", value=name, hint="Use the Compose service name.", error=error, extra_class="max-w-md", autocomplete="off", maxlength="100") }}
 </div>
 {% endcall %}
-<div class="flex flex-wrap gap-3">{{ button("Save name", kind="primary", type="submit") }}{{ button("Cancel", href="/services/" ~ service.id, extra_class="h-11 md:h-ctl") }}</div>
+<div class="flex flex-wrap gap-3">{{ button("Save name", kind="primary", type="submit") }}{{ button("Cancel", href="/services/" ~ service.id) }}</div>
 </form>

@@ -17,7 +17,7 @@
 {%- endfor %}
 {%- if errors.operations %}{{ field_message("to", none, errors.operations) }}{% else %}<p class="text-xs text-ink2">A token never exceeds its owner's access.</p>{% endif %}
 </fieldset>
-<div class="flex flex-col gap-1.5"><label for="tp" class="text-[13px] font-semibold">Project restriction</label><select id="tp" name="restriction" aria-describedby="{{ 'tp-e' if errors.restriction else 'tp-h' }}"{% if errors.restriction %} aria-invalid="true"{% endif %} class="h-10 md:h-ctl w-full rounded-ctl border {{ 'border-danger' if errors.restriction else 'border-line-strong' }} bg-surface px-3 text-sm text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-60 placeholder:text-ink3">
+<div class="flex flex-col gap-1.5"><label for="tp" class="text-[13px] font-semibold">Project restriction</label><select id="tp" name="restriction" aria-describedby="{{ 'tp-e' if errors.restriction else 'tp-h' }}"{% if errors.restriction %} aria-invalid="true"{% endif %} class="h-11 md:h-ctl w-full rounded-ctl border {{ 'border-danger' if errors.restriction else 'border-line-strong' }} bg-surface px-3 text-sm text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-60 placeholder:text-ink3">
 <option value="">All of my projects</option>
 {%- for group_label, group in [("Projects", choices.projects), ("Deployments", choices.deployments), ("Services", choices.services)] if group %}
 <optgroup label="{{ group_label }}">{% for choice in group %}<option value="{{ choice.key }}"{% if choice.key == values.restriction %} selected{% endif %}>{{ choice.label }}</option>{% endfor %}</optgroup>
@@ -25,6 +25,6 @@
 </select>{{ field_message("tp", "Optional. Narrow to a project, deployment or service.", errors.restriction) }}</div>
 {{ field("te", "Expiry", name="expires", type="date", value=values.expires, hint="Optional. The token works through the end of this day, in UTC.", error=errors.expires, min=today) }}
 </div>{% endcall %}
-{% call dialog_footer() %}{{ button("Cancel", extra_class="h-11 md:h-ctl", data_js="dialog-close") }}{{ button("Create token", kind="primary", type="submit") }}{% endcall %}
+{% call dialog_footer() %}{{ button("Cancel", data_js="dialog-close") }}{{ button("Create token", kind="primary", type="submit") }}{% endcall %}
 </form>
 </div>

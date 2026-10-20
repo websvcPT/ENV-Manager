@@ -98,7 +98,7 @@
 {%- endif %}
 <div class="flex flex-wrap items-center gap-3">
 {{ button("Import selected…", kind="primary", type="button", disabled=(usable_services == 0), data_js="dialog-open", data_target="import-confirm", aria_haspopup="dialog", hx_post=confirm_action, hx_target="#import-confirm", hx_swap="innerHTML", hx_sync="this:drop") }}
-{{ button("Back", href=back_href, extra_class="h-11 md:h-ctl") }}
-{{ button("Cancel", href="/deployments/" ~ deployment.id, extra_class="h-11 md:h-ctl") }}
+{{ button("Back", href=back_href) }}
+{{ button("Cancel", href="/deployments/" ~ deployment.id) }}
 </div>
 </form>

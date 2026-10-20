@@ -14,10 +14,11 @@
   --text-5xl--line-height: 1.5;
 }
 
-/* The height of a control from the md breakpoint up, under the touch sizes a phone keeps (44,
-   40, 36 and 32 px): ctl is every button (primary, secondary, danger and dialog buttons alike),
-   field and select, ctl-md a square icon button, a row action or a compact select or field,
-   ctl-sm a plain icon button. Controls write them as md:h-ctl, md:size-ctl-md and so on. */
+/* The height of a control from the md breakpoint up, written beside the phone height of 44 px
+   (h-11 md:h-ctl): ctl is every button with text (primary, secondary, danger and dialog buttons
+   alike), every input and every select, whatever the screen. ctl-md is a square icon-only
+   button or a row action and ctl-sm a plain icon button; they are not buttons with text, and
+   neither are the round theme toggle and the avatar, which keep their own sizes. */
 @theme {
   --spacing-ctl: 37px;
   --spacing-ctl-md: 33px;

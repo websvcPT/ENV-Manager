@@ -8,7 +8,7 @@
 {% from "macros/dialogs.html" import dialog %}
 {% from "macros/icons.html" import icon %}
 {% set grid_classes = "grid grid-cols-[120px_230px_minmax(0,1fr)_minmax(0,1fr)]" %}
-{% set reveal_classes = "h-10 md:h-ctl max-md:h-11 items-center gap-2 rounded-btn border border-line-strong bg-surface px-4 text-sm font-semibold text-ink hover:bg-surface2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus" %}
+{% set reveal_classes = "h-11 md:h-ctl items-center gap-2 rounded-btn border border-line-strong bg-surface px-4 text-sm font-semibold text-ink hover:bg-surface2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus" %}
 <section data-fragment="diff-panel" id="diff-panel" data-reveal-row data-revealed="false" aria-labelledby="dt" class="group overflow-hidden rounded-panel border border-line bg-surface shadow-panel">
 <div class="flex flex-wrap items-center gap-3 p-4 md:px-5">
 {%- if diff %}
@@ -21,11 +21,11 @@
 <button type="button" data-js="reveal-hide" aria-pressed="true" class="{{ reveal_classes }} hidden group-data-[revealed=true]:inline-flex group-data-[revealed=true]:border-accent group-data-[revealed=true]:bg-accent-soft">{{ icon("eye-off", "size-4", "2") }}Hide values</button>
 {%- endif %}
 {%- if env.can_edit %}
-{{ button("Restore v" ~ diff.left ~ " as new version", kind="danger", icon_name="restore", icon_stroke="2.2", extra_class="max-md:h-11", data_js="dialog-open", data_target="restore-dialog", aria_haspopup="dialog") }}
+{{ button("Restore v" ~ diff.left ~ " as new version", kind="danger", icon_name="restore", icon_stroke="2.2", data_js="dialog-open", data_target="restore-dialog", aria_haspopup="dialog") }}
 {%- endif %}
 {%- if env.can_check_dist %}
 {% set deploy_vals = {"environment": env.id, ("version_" ~ env.id): diff.right} | tojson | forceescape %}
-{{ button("Deploy v" ~ diff.right, extra_class="max-md:h-11", data_js="dialog-open", data_target="deploy-dialog", aria_haspopup="dialog", hx_post="/services/" ~ env.service_id ~ "/deploy/preflight", hx_target="#deploy-dialog", hx_swap="innerHTML", hx_vals=deploy_vals) }}
+{{ button("Deploy v" ~ diff.right, data_js="dialog-open", data_target="deploy-dialog", aria_haspopup="dialog", hx_post="/services/" ~ env.service_id ~ "/deploy/preflight", hx_target="#deploy-dialog", hx_swap="innerHTML", hx_vals=deploy_vals) }}
 {%- endif %}
 </div>
 {%- endif %}

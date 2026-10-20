@@ -88,35 +88,22 @@ def test_button_kinds_links_and_attributes() -> None:
     assert "disabled:opacity-60" in page
 
 
-@pytest.mark.parametrize(
-    ("kind", "heights"),
-    [
-        ("primary", "h-11 md:h-ctl"),
-        ("primary-sm", "h-10 md:h-ctl"),
-        ("secondary", "h-10 md:h-ctl"),
-        ("danger", "h-10 md:h-ctl"),
-    ],
-)
-def test_every_button_kind_has_its_phone_height_and_the_one_control_height_from_md(
-    kind: str, heights: str
+@pytest.mark.parametrize("kind", ["primary", "primary-sm", "secondary", "danger"])
+@pytest.mark.parametrize("href", [None, "/x"])
+def test_every_button_kind_has_the_one_height_of_a_phone_and_of_md(
+    kind: str, href: str | None
 ) -> None:
     page = render_snippet(
-        "{% from 'macros/buttons.html' import button %}" + "{{ button('Go', kind=kind) }}",
-        kind=kind,
-    )
-    assert f' {heights}"' in page
-    assert page.count("md:h-") == 1
-
-
-def test_an_extra_class_with_its_own_height_replaces_the_height_of_the_kind() -> None:
-    page = render_snippet(
         "{% from 'macros/buttons.html' import button %}"
-        "{{ button('A', extra_class='h-11 md:h-ctl') }}"
-        "{{ button('B', extra_class='max-md:h-11') }}"
+        "{{ button('Go', kind=kind, href=href, extra_class='px-9') }}",
+        kind=kind,
+        href=href,
     )
-    first, second = page.split("</button>")[:2]
-    assert "h-11 md:h-ctl" in first and "h-10" not in first
-    assert "h-10 md:h-ctl max-md:h-11" in second
+    classes = re.search(r'class="([^"]*)"', page)
+    assert classes is not None
+    tokens = classes.group(1).split()
+    heights = [token for token in tokens if re.fullmatch(r"(md:)?h-\S+", token)]
+    assert heights == ["h-11", "md:h-ctl"]
 
 
 def test_icon_button_uses_the_label_as_accessible_name() -> None:

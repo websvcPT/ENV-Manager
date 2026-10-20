@@ -6,7 +6,7 @@
 {% from "macros/feedback.html" import note %}
 {% from "macros/panels.html" import cell, panel, table %}
 {% from "macros/row_actions.html" import row_actions %}
-{% set add_button %}{{ button("Add path", kind="primary-sm", icon_name="plus", icon_stroke="2.2", extra_class="max-md:h-11", data_js="dialog-open", data_target="path-add", aria_haspopup="dialog", hx_get="/settings/paths/new", hx_target="#path-add", hx_swap="innerHTML") }}{% endset %}
+{% set add_button %}{{ button("Add path", kind="primary-sm", icon_name="plus", icon_stroke="2.2", data_js="dialog-open", data_target="path-add", aria_haspopup="dialog", hx_get="/settings/paths/new", hx_target="#path-add", hx_swap="innerHTML") }}{% endset %}
 {% call panel("Allowed paths", "paths-title", fragment="paths-table", actions=add_button, id="paths-table", hx_get="/settings/paths/table", hx_trigger="paths-changed from:body", hx_swap="outerHTML") %}
 <p class="px-4 pb-3 text-[13px] text-ink2 md:px-5">The app may only read and write below these paths. Mounts are set in the Compose file; this list chooses which mounted roots are used.</p>
 {%- if rows %}

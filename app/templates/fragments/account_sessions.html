@@ -5,7 +5,7 @@
 {% from "macros/account.html" import moment, session_actions %}
 {% from "macros/buttons.html" import button %}
 {% from "macros/panels.html" import panel, table %}
-{% set header_actions %}{% if others %}{{ button("Sign out other sessions", extra_class="h-11 md:h-ctl", data_js="dialog-open", data_target="session-revoke", aria_haspopup="dialog", hx_get="/account/sessions/revoke-others", hx_target="#session-revoke", hx_swap="innerHTML") }}{% endif %}{% endset %}
+{% set header_actions %}{% if others %}{{ button("Sign out other sessions", data_js="dialog-open", data_target="session-revoke", aria_haspopup="dialog", hx_get="/account/sessions/revoke-others", hx_target="#session-revoke", hx_swap="innerHTML") }}{% endif %}{% endset %}
 {% call panel("Active sessions", "account-sessions-title", fragment="account-sessions", id="account-sessions", actions=header_actions, hx_get="/account/sessions", hx_trigger="sessions-changed from:body", hx_swap="outerHTML") %}
 {% call table("Active sessions", ["Device", "IP", "Last active", "Actions"], right_columns=[3], min_width_class="min-w-[560px]") %}
 {%- for row in sessions %}
