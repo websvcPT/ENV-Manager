@@ -226,8 +226,9 @@ the master key, so keep that key apart from the repository (see
 - **Export format** (Settings, Git). *One file per version* (the default) writes, for every version
   of every file, the ciphertext the database already holds (`versions/<hash>/<number>.enc`, written
   once and never touched again, so the tree only grows) and one sealed metadata file for each file
-  (`versions/<hash>/meta.enc`: the project, deployment, service and file names, their paths, and for
-  each version its number, author, comment, time and keyed content hash). The `<hash>` is a keyed
+  (`versions/<hash>/meta.enc`: the project, deployment, service and file names, their paths, the
+  type of the file (`file_type`, `env` or `cert`), and for each version its number, author,
+  comment, time and keyed content hash). The `<hash>` is a keyed
   hash of the file's id, so a name cannot be guessed from it without the key. *Encrypted database
   snapshot* replaces one file, `snapshot.enc`, at every push: the same consistent snapshot a backup
   takes, sealed as a whole with the master key, because a plain snapshot holds names, paths and

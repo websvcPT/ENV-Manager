@@ -12,6 +12,7 @@ from app.core.crypto import CryptoService, generate_master_key, parse_master_key
 from app.core.db import create_session_factory
 from app.models import AuditResult, Environment, Project
 from app.seeds import SeedData
+from app.services import git_export
 from app.services.app_settings import GitSettings
 from app.services.audit import AuditActor, record_actor_audit
 from app.services.git_export import (
@@ -189,6 +190,31 @@ async def test_a_new_version_and_a_rename_add_and_rewrite_only_what_they_touch(r
     assert {path for path in rig.files() if path.endswith("000001.enc")} == {
         path for path in before if path.endswith("000001.enc")
     }
+
+
+async def test_the_metadata_of_a_file_carries_its_type(rig: Rig) -> None:
+    """An export read by hand names the type of every file, ENV file or certificate."""
+    await rig.export()
+    types = {}
+    for environment_id in (rig.seed.editor.id, rig.seed.figures.ca.id):
+        name = path_hash(rig.crypto, environment_id)
+        meta = json.loads(
+            rig.crypto.decrypt(
+                (rig.work / VERSIONS_DIR / name / META_FILE).read_text().strip(),
+                meta_context(name),
+            )
+        )
+        types[environment_id] = meta["environment"]["file_type"]
+    assert types == {rig.seed.editor.id: "env", rig.seed.figures.ca.id: "cert"}
+
+
+async def test_a_new_metadata_revision_moves_the_mark_once(
+    rig: Rig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A field added to the metadata changes the mark, so one push follows an upgrade."""
+    before = await rig.mark()
+    monkeypatch.setattr(git_export, "META_REVISION", git_export.META_REVISION + 1)
+    assert await rig.mark() != before
 
 
 async def test_a_deleted_file_keeps_its_history_in_the_tree(rig: Rig) -> None:

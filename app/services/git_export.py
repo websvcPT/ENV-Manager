@@ -5,9 +5,9 @@ Nothing readable leaves the application. Two layouts exist:
 * ``per_version`` writes, for every version of every file, the ciphertext the database already
   holds (``versions/<path hash>/<number>.enc``, written once and never touched again, so the
   tree only grows) and one encrypted metadata file per file (``meta.enc``: the names of the
-  project, deployment, service and file, their paths, and for each version its number, author,
-  comment, time and keyed content hash). The path hash is a keyed hash of the file's id, so a
-  name cannot be guessed from it without the key.
+  project, deployment, service and file, their paths, the type of the file, and for each version
+  its number, author, comment, time and keyed content hash). The path hash is a keyed hash of
+  the file's id, so a name cannot be guessed from it without the key.
 * ``snapshot`` writes ``snapshot.enc``: the same consistent snapshot a backup takes, sealed as a
   whole with the master key, since a plain snapshot holds names, paths and user names in clear.
 
@@ -39,6 +39,7 @@ from app.models import (
     Deployment,
     Environment,
     EnvironmentVersion,
+    FileType,
     Project,
     Service,
     User,
@@ -48,6 +49,9 @@ from app.services.backup import BackupSnapshotError, write_snapshot
 from app.services.git_errors import GitProblem, GitSyncError
 
 FORMAT_VERSION = 1
+# Raised whenever the metadata of a file gains a field, so the mark changes and the next hourly
+# run pushes the rewritten metadata once, although no file, version or setting changed.
+META_REVISION = 2
 PER_VERSION = "per_version"
 SNAPSHOT = "snapshot"
 EXPORT_FORMATS = (PER_VERSION, SNAPSHOT)
@@ -96,7 +100,7 @@ async def compute_mark(db: AsyncSession, crypto: CryptoService, git: GitSettings
             )
         )
     ).one()
-    parts: list[object] = [git.export_format, git.url, git.branch, *versions]
+    parts: list[object] = [git.export_format, git.url, git.branch, META_REVISION, *versions]
     for model in (Project, Deployment, Service, Environment):
         row = (
             await db.execute(
@@ -161,6 +165,7 @@ class _FileRow:
     environment_name: str
     target_path: str
     dist_path: str | None
+    file_type: FileType
     service_id: int
     service_name: str
     deployment_id: int
@@ -178,6 +183,7 @@ async def _file_rows(db: AsyncSession) -> list[_FileRow]:
             Environment.name,
             Environment.target_path,
             Environment.dist_path,
+            Environment.file_type,
             Service.id,
             Service.name,
             Deployment.id,
@@ -191,7 +197,7 @@ async def _file_rows(db: AsyncSession) -> list[_FileRow]:
         .join(Project, Deployment.project_id == Project.id)
         .order_by(Environment.id)
     )
-    return [_FileRow(*row) for row in rows.all()]
+    return [_FileRow(*tuple(row)) for row in rows.all()]
 
 
 async def _version_rows(db: AsyncSession) -> dict[int, list[dict[str, object]]]:
@@ -239,6 +245,7 @@ def _meta_text(row: _FileRow, versions: list[dict[str, object]]) -> bytes:
                 "name": row.environment_name,
                 "target_path": row.target_path,
                 "dist_path": row.dist_path,
+                "file_type": row.file_type.value,
             },
             "versions": versions,
         },
