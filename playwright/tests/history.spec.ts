@@ -353,6 +353,25 @@ test.describe('superadmin history', () => {
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
   });
 
+  test('a line inserted in a certificate shows as one added line', async ({
+    page,
+    request,
+    scratch,
+  }) => {
+    const before = '-----BEGIN CERTIFICATE-----\nE2EONE\nE2ETWO\nE2ETHREE\n-----END CERTIFICATE-----\n';
+    const after =
+      '-----BEGIN CERTIFICATE-----\nE2EONE\nE2EINSERTED\nE2ETWO\nE2ETHREE\n-----END CERTIFICATE-----\n';
+    const id = await prepare(request, scratch.id, 'ins.pem', [before, after], 'cert');
+    await page.goto(`/environments/${id}/history`);
+    await expect(panel(page).locator('[data-fragment="diff-row"]')).toHaveCount(1);
+    await expect(diffRow(page, 'Line 3').locator('[data-status="added"]')).toBeVisible();
+    await expect(panel(page)).toContainText('5 unchanged lines hidden');
+    await revealButton(page).click();
+    await expect(diffRow(page, 'Line 3').locator('[data-reveal-value]')).toContainText(
+      'E2EINSERTED',
+    );
+  });
+
   test('free text in an ENV file is compared as one file and revealed as whole texts', async ({
     page,
     request,

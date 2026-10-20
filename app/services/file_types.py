@@ -7,6 +7,8 @@ the add and settings forms, the editor, history, drift, the dist check and the s
 """
 
 import re
+from dataclasses import dataclass
+from difflib import SequenceMatcher
 
 from app.models import FileType
 
@@ -66,10 +68,84 @@ def pem_body_lines(text: str) -> list[str]:
     return bodies
 
 
-def line_values(text: str) -> dict[str, str]:
-    """The lines of a text under the names ``Line 1``, ``Line 2``, ... in file order.
+def line_name(number: int) -> str:
+    """The row name of a line, ``Line 3``: history and drift compare a certificate through these
+    names in the place of variable names, so a differing line is reported by its number and never
+    by its content."""
+    return f"Line {number}"
 
-    History and drift compare a certificate through these names in the place of variable names,
-    so a differing line is reported by its position and never by its content.
+
+@dataclass(frozen=True)
+class AlignedLine:
+    """One step of the alignment of two texts: the line of each side, None where a side has none.
+
+    The numbers are 1-based line numbers of that side.
     """
-    return {f"Line {number}": line for number, line in enumerate(text.splitlines(), start=1)}
+
+    left: str | None
+    right: str | None
+    left_number: int | None
+    right_number: int | None
+
+
+@dataclass(frozen=True)
+class LineAlignment:
+    """How the lines of a text sit against a reference text.
+
+    ``matched`` has one entry per reference line: the line of the other text aligned with it, or
+    None. ``inserted`` holds the lines of the other text that sit before the reference line of
+    that index (before the end of the reference for the index of its line count).
+    """
+
+    matched: list[str | None]
+    inserted: dict[int, list[str]]
+
+
+def align_text_lines(reference: str, other: str) -> LineAlignment:
+    """Align the lines of ``other`` with those of ``reference`` the way ``difflib`` does.
+
+    A line added in the middle shows as one inserted line and the lines after it stay matched,
+    where a comparison by position would report every later line as changed. In a block of
+    different lines the first lines of each side are paired as changed lines, and the rest of
+    the longer side is removed or inserted.
+    """
+    reference_lines = reference.splitlines()
+    other_lines = other.splitlines()
+    matcher = SequenceMatcher(None, reference_lines, other_lines, autojunk=False)
+    matched: list[str | None] = [None] * len(reference_lines)
+    inserted: dict[int, list[str]] = {}
+    for tag, start, end, other_start, other_end in matcher.get_opcodes():
+        paired = min(end - start, other_end - other_start) if tag != "insert" else 0
+        for offset in range(paired):
+            matched[start + offset] = other_lines[other_start + offset]
+        rest = other_lines[other_start + paired : other_end]
+        if rest:
+            inserted.setdefault(end if tag == "replace" else start, []).extend(rest)
+    return LineAlignment(matched, inserted)
+
+
+def aligned_lines(left: str, right: str) -> list[AlignedLine]:
+    """Every line of two texts in order, paired where ``difflib`` aligns them."""
+    reference_lines = left.splitlines()
+    alignment = align_text_lines(left, right)
+    steps: list[AlignedLine] = []
+    right_number = 0
+    for index in range(len(reference_lines) + 1):
+        for line in alignment.inserted.get(index, []):
+            right_number += 1
+            steps.append(AlignedLine(None, line, None, right_number))
+        if index == len(reference_lines):
+            break
+        left_number = index + 1
+        other = alignment.matched[index]
+        if other is not None:
+            right_number += 1
+        steps.append(
+            AlignedLine(
+                reference_lines[index],
+                other,
+                left_number,
+                right_number if other is not None else None,
+            )
+        )
+    return steps

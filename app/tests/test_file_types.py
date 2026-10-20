@@ -11,8 +11,9 @@ from app.seeds import SeedData
 from app.services.file_types import (
     CERT_NAME_SUFFIXES,
     NOT_PEM_MESSAGE,
+    aligned_lines,
     content_problem_for,
-    line_values,
+    line_name,
     parse_file_type,
     pem_body_lines,
     pem_problem,
@@ -90,11 +91,56 @@ def test_the_body_lines_are_the_base64_lines_inside_each_block() -> None:
     assert pem_body_lines("-----BEGIN A-----\n-----END A-----") == []
 
 
-def test_lines_are_named_by_position_and_a_final_line_break_adds_none() -> None:
-    assert line_values("a\nb\n") == {"Line 1": "a", "Line 2": "b"}
-    assert line_values("a\r\nb") == {"Line 1": "a", "Line 2": "b"}
-    assert line_values("a\n\nb") == {"Line 1": "a", "Line 2": "", "Line 3": "b"}
-    assert line_values("") == {}
+def steps(left: str, right: str) -> list[tuple[str | None, str | None, int | None, int | None]]:
+    """The aligned lines of two texts as plain tuples."""
+    return [
+        (step.left, step.right, step.left_number, step.right_number)
+        for step in aligned_lines(left, right)
+    ]
+
+
+def test_a_line_name_is_its_number_and_a_final_line_break_adds_no_line() -> None:
+    assert line_name(3) == "Line 3"
+    assert steps("a\nb\n", "a\nb") == [("a", "a", 1, 1), ("b", "b", 2, 2)]
+    assert steps("a\r\nb", "a\nb") == [("a", "a", 1, 1), ("b", "b", 2, 2)]
+    assert steps("", "") == []
+
+
+def test_an_inserted_line_is_one_added_line_and_the_next_lines_stay_aligned() -> None:
+    assert steps("a\nb\nc", "a\nx\nb\nc") == [
+        ("a", "a", 1, 1),
+        (None, "x", None, 2),
+        ("b", "b", 2, 3),
+        ("c", "c", 3, 4),
+    ]
+    assert steps("a\nx\nb", "a\nb") == [
+        ("a", "a", 1, 1),
+        ("x", None, 2, None),
+        ("b", "b", 3, 2),
+    ]
+
+
+def test_a_block_of_different_lines_pairs_its_first_lines_as_changed() -> None:
+    assert steps("a\nb\nc", "a\nB\nc") == [
+        ("a", "a", 1, 1),
+        ("b", "B", 2, 2),
+        ("c", "c", 3, 3),
+    ]
+    assert steps("a\nb", "a\nX\nY") == [
+        ("a", "a", 1, 1),
+        ("b", "X", 2, 2),
+        (None, "Y", None, 3),
+    ]
+    assert steps("a\nb\nc", "a\nX") == [
+        ("a", "a", 1, 1),
+        ("b", "X", 2, 2),
+        ("c", None, 3, None),
+    ]
+
+
+def test_a_text_aligned_with_an_empty_one_is_all_added_or_all_removed() -> None:
+    assert steps("", "a\nb") == [(None, "a", None, 1), (None, "b", None, 2)]
+    assert steps("a\nb", "") == [("a", None, 1, None), ("b", None, 2, None)]
 
 
 async def test_the_seed_marks_its_certificates_and_keeps_every_other_file_an_env_file(

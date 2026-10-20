@@ -46,7 +46,7 @@ from app.services.editor import (
     stored_version,
 )
 from app.services.env_parser import parse_env
-from app.services.file_types import content_problem_for, line_values
+from app.services.file_types import align_text_lines, content_problem_for, line_name
 from app.services.notify_events import (
     NO_EVENT_NOTIFIER,
     EventNotifier,
@@ -246,15 +246,61 @@ class _TargetRead:
     read_at: datetime
 
 
-def _side(text: str | None, file_type: FileType = FileType.ENV) -> _Side:
-    """A text with its variables; a text that is not env format has none.
+def _cert_sides(
+    target: str | None, deployed: str | None, managed: str
+) -> tuple[tuple[_Side, _Side, _Side], dict[str, str]]:
+    """The three columns of a certificate as lines on one shared axis, and the row names.
 
-    The "variables" of a certificate are its lines, named ``Line 1``, ``Line 2``, ...
+    The last deployed text is the axis (the managed one when nothing was deployed). The file on
+    disk and the managed text are aligned with it line by line, so a line inserted in one of them
+    is one new slot and the lines after it stay in line. Each slot is a "variable" named by an
+    internal id; the returned mapping, in slot order, gives the row name ``Line N``, N being the
+    number of the line in the managed text, else on disk, else in the deployed text.
     """
+    axis_deployed = deployed is not None
+    reference = deployed if deployed is not None else managed
+    reference_column = "deployed" if axis_deployed else "managed"
+    aligned = {
+        column: align_text_lines(reference, text)
+        for column, text in (("target", target), ("managed", managed if axis_deployed else None))
+        if text is not None
+    }
+    reference_lines = reference.splitlines()
+    slots: list[dict[str, str]] = []
+    for index in range(len(reference_lines) + 1):
+        for column, alignment in aligned.items():
+            slots.extend({column: line} for line in alignment.inserted.get(index, []))
+        if index == len(reference_lines):
+            break
+        slot = {reference_column: reference_lines[index]}
+        for column, alignment in aligned.items():
+            if (line := alignment.matched[index]) is not None:
+                slot[column] = line
+        slots.append(slot)
+    values: dict[str, dict[str, str]] = {"target": {}, "deployed": {}, "managed": {}}
+    numbers = dict.fromkeys(values, 0)
+    names: dict[str, str] = {}
+    for position, slot in enumerate(slots):
+        slot_id = str(position)
+        for column, line in slot.items():
+            numbers[column] += 1
+            values[column][slot_id] = line
+        for column in ("managed", "target", "deployed"):
+            if column in slot:
+                names[slot_id] = line_name(numbers[column])
+                break
+    texts = {"target": target, "deployed": deployed, "managed": managed}
+    sides = tuple(
+        _Side(texts[column], values[column] if texts[column] is not None else None)
+        for column in ("target", "deployed", "managed")
+    )
+    return (sides[0], sides[1], sides[2]), names
+
+
+def _side(text: str | None) -> _Side:
+    """A text with its variables; a text that is not env format has none."""
     if text is None:
         return _Side(None, None)
-    if file_type is FileType.CERT:
-        return _Side(text, line_values(text))
     parsed = parse_env(text)
     if not parsed.is_env_format:
         return _Side(text, None)
@@ -297,11 +343,25 @@ def _whole_file_entries(
     return [_Entry(row, target.text, deployed.text, managed.text)]
 
 
-def _key_entries(target: _Side, deployed: _Side, managed: _Side, reference: _Side) -> list[_Entry]:
+def _key_entries(
+    target: _Side,
+    deployed: _Side,
+    managed: _Side,
+    reference: _Side,
+    names: dict[str, str] | None = None,
+) -> list[_Entry]:
     """The keys that differ between the columns: on disk against the reference, managed against
-    the last deployed version, disk differences first."""
+    the last deployed version, disk differences first.
+
+    ``names`` is given for a certificate: its keys are slot ids in file order and the mapping
+    gives the name each row shows.
+    """
     sides = (target, deployed, managed)
-    keys = list(dict.fromkeys(key for side in sides for key in (side.values or {})))
+    keys = (
+        list(names)
+        if names is not None
+        else list(dict.fromkeys(key for side in sides for key in (side.values or {})))
+    )
     found: list[tuple[tuple[bool, int, int], _Entry]] = []
     for position, key in enumerate(keys):
         values = [side.values.get(key) if side.values is not None else None for side in sides]
@@ -313,7 +373,7 @@ def _key_entries(target: _Side, deployed: _Side, managed: _Side, reference: _Sid
         order = (disk is None, _CHANGE_ORDER[disk or pending or DiffChange.CHANGED], position)
         row = DriftRow(
             0,
-            key,
+            names[key] if names is not None else key,
             _presence(target, key),
             _presence(deployed, key),
             _presence(managed, key),
@@ -331,9 +391,13 @@ def _compare(
 
     A column of an ENV file that is not env format makes the whole comparison go by file content,
     so no line of free text is ever listed as a key. A certificate is compared by line, each
-    line standing in the place of a key. Comments are never part of a result.
+    aligned line standing in the place of a key. Comments are never part of a result.
     """
-    sides = (_side(target, file_type), _side(deployed, file_type), _side(managed, file_type))
+    names: dict[str, str] | None = None
+    if file_type is FileType.CERT:
+        sides, names = _cert_sides(target, deployed, managed)
+    else:
+        sides = (_side(target), _side(deployed), _side(managed))
     target_side, deployed_side, managed_side = sides
     reference = deployed_side if deployed_side.text is not None else managed_side
     whole_file = any(side.text is not None and side.values is None for side in sides)
@@ -350,8 +414,12 @@ def _compare(
         found = _whole_file_entries(target_side, deployed_side, managed_side, reference)
         unchanged = 0
     else:
-        found = _key_entries(target_side, deployed_side, managed_side, reference)
-        keys = {key for side in sides for key in (side.values or {})}
+        found = _key_entries(target_side, deployed_side, managed_side, reference, names)
+        keys = (
+            set(names)
+            if names is not None
+            else {key for side in sides for key in (side.values or {})}
+        )
         unchanged = len(keys) - len(found)
     entries = [
         replace(entry, row=replace(entry.row, index=index)) for index, entry in enumerate(found)

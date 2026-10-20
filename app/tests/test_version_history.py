@@ -436,11 +436,34 @@ async def test_a_certificate_is_compared_line_by_line_and_never_by_key(
     assert diff.by_line and not diff.whole_file and not diff.identical
     assert [(row.key, row.change) for row in diff.rows] == [
         ("Line 2", DiffChange.CHANGED),
-        ("Line 3", DiffChange.CHANGED),
-        ("Line 4", DiffChange.ADDED),
+        ("Line 3", DiffChange.ADDED),
     ]
-    assert diff.unchanged == 1
+    assert diff.unchanged == 2
     assert "bmV3Ym9keQ" not in repr(diff) and "c2VlZA" not in repr(diff)
+
+
+async def test_a_line_inserted_in_a_certificate_is_one_added_line(
+    db: AsyncSession, seed_data: SeedData, crypto: CryptoService
+) -> None:
+    admin = seed_data.users.admin
+    ca = seed_data.figures.ca
+    header = await header_for(db, admin, ca.id)
+    first = "-----BEGIN CERTIFICATE-----\nAAAA\nBBBB\nCCCC\nDDDD\n-----END CERTIFICATE-----\n"
+    second = first.replace("AAAA\n", "AAAA\nNEW1\n")
+    third = second.replace("CCCC\n", "")
+    await add_version(db, crypto, ca.id, first, admin)
+    await add_version(db, crypto, ca.id, second, admin)
+    await add_version(db, crypto, ca.id, third, admin)
+    inserted = await load_diff(db, crypto, header, 2, 3)
+    assert [(row.key, row.change) for row in inserted.rows] == [("Line 3", DiffChange.ADDED)]
+    assert inserted.unchanged == 6
+    removed = await load_diff(db, crypto, header, 3, 4)
+    assert [(row.key, row.change) for row in removed.rows] == [("Line 5", DiffChange.REMOVED)]
+    assert removed.unchanged == 6
+    revealed = await reveal_diff(db, crypto, header, 2, 3, actor=admin, ip_address=None)
+    assert revealed.values == {0: (None, "NEW1")}
+    entries = await reveal_entries(db)
+    assert [entry.details["keys"] for entry in entries] == [["Line 3"]]
 
 
 async def test_a_certificate_diff_reveals_the_differing_lines_and_audits_line_names(
@@ -452,17 +475,12 @@ async def test_a_certificate_diff_reveals_the_differing_lines_and_audits_line_na
     await add_version(db, crypto, ca.id, CERT_V2, admin)
     revealed = await reveal_diff(db, crypto, header, 1, 2, actor=admin, ip_address=None)
     assert revealed.values[0] == ("c2VlZA==", "bmV3Ym9keQ==")
-    assert revealed.values[1] == ("-----END CERTIFICATE-----", "ZXh0cmE=")
-    assert revealed.values[2] == (None, "-----END CERTIFICATE-----")
+    assert revealed.values[1] == (None, "ZXh0cmE=")
+    assert len(revealed.values) == 2
     entries = await reveal_entries(db)
     assert [entry.details for entry in entries] == [
-        {"version": 1, "scope": "diff", "compared_with": 2, "keys": ["Line 2", "Line 3"]},
-        {
-            "version": 2,
-            "scope": "diff",
-            "compared_with": 1,
-            "keys": ["Line 2", "Line 3", "Line 4"],
-        },
+        {"version": 1, "scope": "diff", "compared_with": 2, "keys": ["Line 2"]},
+        {"version": 2, "scope": "diff", "compared_with": 1, "keys": ["Line 2", "Line 3"]},
     ]
     stored = repr([entry.details for entry in entries])
     assert "bmV3Ym9keQ" not in stored and "c2VlZA" not in stored

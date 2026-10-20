@@ -753,6 +753,55 @@ def test_a_certificate_with_more_or_fewer_lines_marks_the_added_and_removed_ones
     assert [row.disk_change for row in shorter.rows] == [DiffChange.REMOVED] * 3
 
 
+def test_a_line_inserted_on_disk_is_one_added_row_and_the_rest_stay_aligned() -> None:
+    inserted = CERT_MANAGED.replace("AAAA\n", "AAAA\nNEW1\n")
+    comparison = compare_columns(inserted, CERT_MANAGED, CERT_MANAGED, FileType.CERT)
+    (row,) = comparison.rows
+    assert (row.key, row.disk_change, row.managed_change) == ("Line 3", DiffChange.ADDED, None)
+    assert (row.target, row.deployed, row.managed) == (
+        Presence.SET,
+        Presence.NOT_SET,
+        Presence.NOT_SET,
+    )
+    assert comparison.unchanged == 4
+    removed = compare_columns(CERT_MANAGED, inserted, inserted, FileType.CERT)
+    (gone,) = removed.rows
+    assert (gone.key, gone.disk_change) == ("Line 3", DiffChange.REMOVED)
+    assert (gone.target, gone.deployed, gone.managed) == (
+        Presence.NOT_SET,
+        Presence.SET,
+        Presence.SET,
+    )
+
+
+def test_a_line_inserted_in_the_managed_text_is_one_pending_row() -> None:
+    managed = CERT_MANAGED.replace("AAAA\n", "AAAA\nNEW1\n")
+    comparison = compare_columns(CERT_MANAGED, CERT_MANAGED, managed, FileType.CERT)
+    (row,) = comparison.rows
+    assert (row.key, row.disk_change, row.managed_change) == (
+        "Line 3",
+        None,
+        DiffChange.ADDED,
+    )
+    assert (row.target, row.deployed, row.managed) == (
+        Presence.NOT_SET,
+        Presence.NOT_SET,
+        Presence.SET,
+    )
+    assert comparison.unchanged == 4
+
+
+def test_independent_insertions_on_disk_and_in_the_managed_text_are_separate_rows() -> None:
+    target = CERT_MANAGED.replace("AAAA\n", "AAAA\nDISK\n")
+    managed = CERT_MANAGED.replace("BBBB\n", "BBBB\nPEND\n")
+    comparison = compare_columns(target, CERT_MANAGED, managed, FileType.CERT)
+    assert [(row.key, row.disk_change, row.managed_change) for row in comparison.rows] == [
+        ("Line 3", DiffChange.ADDED, None),
+        ("Line 4", None, DiffChange.ADDED),
+    ]
+    assert comparison.unchanged == 4
+
+
 def test_an_env_file_never_compares_by_line() -> None:
     comparison = compare_columns(CERT_EDITED, CERT_MANAGED, CERT_MANAGED)
     assert comparison.whole_file and not comparison.by_line

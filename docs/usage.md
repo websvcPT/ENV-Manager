@@ -30,9 +30,10 @@ again:
 - **Certificate** is PEM text: a certificate, a key or a chain. It is edited and revealed as raw
   text only, as one value. It has no dist file: the field is hidden, a dist path is refused and
   the dist check reports the file as not applicable (also in the deployment overview and the
-  deploy dialog). History and the drift view compare it line by line, each row named by its
-  position (`Line 3`), never by content; a line added or removed in the middle shifts the lines
-  after it. A save, restore, upload, import or drift import must contain at least one PEM block
+  deploy dialog). History and the drift view compare it line by line with the lines aligned
+  (as `diff` does), each row named by its line number (`Line 3`), never by content; a line added
+  or removed in the middle is one added or removed row and the lines after it stay unchanged.
+  A save, restore, upload, import or drift import must contain at least one PEM block
   (`-----BEGIN ...-----` to `-----END ...-----`), otherwise it is refused. The output of a
   post-deploy command has every base64 line of the stored certificate replaced by `****`.
 

@@ -27,7 +27,7 @@ from app.services.editor import (
     stored_version,
 )
 from app.services.env_parser import parse_env
-from app.services.file_types import content_problem_for, line_values
+from app.services.file_types import aligned_lines, content_problem_for, line_name
 from app.services.notify_events import (
     NO_EVENT_NOTIFIER,
     EventNotifier,
@@ -159,22 +159,23 @@ async def load_versions(db: AsyncSession, header: EditorHeader) -> tuple[Version
 def _compare_lines(left_text: str, right_text: str) -> tuple[list[_Entry], int]:
     """The differing lines of a certificate in file order and the count of equal ones.
 
-    Lines are compared by position: an inserted line shifts the ones after it, which then differ.
+    The lines are aligned, so a line inserted in the middle is one added line and the lines after
+    it stay unchanged. A row is named by the number of its line in the newer text, a removed line
+    by its number in the older one.
     """
-    left = line_values(left_text)
-    right = line_values(right_text)
     entries: list[_Entry] = []
     unchanged = 0
-    for name in dict.fromkeys([*left, *right]):
-        before, after = left.get(name), right.get(name)
-        if before == after:
+    for step in aligned_lines(left_text, right_text):
+        if step.left == step.right:
             unchanged += 1
-        elif before is None:
-            entries.append(_Entry(name, DiffChange.ADDED, None, after))
-        elif after is None:
-            entries.append(_Entry(name, DiffChange.REMOVED, before, None))
-        else:
-            entries.append(_Entry(name, DiffChange.CHANGED, before, after))
+        elif step.left is None and step.right_number is not None:
+            entries.append(_Entry(line_name(step.right_number), DiffChange.ADDED, None, step.right))
+        elif step.right is None and step.left_number is not None:
+            entries.append(_Entry(line_name(step.left_number), DiffChange.REMOVED, step.left, None))
+        elif step.right_number is not None:
+            entries.append(
+                _Entry(line_name(step.right_number), DiffChange.CHANGED, step.left, step.right)
+            )
     return entries, unchanged
 
 
