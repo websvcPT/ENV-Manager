@@ -47,7 +47,7 @@ from app.services.environments import (
 )
 from app.services.notify_events import NO_EVENT_NOTIFIER, EventNotifier
 from app.services.paths import load_allowed_paths
-from app.services.services import add_service
+from app.services.services import ServiceNameError, add_service, validate_service_name
 
 HAS_SERVICES_MESSAGE = "This deployment already has services, so nothing can be imported."
 CONFLICT_MESSAGE = "The deployment changed while importing. Nothing was imported."
@@ -250,10 +250,17 @@ async def import_compose(
     entries = _plan(scan, selection)
     allowed = await load_allowed_paths(db)
     try:
-        services = {
-            name: await add_service(db, deployment, name, actor=actor, ip_address=ip_address)
-            for name in dict.fromkeys(selection.services)
-        }
+        services: dict[str, Service] = {}
+        for name in dict.fromkeys(selection.services):
+            try:
+                checked = await validate_service_name(db, deployment.id, name)
+            except ServiceNameError as error:
+                raise ComposeImportError(
+                    "A service cannot be created.", {f"service:{name}": str(error)}
+                ) from error
+            services[name] = await add_service(
+                db, deployment, checked, actor=actor, ip_address=ip_address
+            )
         created: list[tuple[Environment, EnvironmentVersion]] = []
         errors: dict[str, str] = {}
         for entry in entries:
