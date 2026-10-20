@@ -5,6 +5,7 @@ hashes and fixed messages, and audit details hold names, version numbers and out
 value or a host path.
 """
 
+from collections.abc import Sequence
 from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,11 +15,16 @@ from app.models import (
     AuditResult,
     Deployment,
     DeployResult,
+    DeployResultStatus,
     DeployRun,
     DeployStatus,
     DeployTrigger,
+    DriftState,
+    Environment,
+    EnvironmentVersion,
     PostDeployStatus,
     Service,
+    User,
 )
 from app.models.types import utc_now
 from app.services.audit import AuditActor, record_actor_audit
@@ -32,6 +38,7 @@ from app.services.hooks import PostDeployResult
 ACTION_DEPLOY = "service.deploy"
 ACTION_DRY_RUN = "service.deploy_dry_run"
 MESSAGE_LIMIT = 500
+IMPORTED_MESSAGE = "Imported from Compose. The file already held this version."
 
 _TRIGGERS = {
     AuditActorType.USER: DeployTrigger.UI,
@@ -96,6 +103,58 @@ async def record_run(
                 backup_path=outcome.backup_path,
                 dist_outcome=outcome.dist,
                 drift_state=outcome.drift,
+            )
+        )
+    await db.flush()
+    return run
+
+
+async def record_import_run(
+    db: AsyncSession,
+    *,
+    service: Service,
+    deployment: Deployment,
+    user: User,
+    audit_entry_id: int,
+    files: Sequence[tuple[Environment, EnvironmentVersion]],
+) -> DeployRun:
+    """Add the run an import from Compose records for one service and return the flushed run.
+
+    Each file was read from the host and saved as the version it is paired with, so it is recorded
+    as found identical: the version's hash is the baseline the drift check measures the file
+    against, and nothing was written, run or announced. The run is not a deploy for the engine,
+    the metrics or the webhook; it is linked to the audit entry of the import.
+    """
+    now = utc_now()
+    run = DeployRun(
+        service_id=service.id,
+        service_name=service.name,
+        deployment_name=deployment.name,
+        triggered_by_user_id=user.id,
+        trigger=DeployTrigger.COMPOSE,
+        dry_run=False,
+        force=False,
+        status=DeployStatus.SUCCESS,
+        post_deploy_status=PostDeployStatus.NONE,
+        audit_entry_id=audit_entry_id,
+        started_at=now,
+        finished_at=now,
+    )
+    db.add(run)
+    await db.flush()
+    for environment, version in files:
+        db.add(
+            DeployResult(
+                run_id=run.id,
+                environment_id=environment.id,
+                environment_name=environment.name,
+                version_id=version.id,
+                target_path=environment.target_path,
+                status=DeployResultStatus.UNCHANGED,
+                message=IMPORTED_MESSAGE,
+                target_hash_before=version.content_hash,
+                written_hash=version.content_hash,
+                drift_state=DriftState.IN_SYNC,
             )
         )
     await db.flush()

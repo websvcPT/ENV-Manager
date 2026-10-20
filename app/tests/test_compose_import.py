@@ -11,14 +11,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import (
     AuditEntry,
     Deployment,
+    DeployResult,
     DeployResultStatus,
     DeployStatus,
+    DeployTrigger,
+    DriftPolicy,
+    DriftState,
     Environment,
     EnvironmentVersion,
     FileType,
+    PostDeployStatus,
     Service,
 )
 from app.services import compose_import
+from app.services.api_runs import load_last_run_result
 from app.services.compose_config import REMOTE_MESSAGE
 from app.services.compose_import import (
     EMPTY_COMMENT,
@@ -30,6 +36,11 @@ from app.services.compose_import import (
     FileChoice,
     import_compose,
 )
+from app.services.deploy_baseline import load_baselines
+from app.services.deploy_events import DeployFinished
+from app.services.deploy_records import IMPORTED_MESSAGE
+from app.services.deploy_trigger import COMPOSE_IMPORT_LABEL
+from app.services.deployment_detail import load_history
 from app.services.environments import (
     CleanEnvironment,
     EnvironmentForm,
@@ -38,8 +49,9 @@ from app.services.environments import (
 )
 from app.services.notify_events import FileChange, FileChanged, NotificationEvent
 from app.services.paths import AllowedPaths
+from app.services.versions import create_version
 from app.tests.compose_helpers import PEM, add_stack, real_cli
-from app.tests.deploy_helpers import Harness, audit_of, results_of, version_text
+from app.tests.deploy_helpers import Harness, audit_of, results_of, runs, version_text
 
 SERVICES = ("api", "web", "worker-1")
 FILES = (
@@ -244,6 +256,144 @@ async def test_the_first_deploy_after_an_import_sees_the_files_in_sync(
     assert {key: value[0] for key, value in after.items() if key != ".env.optional"} == {
         key: value[0] for key, value in before.items()
     }
+
+
+async def import_with_runs(
+    h: Harness, tmp_path: Path, chosen: ComposeSelection | None = None
+) -> tuple[Deployment, Path, dict[str, tuple[str, Environment]]]:
+    """Import the fixture project (or the chosen part) and return it with its environments."""
+    deployment, root = await add_stack(h)
+    await run_import(h, deployment, chosen or selection(), tmp_path)
+    return deployment, root, await environments_of(h, deployment)
+
+
+async def test_each_service_with_files_found_on_the_host_gets_one_import_run(
+    harness: Harness, tmp_path: Path
+) -> None:
+    h = harness
+    notifier = Recorder()
+    deployment, root = await add_stack(h)
+    await run_import(h, deployment, selection(), tmp_path, notifier)
+    created = await environments_of(h, deployment)
+    imported = [run for run in await runs(h.db) if run.trigger is DeployTrigger.COMPOSE]
+    assert sorted(run.service_name for run in imported) == ["api", "web"]
+    (entry,) = await audit_of(h.db, "deployment.import_compose")
+    for run in imported:
+        assert (run.status, run.dry_run, run.force) == (DeployStatus.SUCCESS, False, False)
+        assert run.post_deploy_status is PostDeployStatus.NONE
+        assert run.triggered_by_user_id == h.seed.users.superadmin.id
+        assert run.triggered_by_token_id is None
+        assert run.deployment_name == deployment.name
+        assert run.audit_entry_id == entry.id
+        assert run.finished_at is not None
+    by_service = {run.service_name: await results_of(h.db, run.id) for run in imported}
+    assert {name: set(results) for name, results in by_service.items()} == {
+        "web": {".env.web", "nginx.conf", "server.key", "app.cfg"},
+        "api": {".env.shared", ".env.api", ".env"},
+    }
+    for results in by_service.values():
+        for result in results.values():
+            environment = next(
+                found for _, found in created.values() if found.id == result.environment_id
+            )
+            version = (
+                await h.db.execute(
+                    select(EnvironmentVersion).where(
+                        EnvironmentVersion.environment_id == environment.id
+                    )
+                )
+            ).scalar_one()
+            assert result.status is DeployResultStatus.UNCHANGED
+            assert (result.environment_id, result.version_id) == (environment.id, version.id)
+            assert result.target_path == environment.target_path
+            assert result.written_hash == version.content_hash
+            assert result.drift_state is DriftState.IN_SYNC and result.dist_outcome is None
+    baselines = await load_baselines(h.db, [environment.id for _, environment in created.values()])
+    with_content = (
+        ".env.web",
+        "conf/nginx.conf",
+        "certs/server.key",
+        "conf/app.cfg",
+        ".env.shared",
+        ".env.api",
+        ".env",
+    )
+    assert set(baselines) == {created[target][1].id for target in with_content}
+    assert not any(isinstance(event, DeployFinished) for event in notifier.events)
+    assert (root / ".env.web").read_text() == "WEB=1\n"
+
+
+async def test_a_service_whose_files_were_all_missing_gets_no_run(
+    harness: Harness, tmp_path: Path
+) -> None:
+    h = harness
+    await import_with_runs(h, tmp_path, selection(("web",), (FileChoice(".env.optional", "web"),)))
+    assert [run for run in await runs(h.db) if run.trigger is DeployTrigger.COMPOSE] == []
+    recorded = select(func.count(DeployResult.id)).where(DeployResult.message == IMPORTED_MESSAGE)
+    assert (await h.db.execute(recorded)).scalar_one() == 0
+
+
+async def test_a_version_saved_before_the_first_deploy_does_not_halt_it(
+    harness: Harness, tmp_path: Path
+) -> None:
+    h = harness
+    deployment, root, created = await import_with_runs(h, tmp_path)
+    assert deployment.drift_policy is DriftPolicy.HALT
+    environment = created[".env.web"][1]
+    await create_version(
+        h.db, h.crypto, environment.id, "WEB=2\n", author=h.seed.users.superadmin, comment="v2"
+    )
+    await h.db.commit()
+    web_id = environment.service_id
+    outcome = await h.deploy(web_id, user="superadmin")
+    assert outcome.status is DeployStatus.SUCCESS and outcome.run_id is not None
+    results = await results_of(h.db, outcome.run_id)
+    assert results[".env.web"].status is DeployResultStatus.WRITTEN
+    assert results[".env.web"].drift_state is DriftState.IN_SYNC
+    assert all(result.status is not DeployResultStatus.HALTED for result in results.values())
+    assert (root / ".env.web").read_text() == "WEB=2\n"
+    assert (root / "conf/nginx.conf").read_text() == "worker_processes 1;\n"
+
+
+async def test_a_file_changed_after_the_import_still_halts_the_first_deploy(
+    harness: Harness, tmp_path: Path
+) -> None:
+    h = harness
+    _, root, created = await import_with_runs(h, tmp_path)
+    (root / ".env.web").write_text("CHANGED=1\n", encoding="utf-8")
+    outcome = await h.deploy(created[".env.web"][1].service_id, user="superadmin")
+    assert outcome.status is DeployStatus.HALTED and outcome.run_id is not None
+    assert (await results_of(h.db, outcome.run_id))[".env.web"].status is DeployResultStatus.HALTED
+    assert (root / ".env.web").read_text() == "CHANGED=1\n"
+
+
+async def test_the_history_and_the_api_show_the_run_as_an_import_from_compose(
+    harness: Harness, tmp_path: Path
+) -> None:
+    h = harness
+    _, _, created = await import_with_runs(h, tmp_path)
+    web = created[".env.web"][1]
+    service_ids = {environment.service_id for _, environment in created.values()}
+    visible = frozenset(environment.id for _, environment in created.values())
+    rows = await load_history(h.db, service_ids, visible, True)
+    assert sorted(row.service for row in rows) == ["api", "web"]
+    assert {row.trigger_label for row in rows} == {COMPOSE_IMPORT_LABEL}
+    assert {row.who for row in rows} == {h.seed.users.superadmin.name}
+    assert all(row.status is DeployStatus.SUCCESS for row in rows)
+    last = await load_last_run_result(h.db, web.service_id, visible)
+    assert last is not None
+    assert (last.trigger, last.status, last.dry_run) == (
+        DeployTrigger.COMPOSE,
+        DeployStatus.SUCCESS,
+        False,
+    )
+    assert {item.status for item in last.environments} == {DeployResultStatus.UNCHANGED}
+    assert last.model_dump(mode="json")["trigger"] == "compose"
+    await h.deploy(web.service_id, user="superadmin")
+    after = await load_last_run_result(h.db, web.service_id, visible)
+    assert after is not None and after.trigger is DeployTrigger.UI
+    history = await load_history(h.db, {web.service_id}, visible, True)
+    assert [row.trigger_label for row in history] == [None, COMPOSE_IMPORT_LABEL]
 
 
 async def test_a_shared_file_belongs_to_the_chosen_owner(harness: Harness, tmp_path: Path) -> None:

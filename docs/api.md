@@ -72,6 +72,7 @@ Deploy and last deployment answer the same shape (a deploy answers the run it ma
 {
   "run_id": 41,
   "service": {"id": 7, "name": "api"},
+  "trigger": "api",
   "dry_run": false,
   "status": "halted",
   "started_at": "2026-10-18T12:00:00.123456Z",
@@ -86,6 +87,11 @@ Deploy and last deployment answer the same shape (a deploy answers the run it ma
 }
 ```
 
+- `trigger`: how the run started: `ui`, `api`, `cli`, or `compose` for the run an import from
+  Docker Compose files records for each imported service that had files on the host. That run
+  wrote nothing: each of its files has the status `unchanged`, which is what gives the drift check
+  its starting point. It is not a deploy and sends no webhook, but it is the last deployment of the
+  service until a real deploy follows.
 - `status`: `success`, `halted`, `blocked`, `failed` or `post_deploy_failed`. A halted or blocked
   deploy is a result (200), not an error.
 - per file `file_type`: `env` or `cert`; `status`: `written`, `unchanged`, `would_write`, `blocked`,

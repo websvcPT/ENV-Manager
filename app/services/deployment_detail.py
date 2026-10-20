@@ -31,6 +31,7 @@ from app.models import (
     User,
 )
 from app.services.audit import CLI_ACTOR_NAME
+from app.services.deploy_trigger import trigger_label
 from app.services.paths import AllowedPaths
 from app.services.permissions import (
     CAPABILITY_GROUPS,
@@ -70,6 +71,7 @@ class HistoryRow:
 
     ``environments`` holds (environment name, version number) for the results in scope; the
     version is None when it was deleted. ``exit_code`` is the post-deploy exit code, if any.
+    ``trigger_label`` names a run that nobody deployed (an import from Compose), else None.
     """
 
     id: int
@@ -80,6 +82,7 @@ class HistoryRow:
     status: DeployStatus
     post_deploy: PostDeployStatus
     exit_code: int | None
+    trigger_label: str | None = None
 
 
 @dataclass(frozen=True)
@@ -234,7 +237,7 @@ async def load_deployment_detail(
                 id=service.id,
                 name=service.name,
                 environments=environment_counts.get(service.id, 0),
-                last_deploy=LastDeploy(run.status, run.started_at, actor) if run else None,
+                last_deploy=LastDeploy.of(run, actor) if run else None,
                 post_deploy=run.post_deploy_status if run else None,
                 flags=(run.status,) if run and run.status is not DeployStatus.SUCCESS else (),
                 can_deploy=service.id in deployable_services,
@@ -347,6 +350,7 @@ async def load_history(
                 status=run.status,
                 post_deploy=run.post_deploy_status,
                 exit_code=run.post_deploy_exit_code,
+                trigger_label=trigger_label(run.trigger),
             )
         )
     return rows

@@ -44,6 +44,7 @@ _ACTOR_TYPES = {
     DeployTrigger.UI: AuditActorType.USER,
     DeployTrigger.API: AuditActorType.API,
     DeployTrigger.CLI: AuditActorType.CLI,
+    DeployTrigger.COMPOSE: AuditActorType.USER,
 }
 
 

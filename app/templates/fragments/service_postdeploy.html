@@ -23,7 +23,7 @@
 {%- if run is none %}
 <p class="text-ink2">No deploys yet.</p>
 {%- elif run.status.value == "none" %}
-<p class="flex flex-wrap items-center gap-3"><span class="text-ink3">None</span><span>{{ run.started_at.strftime("%Y-%m-%d %H:%M") }}{% if service.can_view_output %} · by {{ run.who }}{% endif %}</span></p><p class="text-[13px] text-ink2">No command ran in the latest deploy.</p>
+<p class="flex flex-wrap items-center gap-3"><span class="text-ink3">None</span><span>{{ run.started_at.strftime("%Y-%m-%d %H:%M") }}{% if service.can_view_output %} · by {{ run.who }}{% endif %}</span></p><p class="text-[13px] text-ink2">{% if run.trigger_label %}No command ran: the latest run was an import from Compose, not a deploy.{% else %}No command ran in the latest deploy.{% endif %}</p>
 {%- else %}
 <p class="flex flex-wrap items-center gap-3">{{ badge(run.status.value) }}<span>{{ run.started_at.strftime("%Y-%m-%d %H:%M") }}{% if service.can_view_output %} · by {{ run.who }}{% if run.reason %} · {{ run.reason }}{% endif %}{% if run.exit_code is not none %} · exit code {{ run.exit_code }}{% endif %}{% endif %}</span></p>
 {%- if run.status.value == "running" %}

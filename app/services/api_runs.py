@@ -35,6 +35,7 @@ async def _result_of(
     return RunResult(
         run_id=run.id,
         service=ServiceInfo(id=service_id, name=run.service_name),
+        trigger=run.trigger,
         dry_run=run.dry_run,
         status=run.status,
         started_at=run.started_at,

@@ -490,6 +490,32 @@ async def test_the_import_creates_everything_and_leaves_for_the_deployment_page(
     assert again.status_code == 409 and HAS_SERVICES_MESSAGE in again.text
 
 
+async def test_the_runs_of_the_import_are_listed_as_imported_from_compose(
+    web_client: httpx.AsyncClient, web_app: FastAPI, layout: Layout
+) -> None:
+    await sign_in(web_client, "root")
+    confirm = (await post(web_client, base(layout, "/confirm"), form_of())).text
+    await post(web_client, base(layout), dict(hidden_fields(confirm)))
+    async with web_app.state.session_factory() as db:
+        web_service = (
+            await db.execute(
+                select(Service.id).where(
+                    Service.deployment_id == layout.empty, Service.name == "web"
+                )
+            )
+        ).scalar_one()
+    page = (await web_client.get(f"/deployments/{layout.empty}")).text
+    assert page.count("Imported from Compose") >= 4
+    history = (await web_client.get(f"/deployments/{layout.empty}/history")).text
+    assert history.count("data-history-trigger") == 2
+    assert "found identical to the host file, nothing written." in history
+    service_history = (await web_client.get(f"/services/{web_service}/history")).text
+    assert service_history.count("data-history-trigger") == 1
+    assert "Imported from Compose" in service_history
+    projects = (await web_client.get("/projects")).text
+    assert "Imported from Compose" in projects
+
+
 async def test_the_import_names_the_files_it_refuses_and_changes_nothing(
     web_client: httpx.AsyncClient, web_app: FastAPI, layout: Layout
 ) -> None:

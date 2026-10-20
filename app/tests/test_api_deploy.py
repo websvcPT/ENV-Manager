@@ -50,6 +50,7 @@ FILES = [DB, APP, SECRETS]
 RUN_KEYS = {
     "run_id",
     "service",
+    "trigger",
     "dry_run",
     "status",
     "started_at",
@@ -124,6 +125,7 @@ async def test_a_deploy_writes_the_files_and_answers_the_run(
     answer = response.json()
     assert set(answer) == RUN_KEYS
     assert answer["service"] == {"id": mysql, "name": "mysql"}
+    assert answer["trigger"] == "api"
     assert answer["dry_run"] is False and answer["status"] == "success"
     assert answer["started_at"] <= answer["finished_at"]
     assert answer["post_deploy"] == {"status": "ran", "exit_code": 0, "reason": None}

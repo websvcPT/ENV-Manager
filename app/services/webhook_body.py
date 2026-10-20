@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import (
     DeployResultStatus,
     DeployStatus,
+    DeployTrigger,
     DistOutcome,
     DriftState,
     FileType,
@@ -67,6 +68,7 @@ def sample_document(event_id: str, now: datetime) -> bytes:
     run = RunResult(
         run_id=0,
         service=ServiceInfo(id=0, name="test-service"),
+        trigger=DeployTrigger.API,
         dry_run=False,
         status=DeployStatus.SUCCESS,
         started_at=now,

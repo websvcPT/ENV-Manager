@@ -21,6 +21,7 @@ from app.models import (
     UserGroup,
 )
 from app.services.audit import CLI_ACTOR_NAME, AuditActor, record_actor_audit
+from app.services.deploy_trigger import trigger_label
 from app.services.grants import projects_reached
 from app.services.permissions import AccessScope, Capability, ItemLevel, compute_visibility
 from app.services.token_guard import guard_delete, restrictions_below
@@ -59,11 +60,20 @@ class ProjectInUseError(ProjectError):
 
 @dataclass(frozen=True)
 class LastDeploy:
-    """The most recent deploy run over a project's services in the caller's scope."""
+    """The most recent deploy run over a project's services in the caller's scope.
+
+    ``trigger_label`` names a run that nobody deployed (an import from Compose), else None.
+    """
 
     status: DeployStatus
     started_at: datetime
     actor: str | None
+    trigger_label: str | None = None
+
+    @classmethod
+    def of(cls, run: DeployRun, actor: str | None) -> LastDeploy:
+        """The last deploy figures of a run and the name shown for who ran it."""
+        return cls(run.status, run.started_at, actor, trigger_label(run.trigger))
 
 
 @dataclass(frozen=True)
@@ -358,7 +368,7 @@ async def list_project_rows(
         newest = max(runs, key=lambda item: (item[0].started_at, item[0].id), default=None)
         last_deploy = None
         if newest is not None:
-            last_deploy = LastDeploy(newest[0].status, newest[0].started_at, newest[1])
+            last_deploy = LastDeploy.of(newest[0], newest[1])
         attention = {
             service_deployment[run.service_id]
             for run, _actor in runs

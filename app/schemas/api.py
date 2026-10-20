@@ -23,6 +23,7 @@ from pydantic import (
 from app.models import (
     DeployResultStatus,
     DeployStatus,
+    DeployTrigger,
     DistOutcome,
     DriftState,
     FileType,
@@ -217,12 +218,15 @@ class PostDeployInfo(BaseModel):
 class RunResult(BaseModel):
     """A deploy run as the API answers it, for a deploy and for the last result alike.
 
+    ``trigger`` is how the run started: ``ui``, ``api``, ``cli``, or ``compose`` for the run an
+    import from Compose records (nothing was written; each file was found identical).
     ``environments`` holds the files inside the token's scope only. A ``post_deploy`` status of
     ``running`` means the command has not ended yet and ``finished_at`` is still empty.
     """
 
     run_id: int
     service: ServiceInfo
+    trigger: DeployTrigger
     dry_run: bool
     status: DeployStatus
     started_at: datetime

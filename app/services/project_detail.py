@@ -163,11 +163,7 @@ async def load_project_detail(
                 name=deployment.name,
                 root_path=deployment.root_path if deployment.id in full_deployments else None,
                 files=files,
-                last_deploy=(
-                    LastDeploy(newest[0].status, newest[0].started_at, newest[1])
-                    if newest
-                    else None
-                ),
+                last_deploy=LastDeploy.of(newest[0], newest[1]) if newest else None,
                 flags=flags,
                 can_check_dist=can_check_group and files > 0 and not outside_allowed,
             )

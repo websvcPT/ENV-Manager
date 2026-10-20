@@ -11,11 +11,16 @@ from app.models.types import UtcDateTime, enum_values, utc_now
 
 
 class DeployTrigger(StrEnum):
-    """How a deploy was started."""
+    """How a deploy run was started.
+
+    ``COMPOSE`` marks the run an import from Compose files records, one per imported service, so
+    the files it found on the host have a baseline for the drift check. Nothing was written.
+    """
 
     UI = "ui"
     API = "api"
     CLI = "cli"
+    COMPOSE = "compose"
 
 
 class DeployStatus(StrEnum):

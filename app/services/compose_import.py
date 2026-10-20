@@ -6,8 +6,10 @@ as given. Everything happens in one transaction, all or nothing: the services, o
 per chosen file with its first version, the Compose files stored on the deployment and the audit
 entries. A file that exists becomes version 1 with its exact content, as the drift view's Import
 saves a target; a file that does not exist becomes an empty version 1 and is never written by
-the import. Version 1 equal to the file on disk is what lets the first deploy see the file in
-sync, so no deploy result is recorded here.
+the import. Each service that has files found on the host gets one run with the "Imported from
+Compose" trigger and an unchanged result per such file, which records version 1 as the content
+the target held, so the drift check has a baseline from the start and a version 2 saved before
+the first deploy does not read as drift. Files created empty get no result.
 """
 
 from collections.abc import Sequence
@@ -36,6 +38,7 @@ from app.services.compose_scan import (
     assign_names,
     scan_compose,
 )
+from app.services.deploy_records import record_import_run
 from app.services.docker_cli import DockerCli
 from app.services.environments import (
     ContentSource,
@@ -262,6 +265,7 @@ async def import_compose(
                 db, deployment, checked, actor=actor, ip_address=ip_address
             )
         created: list[tuple[Environment, EnvironmentVersion]] = []
+        found_on_host: dict[str, list[tuple[Environment, EnvironmentVersion]]] = {}
         errors: dict[str, str] = {}
         for entry in entries:
             form = _form_for(entry, services[entry.choice.owner].id)
@@ -270,23 +274,24 @@ async def import_compose(
             except EnvironmentFormError as error:
                 errors[entry.candidate.key] = next(iter(error.errors.values()))
                 continue
-            created.append(
-                await add_environment(
-                    db,
-                    crypto,
-                    deployment,
-                    clean,
-                    actor=actor,
-                    ip_address=ip_address,
-                    comment=IMPORT_COMMENT if entry.candidate.exists else EMPTY_COMMENT,
-                )
+            pair = await add_environment(
+                db,
+                crypto,
+                deployment,
+                clean,
+                actor=actor,
+                ip_address=ip_address,
+                comment=IMPORT_COMMENT if entry.candidate.exists else EMPTY_COMMENT,
             )
+            created.append(pair)
+            if entry.candidate.exists:
+                found_on_host.setdefault(entry.choice.owner, []).append(pair)
         if errors:
             raise ComposeImportError("Some of the files cannot be imported.", errors)
         deployment.compose_files = list(scan.compose_files)
         skipped = _skipped(scan, selection, entries)
         with_content = sum(1 for entry in entries if entry.candidate.exists)
-        await record_actor_audit(
+        audit_entry = await record_actor_audit(
             db,
             AuditActor.for_user(actor, ip_address),
             action=ACTION,
@@ -306,6 +311,15 @@ async def import_compose(
                 "skipped": skipped[:MAX_AUDITED_SKIPPED],
             },
         )
+        for owner, files in found_on_host.items():
+            await record_import_run(
+                db,
+                service=services[owner],
+                deployment=deployment,
+                user=actor,
+                audit_entry_id=audit_entry.id,
+                files=files,
+            )
         await db.commit()
     except ComposeImportError:
         await db.rollback()

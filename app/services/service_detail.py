@@ -116,6 +116,7 @@ class PostDeployRun:
     exit_code: int | None
     output: str | None
     reason: str | None
+    trigger_label: str | None = None
 
 
 @dataclass(frozen=True)
@@ -297,6 +298,7 @@ async def load_post_deploy(
                 exit_code=run.post_deploy_exit_code,
                 output=run.post_deploy_output if header.can_view_output else None,
                 reason=run.post_deploy_reason,
+                trigger_label=newest.trigger_label,
             )
     hook: HookSettings | None = None
     if header.can_view_command:

@@ -411,6 +411,7 @@ without SMTP.
   {
     "run_id": 41,
     "service": {"id": 7, "name": "api"},
+    "trigger": "ui",
     "dry_run": false,
     "status": "success",
     "started_at": "2026-10-18T12:00:00.123456Z",
