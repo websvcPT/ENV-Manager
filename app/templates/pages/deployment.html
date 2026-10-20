@@ -1,6 +1,6 @@
 {#- Deployment detail: header, scope note, section links, status strip, services, deploy history
-    and policies. Context: deployment (a DeploymentDetail), saved (optional), can_manage_structure,
-    can_manage_grants, can_view_output. -#}
+    and policies. Context: deployment (a DeploymentDetail), saved, deleted and imported (the
+    toast texts, optional), can_manage_structure, can_manage_grants, can_view_output. -#}
 {% extends "layouts/app.html" %}
 {% from "macros/access.html" import deployment_tabs %}
 {% from "macros/badges.html" import badge, deploy_status_badge, dist_badge, post_deploy_badge %}
@@ -44,5 +44,5 @@
 {% endcall %}
 {% endif %}
 {% if can_manage_structure %}{{ loaded_dialog("deployment-delete", "Delete deployment", width="560") }}{{ loaded_dialog("service-delete", "Delete service", width="560") }}{% endif %}
-{% if saved | default(false) %}{{ toast("success", "The changes to " ~ deployment.name ~ " are saved.", "Deployment saved", floating=true) }}{% elif deleted | default("") == "service" %}{{ toast("success", "The service and its environments were deleted.", "Service deleted", floating=true) }}{% endif %}
+{% if saved | default(false) %}{{ toast("success", "The changes to " ~ deployment.name ~ " are saved.", "Deployment saved", floating=true) }}{% elif imported | default("") %}{{ toast("success", imported, "Import finished", floating=true) }}{% elif deleted | default("") == "service" %}{{ toast("success", "The service and its environments were deleted.", "Service deleted", floating=true) }}{% endif %}
 {% endblock %}

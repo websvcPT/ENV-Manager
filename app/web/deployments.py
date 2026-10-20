@@ -18,11 +18,13 @@ from app.services.permissions import AccessScope, Capability, ItemLevel, ItemRef
 from app.web.access_tabs import AccessSubject, mount_access_routes
 from app.web.dependencies import AuthContext, get_db, item_access
 from app.web.htmx import hx_redirect
+from app.web.params import plain_number_text
 
 router = APIRouter()
 
 DELETE_FRAGMENT = "fragments/deployment_delete_form.html"
 DELETE_CONFIRM_ERROR = "Type the deployment name exactly to confirm."
+IMPORTED_FIELDS = 5
 
 
 @dataclass(frozen=True)
@@ -55,6 +57,32 @@ deployment_access = item_access(
     "deployment not found",
     DeploymentContext,
 )
+
+
+def _counted(number: int, noun: str) -> str:
+    """The count with its noun, the noun made plural unless the count is one."""
+    return f"{number} {noun}" if number == 1 else f"{number} {noun}s"
+
+
+def imported_message(imported: str) -> str:
+    """The toast text for the counts an import left in the address, empty when they are not five
+    plain numbers (services, files, files with content, files created empty, items not imported).
+
+    The numbers come from the address and are only echoed, as the version of a restore toast is.
+    """
+    parts = imported.split(",")
+    if len(parts) != IMPORTED_FIELDS or not all(
+        part and plain_number_text(part) == part for part in parts
+    ):
+        return ""
+    services, files, with_content, empty, skipped = (int(part) for part in parts)
+    text = (
+        f"Imported {_counted(services, 'service')} and {_counted(files, 'file')} "
+        f"({with_content} with content, {empty} created empty)."
+    )
+    if skipped:
+        text += f" {_counted(skipped, 'item')} not imported."
+    return text
 
 
 def _page_context(access: DeploymentContext, **extra: Any) -> dict[str, Any]:
@@ -91,16 +119,23 @@ async def deployment_page(
     access: Annotated[DeploymentContext, Depends(deployment_access())],
     saved: bool = False,
     deleted: str = "",
+    imported: str = "",
 ) -> Response:
     """The deployment detail page.
 
-    ``saved`` shows the toast after the edit form saved and ``deleted`` (service) the one after
-    a service of the deployment was deleted.
+    ``saved`` shows the toast after the edit form saved, ``deleted`` (service) the one after a
+    service of the deployment was deleted and ``imported`` (the counts) the one after a Docker
+    Compose import.
     """
     return render(
         request,
         "pages/deployment.html",
-        _page_context(access, saved=saved, deleted="service" if deleted == "service" else ""),
+        _page_context(
+            access,
+            saved=saved,
+            deleted="service" if deleted == "service" else "",
+            imported=imported_message(imported),
+        ),
     )
 
 

@@ -51,6 +51,7 @@ from app.web.access_grid import router as access_grid_router
 from app.web.account import router as account_router
 from app.web.audit import router as audit_router
 from app.web.auth import router as auth_router
+from app.web.compose_import import router as compose_import_router
 from app.web.deploy_dialog import router as deploy_dialog_router
 from app.web.deployment_form import router as deployment_form_router
 from app.web.deployments import router as deployments_router
@@ -227,6 +228,7 @@ def create_app() -> FastAPI:
     application.include_router(project_detail_router)
     application.include_router(deployments_router)
     application.include_router(deployment_form_router)
+    application.include_router(compose_import_router)
     application.include_router(service_detail_router)
     application.include_router(deploy_dialog_router)
     application.include_router(service_form_router)

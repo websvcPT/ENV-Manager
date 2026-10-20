@@ -1,0 +1,19 @@
+{#- Import from Docker Compose: the header of the deployment and the steps. Step one is drawn
+    here and the later steps replace it in place; the confirmation is a loaded dialog. Context:
+    deployment (a DeploymentDetail) and the context of fragments/compose_import_files.html. -#}
+{% extends "layouts/app.html" %}
+{% from "macros/buttons.html" import button %}
+{% from "macros/dialogs.html" import loaded_dialog %}
+{% from "macros/panels.html" import deployment_location, item_header %}
+{% set active_nav = "projects" %}
+{% set breadcrumbs = [("Projects", "/projects"), (deployment.project_name, "/projects/" ~ deployment.project_id), (deployment.name, "/deployments/" ~ deployment.id), ("Import from Docker Compose", none)] %}
+{% block title %}Import from Docker Compose · {{ deployment.name }}{% endblock %}
+{% block content %}
+{% set superadmin_tag %}<span class="rounded-md bg-mute-bg px-1.5 py-px text-[11px] font-semibold text-mute-fg">Superadmin</span>{% endset %}
+{% set actions %}{{ button("Back to deployment", href="/deployments/" ~ deployment.id, extra_class="max-md:h-11") }}{% endset %}
+{{ item_header("deployment", deployment.name, location=deployment_location(deployment), details="Import the services and files of the Docker Compose project in this folder.", badges=superadmin_tag, actions=actions) }}
+<div id="import-compose" data-fragment="import-compose" class="flex flex-col gap-5">
+{% include "fragments/compose_import_files.html" %}
+</div>
+{{ loaded_dialog("import-confirm", "Import services and files", width="720", working="Working. Reading the Compose files again can take up to 30 seconds.") }}
+{% endblock %}

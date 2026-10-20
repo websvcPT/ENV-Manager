@@ -6,7 +6,7 @@
    row, row toggle, tree toggle, copy, dismiss, history back, picking a path into a field,
    limiting the version comparison to two versions, closing dialogs when the server asks,
    the deploy dialog (loading content, chosen environments, closing when the load fails), the
-   dist file fields and the type suggestion of the file forms, and a toast when an htmx request fails (an access grid checkbox goes back to the stored state). */
+   files of the Docker Compose import following their services, the dist file fields and the type suggestion of the file forms, and a toast when an htmx request fails (an access grid checkbox goes back to the stored state). */
 (function () {
   'use strict';
 
@@ -373,6 +373,45 @@
     button.textContent = count === 0 ? button.getAttribute('data-label-none')
       : count === 1 ? button.getAttribute('data-label-one')
         : button.getAttribute('data-label-many').replace('{count}', String(count));
+  });
+
+  /* The Docker Compose import preview: a file follows the services that use it. An owner select
+     offers only the ticked services and moves to the first of them when its own is unticked, and
+     a file none of whose services is ticked is unticked and cannot be ticked until one is. */
+  function syncComposeFiles(form) {
+    var ticked = {};
+    form.querySelectorAll('[data-js=compose-service]:checked').forEach(function (box) {
+      ticked[box.value] = true;
+    });
+    form.querySelectorAll('[data-compose-file]').forEach(function (row) {
+      var pick = row.querySelector('[data-compose-pick]');
+      var owner = row.querySelector('[data-compose-owner]');
+      var available = (row.getAttribute('data-users') || '').split(' ').filter(function (name) {
+        return name !== '' && ticked[name];
+      });
+      if (owner instanceof HTMLSelectElement) {
+        Array.prototype.forEach.call(owner.options, function (option) {
+          option.disabled = option.value !== '' && !ticked[option.value];
+        });
+        if (owner.value !== '' && !ticked[owner.value]) { owner.value = available[0] || ''; }
+      }
+      if (!(pick instanceof HTMLInputElement)) { return; }
+      if (available.length === 0) {
+        pick.checked = false;
+        pick.disabled = true;
+      } else if (pick.disabled) {
+        pick.disabled = false;
+        pick.checked = pick.defaultChecked;
+      }
+    });
+  }
+
+  document.addEventListener('change', function (event) {
+    var box = event.target;
+    if (!(box instanceof HTMLInputElement) || box.getAttribute('data-js') !== 'compose-service') {
+      return;
+    }
+    if (box.form) { syncComposeFiles(box.form); }
   });
 
   /* The dist file of a file form depends on its type. A certificate has no dist file: the dist

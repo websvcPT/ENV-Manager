@@ -6,7 +6,8 @@
 {% from "macros/icons.html" import icon %}
 {% from "macros/panels.html" import panel, table %}
 {% from "macros/row_actions.html" import row_actions %}
-{% set add_service %}{% if can_manage_structure %}{{ button("Add service", href="/deployments/" ~ deployment.id ~ "/services/new", icon_name="plus", icon_stroke="2.2") }}{% endif %}{% endset %}
+{% set can_import = can_manage_structure and not deployment.services and not deployment.outside_allowed %}
+{% set add_service %}{% if can_import %}{{ button("Import from Docker Compose", href="/deployments/" ~ deployment.id ~ "/import-compose", icon_name="layers", icon_stroke="2", extra_class="max-md:h-11", id="import-compose-open") }}{% endif %}{% if can_manage_structure %}{{ button("Add service", href="/deployments/" ~ deployment.id ~ "/services/new", icon_name="plus", icon_stroke="2.2") }}{% endif %}{% endset %}
 {% call panel("Services", "services-title", fragment="services-table", actions=add_service, id="services", hx_get="/deployments/" ~ deployment.id ~ "/services", hx_trigger="deploy-finished from:body", hx_swap="outerHTML") %}
 {%- if deployment.services -%}
 {% call table("Services", ["Service", "Environments in your scope" if not deployment.full else "Environments", "Last deploy", "Post-deploy", "State flags", "Actions"], right_columns=[5], min_width_class="min-w-[860px]") %}

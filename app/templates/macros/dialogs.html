@@ -21,9 +21,10 @@
 <dialog id="{{ id }}" aria-labelledby="{{ id }}-t" class="m-auto max-h-[92vh] {{ DIALOG_WIDTHS[width] }} max-w-[calc(100%_-_1.5rem)] overflow-auto rounded-dialog bg-surface p-0 text-ink shadow-dialog backdrop:bg-scrim"><div data-fragment="{{ id }}">{{ dialog_head(id, title, subtitle) }}{{ caller() }}</div></dialog>
 {%- endmacro %}
 
-{#- Content shown in a loaded dialog until its request answers. -#}
-{% macro dialog_loading(id, title) -%}
-<div data-fragment="{{ id }}" aria-busy="true">{{ dialog_head(id, title) }}<div class="p-5 md:p-6">{{ skeleton(3) }}</div></div>
+{#- Content shown in a loaded dialog until its request answers; `working` adds the running line
+    above the placeholder for a request that takes a while. -#}
+{% macro dialog_loading(id, title, working=none) -%}
+<div data-fragment="{{ id }}" aria-busy="true">{{ dialog_head(id, title) }}<div class="p-5 md:p-6">{% if working %}<p class="mb-3">{{ working_status(working, always=true) }}</p>{% endif %}{{ skeleton(3) }}</div></div>
 {%- endmacro %}
 
 {#- A dialog whose content is loaded by the request of the control that opens it (`hx-get` or
@@ -31,10 +32,11 @@
     whenever the dialog opens, and also when it closes if `clear_on_close` is set, so nothing
     from an earlier answer (a one-time secret) stays in the page. A content fragment that carries
     `data-narrow` makes the dialog 560 px wide when `narrows` is set, and `data-wide` makes it
-    720 px wide when `widens` is set (a result that is wider than the form that led to it). -#}
-{% macro loaded_dialog(id, title, width="640", clear_on_close=false, narrows=false, widens=false) -%}
-<dialog id="{{ id }}" aria-labelledby="{{ id }}-t" data-loading="{{ id }}-loading"{% if clear_on_close %} data-clear-on-close{% endif %} class="m-auto max-h-[92vh] {{ DIALOG_WIDTHS[width] }}{% if narrows %} has-[[data-narrow]]:w-[560px]{% endif %}{% if widens %} has-[[data-wide]]:w-[720px]{% endif %} max-w-[calc(100%_-_1.5rem)] overflow-auto rounded-dialog bg-surface p-0 text-ink shadow-dialog backdrop:bg-scrim">{{ dialog_loading(id, title) }}</dialog>
-<template id="{{ id }}-loading">{{ dialog_loading(id, title) }}</template>
+    720 px wide when `widens` is set (a result that is wider than the form that led to it).
+    `working` is a running line for the loading content (see `dialog_loading`). -#}
+{% macro loaded_dialog(id, title, width="640", clear_on_close=false, narrows=false, widens=false, working=none) -%}
+<dialog id="{{ id }}" aria-labelledby="{{ id }}-t" data-loading="{{ id }}-loading"{% if clear_on_close %} data-clear-on-close{% endif %} class="m-auto max-h-[92vh] {{ DIALOG_WIDTHS[width] }}{% if narrows %} has-[[data-narrow]]:w-[560px]{% endif %}{% if widens %} has-[[data-wide]]:w-[720px]{% endif %} max-w-[calc(100%_-_1.5rem)] overflow-auto rounded-dialog bg-surface p-0 text-ink shadow-dialog backdrop:bg-scrim">{{ dialog_loading(id, title, working) }}</dialog>
+<template id="{{ id }}-loading">{{ dialog_loading(id, title, working) }}</template>
 {%- endmacro %}
 
 {% macro dialog_body() -%}
@@ -53,9 +55,10 @@
 {%- endmacro %}
 
 {#- The line that shows while the request of the form it sits in runs; the form carries the
-    `group` class. -#}
-{% macro working_status() -%}
-<span role="status" class="hidden items-center gap-2 text-[13px] font-semibold text-ink2 group-[.htmx-request]:inline-flex">{{ icon("clock", "size-4", "2") }}Working. A post-deploy command can take a while.</span>
+    `group` class. `message` replaces the default text, and `always` shows the line at all times
+    (for content that is itself only there while a request runs). -#}
+{% macro working_status(message="Working. A post-deploy command can take a while.", always=false) -%}
+<span role="status" class="{{ "inline-flex" if always else "hidden group-[.htmx-request]:inline-flex" }} items-center gap-2 text-[13px] font-semibold text-ink2">{{ icon("clock", "size-4", "2") }}{{ message }}</span>
 {%- endmacro %}
 
 {#- The footer of a confirm dialog: Cancel first and the danger button last. `type="submit"`

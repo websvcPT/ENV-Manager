@@ -1,0 +1,43 @@
+{#- Step one of the Docker Compose import: the Compose files found in the deployment folder and
+    one folder below it, to tick, and a path to type for another one. Scanning them answers with
+    the preview, which replaces this form; a refusal draws it again with the reason. Context:
+    deployment (a DeploymentDetail), offers (ComposeFileOffer list), chosen (ticked paths), typed
+    (the path field), error, blocked (the deployment has services) and action. -#}
+{% from "macros/buttons.html" import button %}
+{% from "macros/dialogs.html" import working_status %}
+{% from "macros/feedback.html" import inline_error, note %}
+{% from "macros/forms.html" import field %}
+{% from "macros/panels.html" import panel %}
+{%- if blocked %}
+{% call panel("Compose files", "import-files-title", fragment="import-files") %}
+<div class="flex flex-col gap-4 px-4 pb-5 md:px-5">
+{{ note(error, tone="warn") }}
+<div>{{ button("Back to deployment", href="/deployments/" ~ deployment.id, extra_class="h-11 md:h-ctl") }}</div>
+</div>
+{% endcall %}
+{%- else %}
+<form id="import-form" data-fragment="import-files" hx-post="{{ action }}" hx-target="#import-compose" hx-swap="innerHTML" hx-sync="this:drop" class="group flex max-w-3xl flex-col gap-5">
+{% call panel("Compose files", "import-files-title", fragment="form-section") %}
+<div class="flex flex-col gap-4 px-4 pb-5 md:px-5">
+<p class="text-xs font-bold uppercase tracking-wide text-ink3">Step 1 of 3</p>
+{{ note("Choose the Compose files to read. The first one is the base and the files after it override it. The real Docker Compose reads them, so what is imported is what Compose uses. Nothing is changed until you confirm.") }}
+{%- if error %}
+{{ inline_error("The Compose files cannot be read", error, in_dialog=true, retry=false) }}
+{%- endif %}
+<fieldset class="min-w-0"><legend class="mb-2 text-[13px] font-semibold">Compose files found</legend>
+{%- if offers %}
+<div class="flex flex-col gap-2">
+{%- for offer in offers %}
+<label data-fragment="compose-offer" class="flex min-h-11 cursor-pointer items-center gap-3 rounded-btn border border-line bg-surface px-3 py-2 text-[13px] has-checked:bg-accent-soft"><input type="checkbox" name="compose_file" value="{{ offer.path }}" id="cf-{{ loop.index0 }}"{% if offer.path in chosen %} checked{% endif %} class="size-[18px] shrink-0 accent-accent"><span class="min-w-0 flex-1 break-all font-mono text-[13px] font-semibold">{{ offer.path }}</span><span class="rounded-md bg-mute-bg px-1.5 py-px text-[11px] font-semibold text-mute-fg">{{ "Override" if offer.override else "Base" }}</span></label>
+{%- endfor %}
+</div>
+{%- else %}
+<p class="text-ink2">No Compose file was found in the deployment folder or in the folders directly below it. Type the path of one below.</p>
+{%- endif %}
+</fieldset>
+{{ field("cf-extra", "Another Compose file (optional)", name="extra_path", value=typed, mono=true, hint="A path relative to the deployment folder, for a file the list does not show. It is read after the files ticked above.", extra_class="max-w-xl", autocomplete="off", spellcheck="false", maxlength="500") }}
+</div>
+{% endcall %}
+<div class="flex flex-wrap items-center gap-3">{{ button("Scan the files", kind="primary", type="submit", extra_class="group-[.htmx-request]:opacity-60") }}{{ button("Cancel", href="/deployments/" ~ deployment.id, extra_class="h-11 md:h-ctl-lg") }}{{ working_status("Working. Reading the Compose files can take up to 30 seconds.") }}</div>
+</form>
+{%- endif %}
