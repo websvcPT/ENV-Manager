@@ -1,5 +1,5 @@
-{#- The deployment files panel of a deployment: the files the whole stack reads (the `.env` beside
-    the Compose file, the Compose files), deployed on their own with their own post-deploy
+{#- The deployment files panel of a deployment: the files the whole stack reads (such as the `.env`
+    beside the Compose file), deployed on their own with their own post-deploy
     command. They are managed on their own page; this panel shows their state, deploys them and
     adds a file. Context: deployment (a DeploymentDetail), can_manage_structure. -#}
 {% from "macros/badges.html" import badge, deploy_status_badge, post_deploy_badge %}

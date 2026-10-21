@@ -35,11 +35,15 @@ https://www.buymeacoffee.com/websvc
 - **Import from Docker Compose.** Create the services and files of a new deployment from its
   Compose files: the real `docker compose config` finds the `env_file`, secret, config and bind
   mount files, you review them in a preview, and the files that exist become version 1 with the
-  drift check starting from them. The deployment `.env` and the Compose files go to the
-  deployment files, and a post-deploy command per service and for the deployment is offered,
-  unticked and editable. Includes and extends that leave the deployment folder are refused.
-- **Deployment files.** The files the whole stack reads (the `.env` beside the Compose file, the
-  Compose files) belong to the deployment, with their own deploy and post-deploy command.
+  drift check starting from them. The deployment `.env` goes to the deployment files, the Compose
+  files are linked to the deployment read only, and a post-deploy command per service and for the
+  deployment is offered, unticked and editable. Includes and extends that leave the deployment
+  folder are refused.
+- **Deployment files.** The files the whole stack reads, such as the `.env` beside the Compose
+  file, belong to the deployment, with their own deploy and post-deploy command.
+- **Compose files, read only.** Link a deployment's Compose files, by the import or later, and read
+  their current text from the deployment page; they stay in your repository and are never managed
+  or written.
 - **Drift protection.** If the file on disk changed outside the app, the deploy halts. A drift
   view compares the file on disk, the last deployed version and the managed version key by key
   (line by line for a certificate), and lets you import the file or overwrite it deliberately.

@@ -1,7 +1,7 @@
 # Using ENV Manager
 
-Choosing a deployment path, adding files, deployment files, importing from Docker Compose, file
-types, command line deploys, the drift view, users, accounts and post-deploy commands. API tokens
+Choosing a deployment path, adding files, deployment files, Compose files, importing from Docker
+Compose, file types, command line deploys, the drift view, users, accounts and post-deploy commands. API tokens
 and the API are in [api.md](api.md).
 
 ## Adding a file
@@ -22,8 +22,7 @@ inside the deployment root and the allowed paths.
 ## Deployment files
 
 The files the whole stack reads, such as the `.env` beside the Compose file (which Compose reads
-for `${VAR}` values) and the Compose files themselves, belong to the deployment rather than to
-one service. They are listed in the **Deployment files** panel of the deployment page, below the
+for `${VAR}` values), belong to the deployment rather than to one service. They are listed in the **Deployment files** panel of the deployment page, below the
 services. The superadmin adds the first one with **Add file** there; the Compose import adds them
 too.
 
@@ -31,13 +30,32 @@ They work like the files of a service (versions, dist comparison, drift, history
 their own page, reached from the panel, and their own deploy: **Deploy deployment files** writes
 them in a run of their own, apart from the services, and runs their own post-deploy command when
 one is set (for example `docker compose -f compose.yaml up -d` after the `.env` changed). A file
-that is not in KEY=VALUE format, a Compose file for one, is shown and edited as one text. They
-cannot be renamed or deleted on their own: they go with the deployment. A grant on the project or
+that is not in KEY=VALUE format is shown and edited as one text. They cannot be renamed or deleted on their own: they go with the deployment. A grant on the project or
 the deployment covers them; a grant on a single file covers that file.
 
 From the command line they are deployed as the service named "Deployment files":
 `envmanager deploy "Fancy Proj. Name/prod/Deployment files"`. Through the API they are deployed
 by the id in the address of their page, like a service.
+
+## Compose files
+
+The Compose files a deployment runs from are linked to it, read only: they usually live in the
+project's repository, so the app never versions, edits or writes them. The **Compose files** panel
+of the deployment page lists them, the base file first, and **View** opens the current text of
+one, read from the host at that moment. It is also on the Deployment files page. Opening a file
+is audited (`deployment.compose_view`) and is open to the superadmin and to the admins whose
+grants cover the whole deployment, because a Compose file can hold values under `environment:`;
+viewers do not see the panel.
+
+The Compose import links the Compose files it read. The superadmin links them later, or changes
+them, without importing again: **Link Compose files** (or **Change links**) lists the Compose
+files found in the deployment folder and one folder below it, and takes a typed path for another
+one; unticking every file unlinks them. A linked path is checked as the import checks it: inside
+the deployment folder and the allowed paths, a regular file of at most 1 MiB. A linked Compose
+file that the deployment files held as a managed file is removed from them, with its versions;
+the file on the host is not touched. A file an API token is restricted to is kept until the token
+is revoked. Upgrading to this version removes such managed copies once, at startup, as the
+`upgrade` actor.
 
 ## Choosing a deployment path
 
@@ -75,11 +93,11 @@ What is found:
   is mounted at reads like a file name (`.env`, `.env.api`, `nginx.conf`). A folder, a socket,
   another path that does not exist and a file outside the deployment folder or the allowed paths
   are listed as not offered or disabled with the reason, and are never read.
-- The files of the whole deployment, offered ticked in a **Deployment files** section: the
-  deployment environment file (the `.env` beside the base Compose file, which Compose reads for
-  `${VAR}` values) when it exists or has a dist file, and the Compose files that were read. They
-  go to the deployment files, which are deployed apart from the services with a post-deploy
-  command of their own, unless a service names one of them itself.
+- The deployment environment file (the `.env` beside the base Compose file, which Compose reads
+  for `${VAR}` values), offered ticked in a **Deployment files** section when it exists or has a
+  dist file and no service names it itself. It goes to the deployment files, which are deployed
+  apart from the services with a post-deploy command of their own. The Compose files themselves
+  are not offered: the import links them to the deployment, read only (see Compose files above).
 - A file used by several services belongs to the owner you choose (the first service in
   alphabetical order by default).
 - A file name ending in `.pem`, `.crt`, `.cer` or `.key` is offered as a certificate and any other
@@ -119,7 +137,7 @@ What the import creates, in one transaction (all or nothing):
   written, no post-deploy command runs, no webhook is sent and the metrics do not count it, but it
   is the last deployment of the service until a real one follows. The API reports it with
   `trigger` set to `compose`.
-- The Compose files are stored on the deployment, and one `deployment.import_compose` audit entry
+- The Compose files are linked to the deployment, and one `deployment.import_compose` audit entry
   lists the choices and what was skipped, never a file's text. Each stored command has its own
   `service.hook_save` entry, whose text only the superadmin sees.
 

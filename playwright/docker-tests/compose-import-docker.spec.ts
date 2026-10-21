@@ -1,3 +1,5 @@
+import { rmSync, writeFileSync } from 'node:fs';
+
 import type { Page } from '@playwright/test';
 
 import { createDeployment } from '../deployments-api';
@@ -7,7 +9,9 @@ import { horizontalOverflow } from '../viewport';
 /*
  * The Docker Compose import with a usable Docker: the post-deploy commands it offers, unticked
  * and editable, and the ones ticked stored on the services and on the deployment files. The
- * import only reads the demo Compose stack. Run by `make e2e-demo` (the demo override mounts the
+ * demo stack has no deployment .env, so the spec writes one beside its Compose file for the time
+ * of the test (Compose reads it, the stack uses no variable from it); the import only reads the
+ * stack and links its Compose file. Run by `make e2e-demo` (the demo override mounts the
  * socket and the demo folder at its host path).
  */
 
@@ -15,6 +19,7 @@ const DEMO_ROOT = process.env.E2E_DEMO_ROOT ?? '';
 const STACK = `${DEMO_ROOT}/stack`;
 const UP = 'docker compose -f compose.yaml up -d';
 const FILES_NAME = 'Deployment files';
+const STACK_ENV = `${STACK}/.env`;
 
 function run(page: Page, owner: string) {
   return page.locator(`input[name="run:${owner}"]`);
@@ -25,6 +30,14 @@ function command(page: Page, owner: string) {
 }
 
 test.describe('import from Docker Compose with a usable Docker', () => {
+  test.beforeEach(() => {
+    writeFileSync(STACK_ENV, 'DEMO_STACK_NOTE=from-the-docker-spec\n');
+  });
+
+  test.afterEach(() => {
+    rmSync(STACK_ENV, { force: true });
+  });
+
   test('offers a command per service and for the deployment files and stores the ticked ones', async ({
     page,
     request,
@@ -82,6 +95,9 @@ test.describe('import from Docker Compose with a usable Docker', () => {
     await expect(page.locator('[data-fragment="toast"]')).toContainText(
       '2 post-deploy commands set.',
     );
+    await expect(
+      page.locator('[data-fragment="compose-file-row"][data-file="compose.yaml"]'),
+    ).toBeVisible();
     const filesRow = page.locator('[data-fragment="deployment-files-row"]');
     await expect(filesRow).toContainText('1 file');
     await filesRow.locator('a').first().click();

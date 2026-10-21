@@ -12,8 +12,11 @@ import html
 import re
 import stat
 import time
+from collections.abc import Iterator
+from pathlib import Path
 
 import httpx
+import pytest
 from sqlalchemy import select
 
 from app.models import (
@@ -198,10 +201,27 @@ COMMANDS = {
     DEPLOYMENT_FILES_NAME: STACK_UP,
 }
 API_NAMES = {"DEMO_API_MODE", "DEMO_API_PORT", "DEMO_API_TOKEN"}
+STACK_ENV_TEXT = "DEMO_STACK_NOTE=from-the-scenario\n"
+
+
+@pytest.fixture
+def stack_env(demo: DemoStack) -> Iterator[Path]:
+    """A deployment .env beside the demo Compose file for the time of a scenario: the demo stack
+    has none, and Compose reads it without the stack using any variable from it."""
+    path = demo.root / ".env"
+    path.write_text(STACK_ENV_TEXT, encoding="utf-8")
+    try:
+        yield path
+    finally:
+        path.unlink(missing_ok=True)
 
 
 async def test_an_import_with_commands_brings_the_stack_up_and_recreates_one_service(
-    demo: DemoStack, world: World, web: httpx.AsyncClient, workloads: Workloads
+    demo: DemoStack,
+    world: World,
+    web: httpx.AsyncClient,
+    workloads: Workloads,
+    stack_env: Path,
 ) -> None:
     compose_before = (demo.root / "compose.yaml").read_bytes()
     scratch = await scratch_deployment(world)
@@ -209,7 +229,7 @@ async def test_an_import_with_commands_brings_the_stack_up_and_recreates_one_ser
     base = f"/deployments/{scratch}/import-compose"
     page = (await post(web, f"{base}/preview", {"compose_file": ["compose.yaml"]})).text
     own = re.findall(r'data-fragment="import-deployment-file-row" data-file="([^"]+)"', page)
-    assert own == ["compose.yaml"]
+    assert own == [".env"]
     offered = re.findall(r'<input type="text" name="command:([^"]+)" value="([^"]*)"', page)
     assert {owner: html.unescape(text) for owner, text in offered} == COMMANDS
     form: dict[str, object] = {"compose_file": ["compose.yaml"], "service": SERVICES}
@@ -217,8 +237,8 @@ async def test_an_import_with_commands_brings_the_stack_up_and_recreates_one_ser
     for key, owner in OWNERS.items():
         form[f"owner:{key}"] = owner
         form[f"type:{key}"] = "env"
-    form["deployment_file"] = ["compose.yaml"]
-    form["type:compose.yaml"] = "env"
+    form["deployment_file"] = [".env"]
+    form["type:.env"] = "env"
     for owner in ("api", DEPLOYMENT_FILES_NAME):
         form[f"run:{owner}"] = "1"
         form[f"command:{owner}"] = COMMANDS[owner]
@@ -228,6 +248,8 @@ async def test_an_import_with_commands_brings_the_stack_up_and_recreates_one_ser
     assert done.status_code == 200 and done.headers["hx-redirect"].endswith(",2")
     assert (demo.root / "compose.yaml").read_bytes() == compose_before
     assert workloads.container_ids() == []
+    page = (await web.get(f"/deployments/{scratch}")).text
+    assert 'data-fragment="compose-file-row" data-file="compose.yaml"' in page
     async with world.session() as db:
         files = await find_deployment_files(db, scratch)
         assert files is not None

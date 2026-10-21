@@ -1,7 +1,7 @@
 """Service structure: name checks and superadmin-only create, rename and delete of a service.
 
 A deployment may also hold one service of its own, the deployment files: the files the whole
-stack reads (the `.env` beside the Compose file, the Compose files), with their own deploy and
+stack reads (such as the `.env` beside the Compose file), with their own deploy and
 post-deploy command. It is a service row under the reserved name ``DEPLOYMENT_FILES_NAME``,
 which the service name rule can never produce, so every rule of services applies to it
 unchanged. It is never listed or counted as a service, never renamed or deleted on its own (it
