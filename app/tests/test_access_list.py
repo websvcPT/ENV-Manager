@@ -20,6 +20,8 @@ from app.services.access_list import (
     AccessList,
     change_access,
     load_access_list,
+    load_removal,
+    remove_access,
 )
 from app.services.grants import SUPERADMIN_REFUSAL, GrantTarget, list_grants, load_grant_tree
 from app.services.projects import member_counts
@@ -78,10 +80,8 @@ async def test_the_project_tab_lists_direct_grants_and_the_items_inside_that_car
     assert sources_of(listed["env_scoped_admin"]) == [("mysql/.env.db", "Environment")]
     assert sources_of(listed["env_scoped_viewer"]) == [("mysql/.env.db", "Environment")]
     assert listed["deployment_admin"].below and listed["deployment_admin"].source_count == 1
-    assert listed["deployment_admin"].edit_label == "Edit at source"
-    assert listed["deployment_admin"].edit_href == (
-        f"/deployments/{seed_data.deployments.fancy_prod.id}/access"
-    )
+    assert listed["deployment_admin"].remove_label == "Remove the grant on deployment prod"
+    assert listed["admin"].remove_label == "Remove access"
     assert access.grantable and access.node.future_items
     assert access.subtitle == "project Fancy Proj. Name"
 
@@ -118,7 +118,7 @@ async def test_the_deployment_tab_names_the_project_above_and_the_environments_b
     assert listed["deployment_admin"].direct
     for name in ("admin", "viewer", "project_admin"):
         assert sources_of(listed[name]) == [("Fancy Proj. Name", "Project")]
-        assert listed[name].edit_href == f"/projects/{prod.project_id}/access"
+        assert listed[name].remove_label == "Remove the grant on project Fancy Proj. Name"
     assert sources_of(listed["env_scoped_admin"]) == [("mysql/.env.db", "Environment")]
     assert listed["env_scoped_admin"].below
     assert access.node.future_items and access.grantable
@@ -201,7 +201,7 @@ async def test_many_items_inside_are_cut_to_a_few_and_counted(
     assert len(entry.sources) == SOURCES_SHOWN
     assert entry.more == len(environments) - SOURCES_SHOWN
     assert entry.source_count == len(environments)
-    assert (entry.edit_label, entry.edit_href) == ("Edit grants", f"/users/{user.id}")
+    assert entry.remove_label == "Remove the grants that give this access"
 
 
 async def test_candidates_are_the_users_a_grant_would_give_something_new(
@@ -434,3 +434,63 @@ async def test_a_service_a_missing_item_and_an_item_of_another_project_are_refus
         gone = await change_access(db, project_id, node_id, user.id, grant=True, actor=actor)
         assert (gone.changed, gone.notice) == (False, GONE_NOTICE)
     assert await list_grants(db, user.id) == set()
+
+
+async def test_removing_an_inherited_access_takes_away_the_grant_above_that_gives_it(
+    db: AsyncSession, seed_data: SeedData
+) -> None:
+    user = seed_data.users.deployment_admin
+    fancy = seed_data.projects.fancy.id
+    node_id = f"environment-{seed_data.envs.db.id}"
+    entry = by_name(await tab(db, fancy, node_id))[user.name]
+    assert not entry.direct and not entry.below
+    assert entry.remove_label == "Remove the grant on deployment prod"
+    sources = await load_removal(db, fancy, node_id, user.id)
+    assert sources is not None
+    assert [(source.name, source.level_label) for source in sources] == [("prod", "Deployment")]
+    change = await remove_access(db, fancy, node_id, user.id, actor=actor_of(seed_data))
+    assert change.changed and change.notice is None and change.user_name == user.name
+    assert await list_grants(db, user.id) == set()
+    [audited] = await audit_entries(db, "grant.remove")
+    assert audited.details == {"level": "deployment", "item": "Fancy Proj. Name/prod"}
+    assert user.name not in by_name(await tab(db, fancy, node_id))
+
+
+async def test_removing_access_through_items_inside_takes_away_those_grants(
+    db: AsyncSession, seed_data: SeedData
+) -> None:
+    user = seed_data.users.env_scoped_admin
+    fancy = seed_data.projects.fancy.id
+    node_id = f"service-{seed_data.services.mysql.id}"
+    entry = by_name(await tab(db, fancy, node_id))[user.name]
+    assert entry.below
+    sources = await load_removal(db, fancy, node_id, user.id)
+    assert sources is not None
+    assert [source.name for source in sources] == ["mysql/.env.db"]
+    change = await remove_access(db, fancy, node_id, user.id, actor=actor_of(seed_data))
+    assert change.changed and change.notice is None
+    assert await list_grants(db, user.id) == set()
+    assert user.name not in by_name(await tab(db, fancy, node_id))
+
+
+async def test_removing_a_direct_access_takes_away_only_that_grant(
+    db: AsyncSession, seed_data: SeedData
+) -> None:
+    user = seed_data.users.viewer
+    fancy = seed_data.projects.fancy.id
+    change = await remove_access(db, fancy, f"project-{fancy}", user.id, actor=actor_of(seed_data))
+    assert change.changed and change.notice is None
+    assert await list_grants(db, user.id) == set()
+
+
+async def test_removing_access_a_user_does_not_have_is_refused_as_an_old_page(
+    db: AsyncSession, seed_data: SeedData
+) -> None:
+    user = seed_data.users.ungranted_admin
+    fancy = seed_data.projects.fancy.id
+    node_id = f"environment-{seed_data.envs.db.id}"
+    assert await load_removal(db, fancy, node_id, user.id) == ()
+    change = await remove_access(db, fancy, node_id, user.id, actor=actor_of(seed_data))
+    assert (change.changed, change.notice) == (False, STALE_NOTICE)
+    assert await load_removal(db, fancy, "environment-987654", user.id) is None
+    assert await audit_entries(db, "grant.remove") == []

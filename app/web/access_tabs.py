@@ -1,7 +1,8 @@
 """Access tab routes (superadmin only) for projects, deployments, services and environments.
 
 An Access tab lists the users with access to one item, direct or inherited, and lets the
-superadmin add a user's grant on the item and remove a direct grant. Each item's module mounts
+superadmin add a user's grant on the item and remove a user's access: the direct grant, or the
+grant above or the grants inside that give it, named in the dialog. Each item's module mounts
 the routes next to its own pages with ``mount_access_routes`` and supplies a dependency that
 loads the item through the same access check as its other routes with the grant capability: an
 item outside the caller's scope answers 404, any group but the superadmin 403.
@@ -28,8 +29,11 @@ from app.services.access_list import (
     STALE_NOTICE,
     AccessEntry,
     AccessList,
+    AccessSource,
     change_access,
     load_access_list,
+    load_removal,
+    remove_access,
 )
 from app.services.grants import MAX_ID_DIGITS
 from app.web.dependencies import AuthContext, audit_actor, get_db
@@ -123,6 +127,7 @@ def _remove_view(
     user_name: str,
     *,
     entry: AccessEntry | None = None,
+    sources: tuple[AccessSource, ...] = (),
     notice: str | None = None,
 ) -> dict[str, Any]:
     """What the remove dialog needs; a refusal also redraws the list out of band."""
@@ -132,6 +137,7 @@ def _remove_view(
         "user_id": user_id,
         "user_name": user_name,
         "entry": entry,
+        "sources": sources,
         "notice": notice,
         "refresh": notice is not None,
         "oob": True,
@@ -145,8 +151,8 @@ def mount_access_routes(
 ) -> None:
     """Add the Access tab routes of one item type to a router.
 
-    Every item type gets the tab and its refreshable list. Types that are a grant level (all but
-    the service) also get the add dialog, the add post, the remove dialog and the remove post.
+    Every item type gets the tab, its refreshable list, the remove dialog and the remove post.
+    Types that are a grant level (all but the service) also get the add dialog and the add post.
     ``subject_dependency`` loads the item and checks the grant capability, and its path parameter
     is ``<kind>_id``.
     """
@@ -165,6 +171,52 @@ def mount_access_routes(
         """The list panel, refreshed when a grant changes."""
         access = await _load(db, subject)
         return render(request, LIST_FRAGMENT, {"access": access, "base": subject.base})
+
+    @router.get(
+        f"{base}/remove/{{user_id:int}}",
+        include_in_schema=False,
+        name=f"{kind.value}_access_remove_dialog",
+    )
+    async def remove_dialog(
+        request: Request, db: Database, subject: Subject, user_id: int
+    ) -> Response:
+        """The confirm dialog of removing a user's access, naming the grants it takes away, or why
+        there is none to remove."""
+        account = await db.get(User, user_id)
+        if account is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "user not found")
+        access = await _load(db, subject)
+        entry = access.entry_of(user_id)
+        sources = await load_removal(db, subject.project_id, subject.node_id, user_id)
+        if entry is not None and sources:
+            view = _remove_view(
+                subject, access, user_id, account.name, entry=entry, sources=sources
+            )
+        else:
+            view = _remove_view(subject, access, user_id, account.name, notice=STALE_NOTICE)
+        return render(request, REMOVE_FRAGMENT, view)
+
+    @router.post(
+        f"{base}/remove/{{user_id:int}}",
+        include_in_schema=False,
+        name=f"{kind.value}_access_remove",
+    )
+    async def remove_user_access(
+        request: Request, db: Database, subject: Subject, user_id: int
+    ) -> Response:
+        """Remove the grants that give the user access; a refusal swaps the dialog."""
+        actor = audit_actor(request, subject.auth)
+        change = await remove_access(db, subject.project_id, subject.node_id, user_id, actor=actor)
+        if change.notice is None:
+            return events_response("grants-changed", "close-dialogs")
+        view = _remove_view(
+            subject,
+            await _load(db, subject),
+            user_id,
+            change.user_name or "this user",
+            notice=change.notice,
+        )
+        return render(request, REMOVE_FRAGMENT, view, status_code=status.HTTP_409_CONFLICT)
 
     if kind is NodeKind.SERVICE:
         return
@@ -194,47 +246,3 @@ def mount_access_routes(
             return events_response("grants-changed", "close-dialogs")
         view = _add_view(subject, await _load(db, subject), chosen=user, notice=change.notice)
         return render(request, ADD_FRAGMENT, view, status_code=status.HTTP_409_CONFLICT)
-
-    @router.get(
-        f"{base}/remove/{{user_id:int}}",
-        include_in_schema=False,
-        name=f"{kind.value}_access_remove_dialog",
-    )
-    async def remove_dialog(
-        request: Request, db: Database, subject: Subject, user_id: int
-    ) -> Response:
-        """The confirm dialog of removing a direct grant, or why there is none to remove."""
-        account = await db.get(User, user_id)
-        if account is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "user not found")
-        access = await _load(db, subject)
-        entry = access.entry_of(user_id)
-        if entry is not None and entry.direct:
-            view = _remove_view(subject, access, user_id, account.name, entry=entry)
-        else:
-            view = _remove_view(subject, access, user_id, account.name, notice=STALE_NOTICE)
-        return render(request, REMOVE_FRAGMENT, view)
-
-    @router.post(
-        f"{base}/remove/{{user_id:int}}",
-        include_in_schema=False,
-        name=f"{kind.value}_access_remove",
-    )
-    async def remove_access(
-        request: Request, db: Database, subject: Subject, user_id: int
-    ) -> Response:
-        """Remove the user's direct grant on the item; a refusal swaps the dialog."""
-        actor = audit_actor(request, subject.auth)
-        change = await change_access(
-            db, subject.project_id, subject.node_id, user_id, grant=False, actor=actor
-        )
-        if change.notice is None:
-            return events_response("grants-changed", "close-dialogs")
-        view = _remove_view(
-            subject,
-            await _load(db, subject),
-            user_id,
-            change.user_name or "this user",
-            notice=change.notice,
-        )
-        return render(request, REMOVE_FRAGMENT, view, status_code=status.HTTP_409_CONFLICT)

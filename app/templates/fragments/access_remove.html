@@ -1,8 +1,11 @@
-{#- The confirm dialog content of removing a direct grant, loaded when a Remove control is used.
-    When the user no longer holds the grant (the page is out of date) it shows that instead of
-    the buttons and redraws the list out of band. Context: access (an AccessList), base,
-    user_id, user_name, entry (the AccessEntry being removed, none for a refusal), notice (the
-    reason of a refusal), refresh and oob (true: the list included below is an out of band swap). -#}
+{#- The confirm dialog content of removing a user's access, loaded when a Remove control is used.
+    It names the grants the removal takes away: the user's grant on the item, the grant above
+    that passes the access down (which also ends the access to everything else under it), or the
+    grants on items inside. When the user no longer reaches the item through any of them (the page
+    is out of date) it shows that instead of the buttons and redraws the list out of band.
+    Context: access (an AccessList), base, user_id, user_name, entry (the AccessEntry, none for a
+    refusal), sources (the AccessSource list the removal takes away), notice (the reason of a
+    refusal), refresh and oob (true: the list included below is an out of band swap). -#}
 {% from "macros/buttons.html" import button %}
 {% from "macros/dialogs.html" import confirm_footer, confirm_message, dialog_body, dialog_footer, dialog_head %}
 {% from "macros/feedback.html" import inline_error %}
@@ -14,10 +17,24 @@
 {%- else %}
 <form hx-post="{{ base }}/remove/{{ user_id }}" hx-target="#access-remove" hx-swap="innerHTML">
 {% call dialog_body() %}{% call confirm_message() %}
-{{ user_name }} loses the grant on {{ access.subtitle }}{% if access.node.future_items %} and on the items added under it later{% endif %}. The change applies now, including to their API tokens.
-{%- if entry.also %} They keep access through {{ entry.also.name }} ({{ entry.also.level_label }}).{% else %} Access they have through other grants stays.{% endif %} Their audit entries stay.
-{% endcall %}{% endcall %}
-{{ confirm_footer("Remove access", type="submit") }}
+{%- if entry.direct %}
+{{ user_name }} loses the grant on {{ access.subtitle }}{% if access.node.future_items %} and on the items added under it later{% endif %}.
+{%- if entry.also %} They keep access through {{ entry.also.name }} ({{ entry.also.level_label }}).{% else %} Access they have through other grants stays.{% endif %}
+{%- elif entry.below %}
+{{ user_name }} reaches {{ access.subtitle }} through {{ "a grant" if sources | length == 1 else "grants" }} on {{ "an item" if sources | length == 1 else "items" }} inside it. Removing access takes away {{ "that grant" if sources | length == 1 else "these grants" }}:
+{%- else %}
+{{ user_name }}'s access comes from the grant on {{ sources[0].level_label | lower }} {{ sources[0].name }}. Removing it takes away that grant, so they also lose access to everything else under {{ sources[0].level_label | lower }} {{ sources[0].name }}, not only to {{ access.subtitle }}.
+{%- endif %} The change applies now, including to their API tokens. Their audit entries stay.
+{% endcall %}
+{%- if not entry.direct %}
+<ul data-fragment="access-remove-sources" class="m-0 flex list-none flex-col gap-1.5 text-[13px]">
+{%- for source in sources %}
+<li><span class="text-ink2">{{ source.level_label }}</span> <span class="font-mono font-semibold text-ink">{{ source.name }}</span></li>
+{%- endfor %}
+</ul>
+{%- endif %}
+{% endcall %}
+{{ confirm_footer("Remove the grant" if sources | length == 1 and not entry.direct else ("Remove the grants" if not entry.direct else "Remove access"), type="submit") }}
 </form>
 {%- endif %}
 {%- if refresh %}{% include "fragments/access_list.html" %}{% endif %}

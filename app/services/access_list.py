@@ -107,16 +107,15 @@ class AccessEntry:
         return len(self.sources) + self.more
 
     @property
-    def edit_href(self) -> str:
-        """Where an inherited entry is edited: its one source, or the user's page for several."""
+    def remove_label(self) -> str:
+        """The words of the Remove control: a grant has nothing else to change, so removing it is
+        the one action, on the item itself or on the item that gives the access."""
+        if self.direct:
+            return "Remove access"
         if self.source_count == 1:
-            return self.sources[0].href
-        return f"/users/{self.user.id}"
-
-    @property
-    def edit_label(self) -> str:
-        """The words of the edit link."""
-        return "Edit at source" if self.source_count == 1 else "Edit grants"
+            source = self.sources[0]
+            return f"Remove the grant on {source.level_label.lower()} {source.name}"
+        return "Remove the grants that give this access"
 
 
 @dataclass(frozen=True)
@@ -290,3 +289,73 @@ async def change_access(
         return AccessChange(False, DISABLED_NOTICE, user.name)
     outcome = await apply_toggle(db, user, node, node.target, was=not grant, actor=actor)
     return AccessChange(outcome.changed, outcome.notice(STALE_NOTICE), user.name)
+
+
+def removal_sources(
+    project: GridProject,
+    node: GridNode,
+    names: dict[str, str],
+    grants: frozenset[GrantTarget],
+) -> tuple[AccessSource, ...]:
+    """The grants a removal takes away so the user no longer reaches the item through them.
+
+    The user's grant on the item itself when there is one; else the widest grant above it that
+    passes the access down; else every grant on an item inside it. Empty when the user reaches the
+    item through none of them.
+    """
+    if node.target is not None and node.target in grants:
+        return (AccessSource(node.target, names[node.id]),)
+    covering = covering_source(node, grants)
+    if covering is not None:
+        return (AccessSource.of(covering),)
+    return tuple(
+        AccessSource(item.target, names[item.id])
+        for item in _grantable_below(project, node)
+        if item.target is not None and item.target in grants
+    )
+
+
+async def load_removal(
+    db: AsyncSession, project_id: int, node_id: str, user_id: int
+) -> tuple[AccessSource, ...] | None:
+    """What removing a user's access to an item would take away, None when the item is gone."""
+    located = _locate(build_projects(await load_grant_tree(db, project_id)), node_id)
+    if located is None:
+        return None
+    project, node = located
+    grants = (await load_user_grants(db, project_id=project_id)).get(user_id, frozenset())
+    return removal_sources(project, node, _item_names(project), grants)
+
+
+async def remove_access(
+    db: AsyncSession, project_id: int, node_id: str, user_id: int, *, actor: AuditActor
+) -> AccessChange:
+    """Remove the grants that give a user access to an item, each audited like a grid change.
+
+    The grants are those of ``removal_sources``: the direct one, the one above that passes the
+    access down, or those inside. Refused, with nothing written, when the item or the user is gone,
+    the user is disabled, or none of those grants is held any more; a refusal of one grant stops
+    the others and returns its reason.
+    """
+    located = _locate(build_projects(await load_grant_tree(db, project_id)), node_id)
+    if located is None:
+        return AccessChange(False, GONE_NOTICE)
+    project, node = located
+    user = await db.get(User, user_id)
+    if user is None:
+        return AccessChange(False, USER_GONE_NOTICE)
+    if not user.is_active:
+        return AccessChange(False, DISABLED_NOTICE, user.name)
+    grants = (await load_user_grants(db, project_id=project_id)).get(user_id, frozenset())
+    sources = removal_sources(project, node, _item_names(project), grants)
+    if not sources:
+        return AccessChange(False, STALE_NOTICE, user.name)
+    nodes = {item.target: item for item in project.nodes if item.target is not None}
+    for source in sources:
+        outcome = await apply_toggle(
+            db, user, nodes[source.target], source.target, was=True, actor=actor
+        )
+        notice = outcome.notice(STALE_NOTICE)
+        if notice is not None:
+            return AccessChange(False, notice, user.name)
+    return AccessChange(True, None, user.name)

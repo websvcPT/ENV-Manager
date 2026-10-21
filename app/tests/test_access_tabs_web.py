@@ -212,7 +212,7 @@ async def test_the_project_tab_lists_users_with_how_they_reach_the_project(
     }
     assert "Direct Includes future items" in rows["viewer"]
     actions = row_actions(body)
-    assert actions["viewer"] == ["remove"] and actions["deployment_admin"] == ["edit"]
+    assert actions["viewer"] == ["remove"] and actions["deployment_admin"] == ["remove"]
     assert "Inherited from prod (Deployment)" in rows["deployment_admin"]
     assert "from mysql/.env.db (Environment)" in rows["env_scoped_admin"]
     assert "2 deployments · 6 members" in body
@@ -252,7 +252,7 @@ async def test_the_deployment_tab_has_the_handoff_header_and_links_back_to_the_p
     rows = listed(body)
     assert "Direct Includes future items" in rows["deployment_admin"]
     assert "Inherited from Fancy Proj. Name (Project)" in rows["admin"]
-    assert row_actions(body)["admin"] == ["edit"]
+    assert row_actions(body)["admin"] == ["remove"]
     assert "from mysql/.env.db (Environment)" in rows["env_scoped_viewer"]
     assert "A deployment grant includes the services and environments added later." in body
     assert 'id="grant-dialog"' in body
@@ -270,7 +270,8 @@ async def test_the_service_tab_has_no_grant_controls_and_links_to_the_grant_leve
     assert f'href="/services/{items.mysql}" ' in body
     assert item_header_of(body).location["parents"] == "Project: Fancy Proj. Name, Deployment: prod"
     assert item_header_of(body).title == "Service: mysql" and "Deploy service" not in body
-    assert "Add access" not in body and "grant-dialog" not in body and "Remove" not in body
+    assert "Add access" not in body and "grant-dialog" not in body
+    assert 'id="access-remove"' in body and "Remove the grant on project Fancy Proj. Name" in body
     assert "Services are not a grant level" in body
     assert f'href="/projects/{items.fancy}/access"' in body
     assert f'href="/deployments/{items.prod}/access"' in body
@@ -278,8 +279,7 @@ async def test_the_service_tab_has_no_grant_controls_and_links_to_the_grant_leve
     assert "from Fancy Proj. Name (Project)" in rows["admin"]
     assert "from prod (Deployment)" in rows["deployment_admin"]
     assert "from mysql/.env.db (Environment), sees 1 of 3" in rows["env_scoped_admin"]
-    assert set(map(tuple, row_actions(body).values())) == {("edit",)}
-    assert f'href="/environments/{items.db_env}/access"' in body
+    assert set(map(tuple, row_actions(body).values())) == {("remove",)}
 
 
 async def test_the_environment_tab_lists_direct_and_inherited_access(
@@ -602,13 +602,43 @@ async def test_removing_a_grant_that_is_gone_is_refused_with_the_current_list(
     assert len(await audit_details(web_app, "grant.remove")) == 1
 
 
-async def test_a_service_has_no_grant_routes(web_client: httpx.AsyncClient, items: Items) -> None:
+async def test_a_service_has_no_add_routes(web_client: httpx.AsyncClient, items: Items) -> None:
     await sign_in(web_client, "root")
     base = base_of("service", items.mysql)
     assert (await web_client.get(f"{base}/add")).status_code == 404
-    assert (await web_client.get(f"{base}/remove/1")).status_code == 404
     assert (await post(web_client, f"{base}/grants", {"user": 1})).status_code == 404
-    assert (await post(web_client, f"{base}/remove/1")).status_code == 404
+
+
+async def test_removing_an_inherited_access_names_and_takes_away_the_grant_that_gives_it(
+    web_client: httpx.AsyncClient, web_app: FastAPI, items: Items
+) -> None:
+    await sign_in(web_client, "root")
+    base = base_of("deployment", items.prod)
+    user = items.users["admin"]
+    dialog = (await web_client.get(f"{base}/remove/{user}")).text
+    assert "access comes from the grant on project Fancy Proj. Name" in html.unescape(dialog)
+    assert "also lose access to everything else under project Fancy Proj. Name" in dialog
+    assert 'data-fragment="access-remove-sources"' in dialog and "Remove the grant" in dialog
+    response = await post(web_client, f"{base}/remove/{user}")
+    assert response.status_code == 204
+    details = await audit_details(web_app, "grant.remove")
+    assert details == [{"level": "project", "item": "Fancy Proj. Name"}]
+    assert "admin" not in listed(main_of((await web_client.get(base)).text))
+
+
+async def test_the_service_tab_removes_access_given_by_a_file_inside(
+    web_client: httpx.AsyncClient, web_app: FastAPI, items: Items
+) -> None:
+    await sign_in(web_client, "root")
+    base = base_of("service", items.mysql)
+    user = items.users["env_scoped_admin"]
+    dialog = (await web_client.get(f"{base}/remove/{user}")).text
+    assert "through a grant on an item inside it" in dialog and "mysql/.env.db" in dialog
+    response = await post(web_client, f"{base}/remove/{user}")
+    assert response.status_code == 204
+    details = await audit_details(web_app, "grant.remove")
+    assert [item["level"] for item in details] == ["environment"]
+    assert "env_scoped_admin" not in listed(main_of((await web_client.get(base)).text))
 
 
 async def test_missing_items_answer_404_for_the_superadmin(

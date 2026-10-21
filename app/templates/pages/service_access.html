@@ -1,8 +1,10 @@
 {#- The Access tab of a service: header, section links and the access panel, which shows the
-    result and links to the items that grant it (a service is not a grant level). Context:
+    result and links to the items that grant it (a service is not a grant level); a user's access
+    can be removed, which takes away the grants that give it. Context:
     service (a ServiceHeader), can_manage_grants, access (an AccessList) and base. -#}
 {% extends "layouts/app.html" %}
 {% from "macros/access.html" import service_tabs %}
+{% from "macros/dialogs.html" import loaded_dialog %}
 {% from "macros/panels.html" import item_header, service_location %}
 {% set active_nav = "projects" %}
 {% set breadcrumbs = [("Projects", "/projects"), (service.project_name, "/projects/" ~ service.project_id), (service.deployment_name, "/deployments/" ~ service.deployment_id), (service.name, none)] %}
@@ -11,4 +13,5 @@
 {{ item_header("service", service.name, location=service_location(service)) }}
 {{ service_tabs(service, can_manage_grants, on_access=true) }}
 {% include "fragments/access_list.html" %}
+{{ loaded_dialog("access-remove", "Remove access", width="560") }}
 {% endblock %}

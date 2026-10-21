@@ -51,16 +51,11 @@
 </span>
 {%- endmacro %}
 
-{#- The Actions cell: Remove (opens the confirm dialog) for a direct grant, a link to where an
-    inherited access is edited otherwise. -#}
+{#- The Actions cell: Remove, which opens the confirm dialog. A grant has nothing else to change,
+    so it is the one action: it takes away the direct grant, or the grant above or the grants
+    inside that give the access, as the label and the dialog say. -#}
 {% macro access_actions(entry, base) -%}
-{%- if entry.direct -%}
 {{ row_actions("access-row-" ~ entry.user.id, entry.user.name, [
-  {"key": "remove", "label": "Remove", "icon": "trash", "danger": true, "attrs": {"data_js": "dialog-open", "data_target": "access-remove", "aria_haspopup": "dialog", "hx_get": base ~ "/remove/" ~ entry.user.id, "hx_target": "#access-remove", "hx_swap": "innerHTML"}}
+  {"key": "remove", "label": entry.remove_label, "icon": "trash", "danger": true, "attrs": {"data_js": "dialog-open", "data_target": "access-remove", "aria_haspopup": "dialog", "hx_get": base ~ "/remove/" ~ entry.user.id, "hx_target": "#access-remove", "hx_swap": "innerHTML"}}
 ]) }}
-{%- else -%}
-{{ row_actions("access-row-" ~ entry.user.id, entry.user.name, [
-  {"key": "edit", "label": entry.edit_label, "icon": "pencil", "href": entry.edit_href}
-]) }}
-{%- endif -%}
 {%- endmacro %}

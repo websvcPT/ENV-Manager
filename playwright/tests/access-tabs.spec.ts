@@ -6,7 +6,7 @@ import { expectItemHeader, expectLocation } from '../item-header';
 import { listProjects } from '../projects-api';
 import { disableUser, listUsers, seededEmail, type CreatedUser } from '../users-api';
 import { horizontalOverflow, isWide, TOUCH_TARGET } from '../viewport';
-import { rowAction } from './row-actions';
+import { actionControls, rowAction } from './row-actions';
 import { expect, test, type Scratch } from './scratch-access';
 import { signedInAs } from './sign-in';
 
@@ -176,24 +176,31 @@ test.describe('superadmin: project Access tab', () => {
     await expect(row(page, direct).locator('[data-row-action="remove"]')).toBeVisible();
     await expect(row(page, viaDeployment)).toContainText('Inherited');
     await expect(row(page, viaDeployment)).toContainText('from dep-a (Deployment)');
-    await expect(row(page, viaDeployment).locator('[data-row-action="edit"]')).toHaveAttribute(
-      'href',
-      `/deployments/${scratch.depA}/access`,
+    // A grant has nothing to edit, so every row's one action is Remove, named after the grant it
+    // takes away; no row has an edit control.
+    await expect(actionControls(row(page, viaDeployment), 'remove').first()).toHaveAttribute(
+      'aria-label',
+      'Remove the grant on deployment dep-a',
     );
-    await expect(row(page, viaDeployment).getByRole('button')).toHaveCount(0);
     await expect(row(page, viaFiles)).toContainText(
       'from cache/.env.cache (Environment), cache/.env.cache2 (Environment)',
     );
-    await expect(row(page, viaFiles).locator('[data-row-action="edit"]')).toHaveAttribute(
-      'href',
-      `/users/${viaFiles.id}`,
+    await expect(actionControls(row(page, viaFiles), 'remove').first()).toHaveAttribute(
+      'aria-label',
+      'Remove the grants that give this access',
     );
+    await expect(list(page).locator('[data-row-action="edit"]')).toHaveCount(0);
     await expect(row(page, nothing)).toHaveCount(0);
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
 
-    await row(page, viaDeployment).locator('[data-row-action="edit"]').click();
-    await expect(page).toHaveURL(new RegExp(`/deployments/${scratch.depA}/access$`));
-    await expect(row(page, viaDeployment)).toContainText('Direct');
+    await (await rowAction(row(page, viaDeployment), 'remove')).click();
+    const removeDialog = page.locator('#access-remove');
+    await expect(removeDialog).toContainText('through a grant on an item inside it');
+    await expect(removeDialog.locator('[data-fragment="access-remove-sources"]')).toContainText(
+      'dep-a',
+    );
+    await removeDialog.getByRole('button', { name: 'Remove the grant' }).click();
+    await expect(row(page, viaDeployment)).toHaveCount(0);
   });
 
   test('shows an empty state while nobody has access', async ({ page, scratch }) => {
@@ -306,14 +313,14 @@ test.describe('superadmin: deployment Access tab', () => {
     await expect(page.locator('nav[aria-label="Breadcrumb"] [aria-current="page"]')).toHaveText('dep-a');
     await expect(list(page)).toContainText('A deployment grant includes the services and environments');
     await expect(row(page, inherited)).toContainText(`from ${scratch.projectName} (Project)`);
-    await expect(row(page, inherited).locator('[data-row-action="edit"]')).toHaveAttribute(
-      'href',
-      `/projects/${scratch.projectId}/access`,
+    await expect(actionControls(row(page, inherited), 'remove').first()).toHaveAttribute(
+      'aria-label',
+      `Remove the grant on project ${scratch.projectName}`,
     );
     await expect(row(page, viaFile)).toContainText('from cache/.env.cache (Environment)');
-    await expect(row(page, viaFile).locator('[data-row-action="edit"]')).toHaveAttribute(
-      'href',
-      `/environments/${scratch.envA1}/access`,
+    await expect(actionControls(row(page, viaFile), 'remove').first()).toHaveAttribute(
+      'aria-label',
+      'Remove the grant on environment cache/.env.cache',
     );
 
     await openAddDialog(page);
@@ -405,15 +412,16 @@ test.describe('superadmin: service Access tab', () => {
     await expect(sections(page)).toHaveText(['Environments', 'Deploy history', 'AccessSuperadmin']);
     await expect(sections(page).nth(0)).toHaveAttribute('href', `/services/${scratch.serviceA}`);
     await expect(list(page)).toContainText('Services are not a grant level');
-    await expect(list(page).getByRole('button')).toHaveCount(0);
-    await expect(page.locator('#grant-dialog, #access-remove')).toHaveCount(0);
+    await expect(list(page).getByRole('button', { name: 'Add access' })).toHaveCount(0);
+    await expect(page.locator('#grant-dialog')).toHaveCount(0);
+    await expect(page.locator('#access-remove')).toHaveCount(1);
     await expect(row(page, viaProject)).toContainText(`from ${scratch.projectName} (Project)`);
     await expect(row(page, viaDeployment)).toContainText('from dep-a (Deployment)');
     await expect(row(page, viaFile)).toContainText('from cache/.env.cache (Environment), sees 1 of 2');
     await expect(row(page, viaProject)).not.toContainText('sees');
-    await expect(row(page, viaFile).locator('[data-row-action="edit"]')).toHaveAttribute(
-      'href',
-      `/environments/${scratch.envA1}/access`,
+    await expect(actionControls(row(page, viaFile), 'remove').first()).toHaveAttribute(
+      'aria-label',
+      'Remove the grant on environment cache/.env.cache',
     );
     await expect(
       list(page).getByRole('link', { name: `deployment dep-a`, exact: true }),
@@ -434,13 +442,11 @@ test.describe('superadmin: service Access tab', () => {
     );
   });
 
-  test('has no routes to change a grant', async ({ page, scratch, makeUser, request }) => {
+  test('has no routes to add a grant', async ({ page, scratch, makeUser, request }) => {
     const viewer = await makeUser('viewer');
     const base = tabPath('service', scratch.serviceA);
     expect((await page.request.get(`${base}/add`)).status()).toBe(404);
-    expect((await page.request.get(`${base}/remove/${viewer.id}`)).status()).toBe(404);
     expect((await postForm(request, `${base}/grants`, { user: String(viewer.id) })).status).toBe(404);
-    expect((await postForm(request, `${base}/remove/${viewer.id}`, {})).status).toBe(404);
   });
 });
 
@@ -485,7 +491,10 @@ test.describe('superadmin: refusals', () => {
       `Access to this item is already included through ${scratch.projectName}.`,
     );
     await expect(row(page, viewer)).toContainText(`from ${scratch.projectName} (Project)`);
-    await expect(row(page, viewer).getByRole('button')).toHaveCount(0);
+    await expect(actionControls(row(page, viewer), 'remove').first()).toHaveAttribute(
+      'aria-label',
+      `Remove the grant on project ${scratch.projectName}`,
+    );
   });
 
   test('refuses a remove from an out of date page and redraws the list', async ({
@@ -604,8 +613,11 @@ test.describe('superadmin: small screens', () => {
     expect(add?.height ?? 0).toBeGreaterThanOrEqual(TOUCH_TARGET);
     const remove = await row(page, direct).locator('[data-row-action="remove"]').boundingBox();
     expect(remove?.height ?? 0).toBeGreaterThanOrEqual(TOUCH_TARGET);
-    const edit = await row(page, inherited).locator('[data-row-action="edit"]').boundingBox();
-    expect(edit?.height ?? 0).toBeGreaterThanOrEqual(TOUCH_TARGET);
+    const removeInherited = await row(page, inherited)
+      .locator('[data-row-action="remove"]:visible, [data-row-menu-button]:visible')
+      .first()
+      .boundingBox();
+    expect(removeInherited?.height ?? 0).toBeGreaterThanOrEqual(TOUCH_TARGET);
     await openAddDialog(page);
     const dialog = await addDialog(page).boundingBox();
     expect((dialog?.width ?? 0) <= (page.viewportSize()?.width ?? 0)).toBe(true);
