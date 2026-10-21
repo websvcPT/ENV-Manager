@@ -25,6 +25,12 @@ from app.models import (
 )
 from app.services.app_settings import GeneralSettings
 from app.services.audit import AuditActor, record_actor_audit
+from app.services.display_names import (
+    display_name_message,
+    display_name_rule,
+    is_display_name,
+    normalize_display_name,
+)
 from app.services.paths import (
     AllowedPaths,
     PathValidationError,
@@ -33,13 +39,15 @@ from app.services.paths import (
     path_status,
 )
 from app.services.services import listed_service
-from app.services.slug_names import SLUG_MESSAGE, is_slug_name
 from app.services.token_guard import guard_delete, restrictions_below
 
 FILE_MODE_PATTERN = re.compile(r"0?[0-7]{3}")
 ACCOUNT_PATTERN = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*")
 MAX_ACCOUNT_LENGTH = 64
 DEFAULT_FILE_MODE = "0600"
+MIN_DEPLOYMENT_NAME_LENGTH = 1
+DEPLOYMENT_NAME_RULE = display_name_rule(MIN_DEPLOYMENT_NAME_LENGTH)
+DEPLOYMENT_NAME_MESSAGE = display_name_message(MIN_DEPLOYMENT_NAME_LENGTH)
 
 
 @dataclass(frozen=True)
@@ -226,14 +234,15 @@ async def validate_deployment(
 ) -> CleanDeployment:
     """Check every submitted value and return the clean ones, or raise with all the problems."""
     errors: dict[str, str] = {}
-    name = form.name.strip()
+    name = normalize_display_name(form.name)
     if not name:
         errors["name"] = "Enter a deployment name."
-    elif not is_slug_name(name):
-        errors["name"] = SLUG_MESSAGE
+    elif not is_display_name(name, MIN_DEPLOYMENT_NAME_LENGTH):
+        errors["name"] = DEPLOYMENT_NAME_MESSAGE
     else:
         taken = select(Deployment.id).where(
-            Deployment.project_id == project.id, Deployment.name == name
+            Deployment.project_id == project.id,
+            func.lower(Deployment.name) == name.lower(),
         )
         if ignore_id is not None:
             taken = taken.where(Deployment.id != ignore_id)

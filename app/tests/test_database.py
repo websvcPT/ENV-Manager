@@ -784,3 +784,37 @@ async def test_the_compose_files_column_is_added_and_removed_in_place_and_keeps_
         assert again.scalar_one() is None
     finally:
         await engine.dispose()
+
+
+async def test_deployment_names_become_unique_ignoring_case_and_the_way_back_drops_the_index(
+    database_path: Path, backup_dir: Path
+) -> None:
+    """Migration 0021 refuses a project whose deployments differ only in case, naming them, and
+    otherwise adds the unique index on the project and the lowercased name; the way back drops
+    it and keeps the names."""
+    insert = (
+        "INSERT INTO deployments (id, project_id, name, root_path, dist_missing_policy,"
+        " drift_policy, missing_target_policy, created_at, updated_at)"
+        " VALUES (:id, 1, :name, '/x', 'block', 'halt', 'create', '2026-01-01', '2026-01-01')"
+    )
+    engine = create_engine(database_path)
+    try:
+        await _migrate(engine, "0020")
+        async with engine.begin() as connection:
+            for statement in TREE_STATEMENTS:
+                await connection.execute(text(statement))
+            await connection.execute(text(insert), {"id": 2, "name": "D"})
+        await _migrate(engine, "0021", refused="share a name: d, D")
+        async with engine.begin() as connection:
+            await connection.execute(text("UPDATE deployments SET name = 'Web EU' WHERE id = 2"))
+        await _migrate(engine, "0021")
+        async with engine.begin() as connection:
+            with pytest.raises(IntegrityError):
+                await connection.execute(text(insert), {"id": 3, "name": "web eu"})
+        await _migrate(engine, "0020", down=True)
+        async with engine.begin() as connection:
+            await connection.execute(text(insert), {"id": 3, "name": "web eu"})
+            names = (await connection.execute(text("SELECT name FROM deployments"))).scalars()
+            assert sorted(names) == ["Web EU", "d", "web eu"]
+    finally:
+        await engine.dispose()

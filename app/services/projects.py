@@ -1,6 +1,5 @@
 """Projects: the list shown to a user, and superadmin-only create, rename and delete."""
 
-import re
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -22,24 +21,19 @@ from app.models import (
 )
 from app.services.audit import CLI_ACTOR_NAME, AuditActor, record_actor_audit
 from app.services.deploy_trigger import trigger_label
+from app.services.display_names import (
+    display_name_message,
+    display_name_rule,
+    is_display_name,
+    normalize_display_name,
+)
 from app.services.grants import projects_reached
 from app.services.permissions import AccessScope, Capability, ItemLevel, compute_visibility
 from app.services.token_guard import guard_delete, restrictions_below
 
 MIN_PROJECT_NAME_LENGTH = 3
-MAX_PROJECT_NAME_LENGTH = 100
-# ASCII letters only: SQLite folds the case of ASCII letters alone, so the unique index on
-# ``lower(name)`` and the check in code agree on what a duplicate is.
-PROJECT_NAME_PATTERN = re.compile(r"[A-Za-z0-9 ._-]+")
-REPEATED_SPACES = re.compile(r" {2,}")
-NAME_RULE = (
-    f"{MIN_PROJECT_NAME_LENGTH} to {MAX_PROJECT_NAME_LENGTH} characters with at least one letter "
-    "or number. Letters, numbers, spaces and the characters . - _ are allowed."
-)
-NAME_MESSAGE = (
-    f"Use {MIN_PROJECT_NAME_LENGTH} to {MAX_PROJECT_NAME_LENGTH} characters with at least one "
-    "letter or number: letters, numbers, spaces and the characters . - _"
-)
+NAME_RULE = display_name_rule(MIN_PROJECT_NAME_LENGTH)
+NAME_MESSAGE = display_name_message(MIN_PROJECT_NAME_LENGTH)
 
 
 class ProjectError(Exception):
@@ -102,14 +96,10 @@ def validate_project_name(name: str) -> str:
     number, so a name of dots and dashes is refused. The rule applies when a name is created or
     changed; names stored before it are not touched.
     """
-    name = REPEATED_SPACES.sub(" ", name.strip())
+    name = normalize_display_name(name)
     if not name:
         raise InvalidProjectNameError("Enter a project name.")
-    if (
-        not MIN_PROJECT_NAME_LENGTH <= len(name) <= MAX_PROJECT_NAME_LENGTH
-        or PROJECT_NAME_PATTERN.fullmatch(name) is None
-        or not any(character.isalnum() for character in name)
-    ):
+    if not is_display_name(name, MIN_PROJECT_NAME_LENGTH):
         raise InvalidProjectNameError(NAME_MESSAGE)
     return name
 

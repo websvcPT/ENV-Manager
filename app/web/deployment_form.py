@@ -16,6 +16,7 @@ from app.core.templating import render
 from app.models import Deployment, Project
 from app.services.app_settings import StoredSettings
 from app.services.deployments import (
+    DEPLOYMENT_NAME_RULE,
     DeploymentForm,
     DeploymentFormError,
     RootCheck,
@@ -108,6 +109,7 @@ def _form_context(
     return {
         "form": form,
         "errors": errors or {},
+        "name_rule": DEPLOYMENT_NAME_RULE,
         "root_check": root_check,
         "action": target.action,
         "submit_label": target.submit_label,

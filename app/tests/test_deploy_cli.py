@@ -16,6 +16,7 @@ from app.core.db import create_engine, create_session_factory
 from app.models import (
     AuditActorType,
     AuditEntry,
+    Deployment,
     DeployResult,
     DeployRun,
     DeployStatus,
@@ -236,3 +237,23 @@ def test_a_deploy_first_closes_runs_that_a_dead_process_left_running(
     assert closed.post_deploy_status is PostDeployStatus.FAILED
     assert closed.status is DeployStatus.POST_DEPLOY_FAILED
     assert closed.post_deploy_reason == INTERRUPTED_REASON
+
+
+def test_a_deployment_name_with_spaces_and_capitals_is_named_on_the_command_line(
+    roots: dict[str, Path],
+) -> None:
+    async def rename() -> None:
+        engine = create_engine(get_settings().database_path)
+        try:
+            async with create_session_factory(engine)() as db:
+                staging = await db.scalar(select(Deployment).where(Deployment.name == "staging"))
+                assert staging is not None
+                staging.name = "Staging EU"
+                await db.commit()
+        finally:
+            await engine.dispose()
+
+    asyncio.run(rename())
+    result = runner.invoke(app, ["deploy", "Fancy Proj. Name/Staging EU/web", "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert result.output.startswith("dry run of Fancy Proj. Name/Staging EU/web")

@@ -171,11 +171,12 @@ docker compose exec app envmanager deploy <project>/<deployment>/<service> \
     [--env <file name> ...] [--dry-run] [--force]
 ```
 
-A project name is a display name (letters in any case, numbers, spaces and `. - _`, 3 to 100
-characters with at least one letter or number, repeated spaces made one, unique ignoring case),
-so quote the path when it holds spaces:
-`envmanager deploy "Fancy Proj. Name/prod/web"`. Deployment and service names stay lowercase
-slugs (letters, numbers and dashes), as they usually mirror the Compose project and service.
+Project and deployment names are display names (letters in any case, numbers, spaces and
+`. - _`, with at least one letter or number and repeated spaces made one; 3 to 100 characters for
+a project, unique ignoring case, and 1 to 100 for a deployment, unique in its project ignoring
+case), so quote the path when it holds spaces:
+`envmanager deploy "Fancy Proj. Name/Web EU/web"`. Service names stay lowercase slugs (letters,
+numbers and dashes), as they usually mirror the Compose service.
 
 Deploys the service as the actor `cli`: every file of the service, or the named ones. The command
 prints one line per file and exits 0 only when every file was written or found unchanged and the

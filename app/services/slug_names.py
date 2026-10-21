@@ -1,8 +1,8 @@
-"""The name rule of deployments and services.
+"""The name rule of services.
 
-Both usually mirror a Compose project and a Compose service, so they keep a strict slug: lowercase
-letters, numbers and dashes, starting with a letter or a number, 1 to 100 characters. Project
-names are display names with their own looser rule (``app.services.projects``).
+A service usually mirrors a Compose service, so its name keeps a strict slug: lowercase letters,
+numbers and dashes, starting with a letter or a number, 1 to 100 characters. Project and
+deployment names are display names with their own looser rule (``app.services.display_names``).
 """
 
 import re

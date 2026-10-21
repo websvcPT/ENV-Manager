@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.core.db import create_session_factory
@@ -18,6 +19,7 @@ from app.models import (
 from app.seeds import SeedData
 from app.services import deployments as deployment_service
 from app.services.deployments import (
+    DEPLOYMENT_NAME_MESSAGE,
     DeploymentForm,
     DeploymentFormError,
     check_root_path,
@@ -154,7 +156,7 @@ async def test_validation_collects_every_problem(
     seeded_database: AsyncEngine, seed_data: SeedData, allowed: AllowedPaths, host: Path
 ) -> None:
     form = DeploymentForm(
-        name="Bad Name",
+        name="Bad/Name",
         root="/etc",
         dist_missing_policy="maybe",
         file_mode="9999",
@@ -313,3 +315,72 @@ async def test_update_changes_values_and_audits_only_what_changed(
         "previous_root_path": previous_root,
     }
     assert entry.target_name == "staging-2"
+
+
+@pytest.mark.parametrize(
+    ("raw", "stored"),
+    [
+        ("Production", "Production"),
+        ("  Web   EU  1 ", "Web EU 1"),
+        ("a", "a"),
+        ("geo_travel.v2-test", "geo_travel.v2-test"),
+        ("x" * 100, "x" * 100),
+    ],
+)
+async def test_a_deployment_name_is_a_display_name(
+    seeded_database: AsyncEngine,
+    seed_data: SeedData,
+    allowed: AllowedPaths,
+    host: Path,
+    raw: str,
+    stored: str,
+) -> None:
+    async with create_session_factory(seeded_database)() as db:
+        fancy = await db.get(Project, seed_data.projects.fancy.id)
+        assert fancy is not None
+        form = DeploymentForm(name=raw, root=str(host / "alpha"))
+        clean = await validate_deployment(db, allowed, fancy, form, mount_points=[host])
+    assert clean.name == stored
+
+
+@pytest.mark.parametrize("raw", ["web/eu", "-.-", "x" * 101, "café", "tab\there"])
+async def test_a_deployment_name_outside_the_rule_is_refused(
+    seeded_database: AsyncEngine,
+    seed_data: SeedData,
+    allowed: AllowedPaths,
+    host: Path,
+    raw: str,
+) -> None:
+    async with create_session_factory(seeded_database)() as db:
+        fancy = await db.get(Project, seed_data.projects.fancy.id)
+        assert fancy is not None
+        form = DeploymentForm(name=raw, root=str(host / "alpha"))
+        with pytest.raises(DeploymentFormError) as refused:
+            await validate_deployment(db, allowed, fancy, form, mount_points=[host])
+    assert refused.value.errors["name"] == DEPLOYMENT_NAME_MESSAGE
+
+
+async def test_a_deployment_name_is_unique_in_the_project_ignoring_case(
+    seeded_database: AsyncEngine, seed_data: SeedData, allowed: AllowedPaths, host: Path
+) -> None:
+    async with create_session_factory(seeded_database)() as db:
+        fancy = await db.get(Project, seed_data.projects.fancy.id)
+        assert fancy is not None
+        form = DeploymentForm(name="PROD", root=str(host / "alpha"))
+        with pytest.raises(DeploymentFormError) as refused:
+            await validate_deployment(db, allowed, fancy, form, mount_points=[host])
+        assert refused.value.errors == {
+            "name": "A deployment named PROD already exists in this project."
+        }
+        renamed = await validate_deployment(
+            db,
+            allowed,
+            fancy,
+            form,
+            ignore_id=seed_data.deployments.fancy_prod.id,
+            mount_points=[host],
+        )
+        assert renamed.name == "PROD"
+        db.add(Deployment(project_id=fancy.id, name="Prod", root_path=str(host / "alpha")))
+        with pytest.raises(IntegrityError):
+            await db.commit()

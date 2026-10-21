@@ -96,14 +96,16 @@ class Deployment(Base):
 
     ``file_mode`` is the octal mode written files get, ``file_owner`` and ``file_group`` the names
     (or numeric ids) they are given; both are empty when the files keep the app user.
-    ``compose_files`` holds the Compose files the services and files were imported from, as paths
-    relative to the root with the base file first; it is None for a deployment that was not
-    imported from Compose files.
+    ``compose_files`` holds the Compose files linked to the deployment (by the import or later),
+    as paths relative to the root with the base file first; it is None for a deployment that has
+    none. They are read only: the app shows their text but never manages or writes them. The name
+    is a display name, unique in the project ignoring case through the index below.
     """
 
     __tablename__ = "deployments"
     __table_args__ = (
         UniqueConstraint("project_id", "name", name="uq_deployments_project_name"),
+        Index("uq_deployments_project_name_lower", "project_id", text("lower(name)"), unique=True),
         {"sqlite_autoincrement": True},
     )
 
