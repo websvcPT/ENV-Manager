@@ -65,8 +65,8 @@ async def test_the_panel_offers_to_add_the_first_file_and_creates_the_files_once
     panel = re.search(r'<section[^>]*data-fragment="deployment-files".*?</section>', page, re.S)
     assert panel is not None and "No deployment files yet" in panel.group(0)
     assert f'hx-post="/deployments/{prod}/deployment-files"' in panel.group(0)
-    assert page.index('data-fragment="deployment-files"') < page.index(
-        'data-fragment="services-table"'
+    assert page.index('data-fragment="services-table"') < page.index(
+        'data-fragment="deployment-files"'
     )
     first = await open_files(web_client, prod)
     again = await open_files(web_client, prod)

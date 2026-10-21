@@ -29,8 +29,8 @@
 <div class="flex flex-col gap-1.5 border-b border-line p-4 sm:border-r lg:border-b-0"><p class="text-xs font-bold uppercase tracking-wide text-ink3">Dist check</p><div class="flex flex-wrap items-center gap-2">{% if deployment.dist_outcome %}{{ dist_badge(deployment.dist_outcome.value) }}{% else %}{{ badge("unchanged", "Not checked yet") }}{% endif %}</div></div>
 <div class="flex flex-col gap-1.5 border-b border-line p-4 sm:border-r lg:border-b-0"><p class="text-xs font-bold uppercase tracking-wide text-ink3">Post-deploy</p><div class="flex flex-wrap items-center gap-2">{% if run %}{{ post_deploy_badge(run.post_deploy.value) }}<span class="text-[13px] text-ink2">{{ run.service }}</span>{% else %}<span class="text-[13px] text-ink2">No deploys yet</span>{% endif %}</div></div>
 </section>
-{% include "fragments/deployment_files_panel.html" %}
 {% include "fragments/services_table.html" %}
+{% include "fragments/deployment_files_panel.html" %}
 {% include "fragments/deploy_history.html" %}
 {% if deployment.can_check_dist and not deployment.outside_allowed %}{{ deploy_shell() }}{% endif %}
 {% if deployment.policies %}
