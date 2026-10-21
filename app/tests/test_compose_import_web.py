@@ -718,7 +718,7 @@ async def test_ticked_commands_are_reviewed_and_stored_by_the_import(
             .join(ServiceHook, ServiceHook.service_id == Service.id)
             .where(Service.deployment_id == layout.empty)
         )
-        assert dict(rows.tuples().all()) == {"api": API_UP, DEPLOYMENT_FILES_NAME: FILES_UP}
+        assert dict(rows.all()) == {"api": API_UP, DEPLOYMENT_FILES_NAME: FILES_UP}
     page = (await web_client.get(response.headers["hx-redirect"])).text
     assert "2 post-deploy commands set." in page
 

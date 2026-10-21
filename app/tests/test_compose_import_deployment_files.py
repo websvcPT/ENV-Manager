@@ -65,7 +65,7 @@ async def stored_hooks(h: Harness, deployment: Deployment) -> dict[str, ServiceH
         .join(ServiceHook, ServiceHook.service_id == Service.id)
         .where(Service.deployment_id == deployment.id, ServiceHook.type == HookType.POST_DEPLOY)
     )
-    return dict(rows.tuples().all())
+    return dict(rows.all())
 
 
 async def totals(h: Harness) -> tuple[int, int, int]:

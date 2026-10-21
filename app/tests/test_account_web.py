@@ -493,11 +493,18 @@ async def test_cancelling_drops_the_pending_secret(web_client: httpx.AsyncClient
     assert replay.status_code == 409
 
 
+async def enable_with_code(http: httpx.AsyncClient) -> tuple[str, str]:
+    """Turn the second factor on for the signed-in user; return the secret and the code used."""
+    _, secret = await start_setup(http)
+    code = pyotp.TOTP(secret).now()
+    done = await post(http, "/account/totp/enable", enable_fields(code))
+    assert done.status_code == 200
+    return secret, code
+
+
 async def enable_for(http: httpx.AsyncClient) -> str:
     """Turn the second factor on for the signed-in user and return the secret."""
-    _, secret = await start_setup(http)
-    done = await post(http, "/account/totp/enable", enable_fields(pyotp.TOTP(secret).now()))
-    assert done.status_code == 200
+    secret, _ = await enable_with_code(http)
     return secret
 
 
@@ -505,7 +512,7 @@ async def test_removing_needs_the_password_and_a_code_that_was_not_used_to_turn_
     web_client: httpx.AsyncClient, web_app: FastAPI
 ) -> None:
     await sign_in(web_client, "admin")
-    secret = await enable_for(web_client)
+    secret, used = await enable_with_code(web_client)
     dialog = await web_client.get("/account/totp/remove", headers=HTMX)
     assert dialog.status_code == 200
     for marker in ('id="rp"', 'id="rc"', "Remove two-factor", 'hx-post="/account/totp/remove"'):
@@ -524,7 +531,7 @@ async def test_removing_needs_the_password_and_a_code_that_was_not_used_to_turn_
     reused = await post(
         web_client,
         "/account/totp/remove",
-        {"current_password": DEV_PASSWORD, "code": pyotp.TOTP(secret).now()},
+        {"current_password": DEV_PASSWORD, "code": used},
     )
     assert reused.status_code == 422 and 'aria-describedby="rc-e"' in reused.text
 
