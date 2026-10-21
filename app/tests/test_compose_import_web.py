@@ -12,9 +12,9 @@ from fastapi import FastAPI
 from sqlalchemy import func, select
 
 from app.models import AllowedPath, AuditEntry, Deployment, Environment, Project, Service
-from app.services.compose_import import HAS_SERVICES_MESSAGE
+from app.services.compose_import import DIST_NEEDED_MESSAGE, HAS_SERVICES_MESSAGE
 from app.services.file_types import NOT_PEM_MESSAGE
-from app.tests.compose_helpers import PROJECT, write_project
+from app.tests.compose_helpers import GEOTRAVEL, PROJECT, write_project
 from app.tests.conftest import sign_in
 from app.tests.web_helpers import assert_never_cached, item_header_of, main_of, post
 
@@ -30,7 +30,6 @@ FILE_KEYS = [
     "conf/app.cfg",
     ".env.shared",
     ".env.api",
-    ".env",
 ]
 OWNERS = {
     ".env.web": "web",
@@ -40,7 +39,6 @@ OWNERS = {
     "conf/app.cfg": "web",
     ".env.shared": "api",
     ".env.api": "api",
-    ".env": "api",
 }
 DIST = {".env.web": ".env.web.example", ".env.api": ".env.api-dist"}
 CONFIRM_TITLE = "Import services and files"
@@ -191,7 +189,7 @@ async def test_step_one_lists_the_compose_files_under_the_deployment_header(
     assert (header.type, header.title) == ("deployment", "Deployment: imported")
     assert dict(header.location) == {
         "parents": "Project: Fancy Proj. Name",
-        "root": f"Project path: {layout.root}",
+        "root": f"Deployment path: {layout.root}",
     }
     assert ">Import from Docker Compose</li>" in page
     body = main_of(page)
@@ -272,10 +270,11 @@ async def test_the_preview_shows_a_row_per_service_and_per_file(
     shared = row_of(page, ".env.shared")
     options = re.findall(r'<option value="([^"]*)"', shared.split('name="owner:', 1)[1])
     assert "api" in options and "worker-1" in options
-    project_env = row_of(page, ".env")
-    assert "Choose a service" in project_env and "No service" in project_env
-    assert re.search(r'name="file" value="\.env"[^>]*aria-label', project_env)
-    assert " checked" not in project_env.split("</td>", 1)[0]
+    assert 'data-file=".env"' not in page and "Choose a service" not in page
+    assert "The deployment environment file is not managed yet." in page
+    guessed = row_of(page, "missing.conf")
+    assert "Not on disk, looks like a file" in guessed and "Bind mount" in guessed
+    assert " checked" not in guessed.split("</td>", 1)[0]
     optional = row_of(page, ".env.optional")
     assert "Optional" in optional and "Not on disk" in optional
     assert " checked" not in optional.split("</td>", 1)[0]
@@ -286,7 +285,7 @@ async def test_the_preview_shows_a_row_per_service_and_per_file(
     assert "Not offered" in page and "A folder, not a file." in page
     assert (
         "4 services and 9 files found, 1 cannot be created, 1 file cannot be imported, "
-        "3 mounts not offered."
+        "3 not offered."
     ) in page
     assert f'hx-post="{base(layout, "/confirm")}"' in page and 'data-js="compose-service"' in page
     href = re.search(r'href="([^"]*\?compose_file[^"]*)"', page)
@@ -349,9 +348,9 @@ async def test_confirm_shows_what_the_import_creates_and_carries_the_judged_choi
     page = response.text
     assert response.status_code == 200
     assert_never_cached(response)
-    assert "3 services" in page and "8 files" in page
+    assert "3 services" in page and "7 files" in page
     assert (
-        'data-import-count="content">7 saved as version 1 as they are on disk, 1 created empty'
+        'data-import-count="content">6 saved as version 1 as they are on disk, 1 created empty'
         in page
     )
     assert 'data-import-count="linked">2<' in page
@@ -367,7 +366,6 @@ async def test_confirm_shows_what_the_import_creates_and_carries_the_judged_choi
         "conf/app.cfg",
         ".env.shared",
         ".env.api",
-        ".env",
     ]
     assert fields["owner:.env.web"] == ["web"] and fields["type:certs/server.key"] == ["cert"]
     assert fields["dist:.env.web"] == [".env.web.example"]
@@ -393,8 +391,7 @@ async def test_a_file_whose_service_is_not_selected_is_left_out(
     web_client: httpx.AsyncClient, layout: Layout
 ) -> None:
     await sign_in(web_client, "root")
-    keys = [key for key in FILE_KEYS if key != ".env"]
-    page = (await post(web_client, base(layout, "/confirm"), form_of(["web"], keys))).text
+    page = (await post(web_client, base(layout, "/confirm"), form_of(["web"], FILE_KEYS))).text
     fields = hidden_fields(page)
     assert fields["service"] == ["web"]
     assert ".env.api" not in fields["file"] and ".env.shared" not in fields["file"]
@@ -423,9 +420,9 @@ async def test_a_shared_file_moves_to_a_selected_service(
             "This file is no longer found in the Compose files.",
         ),
         (
-            form_of(keys=[".env"], owners={".env": ""}),
-            ".env",
-            "Choose the service that owns this file.",
+            form_of(keys=[".env.optional"]) | {"start:.env.optional": "1"},
+            ".env.optional",
+            DIST_NEEDED_MESSAGE,
         ),
         (
             form_of(keys=["conf/nginx.conf"]) | {"type:conf/nginx.conf": "cert"},
@@ -473,16 +470,16 @@ async def test_the_import_creates_everything_and_leaves_for_the_deployment_page(
     fields: dict[str, object] = dict(hidden_fields(confirm))
     response = await post(web_client, base(layout), fields)
     assert response.status_code == 200
-    assert response.headers["hx-redirect"] == f"/deployments/{layout.empty}?imported=3,8,7,1,5"
+    assert response.headers["hx-redirect"] == f"/deployments/{layout.empty}?imported=3,7,6,1,6"
     after = await counts(web_app)
-    assert tuple(now - was for now, was in zip(after, before, strict=True)) == (3, 8, 1)
+    assert tuple(now - was for now, was in zip(after, before, strict=True)) == (3, 7, 1)
     async with web_app.state.session_factory() as db:
         deployment = await db.get(Deployment, layout.empty)
         assert deployment is not None and deployment.compose_files == ["compose.yaml"]
     page = (await web_client.get(response.headers["hx-redirect"])).text
     assert "Import finished" in page
     assert (
-        "Imported 3 services and 8 files (7 with content, 1 created empty). 5 items not imported."
+        "Imported 3 services and 7 files (6 with content, 1 created empty). 6 items not imported."
         in page
     )
     assert "import-compose" not in page
@@ -573,3 +570,58 @@ async def test_the_toast_echoes_five_plain_numbers_and_nothing_else(
         assert "Import finished" not in page
     else:
         assert toast in page
+
+
+async def test_files_not_on_disk_start_from_their_dist_file_by_default(
+    web_client: httpx.AsyncClient, web_app: FastAPI, layout: Layout
+) -> None:
+    root = layout.root.parent / "geotravel"
+    root.mkdir()
+    write_project(root, GEOTRAVEL)
+    async with web_app.state.session_factory() as db:
+        project = (
+            await db.execute(select(Project.id).where(Project.name == "Fancy Proj. Name"))
+        ).scalar_one()
+        deployment = Deployment(project_id=project, name="geotravel", root_path=str(root))
+        db.add(deployment)
+        await db.commit()
+        deployment_id = deployment.id
+    await sign_in(web_client, "root")
+    address = f"/deployments/{deployment_id}/import-compose"
+    preview = {"compose_file": ["docker-compose.yml"]}
+    page = (await post(web_client, f"{address}/preview", preview)).text
+    frontend = row_of(page, "environments/.env.frontend")
+    assert re.search(r'name="file" value="environments/\.env\.frontend"[^>]*checked', frontend)
+    assert re.search(r'name="dist:environments/\.env\.frontend"[^>]*checked', frontend)
+    assert re.search(r'name="start:environments/\.env\.frontend"[^>]*checked', frontend)
+    assert "Not on disk" in frontend and "created empty" not in frontend
+    database = row_of(page, "environments/.env.db")
+    assert 'name="start:' not in database
+    assert not re.search(r'name="dist:environments/\.env\.db"[^>]*checked', database)
+    api = row_of(page, "environments/.env.api")
+    assert "Bind mount" in api and "Not on disk, looks like a file" in api
+    assert re.search(r'name="start:environments/\.env\.api"[^>]*checked', api)
+    assert "The deployment environment file is not managed yet." in page
+    assert 'data-file=".env"' not in page
+    fields = {
+        "compose_file": ["docker-compose.yml"],
+        "service": ["api", "db", "frontend"],
+        "file": ["environments/.env.db", "environments/.env.frontend", "environments/.env.api"],
+        "owner:environments/.env.db": "db",
+        "owner:environments/.env.frontend": "frontend",
+        "owner:environments/.env.api": "api",
+        "dist:environments/.env.frontend": "environments/.env.frontend-dist",
+        "dist:environments/.env.api": "environments/.env.api-dist",
+        "start:environments/.env.frontend": "1",
+        "start:environments/.env.api": "1",
+    }
+    confirm = (await post(web_client, f"{address}/confirm", fields)).text
+    assert (
+        'data-import-count="content">1 saved as version 1 as they are on disk, '
+        "2 started from their dist file, 0 created empty"
+    ) in confirm
+    carried = hidden_fields(confirm)
+    assert carried["start:environments/.env.frontend"] == ["1"]
+    response = await post(web_client, address, dict(carried))
+    assert response.headers["hx-redirect"] == f"/deployments/{deployment_id}?imported=3,3,3,0,4"
+    assert not (root / "environments/.env.frontend").exists()

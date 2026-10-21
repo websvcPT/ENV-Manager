@@ -5,11 +5,13 @@ choices of the user (service names and file paths) are matched against the new s
 as given. Everything happens in one transaction, all or nothing: the services, one environment
 per chosen file with its first version, the Compose files stored on the deployment and the audit
 entries. A file that exists becomes version 1 with its exact content, as the drift view's Import
-saves a target; a file that does not exist becomes an empty version 1 and is never written by
-the import. Each service that has files found on the host gets one run with the "Imported from
+saves a target; a file that does not exist becomes version 1 with the content of its dist file
+when the user starts it from that file, else an empty version 1, and is never written by the
+import. Each service that has files found on the host gets one run with the "Imported from
 Compose" trigger and an unchanged result per such file, which records version 1 as the content
 the target held, so the drift check has a baseline from the start and a version 2 saved before
-the first deploy does not read as drift. Files created empty get no result.
+the first deploy does not read as drift. Files that were not on the host get no result: their
+first deploy writes them.
 """
 
 from collections.abc import Sequence
@@ -59,6 +61,9 @@ UNKNOWN_SERVICE_MESSAGE = "This service is not in the Compose files or cannot be
 NOT_SELECTED_REASON = "Not selected."
 IMPORT_COMMENT = "Imported from Docker Compose"
 EMPTY_COMMENT = "Created empty from Docker Compose"
+DIST_COMMENT = "Created from the dist file by the Docker Compose import"
+EXISTS_FROM_DIST_MESSAGE = "The file is on disk, so it is imported as it is."
+DIST_NEEDED_MESSAGE = "Starting from the dist file needs the dist file linked."
 MAX_AUDITED_SKIPPED = 100
 ACTION = "deployment.import_compose"
 
@@ -81,13 +86,14 @@ class FileChoice:
     """A file the user ticked: its key, the service that owns it, and the optional overrides.
 
     ``file_type`` None keeps the suggested type; ``dist_path`` must be the suggested sibling or
-    None.
+    None. ``from_dist`` starts a file that is not on disk from its linked dist file.
     """
 
     key: str
     owner: str
     file_type: FileType | None = None
     dist_path: str | None = None
+    from_dist: bool = False
 
 
 @dataclass(frozen=True)
@@ -101,14 +107,16 @@ class ComposeSelection:
 
 @dataclass(frozen=True)
 class ComposeImportResult:
-    """What an import created: counts only. ``with_content`` files held text, ``empty`` ones did
-    not exist and start empty."""
+    """What an import created: counts only. ``with_content`` files start with text (from the file
+    on disk or from their dist file), ``from_dist`` of them from the dist file, ``empty`` ones
+    start empty."""
 
     services: int
     environments: int
     with_content: int
     empty: int
     skipped: int
+    from_dist: int = 0
 
 
 @dataclass(frozen=True)
@@ -176,11 +184,31 @@ def _choice_problem(
             return "A certificate has no dist file."
         if choice.dist_path != candidate.dist_suggestion:
             return "The dist file is not one of the suggested files."
+    if choice.from_dist:
+        if candidate.exists:
+            return EXISTS_FROM_DIST_MESSAGE
+        if choice.dist_path is None:
+            return DIST_NEEDED_MESSAGE
     return None
 
 
+def _source_of(entry: _Entry) -> ContentSource:
+    """Where version 1 comes from: the file on disk, the dist file, or nothing (empty)."""
+    if entry.candidate.exists:
+        return ContentSource.IMPORT
+    return ContentSource.DIST if entry.choice.from_dist else ContentSource.PASTE
+
+
+def _comment_of(entry: _Entry) -> str:
+    """The comment of version 1, saying where its content came from."""
+    if entry.candidate.exists:
+        return IMPORT_COMMENT
+    return DIST_COMMENT if entry.choice.from_dist else EMPTY_COMMENT
+
+
 def _form_for(entry: _Entry, service_id: int) -> EnvironmentForm:
-    """The add environment form of one file: a file on the host is imported, a missing one empty."""
+    """The add environment form of one file: a file on the host is imported, a missing one starts
+    from its dist file when chosen, else empty."""
     candidate = entry.candidate
     return EnvironmentForm(
         service=str(service_id),
@@ -191,7 +219,7 @@ def _form_for(entry: _Entry, service_id: int) -> EnvironmentForm:
         file_mode=candidate.file_mode or "",
         file_owner=candidate.file_owner or "",
         file_group=candidate.file_group or "",
-        source=(ContentSource.IMPORT if candidate.exists else ContentSource.PASTE).value,
+        source=_source_of(entry).value,
     )
 
 
@@ -281,7 +309,7 @@ async def import_compose(
                 clean,
                 actor=actor,
                 ip_address=ip_address,
-                comment=IMPORT_COMMENT if entry.candidate.exists else EMPTY_COMMENT,
+                comment=_comment_of(entry),
             )
             created.append(pair)
             if entry.candidate.exists:
@@ -290,7 +318,8 @@ async def import_compose(
             raise ComposeImportError("Some of the files cannot be imported.", errors)
         deployment.compose_files = list(scan.compose_files)
         skipped = _skipped(scan, selection, entries)
-        with_content = sum(1 for entry in entries if entry.candidate.exists)
+        from_dist = sum(1 for entry in entries if entry.choice.from_dist)
+        with_content = sum(1 for entry in entries if entry.candidate.exists) + from_dist
         audit_entry = await record_actor_audit(
             db,
             AuditActor.for_user(actor, ip_address),
@@ -306,6 +335,7 @@ async def import_compose(
                 "services": list(services),
                 "environments": len(created),
                 "with_content": with_content,
+                "from_dist": from_dist,
                 "empty": len(created) - with_content,
                 "skipped_count": len(skipped),
                 "skipped": skipped[:MAX_AUDITED_SKIPPED],
@@ -335,4 +365,5 @@ async def import_compose(
         with_content=with_content,
         empty=len(created) - with_content,
         skipped=len(skipped),
+        from_dist=from_dist,
     )

@@ -87,19 +87,33 @@ class EnvFileRef:
 
 
 @dataclass(frozen=True)
+class BindMount:
+    """One bind mount of a service: the absolute source on the host and the path in the
+    container, empty when Compose printed none."""
+
+    source: str
+    target: str
+
+
+@dataclass(frozen=True)
 class ComposeService:
     """What the scan keeps of one service.
 
-    ``bind_sources`` are the absolute sources of its bind mounts, ``secrets`` and ``configs`` the
-    names of the top-level entries it uses.
+    ``binds`` are its bind mounts, ``secrets`` and ``configs`` the names of the top-level entries
+    it uses.
     """
 
     name: str
     profiles: tuple[str, ...]
     env_files: tuple[EnvFileRef, ...]
-    bind_sources: tuple[str, ...]
+    binds: tuple[BindMount, ...]
     secrets: tuple[str, ...]
     configs: tuple[str, ...]
+
+    @property
+    def bind_sources(self) -> tuple[str, ...]:
+        """The absolute sources of its bind mounts."""
+        return tuple(bind.source for bind in self.binds)
 
 
 @dataclass(frozen=True)
@@ -142,14 +156,14 @@ def _env_files(service: dict[str, object]) -> tuple[EnvFileRef, ...]:
     return tuple(found)
 
 
-def _bind_sources(service: dict[str, object]) -> tuple[str, ...]:
-    """The sources of the bind mounts of a service."""
-    sources: list[str] = []
+def _binds(service: dict[str, object]) -> tuple[BindMount, ...]:
+    """The bind mounts of a service, with their source and container path."""
+    binds: list[BindMount] = []
     for entry in _entries(service.get("volumes")):
         volume = _mapping(entry)
         if volume.get("type") == "bind" and (source := _text_of(volume.get("source"))):
-            sources.append(source)
-    return tuple(sources)
+            binds.append(BindMount(source, _text_of(volume.get("target")) or ""))
+    return tuple(binds)
 
 
 def _used_names(service: dict[str, object], key: str) -> tuple[str, ...]:
@@ -189,7 +203,7 @@ def extract_model(document: object) -> ComposeModel:
                 name=name,
                 profiles=profiles,
                 env_files=_env_files(service),
-                bind_sources=_bind_sources(service),
+                binds=_binds(service),
                 secrets=_used_names(service, "secrets"),
                 configs=_used_names(service, "configs"),
             )
@@ -210,7 +224,7 @@ def failure_message(output: str) -> str:
     if (variable := _REQUIRED_VARIABLE.search(output)) is not None:
         return (
             f"The Compose files need the variable {variable.group(1)}, which is not set in the "
-            "project .env file."
+            "deployment environment file (.env)."
         )
     if "no such file or directory" in output:
         return MISSING_FILE_MESSAGE

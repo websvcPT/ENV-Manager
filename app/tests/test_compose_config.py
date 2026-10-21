@@ -349,7 +349,8 @@ async def test_a_missing_required_variable_is_named_and_a_broken_file_is_not_quo
     with pytest.raises(ComposeScanError) as variable:
         await read(cli, root, "compose.yaml")
     assert str(variable.value) == (
-        "The Compose files need the variable IMAGE_NAME, which is not set in the project .env file."
+        "The Compose files need the variable IMAGE_NAME, which is not set in the "
+        "deployment environment file (.env)."
     )
     with pytest.raises(ComposeScanError) as broken:
         await read(cli, root, "broken.yaml")

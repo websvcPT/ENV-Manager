@@ -414,6 +414,20 @@
     if (box.form) { syncComposeFiles(box.form); }
   });
 
+  /* A file that is not on disk starts from its dist file only while that file is linked:
+     ticking "Start from the dist file" links it, and unlinking it unticks the start. */
+  document.addEventListener('change', function (event) {
+    var box = event.target;
+    if (!(box instanceof HTMLInputElement)) { return; }
+    var cell = box.closest('td');
+    if (!cell) { return; }
+    var dist = cell.querySelector('[data-compose-dist]');
+    var start = cell.querySelector('[data-compose-start]');
+    if (!(dist instanceof HTMLInputElement) || !(start instanceof HTMLInputElement)) { return; }
+    if (box === start && start.checked) { dist.checked = true; }
+    if (box === dist && !dist.checked) { start.checked = false; }
+  });
+
   /* The dist file of a file form depends on its type. A certificate has no dist file: the dist
      path field is hidden and disabled (so it is not sent) and the "Copy the dist file" source of
      the add form is unavailable. For an ENV file that source is available only while the dist

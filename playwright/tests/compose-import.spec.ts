@@ -41,6 +41,40 @@ const FILES: Record<string, string> = {
 
 const HAS_SERVICES = 'This deployment already has services, so nothing can be imported.';
 
+/* A layout shaped like a real project: an env file with its dist file, an env file and a mounted
+   file that are not on disk yet but have dist files, a missing data folder, two real folders and
+   the deployment environment file beside the Compose file. */
+const GEOTRAVEL_COMPOSE = `name: \${ENVIRONMENT_NAME:-geotravel}
+services:
+  db:
+    image: mysql:8.0.41-debian
+    env_file:
+      - ./environments/.env.db
+    volumes:
+      - ./data/mysql/data:/var/lib/mysql
+      - ./backups:/var/backups
+      - ./scripts:/scripts
+  api:
+    image: api:\${IMAGE_API_VERSION:-latest}
+    volumes:
+      - ./environments/.env.api:/var/www/html/.env
+  frontend:
+    image: frontend:\${IMAGE_FRONTEND_VERSION:-latest}
+    env_file:
+      - ./environments/.env.frontend
+`;
+
+const GEOTRAVEL: Record<string, string> = {
+  'docker-compose.yml': GEOTRAVEL_COMPOSE,
+  '.env': 'ENVIRONMENT_NAME=tests\n',
+  'environments/.env.db': 'MYSQL_USER=app\n',
+  'environments/.env.db-dist': 'MYSQL_USER=\n',
+  'environments/.env.frontend-dist': 'API_URL=http://localhost:8101\n',
+  'environments/.env.api-dist': 'APP_KEY=\n',
+  'backups/.keep': '',
+  'scripts/init.sql': 'SELECT 1;\n',
+};
+
 const test = scratchTest.extend<{ host: HostFolder }>({
   host: async ({}, use) => {
     const host = createHostFolder();
@@ -97,7 +131,7 @@ test.describe('import from Docker Compose', () => {
     await expectItemHeader(page, 'deployment', 'compose-dep');
     await expectLocation(page, 'deployment', {
       parents: `Project: ${scratch.name}`,
-      root: `Project path: ${host.root}`,
+      root: `Deployment path: ${host.root}`,
     });
     await expect(page.locator('nav[aria-label="Breadcrumb"] li')).toHaveText([
       'Projects',
@@ -225,5 +259,59 @@ test.describe('import from Docker Compose', () => {
     await expect(page.locator('#import-compose-open')).toHaveCount(0);
     await page.goto(`/deployments/${id}/import-compose`);
     await expect(page.locator('[data-fragment="import-files"]')).toContainText(HAS_SERVICES);
+  });
+
+  test('starts files that are not on disk from their dist file and skips the deployment .env', async ({
+    page,
+    request,
+    scratch,
+  }) => {
+    const geo = createHostFolder();
+    try {
+      mkdirSync(geo.file('backups'));
+      mkdirSync(geo.file('scripts'));
+      for (const [relative, content] of Object.entries(GEOTRAVEL)) {
+        geo.write(relative, content);
+      }
+      const id = await createDeployment(request, scratch.id, 'geotravel', geo.root);
+      await page.goto(`/deployments/${id}/import-compose`);
+      await scan(page);
+      await expect(page.locator('[data-fragment="import-file-row"]')).toHaveCount(3);
+      const frontend = fileRow(page, 'environments/.env.frontend');
+      await expect(frontend).toContainText('Not on disk');
+      await expect(frontend.locator('input[name="file"]')).toBeChecked();
+      const link = frontend.locator('input[name="dist:environments/.env.frontend"]');
+      const start = frontend.locator('input[name="start:environments/.env.frontend"]');
+      await expect(link).toBeChecked();
+      await expect(start).toBeChecked();
+      // Unlinking the dist file unticks the start, and starting from it links it again.
+      await link.uncheck();
+      await expect(start).not.toBeChecked();
+      await start.check();
+      await expect(link).toBeChecked();
+      const api = fileRow(page, 'environments/.env.api');
+      await expect(api).toContainText('Not on disk, looks like a file');
+      await expect(api.locator('input[name="file"]')).toBeChecked();
+      const ignored = page.locator('[data-fragment="import-ignored"]');
+      await expect(ignored).toContainText('The deployment environment file is not managed yet.');
+      await expect(ignored).toContainText('data/mysql/data');
+      await expect(page.locator('[data-fragment="import-file-row"][data-file=".env"]')).toHaveCount(0);
+
+      await page.getByRole('button', { name: 'Import selected…' }).click();
+      const dialog = page.locator('#import-confirm');
+      await expect(dialog.locator('[data-import-count="content"]')).toContainText(
+        '1 saved as version 1 as they are on disk, 2 started from their dist file, 0 created empty',
+      );
+      await dialog.getByRole('button', { name: 'Import', exact: true }).click();
+      await expect(page).toHaveURL(new RegExp(`/deployments/${id}\\?imported=3,3,3,0,4$`));
+      expect(geo.list('environments')).toEqual([
+        '.env.api-dist',
+        '.env.db',
+        '.env.db-dist',
+        '.env.frontend-dist',
+      ]);
+    } finally {
+      geo.remove();
+    }
   });
 });

@@ -77,6 +77,7 @@ OUTSIDE_REASON = "Outside the deployment folder or the allowed paths."
 FOLDER_REASON = "A folder, not a file."
 SPECIAL_REASON = "Not a regular file (a socket or a device)."
 MISSING_BIND_REASON = "Does not exist, so it is not known whether it is a file or a folder."
+DEPLOYMENT_ENV_REASON = "The deployment environment file is not managed yet."
 UNREADABLE_REASON = "The file cannot be read."
 NO_NAME_REASON = "The name cannot be used as a service name."
 CERT_EMPTY_REASON = "A certificate cannot be created empty."
@@ -106,7 +107,6 @@ class FileSource(StrEnum):
     BIND_MOUNT = "bind_mount"
     SECRET_FILE = "secret_file"  # noqa: S105
     CONFIG_FILE = "config_file"
-    PROJECT_ENV = "project_env"
 
 
 class FileState(StrEnum):
@@ -155,11 +155,12 @@ class FileCandidate:
 
     ``key`` is the target path relative to the root (for a file outside the root, the path as
     Compose printed it) and identifies the candidate. ``users`` are the names of every service
-    that uses it and ``owner`` the one it would belong to, None for the project ``.env`` until
-    one is chosen. ``type_problems`` maps a file type value to why the file cannot have that
-    type; ``file_mode``, ``file_owner`` and ``file_group`` are what the file has on the host,
-    None where the deployment default applies. ``dist_suggestion`` is an existing sibling that
-    looks like a template for it.
+    that uses it and ``owner`` the one it would belong to, None when none of them can be
+    created. ``type_problems`` maps a file type value to why the file cannot have that type;
+    ``file_mode``, ``file_owner`` and ``file_group`` are what the file has on the host, None
+    where the deployment default applies. ``dist_suggestion`` is an existing sibling that looks
+    like a template for it, looked for whether the file exists or not. ``guessed`` marks a bind
+    mount whose source does not exist but whose name looks like a file's.
     """
 
     key: str
@@ -177,15 +178,22 @@ class FileCandidate:
     file_group: str | None
     dist_suggestion: str | None
     disabled_reason: str | None = None
+    guessed: bool = False
+
+    @property
+    def starts_from_dist(self) -> bool:
+        """Whether the file starts from its dist file by default: it is not on disk and a dist
+        file was found for it."""
+        return not self.exists and self.dist_suggestion is not None
 
     @property
     def preselected(self) -> bool:
-        """Whether the file is ticked at first: usable, owned, and not an optional file that is
-        absent."""
+        """Whether the file is ticked at first: usable, owned, and either on disk, starting from
+        its dist file, or a required file that is not a guess."""
         return (
             self.disabled_reason is None
             and self.owner is not None
-            and (self.exists or not self.optional)
+            and (self.exists or self.starts_from_dist or not (self.optional or self.guessed))
             and self.file_type.value not in self.type_problems
         )
 
@@ -364,14 +372,19 @@ class _Reference:
     absolute: str
     sources: list[FileSource] = field(default_factory=list)
     users: list[str] = field(default_factory=list)
+    mount_targets: list[str] = field(default_factory=list)
     optional: bool = True
 
-    def add(self, source: FileSource, user: str | None, *, optional: bool = False) -> None:
-        """Record one use of the path."""
+    def add(
+        self, source: FileSource, user: str, *, optional: bool = False, mount_target: str = ""
+    ) -> None:
+        """Record one use of the path, with the container path of a bind mount."""
         if source not in self.sources:
             self.sources.append(source)
-        if user is not None and user not in self.users:
+        if user not in self.users:
             self.users.append(user)
+        if mount_target and mount_target not in self.mount_targets:
+            self.mount_targets.append(mount_target)
         self.optional = self.optional and optional
 
 
@@ -396,29 +409,43 @@ class _Draft:
     reference: _Reference
     facts: _Facts
     key: str
+    guessed: bool = False
 
 
-def _references(model: ComposeModel, project_directory: Path) -> dict[str, _Reference]:
-    """The referenced paths in order of appearance, with their sources and users."""
+def _references(model: ComposeModel) -> dict[str, _Reference]:
+    """The paths the services reference, in order of appearance, with their sources and users.
+
+    The deployment environment file (the ``.env`` Compose reads for interpolation) is not one of
+    them unless a service names it itself.
+    """
     found: dict[str, _Reference] = {}
 
-    def use(path: str, source: FileSource, user: str | None, *, optional: bool = False) -> None:
+    def use(
+        path: str, source: FileSource, user: str, *, optional: bool = False, target: str = ""
+    ) -> None:
         normal = os.path.normpath(path)
-        found.setdefault(normal, _Reference(normal)).add(source, user, optional=optional)
+        found.setdefault(normal, _Reference(normal)).add(
+            source, user, optional=optional, mount_target=target
+        )
 
     for service in model.services:
         for env_file in service.env_files:
             use(env_file.path, FileSource.ENV_FILE, service.name, optional=not env_file.required)
-        for source in service.bind_sources:
-            use(source, FileSource.BIND_MOUNT, service.name)
+        for bind in service.binds:
+            use(bind.source, FileSource.BIND_MOUNT, service.name, target=bind.target)
         for name in service.secrets:
             if name in model.secret_files:
                 use(model.secret_files[name], FileSource.SECRET_FILE, service.name)
         for name in service.configs:
             if name in model.config_files:
                 use(model.config_files[name], FileSource.CONFIG_FILE, service.name)
-    use(str(project_directory / ".env"), FileSource.PROJECT_ENV, None)
     return found
+
+
+def looks_like_file(name: str) -> bool:
+    """Whether a path's last part reads like a file name: an ``.env`` name or a name with an
+    extension (``nginx.conf``, ``tls.pem``). A hidden name with no other dot does not."""
+    return name.startswith(".env") or bool(PurePosixPath(name).suffix)
 
 
 def _inspect(allowed: AllowedPaths, root: Path, absolute: str) -> _Facts:
@@ -596,7 +623,7 @@ def _file_candidate(
         reason = FILE_NAME_REASON
     mode, file_owner, file_group = file_attributes(facts.mode, facts.uid, facts.gid, defaults)
     suggestion = None
-    if file_type is FileType.ENV and facts.state is FileState.FILE:
+    if file_type is FileType.ENV and facts.state in (FileState.FILE, FileState.MISSING):
         suggestion = _dist_suggestion(allowed, root, draft.key)
     return FileCandidate(
         key=draft.key,
@@ -614,27 +641,53 @@ def _file_candidate(
         file_group=file_group,
         dist_suggestion=suggestion,
         disabled_reason=reason,
+        guessed=draft.guessed,
     )
+
+
+def _missing_mount_is_file(allowed: AllowedPaths, root: Path, key: str, targets: list[str]) -> bool:
+    """Whether a bind mount source that does not exist is taken for a file: a dist file sits
+    beside it, or its own name or a container path it is mounted at reads like a file name."""
+    if _dist_suggestion(allowed, root, key) is not None:
+        return True
+    names = [PurePosixPath(key).name, *(PurePosixPath(target).name for target in targets)]
+    return any(looks_like_file(name) for name in names if name)
 
 
 def _drafts(
     allowed: AllowedPaths, root: Path, references: Iterable[_Reference]
 ) -> tuple[list[_Draft], list[IgnoredItem]]:
-    """Inspect every reference. A bind mount that is not a regular file is ignored, and so is a
-    project ``.env`` that does not exist; every other reference stays as a candidate."""
+    """Inspect every reference. A bind mount that is not a regular file is ignored, unless it
+    does not exist and looks like a file; every other reference stays as a candidate."""
     drafts: list[_Draft] = []
     ignored: list[IgnoredItem] = []
     for reference in references:
         facts = _inspect(allowed, root, reference.absolute)
-        only = set(reference.sources)
-        if only == {FileSource.PROJECT_ENV} and facts.state is not FileState.FILE:
-            continue
         key = facts.relative if facts.relative is not None else reference.absolute
-        if only == {FileSource.BIND_MOUNT} and facts.state is not FileState.FILE:
+        if set(reference.sources) == {FileSource.BIND_MOUNT} and facts.state is not FileState.FILE:
+            if facts.state is FileState.MISSING and _missing_mount_is_file(
+                allowed, root, key, reference.mount_targets
+            ):
+                drafts.append(_Draft(reference, facts, key, guessed=True))
+                continue
             ignored.append(IgnoredItem(key, _STATE_REASONS[facts.state]))
             continue
         drafts.append(_Draft(reference, facts, key))
     return drafts, ignored
+
+
+def _deployment_env(
+    allowed: AllowedPaths, root: Path, project_directory: Path, references: dict[str, _Reference]
+) -> IgnoredItem | None:
+    """The deployment environment file beside the base Compose file as an item not offered, when
+    it exists and no service names it itself."""
+    path = project_directory / ".env"
+    if os.path.normpath(str(path)) in references:
+        return None
+    facts = _inspect(allowed, root, str(path))
+    if facts.state is not FileState.FILE or facts.relative is None:
+        return None
+    return IgnoredItem(facts.relative, DEPLOYMENT_ENV_REASON)
 
 
 def build_scan(
@@ -650,11 +703,14 @@ def build_scan(
     """
     if len(model.services) > MAX_SERVICES:
         raise ComposeScanError(f"The Compose files define more than {MAX_SERVICES} services.")
-    references = _references(model, resolved.project_directory)
+    references = _references(model)
     if len(references) > MAX_FILES:
         raise ComposeScanError(f"The Compose files name more than {MAX_FILES} files.")
     by_compose_name = {service.compose_name: service for service in _service_candidates(model, {})}
     drafts, ignored = _drafts(allowed, root, references.values())
+    deployment_env = _deployment_env(allowed, root, resolved.project_directory, references)
+    if deployment_env is not None:
+        ignored.append(deployment_env)
     owners: dict[str, str | None] = {}
     for draft in drafts:
         enabled = [

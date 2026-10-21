@@ -8,7 +8,7 @@
 {% from "macros/feedback.html" import note %}
 {% from "macros/icons.html" import icon %}
 {% from "macros/panels.html" import cell, panel, row_header, table %}
-{% set source_labels = {"env_file": "env_file", "bind_mount": "Bind mount", "secret_file": "Secret", "config_file": "Config", "project_env": "Project .env"} %}
+{% set source_labels = {"env_file": "env_file", "bind_mount": "Bind mount", "secret_file": "Secret", "config_file": "Config"} %}
 {% set type_labels = {"env": "ENV file", "cert": "Certificate"} %}
 {% set select_class = "h-11 md:h-ctl w-full min-w-40 rounded-ctl border border-line-strong bg-surface px-3 text-sm text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-60" %}
 {% set service_count = scan.services | length %}
@@ -22,7 +22,7 @@
 <div class="flex flex-col gap-3 px-4 pb-5 md:px-5">
 <p class="text-xs font-bold uppercase tracking-wide text-ink3">Step 2 of 3</p>
 <p class="text-ink2">Read from <span class="break-all font-mono text-[13px] text-ink">{{ scan.compose_files | join(", ") }}</span>. Untick what is not to be imported. Nothing is changed yet.</p>
-<div role="status" data-fragment="import-counts" class="flex items-start gap-3 rounded-btn bg-info-bg px-4 py-3 font-semibold text-info-fg">{{ icon("info", "size-[18px] mt-0.5", "2") }}<span>{{ service_count }} {{ "service" if service_count == 1 else "services" }} and {{ rows | length }} {{ "file" if rows | length == 1 else "files" }} found{% if unusable_services %}, {{ unusable_services }} cannot be created{% endif %}{% if blocked_files %}, {{ blocked_files }} {{ "file" if blocked_files == 1 else "files" }} cannot be imported{% endif %}{% if scan.ignored %}, {{ scan.ignored | length }} {{ "mount" if scan.ignored | length == 1 else "mounts" }} not offered{% endif %}.</span></div>
+<div role="status" data-fragment="import-counts" class="flex items-start gap-3 rounded-btn bg-info-bg px-4 py-3 font-semibold text-info-fg">{{ icon("info", "size-[18px] mt-0.5", "2") }}<span>{{ service_count }} {{ "service" if service_count == 1 else "services" }} and {{ rows | length }} {{ "file" if rows | length == 1 else "files" }} found{% if unusable_services %}, {{ unusable_services }} cannot be created{% endif %}{% if blocked_files %}, {{ blocked_files }} {{ "file" if blocked_files == 1 else "files" }} cannot be imported{% endif %}{% if scan.ignored %}, {{ scan.ignored | length }} not offered{% endif %}.</span></div>
 {%- if usable_services == 0 %}
 {{ note("None of the services can be created, so there is nothing to import.", tone="warn") }}
 {%- endif %}
@@ -49,16 +49,16 @@
 {%- set key = candidate.key %}
 {%- set off = candidate.disabled_reason is not none %}
 {%- set homeless = not off and not row.owner_options %}
-{%- set file_name %}<span class="break-all font-mono text-[13px] font-semibold">{{ key }}</span><span class="mt-0.5 block text-xs text-ink2">Environment {{ candidate.name }} · {% for source in candidate.sources %}{{ source_labels[source.value] }}{% if not loop.last %}, {% endif %}{% endfor %}</span>{% if not off %}<span data-file-state class="block text-xs text-ink2">{% if candidate.exists %}{{ candidate.size }} B{% else %}Not on disk, created empty{% endif %}{% if candidate.optional %} · Optional{% endif %}{% if candidate.file_mode %} · <span class="font-mono">{{ candidate.file_mode }}</span>{% endif %}{% if candidate.file_owner or candidate.file_group %} · <span class="font-mono">{{ candidate.file_owner or "" }}:{{ candidate.file_group or "" }}</span>{% endif %}</span>{% endif %}{% if off %}<span class="mt-1 flex flex-wrap items-center gap-2">{{ badge("skipped", "Cannot be imported") }}<span class="text-xs text-ink2">{{ candidate.disabled_reason }}</span></span>{% endif %}{% endset %}
+{%- set file_name %}<span class="break-all font-mono text-[13px] font-semibold">{{ key }}</span><span class="mt-0.5 block text-xs text-ink2">Environment {{ candidate.name }} · {% for source in candidate.sources %}{{ source_labels[source.value] }}{% if not loop.last %}, {% endif %}{% endfor %}</span>{% if not off %}<span data-file-state class="block text-xs text-ink2">{% if candidate.exists %}{{ candidate.size }} B{% elif candidate.guessed %}Not on disk, looks like a file{% elif candidate.dist_suggestion %}Not on disk{% else %}Not on disk, created empty{% endif %}{% if candidate.optional %} · Optional{% endif %}{% if candidate.file_mode %} · <span class="font-mono">{{ candidate.file_mode }}</span>{% endif %}{% if candidate.file_owner or candidate.file_group %} · <span class="font-mono">{{ candidate.file_owner or "" }}:{{ candidate.file_group or "" }}</span>{% endif %}</span>{% endif %}{% if off %}<span class="mt-1 flex flex-wrap items-center gap-2">{{ badge("skipped", "Cannot be imported") }}<span class="text-xs text-ink2">{{ candidate.disabled_reason }}</span></span>{% endif %}{% endset %}
 <tr data-fragment="import-file-row" data-file="{{ key }}"{% if not off %} data-compose-file data-users="{{ row.owner_options | join(" ") }}"{% endif %} class="align-top{% if off %} bg-surface2{% endif %}">
 <td class="border-t border-line px-2 py-1 md:px-4"><label class="flex size-11 items-center justify-center"><input type="checkbox" name="file" value="{{ key }}" aria-label="Import {{ key }}"{% if not off %} data-compose-pick{% endif %}{% if row.checked and not homeless %} checked{% endif %}{% if off or homeless %} disabled{% endif %} class="size-[18px] accent-accent"></label></td>
 {{ row_header(file_name, mono=false) }}
-{% call cell() %}{% if candidate.users %}<span class="font-mono text-[13px]">{{ candidate.users | join(", ") }}</span>{% else %}<span class="text-ink3">No service</span>{% endif %}{% endcall %}
+{% call cell() %}<span class="font-mono text-[13px]">{{ candidate.users | join(", ") }}</span>{% endcall %}
 <td class="border-t border-line px-4 py-2.5">
 {%- if off or homeless -%}
 <span class="text-ink3">None</span>
-{%- elif row.owner_options | length > 1 or not candidate.users -%}
-<select name="owner:{{ key }}" aria-label="Owner of {{ key }}" data-compose-owner class="{{ select_class }}">{% if not candidate.users %}<option value=""{% if not row.owner %} selected{% endif %}>Choose a service</option>{% endif %}{% for name in row.owner_options %}<option value="{{ name }}"{% if name == row.owner %} selected{% endif %}>{{ name }}</option>{% endfor %}</select>
+{%- elif row.owner_options | length > 1 -%}
+<select name="owner:{{ key }}" aria-label="Owner of {{ key }}" data-compose-owner class="{{ select_class }}">{% for name in row.owner_options %}<option value="{{ name }}"{% if name == row.owner %} selected{% endif %}>{{ name }}</option>{% endfor %}</select>
 {%- else -%}
 <span class="font-mono text-[13px]">{{ row.owner }}</span><input type="hidden" name="owner:{{ key }}" value="{{ row.owner }}">
 {%- endif -%}
@@ -75,7 +75,10 @@
 </td>
 <td class="min-w-48 border-t border-line px-4 py-2.5">
 {%- if candidate.dist_suggestion and not off -%}
-<label class="flex min-h-11 items-start gap-2.5 py-2 text-[13px] font-semibold"><input type="checkbox" name="dist:{{ key }}" value="{{ candidate.dist_suggestion }}" class="mt-0.5 size-[18px] shrink-0 accent-accent"><span>Link <span class="font-mono text-[13px]">{{ candidate.dist_suggestion }}</span></span></label>
+<label class="flex min-h-11 items-start gap-2.5 py-2 text-[13px] font-semibold"><input type="checkbox" name="dist:{{ key }}" value="{{ candidate.dist_suggestion }}" data-compose-dist{% if row.from_dist %} checked{% endif %} class="mt-0.5 size-[18px] shrink-0 accent-accent"><span>Link <span class="font-mono text-[13px]">{{ candidate.dist_suggestion }}</span></span></label>
+{%- if not candidate.exists %}
+<label class="flex min-h-11 items-start gap-2.5 py-2 text-[13px]"><input type="checkbox" name="start:{{ key }}" value="1" data-compose-start{% if row.from_dist %} checked{% endif %} class="mt-0.5 size-[18px] shrink-0 accent-accent"><span>Start from the dist file</span></label>
+{%- endif %}
 {%- else -%}
 <span class="text-ink3">None found</span>
 {%- endif -%}

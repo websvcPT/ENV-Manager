@@ -10,6 +10,7 @@ from app.services import compose_scan
 from app.services.compose_config import ComposeScanError
 from app.services.compose_scan import (
     CERT_EMPTY_REASON,
+    DEPLOYMENT_ENV_REASON,
     FILE_NAME_REASON,
     FOLDER_REASON,
     MISSING_BIND_REASON,
@@ -27,12 +28,13 @@ from app.services.compose_scan import (
     file_attributes,
     file_defaults,
     find_compose_files,
+    looks_like_file,
     resolve_compose_files,
     scan_compose,
 )
 from app.services.content import MAX_CONTENT_BYTES
 from app.services.paths import AllowedPaths
-from app.tests.compose_helpers import PEM, add_stack, real_cli, write_project
+from app.tests.compose_helpers import GEOTRAVEL, PEM, add_stack, real_cli, write_project
 from app.tests.deploy_helpers import Harness
 
 
@@ -232,6 +234,7 @@ async def test_the_services_are_candidates_with_cleaned_names_and_profiles(
         ".env.web",
         ".env.optional",
         "conf/nginx.conf",
+        "missing.conf",
         "certs/server.key",
         "conf/app.cfg",
     )
@@ -261,14 +264,9 @@ async def test_every_source_of_a_file_is_found_and_shared_files_are_shown_once(
         {},
     )
     assert key.dist_suggestion is None
-    project_env = candidate(scan, ".env")
-    assert (project_env.sources, project_env.users, project_env.owner) == (
-        (FileSource.PROJECT_ENV,),
-        (),
-        None,
-    )
-    assert project_env.preselected is False
+    assert ".env" not in keys
     assert (root / ".env").is_file()
+    assert (".env", DEPLOYMENT_ENV_REASON) in [(item.label, item.reason) for item in scan.ignored]
 
 
 async def test_an_optional_file_that_is_absent_is_listed_but_not_ticked(
@@ -289,8 +287,16 @@ async def test_what_is_not_a_plain_file_inside_the_root_is_ignored_or_disabled(
     assert ignored == {
         "data": FOLDER_REASON,
         "/var/run/docker.sock": OUTSIDE_REASON,
-        "missing.conf": MISSING_BIND_REASON,
+        ".env": DEPLOYMENT_ENV_REASON,
     }
+    missing = candidate(scan, "missing.conf")
+    assert (missing.exists, missing.guessed, missing.sources) == (
+        False,
+        True,
+        (FileSource.BIND_MOUNT,),
+    )
+    assert missing.dist_suggestion is None and missing.preselected is False
+    assert missing.disabled_reason is None
     outside = next(item for item in scan.files if item.key.endswith("outside.env"))
     assert outside.key == str(root.parent / "outside.env")
     assert outside.disabled_reason == OUTSIDE_REASON and outside.preselected is False
@@ -406,8 +412,11 @@ async def test_overrides_in_a_folder_below_the_root_are_read_against_that_folder
         ["app/compose.yaml", "app/compose.override.yaml"],
     )
     assert scan.compose_files == ("app/compose.yaml", "app/compose.override.yaml")
-    assert [item.key for item in scan.files] == ["app/web.env", "app/more.env", "app/.env"]
+    assert [item.key for item in scan.files] == ["app/web.env", "app/more.env"]
     assert candidate(scan, "app/more.env").exists is False
+    assert [(item.label, item.reason) for item in scan.ignored] == [
+        ("app/.env", DEPLOYMENT_ENV_REASON)
+    ]
 
 
 async def test_a_remote_include_stops_the_scan(harness: Harness, tmp_path: Path) -> None:
@@ -443,3 +452,78 @@ async def test_a_scan_holds_names_and_attributes_but_no_content(
     for content in ("WEB=1", "SHARED=1", "worker_processes", "mode=prod", "PROJECT_VARIABLE"):
         assert content not in text
     assert PEM.splitlines()[1] not in text
+
+
+async def scan_geotravel(harness: Harness, tmp_path: Path, *, api_dist: bool = True) -> ComposeScan:
+    """Scan the GeoTravel shaped project, with or without the dist file of the mounted file."""
+    files = dict(GEOTRAVEL)
+    if not api_dist:
+        del files["environments/.env.api-dist"]
+    deployment, _ = await add_stack(harness, files, name="geotravel")
+    return await scan_compose(harness.db, real_cli(tmp_path), deployment, ["docker-compose.yml"])
+
+
+async def test_a_real_layout_offers_every_service_file_and_its_dist_file(
+    harness: Harness, tmp_path: Path
+) -> None:
+    scan = await scan_geotravel(harness, tmp_path)
+    assert [service.name for service in scan.services] == ["api", "db", "frontend"]
+    assert all(service.disabled_reason is None for service in scan.services)
+    assert [item.key for item in scan.files] == [
+        "environments/.env.api",
+        "environments/.env.db",
+        "environments/.env.frontend",
+    ]
+    db = candidate(scan, "environments/.env.db")
+    assert (db.exists, db.dist_suggestion, db.starts_from_dist, db.preselected) == (
+        True,
+        "environments/.env.db-dist",
+        False,
+        True,
+    )
+    frontend = candidate(scan, "environments/.env.frontend")
+    assert (frontend.exists, frontend.optional, frontend.guessed) == (False, False, False)
+    assert frontend.dist_suggestion == "environments/.env.frontend-dist"
+    assert frontend.starts_from_dist is True and frontend.preselected is True
+    api = candidate(scan, "environments/.env.api")
+    assert (api.sources, api.users, api.owner) == ((FileSource.BIND_MOUNT,), ("api",), "api")
+    assert (api.exists, api.guessed, api.dist_suggestion) == (
+        False,
+        True,
+        "environments/.env.api-dist",
+    )
+    assert api.starts_from_dist is True and api.preselected is True
+    assert {item.label: item.reason for item in scan.ignored} == {
+        "data/mysql/data": MISSING_BIND_REASON,
+        "backups": FOLDER_REASON,
+        "scripts": FOLDER_REASON,
+        ".env": DEPLOYMENT_ENV_REASON,
+    }
+
+
+async def test_a_missing_mount_without_a_dist_file_is_offered_unticked_when_it_looks_like_a_file(
+    harness: Harness, tmp_path: Path
+) -> None:
+    scan = await scan_geotravel(harness, tmp_path, api_dist=False)
+    api = candidate(scan, "environments/.env.api")
+    assert (api.guessed, api.dist_suggestion, api.starts_from_dist) == (True, None, False)
+    assert api.preselected is False and api.disabled_reason is None
+    assert "data/mysql/data" in {item.label for item in scan.ignored}
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        (".env", True),
+        (".env.api", True),
+        ("nginx.conf", True),
+        ("tls.pem", True),
+        ("data", False),
+        ("mysql", False),
+        (".git", False),
+    ],
+)
+def test_a_name_looks_like_a_file_when_it_is_an_env_name_or_has_an_extension(
+    name: str, expected: bool
+) -> None:
+    assert looks_like_file(name) is expected

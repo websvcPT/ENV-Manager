@@ -3,8 +3,8 @@
 The screens carry the user's choices in the form and never keep the scan: every step reads the
 Compose files again, so what a step shows or imports is what the files hold now. The posted names
 are only choices, matched against the fresh scan by key. Files are named by their key in the
-fields (``owner:<key>``, ``type:<key>``, ``dist:<key>``), not by their position, so a scan that
-lists them in another order does not shift a choice onto another file.
+fields (``owner:<key>``, ``type:<key>``, ``dist:<key>``, ``start:<key>``), not by their position,
+so a scan that lists them in another order does not shift a choice onto another file.
 """
 
 from collections.abc import Sequence
@@ -14,6 +14,7 @@ from starlette.datastructures import FormData
 
 from app.models import FileType
 from app.services.compose_import import (
+    DIST_NEEDED_MESSAGE,
     NO_SERVICE_MESSAGE,
     ComposeSelection,
     FileChoice,
@@ -23,15 +24,15 @@ from app.services.compose_scan import ComposeScan, FileCandidate
 OWNER_PREFIX = "owner:"
 TYPE_PREFIX = "type:"
 DIST_PREFIX = "dist:"
+START_PREFIX = "start:"
 GONE_MESSAGE = "This file is no longer found in the Compose files."
-NO_OWNER_MESSAGE = "Choose the service that owns this file."
 SERVICES_LABEL = "Services"
 
 
 @dataclass(frozen=True)
 class PostedImport:
     """The fields of an import step: the Compose files, the ticked services, the ticked files by
-    key and the owner, type and dist path posted for each key."""
+    key and the owner, type, dist path and start-from-dist choice posted for each key."""
 
     compose_files: tuple[str, ...]
     services: tuple[str, ...]
@@ -39,18 +40,21 @@ class PostedImport:
     owners: dict[str, str]
     types: dict[str, str]
     dists: dict[str, str]
+    starts: dict[str, str]
 
 
 @dataclass(frozen=True)
 class FileRow:
     """One file of the preview: its candidate, the services that may own it, the owner, type and
-    dist choice it starts with, and whether it starts ticked."""
+    dist choices it starts with, and whether it starts ticked. ``from_dist`` ticks both the dist
+    link and starting from the dist file, for a file that is not on disk."""
 
     candidate: FileCandidate
     owner_options: tuple[str, ...]
     owner: str
     file_type: str
     checked: bool
+    from_dist: bool
 
 
 @dataclass(frozen=True)
@@ -92,14 +96,12 @@ def parse_posted(form: FormData) -> PostedImport:
         owners=_prefixed(form, OWNER_PREFIX),
         types=_prefixed(form, TYPE_PREFIX),
         dists=_prefixed(form, DIST_PREFIX),
+        starts=_prefixed(form, START_PREFIX),
     )
 
 
 def owner_options(candidate: FileCandidate, usable: Sequence[str]) -> tuple[str, ...]:
-    """The services that may own a file: the usable ones that use it, or, for a file that no
-    service uses (the project ``.env``), every usable service."""
-    if not candidate.users:
-        return tuple(dict.fromkeys(usable))
+    """The services that may own a file: the usable ones that use it."""
     return tuple(dict.fromkeys(name for name in candidate.users if name in usable))
 
 
@@ -118,6 +120,7 @@ def preview_rows(scan: ComposeScan) -> tuple[FileRow, ...]:
             owner=candidate.owner or "",
             file_type=candidate.file_type.value,
             checked=candidate.preselected,
+            from_dist=candidate.starts_from_dist,
         )
         for candidate in scan.files
     )
@@ -136,9 +139,9 @@ def review_import(scan: ComposeScan, posted: PostedImport) -> Review:
 
     A service that is not in the scan or cannot be created is left out. A ticked file that is no
     longer offered or is disabled is a problem. Its owner is the posted one when that service is
-    ticked and may own it; else, for a file that services use, the first of them that is ticked,
-    and the file is dropped when none is. A file no service uses (the project ``.env``) needs its
-    owner chosen. The dist file is the fresh scan's suggestion, taken only for an ENV file.
+    ticked and may own it, else the first of its services that is ticked, and the file is dropped
+    when none is. The dist file is the fresh scan's suggestion, taken only for an ENV file; a file
+    that is not on disk starts from it only when it is linked.
     """
     usable = usable_services(scan)
     chosen = tuple(name for name in usable if name in set(posted.services))
@@ -158,15 +161,9 @@ def review_import(scan: ComposeScan, posted: PostedImport) -> Review:
             continue
         options = [name for name in owner_options(candidate, usable) if name in chosen]
         posted_owner = posted.owners.get(key, "")
-        if posted_owner in options:
-            owner = posted_owner
-        else:
-            owner = options[0] if options and candidate.users else ""
+        owner = posted_owner if posted_owner in options else (options[0] if options else "")
         if not owner:
-            if candidate.users:
-                dropped.append(key)
-            else:
-                problems.append((key, NO_OWNER_MESSAGE))
+            dropped.append(key)
             continue
         file_type = _file_type(posted.types.get(key, ""), candidate)
         if file_type.value in candidate.type_problems:
@@ -174,7 +171,11 @@ def review_import(scan: ComposeScan, posted: PostedImport) -> Review:
             continue
         wants_dist = bool(posted.dists.get(key)) and file_type is FileType.ENV
         dist_path = candidate.dist_suggestion if wants_dist else None
-        picks.append((candidate, FileChoice(key, owner, file_type, dist_path)))
+        from_dist = bool(posted.starts.get(key)) and not candidate.exists
+        if from_dist and dist_path is None:
+            problems.append((key, DIST_NEEDED_MESSAGE))
+            continue
+        picks.append((candidate, FileChoice(key, owner, file_type, dist_path, from_dist)))
     selection = ComposeSelection(scan.compose_files, chosen, tuple(choice for _, choice in picks))
     return Review(selection, tuple(picks), tuple(dropped), tuple(problems))
 
@@ -190,6 +191,12 @@ def selection_of(posted: PostedImport) -> ComposeSelection:
         except ValueError:
             file_type = None
         choices.append(
-            FileChoice(key, posted.owners.get(key, ""), file_type, posted.dists.get(key) or None)
+            FileChoice(
+                key,
+                posted.owners.get(key, ""),
+                file_type,
+                posted.dists.get(key) or None,
+                bool(posted.starts.get(key)),
+            )
         )
     return ComposeSelection(posted.compose_files, posted.services, tuple(choices))

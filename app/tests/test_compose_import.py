@@ -26,7 +26,10 @@ from app.models import (
 from app.services import compose_import
 from app.services.api_runs import load_last_run_result
 from app.services.compose_import import (
+    DIST_COMMENT,
+    DIST_NEEDED_MESSAGE,
     EMPTY_COMMENT,
+    EXISTS_FROM_DIST_MESSAGE,
     HAS_SERVICES_MESSAGE,
     IMPORT_COMMENT,
     NO_SERVICE_MESSAGE,
@@ -49,7 +52,7 @@ from app.services.environments import (
 from app.services.notify_events import FileChange, FileChanged, NotificationEvent
 from app.services.paths import AllowedPaths
 from app.services.versions import create_version
-from app.tests.compose_helpers import PEM, add_stack, real_cli
+from app.tests.compose_helpers import GEOTRAVEL, PEM, add_stack, real_cli
 from app.tests.deploy_helpers import Harness, audit_of, results_of, runs, version_text
 
 SERVICES = ("api", "web", "worker-1")
@@ -61,7 +64,6 @@ FILES = (
     FileChoice("conf/app.cfg", "web"),
     FileChoice(".env.shared", "api"),
     FileChoice(".env.api", "api", dist_path=".env.api-dist"),
-    FileChoice(".env", "api"),
 )
 
 
@@ -142,8 +144,8 @@ async def test_services_and_files_are_created_with_the_first_versions(
     (root / ".env.web").chmod(0o640)
     notifier = Recorder()
     result = await run_import(h, deployment, selection(), tmp_path, notifier)
-    assert (result.services, result.environments, result.with_content, result.empty) == (3, 8, 7, 1)
-    assert result.skipped == 5
+    assert (result.services, result.environments, result.with_content, result.empty) == (3, 7, 6, 1)
+    assert result.skipped == 6
     services = (
         (await h.db.execute(select(Service.name).where(Service.deployment_id == deployment.id)))
         .scalars()
@@ -159,7 +161,6 @@ async def test_services_and_files_are_created_with_the_first_versions(
         "conf/app.cfg": "web",
         ".env.shared": "api",
         ".env.api": "api",
-        ".env": "api",
     }
     web = created[".env.web"][1]
     assert (web.name, web.file_type, web.file_mode, web.dist_path) == (
@@ -186,7 +187,7 @@ async def test_services_and_files_are_created_with_the_first_versions(
     assert deployment.compose_files == ["compose.yaml"]
     assert [event.change for event in notifier.events if isinstance(event, FileChanged)] == [
         FileChange.CREATED
-    ] * 8
+    ] * 7
 
 
 async def test_the_audit_holds_one_import_entry_and_the_usual_create_entries(
@@ -206,19 +207,20 @@ async def test_the_audit_holds_one_import_entry_and_the_usual_create_entries(
     assert isinstance(details, dict)
     assert details["compose_files"] == ["compose.yaml"]
     assert details["services"] == ["api", "web", "worker-1"]
-    assert (details["environments"], details["with_content"], details["empty"]) == (8, 7, 1)
-    assert details["skipped_count"] == 5
+    assert (details["environments"], details["with_content"], details["empty"]) == (7, 6, 1)
+    assert details["skipped_count"] == 6
     items = cast(list[dict[str, str]], details["skipped"])
     skipped = {(item["kind"], item["name"]): item["reason"] for item in items}
     assert skipped[("service", "worker-1")] == "Another service is already named worker-1."
-    assert ("ignored", "data") in skipped and ("ignored", "missing.conf") in skipped
+    assert ("ignored", "data") in skipped and ("file", "missing.conf") in skipped
+    assert skipped[("ignored", ".env")] == "The deployment environment file is not managed yet."
     assert len(await audit_of(h.db, "service.create")) == 3
     created = [
         entry
         for entry in await audit_of(h.db, "environment.create")
         if entry.deployment_id == deployment.id
     ]
-    assert len(created) == 8
+    assert len(created) == 7
     text = repr([entry.details for entry in await h.db.scalars(select(AuditEntry))])
     for content in ("WEB=1", "SHARED=1", "worker_processes", "PROJECT_VARIABLE"):
         assert content not in text
@@ -288,7 +290,7 @@ async def test_each_service_with_files_found_on_the_host_gets_one_import_run(
     by_service = {run.service_name: await results_of(h.db, run.id) for run in imported}
     assert {name: set(results) for name, results in by_service.items()} == {
         "web": {".env.web", "nginx.conf", "server.key", "app.cfg"},
-        "api": {".env.shared", ".env.api", ".env"},
+        "api": {".env.shared", ".env.api"},
     }
     for results in by_service.values():
         for result in results.values():
@@ -315,7 +317,6 @@ async def test_each_service_with_files_found_on_the_host_gets_one_import_run(
         "conf/app.cfg",
         ".env.shared",
         ".env.api",
-        ".env",
     )
     assert set(baselines) == {created[target][1].id for target in with_content}
     assert not any(isinstance(event, DeployFinished) for event in notifier.events)
@@ -598,4 +599,111 @@ async def test_a_scan_that_fails_refuses_the_import(harness: Harness, tmp_path: 
         await run_import(h, deployment, selection(("web",), ()), tmp_path)
     assert "oci://example.invalid/team/stack:1" in str(caught.value)
     assert "remote source" in str(caught.value)
+    assert await counts(h) == before
+
+
+GEOTRAVEL_SELECTION = ComposeSelection(
+    ("docker-compose.yml",),
+    ("api", "db", "frontend"),
+    (
+        FileChoice("environments/.env.db", "db", dist_path="environments/.env.db-dist"),
+        FileChoice(
+            "environments/.env.frontend",
+            "frontend",
+            dist_path="environments/.env.frontend-dist",
+            from_dist=True,
+        ),
+        FileChoice(
+            "environments/.env.api", "api", dist_path="environments/.env.api-dist", from_dist=True
+        ),
+    ),
+)
+
+
+async def test_a_file_not_on_disk_starts_from_its_dist_file(
+    harness: Harness, tmp_path: Path
+) -> None:
+    h = harness
+    deployment, root = await add_stack(h, GEOTRAVEL, name="geotravel")
+    before = snapshot(root)
+    result = await run_import(h, deployment, GEOTRAVEL_SELECTION, tmp_path)
+    counted = (result.environments, result.with_content, result.from_dist, result.empty)
+    assert counted == (3, 3, 2, 0)
+    assert snapshot(root) == before
+    created = await environments_of(h, deployment)
+    frontend = created["environments/.env.frontend"][1]
+    assert frontend.dist_path == "environments/.env.frontend-dist"
+    text = await version_text(h.db, h.crypto, frontend.id, 1)
+    assert text == GEOTRAVEL["environments/.env.frontend-dist"]
+    api = created["environments/.env.api"][1]
+    assert await version_text(h.db, h.crypto, api.id, 1) == GEOTRAVEL["environments/.env.api-dist"]
+    versions = await h.db.scalars(
+        select(EnvironmentVersion).where(EnvironmentVersion.environment_id == frontend.id)
+    )
+    assert [version.comment for version in versions] == [DIST_COMMENT]
+    (entry,) = await audit_of(h.db, "deployment.import_compose")
+    assert isinstance(entry.details, dict) and entry.details["from_dist"] == 2
+
+
+async def test_only_the_files_found_on_disk_get_a_deployed_baseline(
+    harness: Harness, tmp_path: Path
+) -> None:
+    h = harness
+    deployment, _ = await add_stack(h, GEOTRAVEL, name="geotravel")
+    await run_import(h, deployment, GEOTRAVEL_SELECTION, tmp_path)
+    imported = [run for run in await runs(h.db) if run.trigger is DeployTrigger.COMPOSE]
+    assert [run.service_name for run in imported] == ["db"]
+    assert set(await results_of(h.db, imported[0].id)) == {".env.db"}
+
+
+async def test_the_first_deploy_writes_a_file_started_from_its_dist_file(
+    harness: Harness, tmp_path: Path
+) -> None:
+    h = harness
+    deployment, root = await add_stack(h, GEOTRAVEL, name="geotravel")
+    await run_import(h, deployment, GEOTRAVEL_SELECTION, tmp_path)
+    created = await environments_of(h, deployment)
+    frontend = created["environments/.env.frontend"][1]
+    outcome = await h.deploy(frontend.service_id, user="superadmin")
+    assert outcome.status is DeployStatus.SUCCESS and outcome.run_id is not None
+    results = await results_of(h.db, outcome.run_id)
+    assert results[".env.frontend"].status is DeployResultStatus.WRITTEN
+    assert (root / "environments/.env.frontend").read_text() == GEOTRAVEL[
+        "environments/.env.frontend-dist"
+    ]
+    db_outcome = await h.deploy(created["environments/.env.db"][1].service_id, user="superadmin")
+    assert db_outcome.status is DeployStatus.SUCCESS and db_outcome.run_id is not None
+    db_results = await results_of(h.db, db_outcome.run_id)
+    assert db_results[".env.db"].status is DeployResultStatus.UNCHANGED
+
+
+async def test_starting_from_the_dist_file_is_refused_when_it_does_not_fit(
+    harness: Harness, tmp_path: Path
+) -> None:
+    h = harness
+    deployment, _ = await add_stack(h, GEOTRAVEL, name="geotravel")
+    before = await counts(h)
+    on_disk = ComposeSelection(
+        ("docker-compose.yml",),
+        ("db",),
+        (
+            FileChoice(
+                "environments/.env.db",
+                "db",
+                dist_path="environments/.env.db-dist",
+                from_dist=True,
+            ),
+        ),
+    )
+    with pytest.raises(ComposeImportError) as exists:
+        await run_import(h, deployment, on_disk, tmp_path)
+    assert exists.value.errors == {"environments/.env.db": EXISTS_FROM_DIST_MESSAGE}
+    unlinked = ComposeSelection(
+        ("docker-compose.yml",),
+        ("frontend",),
+        (FileChoice("environments/.env.frontend", "frontend", from_dist=True),),
+    )
+    with pytest.raises(ComposeImportError) as needs_link:
+        await run_import(h, deployment, unlinked, tmp_path)
+    assert needs_link.value.errors == {"environments/.env.frontend": DIST_NEEDED_MESSAGE}
     assert await counts(h) == before

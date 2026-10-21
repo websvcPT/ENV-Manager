@@ -67,6 +67,83 @@ PROJECT: dict[str, str] = {
 }
 
 
+GEOTRAVEL_COMPOSE = """\
+name: ${ENVIRONMENT_NAME:-geotravel}
+
+services:
+  db:
+    image: mysql:8.0.41-debian
+    hostname: db
+    restart: always
+    env_file:
+      - ./environments/.env.db
+    ports:
+      - "${DB_PORT:-127.0.0.1:13381}:3306"
+    networks:
+      - app_network
+    volumes:
+      - ./data/mysql/data:/var/lib/mysql
+      - ./backups:/var/backups
+      - ./scripts:/scripts
+    environment:
+      TZ: ${TZ:-Europe/Lisbon}
+    healthcheck:
+      test: "mysql --user=$$MYSQL_USER --password=$$MYSQL_PASSWORD --execute='SHOW DATABASES;'"
+      timeout: 10s
+      interval: 10s
+      retries: 20
+
+  api:
+    image: registry.example.test/geotravel/api:${IMAGE_API_VERSION:-latest}
+    hostname: api
+    restart: always
+    networks:
+      - app_network
+    ports:
+      - "${API_PORT:-127.0.0.1:8101}:80"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./environments/.env.api:/var/www/html/.env
+    environment:
+      RUN_MIGRATIONS: true
+      TZ: ${TZ:-Europe/Lisbon}
+
+  frontend:
+    image: registry.example.test/geotravel/frontend:${IMAGE_FRONTEND_VERSION:-latest}
+    hostname: frontend
+    restart: always
+    networks:
+      - app_network
+    ports:
+      - "${FRONTEND_PORT:-127.0.0.1:8102}:80"
+    env_file:
+      - ./environments/.env.frontend
+    environment:
+      TZ: ${TZ:-Europe/Lisbon}
+
+networks:
+  app_network:
+    name: ${DOCKER_NETWORK_NAME:-geotravel_network}
+    driver: bridge
+"""
+
+GEOTRAVEL: dict[str, str] = {
+    "docker-compose.yml": GEOTRAVEL_COMPOSE,
+    ".env": "ENVIRONMENT_NAME=tests\nTZ=Europe/Lisbon\n",
+    "environments/.env.db": "MYSQL_USER=app\nMYSQL_PASSWORD=secret\n",
+    "environments/.env.db-dist": "MYSQL_USER=\nMYSQL_PASSWORD=\n",
+    "environments/.env.frontend-dist": "API_URL=http://localhost:8101\n",
+    "environments/.env.api-dist": "APP_KEY=\nDB_HOST=db\n",
+    "backups/.keep": "",
+    "scripts/init.sql": "SELECT 1;\n",
+}
+"""A project shaped like a real one: an env file on disk with its dist file, a required env file
+that is not on disk yet but has a dist file, a mounted file that is not on disk yet, a missing
+data folder, two real folders, and the deployment environment file beside the Compose file."""
+
+
 def write_project(root: Path, files: Mapping[str, str | bytes]) -> None:
     """Write the files of a project below ``root``, creating the folders; each gets mode 0644."""
     for relative, content in files.items():

@@ -251,6 +251,7 @@ async def import_confirm(
             review.problems,
         )
     with_content = sum(1 for candidate, _ in review.picks if candidate.exists)
+    from_dist = sum(1 for _, choice in review.picks if choice.from_dist)
     chosen = set(review.selection.services)
     return render(
         request,
@@ -261,7 +262,8 @@ async def import_confirm(
             "picks": review.picks,
             "dropped": review.dropped,
             "with_content": with_content,
-            "empty": len(review.picks) - with_content,
+            "from_dist": from_dist,
+            "empty": len(review.picks) - with_content - from_dist,
             "linked": sum(1 for _, choice in review.picks if choice.dist_path),
             "left_services": sum(1 for service in scan.services if service.name not in chosen),
         },
