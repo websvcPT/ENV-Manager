@@ -626,7 +626,7 @@ async def test_files_not_on_disk_start_from_their_dist_file_by_default(
     assert "Not on disk" in frontend and "created empty" not in frontend
     database = row_of(page, "environments/.env.db")
     assert 'name="start:' not in database
-    assert not re.search(r'name="dist:environments/\.env\.db"[^>]*checked', database)
+    assert re.search(r'name="dist:environments/\.env\.db"[^>]*checked', database)
     api = row_of(page, "environments/.env.api")
     assert "Bind mount" in api and "Not on disk, looks like a file" in api
     assert re.search(r'name="start:environments/\.env\.api"[^>]*checked', api)

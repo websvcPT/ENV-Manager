@@ -63,8 +63,9 @@ class PostedImport:
 @dataclass(frozen=True)
 class FileRow:
     """One file of the preview: its candidate, the services that may own it, the owner, type and
-    dist choices it starts with, and whether it starts ticked. ``from_dist`` ticks both the dist
-    link and starting from the dist file, for a file that is not on disk."""
+    dist choices it starts with, and whether it starts ticked. ``linked`` ticks the dist link of
+    every dist file found, the file on disk or not; ``from_dist`` ticks starting from the dist
+    file, for a file that is not on disk."""
 
     candidate: FileCandidate
     owner_options: tuple[str, ...]
@@ -72,6 +73,7 @@ class FileRow:
     file_type: str
     checked: bool
     from_dist: bool
+    linked: bool = False
 
 
 @dataclass(frozen=True)
@@ -144,6 +146,7 @@ def preview_rows(scan: ComposeScan) -> tuple[FileRow, ...]:
             file_type=candidate.file_type.value,
             checked=candidate.preselected,
             from_dist=candidate.starts_from_dist,
+            linked=candidate.dist_suggestion is not None,
         )
         for candidate in scan.files
     )
@@ -159,6 +162,7 @@ def deployment_rows(scan: ComposeScan) -> tuple[FileRow, ...]:
             file_type=candidate.file_type.value,
             checked=candidate.preselected,
             from_dist=candidate.starts_from_dist,
+            linked=candidate.dist_suggestion is not None,
         )
         for candidate in scan.deployment_files
     )

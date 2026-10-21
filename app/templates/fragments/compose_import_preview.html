@@ -24,13 +24,13 @@
 {%- set off = candidate.disabled_reason is not none -%}
 <span class="break-all font-mono text-[13px] font-semibold">{{ candidate.key }}</span><span class="mt-0.5 block text-xs text-ink2">Environment {{ candidate.name }} · {% for source in candidate.sources %}{{ labels[source.value] }}{% if not loop.last %}, {% endif %}{% endfor %}</span>{% if not off %}<span data-file-state class="block text-xs text-ink2">{% if candidate.exists %}{{ candidate.size }} B{% elif candidate.guessed %}Not on disk, looks like a file{% elif candidate.dist_suggestion %}Not on disk{% else %}Not on disk, created empty{% endif %}{% if candidate.optional %} · Optional{% endif %}{% if candidate.file_mode %} · <span class="font-mono">{{ candidate.file_mode }}</span>{% endif %}{% if candidate.file_owner or candidate.file_group %} · <span class="font-mono">{{ candidate.file_owner or "" }}:{{ candidate.file_group or "" }}</span>{% endif %}</span>{% endif %}{% if off %}<span class="mt-1 flex flex-wrap items-center gap-2">{{ badge("skipped", "Cannot be imported") }}<span class="text-xs text-ink2">{{ candidate.disabled_reason }}</span></span>{% endif %}
 {%- endmacro %}
-{#- The dist file cell of a file row: link the suggested dist file, and start from it when the
-    file is not on disk. -#}
+{#- The dist file cell of a file row: link the suggested dist file (ticked at first), and start
+    from it when the file is not on disk (ticked at first). -#}
 {% macro dist_cell(row) -%}
 {%- set candidate = row.candidate -%}
 <td class="min-w-48 border-t border-line px-4 py-2.5">
 {%- if candidate.dist_suggestion and candidate.disabled_reason is none -%}
-<label class="flex min-h-11 items-start gap-2.5 py-2 text-[13px] font-semibold"><input type="checkbox" name="dist:{{ candidate.key }}" value="{{ candidate.dist_suggestion }}" data-compose-dist{% if row.from_dist %} checked{% endif %} class="mt-0.5 size-[18px] shrink-0 accent-accent"><span>Link <span class="font-mono text-[13px]">{{ candidate.dist_suggestion }}</span></span></label>
+<label class="flex min-h-11 items-start gap-2.5 py-2 text-[13px] font-semibold"><input type="checkbox" name="dist:{{ candidate.key }}" value="{{ candidate.dist_suggestion }}" data-compose-dist{% if row.linked %} checked{% endif %} class="mt-0.5 size-[18px] shrink-0 accent-accent"><span>Link <span class="font-mono text-[13px]">{{ candidate.dist_suggestion }}</span></span></label>
 {%- if not candidate.exists %}
 <label class="flex min-h-11 items-start gap-2.5 py-2 text-[13px]"><input type="checkbox" name="start:{{ candidate.key }}" value="1" data-compose-start{% if row.from_dist %} checked{% endif %} class="mt-0.5 size-[18px] shrink-0 accent-accent"><span>Start from the dist file</span></label>
 {%- endif %}

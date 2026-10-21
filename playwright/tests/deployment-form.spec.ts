@@ -297,7 +297,8 @@ test.describe('superadmin edit', () => {
       `/deployments/${id}`,
     );
 
-    await page.locator('#name').fill('edited-name');
+    await expect(page.locator('#name-h')).toContainText('Letters, numbers, spaces');
+    await page.locator('#name').fill('  Edited   Name EU ');
     await page.locator('#root').fill(SAMPLE_B);
     await page.getByLabel('Back up, then overwrite').check();
     await page.locator('#group').fill('deploy');
@@ -305,7 +306,7 @@ test.describe('superadmin edit', () => {
 
     await expect(page).toHaveURL(`/deployments/${id}?saved=true`);
     await expect(page.locator('[data-fragment="toast"]')).toContainText('Deployment saved');
-    await expectItemHeader(page, 'deployment', 'edited-name');
+    await expectItemHeader(page, 'deployment', 'Edited Name EU');
     await expect(page.locator('[data-location="root"]')).toHaveText(`Deployment path: ${SAMPLE_B}`);
     await expect(page.locator('[data-fragment="policies-panel"]')).toContainText(
       'Back up, then overwrite',

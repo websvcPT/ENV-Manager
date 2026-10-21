@@ -23,7 +23,7 @@ inside the deployment root and the allowed paths.
 
 The files the whole stack reads, such as the `.env` beside the Compose file (which Compose reads
 for `${VAR}` values) and the Compose files themselves, belong to the deployment rather than to
-one service. They are listed in the **Deployment files** panel of the deployment page, above the
+one service. They are listed in the **Deployment files** panel of the deployment page, below the
 services. The superadmin adds the first one with **Add file** there; the Compose import adds them
 too.
 
@@ -94,9 +94,11 @@ What is found:
   a file changed); the confirmation shows the arguments each line is run with. Without a usable
   socket the preview says why no command is offered.
 - A sibling named `<name>-dist`, `<name>.example` or `<name>.dist` is offered as the dist file,
-  whether the file exists or not. For a file on disk the link starts unticked. For a file that is
-  not on disk yet, the link and "Start from the dist file" start ticked: version 1 then holds the
-  dist file's text instead of being empty. Starting from the dist file needs the link.
+  whether the file exists or not, and the link starts ticked. For a file on disk version 1 is its
+  own text and the link only turns the dist comparison on (under the Block policy a dist key the
+  file lacks blocks its deploy until it is added). For a file that is not on disk yet "Start from
+  the dist file" starts ticked too: version 1 then holds the dist file's text instead of being
+  empty. Starting from the dist file needs the link.
 
 What the import creates, in one transaction (all or nothing):
 
