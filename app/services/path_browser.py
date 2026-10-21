@@ -40,10 +40,14 @@ class BrowseView:
 def _child_directories(
     directory: Path, allowed: AllowedPaths, limit: int
 ) -> tuple[list[Path], bool]:
-    """Real child directories that stay inside the allowed paths, sorted, with a cut-off flag."""
+    """Real child directories that stay inside the allowed paths, sorted alphabetically ignoring
+    case, with a cut-off flag."""
     try:
         with os.scandir(directory) as scanner:
-            names = sorted(entry.name for entry in scanner if entry.is_dir(follow_symlinks=False))
+            names = sorted(
+                (entry.name for entry in scanner if entry.is_dir(follow_symlinks=False)),
+                key=lambda name: (name.casefold(), name),
+            )
     except OSError:
         return [], False
     children: list[Path] = []

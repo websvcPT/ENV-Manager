@@ -538,6 +538,48 @@
     armReveals();
   });
 
+  /* The root path picker's filter: narrow the listed folders to those whose name holds the typed
+     text, ignoring case, say how many are shown, show "No folder matches" when none is, and let
+     Enter open the only match. The way up and the empty-list rows are never filtered. */
+  function visiblePathEntries(list) {
+    return Array.prototype.filter.call(list.querySelectorAll('[data-path-entry]'), function (row) {
+      return !row.hidden;
+    });
+  }
+
+  document.addEventListener('input', function (event) {
+    var field = event.target;
+    if (!(field instanceof HTMLInputElement) || field.getAttribute('data-js') !== 'path-filter') {
+      return;
+    }
+    var list = document.getElementById(field.getAttribute('aria-controls') || '');
+    if (!list) { return; }
+    var needle = field.value.trim().toLowerCase();
+    list.querySelectorAll('[data-path-entry]').forEach(function (row) {
+      row.hidden = needle !== '' && (row.getAttribute('data-name') || '').indexOf(needle) === -1;
+    });
+    var shown = visiblePathEntries(list).length;
+    var empty = list.querySelector('[data-path-filter-empty]');
+    if (empty) { empty.hidden = shown !== 0; }
+    var count = document.getElementById(field.getAttribute('aria-describedby') || '');
+    if (count) { count.textContent = shown + (shown === 1 ? ' folder' : ' folders') + ' shown'; }
+  });
+
+  document.addEventListener('keydown', function (event) {
+    var field = event.target;
+    if (event.key !== 'Enter' || !(field instanceof HTMLInputElement)
+      || field.getAttribute('data-js') !== 'path-filter') {
+      return;
+    }
+    event.preventDefault();
+    var list = document.getElementById(field.getAttribute('aria-controls') || '');
+    var shown = list ? visiblePathEntries(list) : [];
+    if (shown.length === 1) {
+      var open = shown[0].querySelector('button');
+      if (open) { open.click(); }
+    }
+  });
+
   document.addEventListener('DOMContentLoaded', function () {
     syncThemeLabels();
     syncThemeChoices();

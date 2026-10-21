@@ -310,6 +310,24 @@ async def test_picker_lists_roots_with_folders_then_one_directory(
     assert "No folders inside this one." in empty.text
 
 
+async def test_picker_sorts_folders_ignoring_case_and_offers_a_filter(
+    web_client: httpx.AsyncClient, layout: Layout
+) -> None:
+    for name in ("Zeta", "beta", "Alpha2", "gamma"):
+        (layout.host / "alpha" / name).mkdir()
+    await sign_in(web_client, "root")
+    page = (await web_client.get("/paths/browse", params={"path": str(layout.host / "alpha")})).text
+    names = re.findall(r'<li data-path-entry data-name="([^"]+)">', page)
+    assert names == ["alpha2", "beta", "gamma", "inner", "zeta"]
+    assert 'data-js="path-filter"' in page and 'aria-controls="path-picker-list"' in page
+    assert 'id="path-filter-count"' in page and "5 folders shown" in page
+    assert re.search(r"<li data-path-filter-empty hidden[^>]*>No folder matches\.</li>", page)
+    empty = await web_client.get(
+        "/paths/browse", params={"path": str(layout.host / "alpha" / "inner")}
+    )
+    assert 'data-js="path-filter"' not in empty.text
+
+
 @pytest.mark.parametrize("probe", ["/etc", "/definitely/not/there", "escape", "note.txt", "../x"])
 async def test_picker_never_opens_anything_outside_the_list(
     web_client: httpx.AsyncClient, layout: Layout, probe: str

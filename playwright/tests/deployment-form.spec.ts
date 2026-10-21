@@ -136,6 +136,35 @@ test.describe('superadmin create', () => {
     ]);
   });
 
+  test('filters the listed folders as you type and opens the only match with Enter', async ({
+    page,
+    scratch,
+  }) => {
+    await page.goto(`/projects/${scratch.id}/deployments/new`);
+    await page.getByRole('button', { name: 'Browse…' }).click();
+    const filter = picker(page).locator('[data-js="path-filter"]');
+    await expect(filter).toBeVisible();
+    const shown = picker(page).locator('[data-path-entry]:visible');
+    await filter.fill('SAMPLE');
+    await expect(shown).toHaveCount(2);
+    await expect(shown.nth(0)).toContainText(SAMPLE_A);
+    await expect(shown.nth(1)).toContainText(SAMPLE_B);
+    await expect(picker(page).locator('#path-filter-count')).toHaveText('2 folders shown');
+    await filter.fill('no-folder-has-this-name');
+    await expect(shown).toHaveCount(0);
+    await expect(picker(page).getByText('No folder matches.')).toBeVisible();
+    await filter.fill('sample-a');
+    await expect(shown).toHaveCount(1);
+    await expect(picker(page).getByText('No folder matches.')).toBeHidden();
+    await filter.press('Enter');
+    await expect(picker(page).locator('[data-fragment="path-picker"]')).toContainText(
+      `Folder ${SAMPLE_A}`,
+    );
+    // The filter starts empty again inside the folder that was opened.
+    await expect(picker(page).locator('[data-js="path-filter"]')).toHaveValue('');
+    expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+  });
+
   test('browses inside the allowed paths only and fills the field', async ({ page, scratch }) => {
     await page.goto(`/projects/${scratch.id}/deployments/new`);
     await page.getByRole('button', { name: 'Browse…' }).click();
