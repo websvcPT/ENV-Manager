@@ -125,6 +125,12 @@ test.describe('superadmin: the users list', () => {
     await usersPage(page);
     await expect(page.locator('[data-fragment="page-header"] h1')).toHaveText('Users');
     await expect(page.getByText('Accounts are created by a superadmin.')).toBeVisible();
+    const header = page.locator('[data-fragment="page-header"]');
+    await expect(header.getByRole('link', { name: 'Access grid' })).toHaveAttribute(
+      'href',
+      '/access/grid',
+    );
+    await expect(header.getByRole('link', { name: 'API tokens' })).toHaveAttribute('href', '/tokens');
     await expect(page.locator('#users-table th[scope="col"]')).toHaveText([
       'Name',
       'Email',

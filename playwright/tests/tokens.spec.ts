@@ -94,14 +94,17 @@ function inDays(days: number): string {
 test.describe('admin: creating and revoking tokens', () => {
   test('an admin without tokens sees the empty state and the create dialog', async ({ owner }) => {
     const { page } = owner;
-    await page.goto('/tokens');
+    // The tokens page is reached from the account menu; the sidebar has no entry for it.
+    await page.goto('/projects');
+    await expect(page.locator('nav[aria-label="Primary"] a[href="/tokens"]')).toHaveCount(0);
+    await page.locator('[data-js="dialog-open"][data-target="account-menu"]').click();
+    await page.locator('#account-menu [data-account-menu-item="tokens"]').click();
+    await expect(page).toHaveURL(/\/tokens$/);
     await expect(page.locator('[data-fragment="page-header"] h1')).toHaveText('API tokens');
     await expect(
       page.getByText('Your tokens. A token acts as you and never exceeds your access.'),
     ).toBeVisible();
-    await expect(
-      page.locator('nav[aria-label="Primary"] a[aria-current="page"]').first(),
-    ).toHaveText(/API tokens/);
+    await expect(page.locator('nav[aria-label="Primary"] a[aria-current="page"]')).toHaveCount(0);
     const empty = page.locator('#tokens-table [data-fragment="empty-state"]');
     await expect(empty.getByText('No API tokens')).toBeVisible();
     await expect(empty.getByText('The secret is shown once.')).toBeVisible();

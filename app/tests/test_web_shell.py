@@ -33,8 +33,8 @@ def sidebar_links(page: str) -> list[str]:
 @pytest.mark.parametrize(
     ("user", "expected"),
     [
-        ("root", ["/projects", "/audit", "/tokens", "/users", "/settings"]),
-        ("admin", ["/projects", "/audit", "/tokens"]),
+        ("root", ["/projects", "/audit", "/users", "/settings"]),
+        ("admin", ["/projects", "/audit"]),
         ("viewer", ["/projects"]),
     ],
 )
@@ -253,7 +253,7 @@ async def test_unknown_path_renders_the_not_found_page_inside_the_shell(
     assert response.status_code == 404
     assert 'data-fragment="system-state"' in response.text
     assert "Not found" in response.text
-    assert sidebar_links(response.text) == ["/projects", "/audit", "/tokens"]
+    assert sidebar_links(response.text) == ["/projects", "/audit"]
     assert response.headers["content-security-policy"] == CONTENT_SECURITY_POLICY
 
 
@@ -361,6 +361,23 @@ async def test_account_menu_has_account_theme_and_logout(web_client: httpx.Async
     form = re.search(r'<form method="post" action="/logout".*?</form>', body, re.DOTALL)
     assert form is not None and 'name="csrf_token"' in form.group(0)
     assert "Log out" in form.group(0)
+
+
+@pytest.mark.parametrize(("user", "listed"), [("root", True), ("admin", True), ("viewer", False)])
+async def test_api_tokens_are_in_the_account_menu_for_the_groups_that_hold_tokens(
+    web_client: httpx.AsyncClient, user: str, listed: bool
+) -> None:
+    """The account menu lists API tokens right under Account, the sidebar never does."""
+    await sign_in(web_client, user)
+    page = (await web_client.get("/projects")).text
+    menu = re.search(r'<dialog id="account-menu".*?</dialog>', page, re.DOTALL)
+    assert menu is not None
+    body = menu.group(0)
+    assert ('data-account-menu-item="tokens"' in body) is listed
+    if listed:
+        assert body.index('href="/account"') < body.index('href="/tokens"')
+        assert body.index('href="/tokens"') < body.index('data-js="theme-toggle"')
+    assert "/tokens" not in sidebar_links(page)
 
 
 async def test_logout_form_ends_the_session(web_client: httpx.AsyncClient) -> None:

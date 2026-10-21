@@ -23,7 +23,6 @@ _SUPERADMIN = frozenset({UserGroup.SUPERADMIN})
 NAV_ITEMS: tuple[NavItem, ...] = (
     NavItem("projects", "Projects", "/projects", "layers", _ALL),
     NavItem("audit", "Audit log", "/audit", "shield", _ADMINS),
-    NavItem("tokens", "API tokens", "/tokens", "key", _ADMINS),
     NavItem("users", "Users", "/users", "users", _SUPERADMIN),
     NavItem("settings", "Settings", "/settings", "settings", _SUPERADMIN),
 )

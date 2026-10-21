@@ -7,7 +7,7 @@
 {% set breadcrumbs = [("Users", none)] %}
 {% block title %}Users{% endblock %}
 {% block content %}
-{% set header_actions %}{{ button("Access grid", href="/access/grid") }}{{ button("Create user", kind="primary", icon_name="plus", icon_stroke="2.2", data_js="dialog-open", data_target="user-create", aria_haspopup="dialog", hx_get="/users/new", hx_target="#user-create", hx_swap="innerHTML") }}{% endset %}
+{% set header_actions %}{{ button("Access grid", href="/access/grid") }}{{ button("API tokens", href="/tokens", icon_name="key") }}{{ button("Create user", kind="primary", icon_name="plus", icon_stroke="2.2", data_js="dialog-open", data_target="user-create", aria_haspopup="dialog", hx_get="/users/new", hx_target="#user-create", hx_swap="innerHTML") }}{% endset %}
 {{ page_header("Users", "Accounts are created by a superadmin. Disabled users keep their audit entries.", actions=header_actions) }}
 {{ section_tabs("/users") }}
 <section aria-label="Users" class="rounded-panel border border-line bg-surface shadow-panel overflow-hidden">

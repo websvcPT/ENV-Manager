@@ -302,6 +302,18 @@ async def test_a_search_with_no_match_says_so_and_a_bad_cursor_starts_again(
         assert rows.status_code == 200 and listed(rows.text) == everyone, after
 
 
+async def test_the_header_links_the_access_grid_and_the_api_tokens(
+    web_client: httpx.AsyncClient,
+) -> None:
+    await sign_in(web_client, "root")
+    page = (await web_client.get("/users")).text
+    header = re.search(r'<section data-fragment="page-header".*?</section>', page, re.DOTALL)
+    assert header is not None
+    actions = header.group(0)
+    assert actions.index('href="/access/grid"') < actions.index('href="/tokens"')
+    assert actions.index('href="/tokens"') < actions.index("Create user")
+
+
 async def test_the_create_dialog_offers_the_group_and_the_whole_grant_tree(
     web_client: httpx.AsyncClient, web_app: FastAPI
 ) -> None:

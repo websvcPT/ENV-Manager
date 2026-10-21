@@ -26,13 +26,17 @@ flex h-11 w-full items-center gap-3 rounded-btn px-3 text-sm font-semibold text-
 {%- endmacro %}
 
 {#- The account menu opened by the top bar account button (a native dialog, closed by
-    data-js="dialog-close", a click on its backdrop or Escape). Holds the account link, the
-    theme switch and the log out form with its CSRF field. -#}
+    data-js="dialog-close", a click on its backdrop or Escape). Holds the account link, the API
+    tokens link for the groups that may hold tokens, the theme switch and the log out form with
+    its CSRF field. -#}
 {% macro account_menu(user, csrf_token) -%}
 <dialog id="account-menu" aria-label="Account" class="fixed left-auto right-2 top-14 m-0 w-64 max-w-[calc(100%_-_1rem)] rounded-panel border border-line bg-surface p-0 text-ink shadow-dialog backdrop:bg-transparent md:right-8 md:top-[60px]">
   <div data-fragment="account-menu" class="flex flex-col gap-1 p-2">
     <div class="border-b border-line px-3 pb-2 pt-1"><p class="truncate text-sm font-bold">{{ user.name }}</p><p class="truncate text-xs text-ink2">{{ user.email }}</p></div>
     <a href="/account" class="{{ menu_row_classes() }}">{{ icon("user", "size-4", "2") }}<span>Account</span></a>
+    {%- if user.group.value != "viewer" %}
+    <a href="/tokens" data-account-menu-item="tokens" class="{{ menu_row_classes() }}">{{ icon("key", "size-4", "2") }}<span>API tokens</span></a>
+    {%- endif %}
     <button type="button" data-js="theme-toggle" class="{{ menu_row_classes() }}">{{ icon("moon", "size-4", "2") }}<span class="dark:hidden">Dark theme</span><span class="hidden dark:inline">Light theme</span></button>
     <form method="post" action="/logout" class="border-t border-line pt-1">{{ csrf_field(csrf_token) }}<button type="submit" class="{{ menu_row_classes() }}">{{ icon("arrow-right", "size-4", "2") }}<span>Log out</span></button></form>
   </div>
