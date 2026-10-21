@@ -1,6 +1,34 @@
 # CHANGELOG
 
 
+## v1.4.0 (2026-10-21)
+
+### Documentation
+
+- Describe the read only Compose files and the deployment names, and rework the demo scenarios for
+  them
+  ([`eefb1bf`](https://github.com/websvcPT/ENV-Manager/commit/eefb1bf91f58ff5eef3c53f267c5449a04b9067d))
+
+### Features
+
+- Let deployment names use capitals and spaces, unique in their project ignoring case
+  ([`36ca664`](https://github.com/websvcPT/ENV-Manager/commit/36ca6645ad61820315fd09bfde45d05781a2b27c))
+
+- Link Compose files to a deployment read only instead of importing them
+  ([`30b22f1`](https://github.com/websvcPT/ENV-Manager/commit/30b22f17f17b9282f634e0e86996cf0ee0a9d946))
+
+- Link every dist file the Compose import finds, the files on disk included
+  ([`3b99949`](https://github.com/websvcPT/ENV-Manager/commit/3b99949463c93a27753889757d8c35e8bf6d24d3))
+
+- Show the deployment files below the services
+  ([`1219cbf`](https://github.com/websvcPT/ENV-Manager/commit/1219cbfd6fa4a90694a9573d59e71f3ccaf8df78))
+
+### Testing
+
+- Cover linking and reading Compose files and the import without them in the browser
+  ([`815137c`](https://github.com/websvcPT/ENV-Manager/commit/815137cb3b172d1f011ff06418ef36a98f8d6d0e))
+
+
 ## v1.3.0 (2026-10-21)
 
 ### Features
