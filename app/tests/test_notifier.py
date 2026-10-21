@@ -370,7 +370,9 @@ async def test_events_over_the_cap_are_dropped_and_counted(
     for _ in range(5):
         await notifier.notify(lockout())
     assert len(notifier._pending) == 2
-    await asyncio.sleep(0.05)
+    recorder = notifier._recorder
+    assert recorder is not None
+    await asyncio.wait_for(recorder, timeout=5)
     (row,) = await failures(seeded_database)
     assert row.failures == 3 and "dropped" in row.reason
     transport.hang.set()
