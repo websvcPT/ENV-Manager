@@ -3,7 +3,7 @@
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import RedirectResponse, Response
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,7 +19,7 @@ from app.web.dependencies import (
     require_auth,
     require_capability,
 )
-from app.web.htmx import ANSWER_HEADERS, hx_events
+from app.web.htmx import hx_redirect
 
 log = get_logger("web.projects")
 
@@ -90,17 +90,18 @@ async def projects_table(
 async def create_project_route(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    scope: Annotated[AccessScope, Depends(get_scope)],
     context: Annotated[AuthContext, Depends(require_capability(Capability.MANAGE_STRUCTURE))],
     name: Annotated[str, Form()] = "",
 ) -> Response:
     """Create a project (superadmin only).
 
-    Success swaps in the refreshed table, resets the form and closes the dialog; a refused name
-    swaps the form again with the reason.
+    Success goes to the new project's page, which shows a toast; a refused name swaps the form
+    again with the reason.
     """
     try:
-        await create_project(db, name=name, actor=context.user, ip_address=client_address(request))
+        project = await create_project(
+            db, name=name, actor=context.user, ip_address=client_address(request)
+        )
     except ProjectError as error:
         return render(
             request,
@@ -108,9 +109,4 @@ async def create_project_route(
             {"form_value": name.strip(), "form_error": str(error), "name_rule": NAME_RULE},
             status_code=422,
         )
-    table = render(request, TABLE_FRAGMENT, await _table_context(db, scope, ""))
-    fresh_form = render(request, FORM_FRAGMENT, {"form_oob": True, "name_rule": NAME_RULE})
-    return HTMLResponse(
-        bytes(table.body) + bytes(fresh_form.body),
-        headers={**ANSWER_HEADERS, "HX-Trigger": hx_events("close-dialogs")},
-    )
+    return hx_redirect(f"/projects/{project.id}?created=1")

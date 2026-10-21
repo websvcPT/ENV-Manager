@@ -164,7 +164,7 @@ async def test_empty_project_offers_the_first_deployment(
     await sign_in(web_client, "root")
     created = await post(web_client, "/projects", {"name": "fresh"})
     assert created.status_code == 200
-    project_id = re.search(r'href="/projects/(\d+)"[^>]*>fresh<', created.text)
+    project_id = re.search(r"^/projects/(\d+)\?created=1$", created.headers["hx-redirect"])
     assert project_id is not None
     page = (await web_client.get(f"/projects/{project_id.group(1)}")).text
     assert "No deployments yet" in page
@@ -210,7 +210,7 @@ async def test_activity_empty_state(web_client: httpx.AsyncClient, web_app: Fast
     """A project with no entries in scope says so."""
     await sign_in(web_client, "root")
     created = await post(web_client, "/projects", {"name": "quiet"})
-    project_id = re.search(r'href="/projects/(\d+)"[^>]*>quiet<', created.text)
+    project_id = re.search(r"^/projects/(\d+)\?created=1$", created.headers["hx-redirect"])
     assert project_id is not None
     async with web_app.state.session_factory() as db:
         entries = (await db.execute(select(AuditEntry))).scalars().all()
@@ -304,7 +304,9 @@ async def test_delete_removes_the_project_and_leaves_for_the_list(
     """A confirmed delete is audited and the browser is sent to the projects list."""
     await sign_in(web_client, "root")
     created = await post(web_client, "/projects", {"name": "doomed"})
-    project_id = int(re.search(r'href="/projects/(\d+)"[^>]*>doomed<', created.text).group(1))  # type: ignore[union-attr]
+    found = re.search(r"^/projects/(\d+)\?created=1$", created.headers["hx-redirect"])
+    assert found is not None
+    project_id = int(found.group(1))
     response = await post(web_client, f"/projects/{project_id}/delete", {"confirm_name": "doomed"})
     assert response.status_code == 200
     assert response.headers["hx-redirect"] == "/projects"

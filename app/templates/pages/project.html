@@ -5,5 +5,5 @@
 {% if project.partial %}{{ note("You have access to " ~ (project.limited_to | join(", ")) ~ " only. " ~ ("Other deployments of this project are not listed." if project.all_granted_are_deployments else "Other items of this project are not listed.")) }}{% endif %}
 {% include "fragments/deployments_table.html" %}
 {% if can_manage_structure %}{{ loaded_dialog("deployment-delete", "Delete deployment", width="560") }}{% endif %}
-{% if deleted | default("") == "deployment" %}{{ toast("success", "The deployment, its services and environments were deleted.", "Deployment deleted", floating=true) }}{% endif %}
+{% if deleted | default("") == "deployment" %}{{ toast("success", "The deployment, its services and environments were deleted.", "Deployment deleted", floating=true) }}{% elif created | default(false) %}{{ toast("success", "Add a deployment to start managing its files.", "Project created", floating=true) }}{% endif %}
 {% endblock %}

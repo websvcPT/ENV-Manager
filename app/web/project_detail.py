@@ -90,10 +90,15 @@ async def project_page(
     request: Request,
     access: Annotated[ProjectContext, Depends(project_access())],
     deleted: str = "",
+    created: str = "",
 ) -> Response:
-    """The Deployments tab; ``deleted`` (deployment) shows the toast after one was deleted."""
+    """The Deployments tab; ``deleted`` (deployment) shows the toast after one was deleted and
+    ``created`` the one after the project was created."""
     context = _page_context(
-        access, "deployments", deleted="deployment" if deleted == "deployment" else ""
+        access,
+        "deployments",
+        deleted="deployment" if deleted == "deployment" else "",
+        created=created == "1",
     )
     return render(request, "pages/project.html", context)
 

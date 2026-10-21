@@ -101,9 +101,13 @@ test.describe('superadmin', () => {
     try {
       await dialog.locator('#pn').fill(`  ${name}  `);
       await dialog.getByRole('button', { name: 'Create project' }).click();
-      await expect(page.locator('#project-new[open]')).toHaveCount(0);
-      await expect(rowNames(page).filter({ hasText: name })).toHaveText(name);
+      // The new project's page opens, with a toast, instead of the list.
+      await expect(page).toHaveURL(/\/projects\/\d+\?created=1$/);
+      await expect(page.locator('[data-fragment="page-header"] [data-item-name]')).toHaveText(name);
+      await expect(page.locator('[data-fragment="toast"]')).toContainText('Project created');
 
+      await page.goto('/projects');
+      await expect(rowNames(page).filter({ hasText: name })).toHaveText(name);
       await page.locator('[data-js="dialog-open"][data-target="project-new"]').first().click();
       await expect(page.locator('#project-new #pn')).toHaveValue('');
       await expect(page.locator('#project-new #pn-e')).toHaveCount(0);

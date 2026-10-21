@@ -12,7 +12,7 @@ from app.core.csrf import CSRF_COOKIE_NAME
 from app.models import ApiTokenRestriction, AuditEntry, Project, User
 from app.services.projects import delete_project
 from app.tests.conftest import sign_in
-from app.tests.web_helpers import HTMX, events_of
+from app.tests.web_helpers import HTMX
 from app.web import projects as projects_web
 
 TABLE = re.compile(r'<section data-fragment="projects-table".*?</section>', re.DOTALL)
@@ -154,20 +154,22 @@ async def test_table_load_failure_answers_a_retry_panel(
     assert "secret detail" not in response.text
 
 
-async def test_create_project_swaps_the_table_and_closes_the_dialog(
+async def test_create_project_goes_to_the_new_project_with_a_toast(
     web_client: httpx.AsyncClient, web_app: FastAPI
 ) -> None:
-    """A valid name returns the refreshed table, asks the page to close dialogs, and audits."""
+    """A valid name creates the project, audits it and sends the browser to its page."""
     await sign_in(web_client, "root")
     response = await post_project(web_client, " fleetops ")
     assert response.status_code == 200
-    assert events_of(response) == {"close-dialogs": True}
-    assert project_names(response.text) == ["billing", "Fancy Proj. Name", "fleetops"]
     async with web_app.state.session_factory() as db:
         entry = (
             await db.execute(select(AuditEntry).where(AuditEntry.action == "project.create"))
         ).scalar_one()
     assert (entry.target_name, entry.actor_name) == ("fleetops", "root")
+    assert response.headers["hx-redirect"] == f"/projects/{entry.target_id}?created=1"
+    page = (await web_client.get(response.headers["hx-redirect"])).text
+    assert "Project created" in page and "fleetops" in page
+    assert "Project created" not in (await web_client.get(f"/projects/{entry.target_id}")).text
 
 
 @pytest.mark.parametrize(
