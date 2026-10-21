@@ -1,7 +1,56 @@
 # CHANGELOG
 
 
+## v1.3.0 (2026-10-21)
+
+### Features
+
+- Give each deployment files of its own, deployed apart from the services
+  ([`1991723`](https://github.com/websvcPT/ENV-Manager/commit/1991723e012378606974472aef0838fa92aed2c9))
+
+- Keep deployment files the deployment has out of the Compose import and document them
+  ([`40fac7f`](https://github.com/websvcPT/ENV-Manager/commit/40fac7f5424fcfdc95c830a894c5209605564603))
+
+- Move API tokens from the sidebar to the Users page and the account menu
+  ([`b9bf70a`](https://github.com/websvcPT/ENV-Manager/commit/b9bf70ae663efb3da659b29acc5563c08bb85594))
+
+- Offer the deployment files and post-deploy commands in the Docker Compose import
+  ([`d081143`](https://github.com/websvcPT/ENV-Manager/commit/d081143b5ba279c022845f098bf314675ccc8d6b))
+
+- Open the new project after creating it
+  ([`3912695`](https://github.com/websvcPT/ENV-Manager/commit/3912695f311c5947ff13b37f339d9ed116fd6002))
+
+- Sort the root path picker ignoring case and filter its folders as you type
+  ([`78d8efc`](https://github.com/websvcPT/ENV-Manager/commit/78d8efc6a1cd12a12add5683d26ce62bbab4f4c1))
+
+### Testing
+
+- Reuse the exact code that turned two-factor on when checking a reused code
+  ([`6af1f2b`](https://github.com/websvcPT/ENV-Manager/commit/6af1f2b58f905304b50999363372347641e7245a))
+
+- Wait for the count of dropped notifications instead of a fixed sleep
+  ([`7052e60`](https://github.com/websvcPT/ENV-Manager/commit/7052e606d35668e228a1bfa7886cde278c24ef40))
+
+
 ## v1.2.0 (2026-10-20)
+
+### Bug Fixes
+
+- Label the deployment root as the deployment path
+  ([`1b0b505`](https://github.com/websvcPT/ENV-Manager/commit/1b0b50572fd09a2162ea1c15a465474fb074e65d))
+
+- Offer the dist file of Compose files not on disk, missing mounted files that look like files, and
+  skip the deployment environment file
+  ([`ff656ae`](https://github.com/websvcPT/ENV-Manager/commit/ff656ae57c377d673cb5fb24cab2d103ddaa687d))
+
+- Remove access from any Access tab row, naming the grant that gives it, instead of an edit link
+  ([`673e092`](https://github.com/websvcPT/ENV-Manager/commit/673e092ec4b4ecd8725ec7ce1fa377fd67805f5d))
+
+### Documentation
+
+- Describe the dist file start, missing mounted files and the deployment environment file in the
+  Compose import
+  ([`fdfc572`](https://github.com/websvcPT/ENV-Manager/commit/fdfc572179e1077c51dd6408be4f15a3ab095ef4))
 
 
 ## v1.1.0 (2026-10-20)
