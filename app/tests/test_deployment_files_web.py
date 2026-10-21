@@ -139,3 +139,18 @@ async def test_only_the_superadmin_creates_the_files(
     assert response.status_code in (403, 404)
     page = (await web_client.get(f"/deployments/{prod}")).text
     assert 'data-fragment="deployment-files"' not in page
+
+
+async def test_the_access_grid_names_the_files_without_calling_them_a_service(
+    web_client: httpx.AsyncClient, web_app: FastAPI, prod: int
+) -> None:
+    await sign_in(web_client, "root")
+    files_id = await open_files(web_client, prod)
+    async with web_app.state.session_factory() as db:
+        project_id: int = (
+            await db.execute(select(Deployment.project_id).where(Deployment.id == prod))
+        ).scalar_one()
+    body = (await web_client.get(f"/access/grid/project/{project_id}")).text
+    row = re.search(rf'<tr[^>]*service-{files_id}".*?</th>', body, re.S)
+    assert row is not None, body[:500]
+    assert DEPLOYMENT_FILES_NAME in row.group(0) and ">Service<" not in row.group(0)

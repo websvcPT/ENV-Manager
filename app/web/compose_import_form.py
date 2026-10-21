@@ -18,6 +18,7 @@ from starlette.datastructures import FormData
 from app.models import DEPLOYMENT_FILES_NAME, FileType
 from app.services.compose_import import (
     COMMAND_PREFIX,
+    COMMAND_STORED_MESSAGE,
     DIST_NEEDED_MESSAGE,
     EMPTY_COMMAND_MESSAGE,
     NO_SERVICE_MESSAGE,
@@ -265,6 +266,8 @@ def review_import(
     owners = [*chosen, *([DEPLOYMENT_FILES_NAME] if has_own else [])]
     commands, command_problems = _review_commands(posted, owners, docker_reason)
     problems.extend(command_problems)
+    if scan.deployment_command_set and any(owner == DEPLOYMENT_FILES_NAME for owner, _ in commands):
+        problems.append((DEPLOYMENT_FILES_NAME, COMMAND_STORED_MESSAGE))
     texts = tuple((owner, posted.commands.get(owner, "")) for owner, _ in commands)
     selection = ComposeSelection(
         scan.compose_files, chosen, tuple(choice for _, choice in picks), texts

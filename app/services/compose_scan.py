@@ -33,14 +33,23 @@ import re
 import shlex
 import stat
 from collections.abc import Callable, Iterable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from pathlib import Path, PurePosixPath
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.log import get_logger
-from app.models import DEPLOYMENT_FILES_NAME, Deployment, FileType
+from app.models import (
+    DEPLOYMENT_FILES_NAME,
+    Deployment,
+    Environment,
+    FileType,
+    HookType,
+    Service,
+    ServiceHook,
+)
 from app.services.compose_config import (
     MAX_COMPOSE_FILE_BYTES,
     ComposeModel,
@@ -81,6 +90,7 @@ MAX_SERVICES = 200
 MAX_FILES = 500
 
 OUTSIDE_REASON = "Outside the deployment folder or the allowed paths."
+IN_FILES_REASON = "Already one of the deployment files."
 FOLDER_REASON = "A folder, not a file."
 SPECIAL_REASON = "Not a regular file (a socket or a device)."
 MISSING_BIND_REASON = "Does not exist, so it is not known whether it is a file or a folder."
@@ -222,7 +232,8 @@ class ComposeScan:
 
     ``deployment_files`` are the candidates of the deployment's own files, each owned by
     ``DEPLOYMENT_FILES_NAME``, and ``deployment_command`` the post-deploy command offered for
-    them.
+    them; ``deployment_command_set`` is True when the deployment files have a command already,
+    which the import then does not offer.
     """
 
     compose_files: tuple[str, ...]
@@ -231,6 +242,7 @@ class ComposeScan:
     ignored: tuple[IgnoredItem, ...]
     deployment_files: tuple[FileCandidate, ...] = ()
     deployment_command: str = ""
+    deployment_command_set: bool = False
 
     @property
     def all_files(self) -> tuple[FileCandidate, ...]:
@@ -829,4 +841,37 @@ async def scan_compose(
     root = _root_of(allowed, deployment.root_path)
     model = await read_compose_model(cli, allowed, root, resolved.project_directory, resolved.paths)
     defaults = file_defaults(deployment)
-    return await asyncio.to_thread(build_scan, allowed, root, resolved, model, defaults)
+    scan = await asyncio.to_thread(build_scan, allowed, root, resolved, model, defaults)
+    return await _with_present_files(db, deployment, scan)
+
+
+async def _with_present_files(
+    db: AsyncSession, deployment: Deployment, scan: ComposeScan
+) -> ComposeScan:
+    """The scan with what the deployment holds already: a deployment file whose target path a
+    file of the deployment uses is disabled, and ``deployment_command_set`` says whether the
+    deployment files have a post-deploy command."""
+    targets = await db.scalars(
+        select(Environment.target_path)
+        .join(Service, Service.id == Environment.service_id)
+        .where(Service.deployment_id == deployment.id)
+    )
+    present = {str(PurePosixPath(target)) for target in targets}
+    hook = await db.scalar(
+        select(ServiceHook.id)
+        .join(Service, Service.id == ServiceHook.service_id)
+        .where(
+            Service.deployment_id == deployment.id,
+            Service.name == DEPLOYMENT_FILES_NAME,
+            ServiceHook.type == HookType.POST_DEPLOY,
+        )
+    )
+    if not present and hook is None:
+        return scan
+    own = tuple(
+        replace(candidate, disabled_reason=candidate.disabled_reason or IN_FILES_REASON)
+        if candidate.key in present
+        else candidate
+        for candidate in scan.deployment_files
+    )
+    return replace(scan, deployment_files=own, deployment_command_set=hook is not None)

@@ -29,7 +29,7 @@
 {%- else -%}
 <span class="size-6 shrink-0 max-md:size-11"></span>
 {%- endif -%}
-<span><span class="block text-xs font-semibold uppercase tracking-wide text-ink3">{{ LEVEL_LABELS[node.kind.value] }}</span><span class="{{ "font-mono text-[13px]" if node.kind.value == "environment" else "font-semibold" }}">{{ node.name }}</span></span></span></div></th>
+<span>{% if not (node.kind.value == "service" and node.name == DEPLOYMENT_FILES_NAME) %}<span class="block text-xs font-semibold uppercase tracking-wide text-ink3">{{ LEVEL_LABELS[node.kind.value] }}</span>{% endif %}<span class="{{ "font-mono text-[13px]" if node.kind.value == "environment" else "font-semibold" }}">{{ node.name }}</span></span></span></div></th>
 {%- endmacro %}
 
 {#- The rows of one project in a tbody of their own, so the control of a project that is not

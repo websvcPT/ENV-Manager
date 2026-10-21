@@ -1,7 +1,8 @@
 # Using ENV Manager
 
-Adding files, importing from Docker Compose, file types, command line deploys, the drift view,
-users, accounts and post-deploy commands. API tokens and the API are in [api.md](api.md).
+Choosing a deployment path, adding files, deployment files, importing from Docker Compose, file
+types, command line deploys, the drift view, users, accounts and post-deploy commands. API tokens
+and the API are in [api.md](api.md).
 
 ## Adding a file
 
@@ -17,6 +18,33 @@ optional dist file path, the mode, owner and group, and where version 1 comes fr
 
 The target and dist paths are read through the same confined reader as a deploy: they must stay
 inside the deployment root and the allowed paths.
+
+## Deployment files
+
+The files the whole stack reads, such as the `.env` beside the Compose file (which Compose reads
+for `${VAR}` values) and the Compose files themselves, belong to the deployment rather than to
+one service. They are listed in the **Deployment files** panel of the deployment page, above the
+services. The superadmin adds the first one with **Add file** there; the Compose import adds them
+too.
+
+They work like the files of a service (versions, dist comparison, drift, history, grants) with
+their own page, reached from the panel, and their own deploy: **Deploy deployment files** writes
+them in a run of their own, apart from the services, and runs their own post-deploy command when
+one is set (for example `docker compose -f compose.yaml up -d` after the `.env` changed). A file
+that is not in KEY=VALUE format, a Compose file for one, is shown and edited as one text. They
+cannot be renamed or deleted on their own: they go with the deployment. A grant on the project or
+the deployment covers them; a grant on a single file covers that file.
+
+From the command line they are deployed as the service named "Deployment files":
+`envmanager deploy "Fancy Proj. Name/prod/Deployment files"`. Through the API they are deployed
+by the id in the address of their page, like a service.
+
+## Choosing a deployment path
+
+The deployment form picks the deployment path from a folder browser of the allowed paths. Folders
+are sorted by name ignoring case, and the filter field at the top narrows the listed folders as
+you type (matching anywhere in the name, ignoring case); Enter opens the folder when only one is
+left. Opening a folder clears the filter.
 
 ## Importing from Docker Compose
 

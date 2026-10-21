@@ -137,7 +137,9 @@
 </tr>
 {%- endfor %}
 {% endcall %}
-{%- if commands_offered %}
+{%- if commands_offered and scan.deployment_command_set %}
+<p data-fragment="import-command-set" class="border-t border-line px-4 py-4 text-[13px] text-ink2 md:px-5">The {{ files_name | lower }} have a post-deploy command already. Change it on their page.</p>
+{%- elif commands_offered %}
 <div class="border-t border-line px-4 py-4 md:px-5">{{ command_field(files_name, "Post-deploy command of the " ~ files_name | lower, scan.deployment_command, command_class) }}</div>
 {%- endif %}
 {%- else %}

@@ -17,11 +17,17 @@ from app.models import (
     AuditEntry,
     Deployment,
     Environment,
+    HookType,
     Project,
     Service,
     ServiceHook,
 )
-from app.services.compose_import import DIST_NEEDED_MESSAGE, HAS_SERVICES_MESSAGE
+from app.services.compose_import import (
+    COMMAND_STORED_MESSAGE,
+    DIST_NEEDED_MESSAGE,
+    HAS_SERVICES_MESSAGE,
+)
+from app.services.compose_scan import IN_FILES_REASON
 from app.services.file_types import NOT_PEM_MESSAGE
 from app.tests.compose_helpers import GEOTRAVEL, PROJECT, mounted_cli, write_project
 from app.tests.conftest import sign_in
@@ -772,3 +778,79 @@ async def test_deployment_files_made_before_the_import_leave_it_offered(
     assert HAS_SERVICES_MESSAGE not in page
     detail = main_of((await web_client.get(f"/deployments/{layout.empty}")).text)
     assert f'href="/deployments/{layout.empty}/import-compose"' in detail
+
+
+async def test_what_the_deployment_files_hold_already_is_not_offered_again(
+    web_client: httpx.AsyncClient, web_app: FastAPI, layout: Layout, tmp_path: Path
+) -> None:
+    web_app.state.docker_cli = mounted_cli(tmp_path)
+    await sign_in(web_client, "root")
+    made = await post(web_client, f"/deployments/{layout.empty}/deployment-files", {})
+    files_id = int(made.headers["hx-redirect"].split("/")[2])
+    added = await post(
+        web_client,
+        f"/services/{files_id}/environments/new",
+        {"service": str(files_id), "name": ".env", "target_path": ".env", "source": "import"},
+    )
+    assert added.status_code == 200, added.text
+    async with web_app.state.session_factory() as db:
+        db.add(ServiceHook(service_id=files_id, type=HookType.POST_DEPLOY, commands=FILES_UP))
+        await db.commit()
+    preview = await post(web_client, base(layout, "/preview"), {"compose_file": ["compose.yaml"]})
+    env = own_row_of(preview.text, ".env")
+    assert IN_FILES_REASON in env and 'name="deployment_file" value=".env" aria-label' in env
+    assert re.search(r'name="deployment_file" value="\.env"[^>]*disabled', env)
+    assert 'data-fragment="import-command-set"' in preview.text
+    assert f'name="{RUN_FILES}"' not in preview.text
+    fields = with_commands(form_of(), {DEPLOYMENT_FILES_NAME: FILES_UP})
+    fields["deployment_file"] = ["compose.yaml"]
+    response = await post(web_client, base(layout, "/confirm"), fields)
+    assert response.status_code == 422 and COMMAND_STORED_MESSAGE in response.text
+
+
+async def test_an_imported_compose_file_reads_as_one_text_in_the_editor_history_and_drift(
+    web_client: httpx.AsyncClient, web_app: FastAPI, layout: Layout
+) -> None:
+    root = layout.root.parent / "geo-files"
+    root.mkdir()
+    write_project(root, GEOTRAVEL)
+    async with web_app.state.session_factory() as db:
+        project = (
+            await db.execute(select(Project.id).where(Project.name == "Fancy Proj. Name"))
+        ).scalar_one()
+        deployment = Deployment(project_id=project, name="geo-files", root_path=str(root))
+        db.add(deployment)
+        await db.commit()
+        deployment_id = deployment.id
+    await sign_in(web_client, "root")
+    address = f"/deployments/{deployment_id}/import-compose"
+    fields = {
+        "compose_file": ["docker-compose.yml"],
+        "service": ["api", "db", "frontend"],
+        "deployment_file": [".env", "docker-compose.yml"],
+        "type:.env": "env",
+        "type:docker-compose.yml": "env",
+    }
+    confirm = (await post(web_client, f"{address}/confirm", fields)).text
+    assert 'data-import-count="deployment-files">2 files<' in confirm
+    done = await post(web_client, address, dict(hidden_fields(confirm)))
+    assert done.status_code == 200, done.text
+    async with web_app.state.session_factory() as db:
+        compose_id = await db.scalar(
+            select(Environment.id)
+            .join(Service, Service.id == Environment.service_id)
+            .where(
+                Service.deployment_id == deployment_id,
+                Service.name == DEPLOYMENT_FILES_NAME,
+                Environment.name == "docker-compose.yml",
+            )
+        )
+    assert compose_id is not None
+    editor = (await web_client.get(f"/environments/{compose_id}")).text
+    assert 'data-fragment="raw-text"' in editor
+    assert "This file is not in KEY=VALUE format, so it is shown and edited as one text." in editor
+    assert GEOTRAVEL["docker-compose.yml"].splitlines()[0] not in editor
+    history = await web_client.get(f"/environments/{compose_id}/history")
+    assert history.status_code == 200
+    drift = await web_client.get(f"/environments/{compose_id}/drift")
+    assert drift.status_code == 200 and "Drift" in drift.text

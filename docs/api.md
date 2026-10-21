@@ -2,7 +2,8 @@
 
 ## API tokens
 
-Admins and superadmins create tokens for themselves on the API tokens page (viewers get 403 and
+Admins and superadmins create tokens for themselves on the API tokens page, opened from the
+account menu (under Account) or from the API tokens button of the Users page (viewers get 403 and
 no link). A token has a name (unique among the owner's tokens that are not revoked), the
 operations it may use (Deploy, Read last deployment), an optional restriction to one project,
 deployment or service the owner reaches, and an optional expiry date (the token works through the
@@ -58,6 +59,10 @@ and `force` (whatever its value) is refused with a message that says so. An empt
 A file outside the token's scope reads exactly like a file that does not exist. The deploy runs the
 same engine as the web interface (dist check, drift and missing-target policies, atomic write,
 file mode, post-deploy command once, deploy lock) as the actor `token <name>`.
+
+The deployment files of a deployment (its `.env`, its Compose files) are deployed the same way, by
+the id in the address of their page (`/services/<id>`), in a run of their own with their own
+post-deploy command. A token restricted to their deployment or project reaches them.
 
 The request stays open until the deploy has finished, which includes the post-deploy command of
 the service (up to its timeout, 3600 seconds at most), so a client needs a timeout longer than

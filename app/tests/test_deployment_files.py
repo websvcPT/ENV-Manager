@@ -1,6 +1,10 @@
-"""A deployment's own files deploy like a service: same engine, same results, own run."""
+"""A deployment's own files deploy like a service: same engine, same results, own run, and the
+same grants (a deployment or project grant covers them, a grant on another file does not)."""
+
+import pytest
 
 from app.models import DEPLOYMENT_FILES_NAME, DeployResultStatus, DeployStatus, Environment
+from app.services.deploy_types import DeployRequestError
 from app.services.services import ensure_deployment_files, find_deployment_files
 from app.services.versions import create_version
 from app.tests.deploy_helpers import Harness, results_of
@@ -33,3 +37,38 @@ async def test_deploying_the_files_writes_them_in_a_run_of_their_own(harness: Ha
     results = await results_of(h.db, outcome.run_id)
     assert results[".env"].status is DeployResultStatus.WRITTEN
     assert (h.roots["prod"] / ".env").read_text() == "STACK=prod\n"
+
+
+async def files_with_env(h: Harness) -> int:
+    """The deployment files of the seeded prod deployment with one ``.env`` file; their id."""
+    files = await ensure_deployment_files(
+        h.db, h.seed.deployments.fancy_prod, actor=h.seed.users.superadmin
+    )
+    environment = Environment(service_id=files.id, name=".env", target_path=".env")
+    h.db.add(environment)
+    await h.db.flush()
+    await create_version(
+        h.db, h.crypto, environment.id, "STACK=prod\n", author=h.seed.users.superadmin
+    )
+    await h.db.commit()
+    return files.id
+
+
+@pytest.mark.parametrize("user", ["admin", "project_admin", "deployment_admin"])
+async def test_an_admin_of_the_deployment_deploys_its_files(harness: Harness, user: str) -> None:
+    h = harness
+    files_id = await files_with_env(h)
+    outcome = await h.deploy(files_id, user=user)
+    assert outcome.status is DeployStatus.SUCCESS
+    assert (h.roots["prod"] / ".env").read_text() == "STACK=prod\n"
+
+
+@pytest.mark.parametrize("user", ["viewer", "env_scoped_admin", "ungranted_admin"])
+async def test_a_user_without_a_grant_over_the_files_cannot_deploy_them(
+    harness: Harness, user: str
+) -> None:
+    h = harness
+    files_id = await files_with_env(h)
+    with pytest.raises(DeployRequestError):
+        await h.deploy(files_id, user=user)
+    assert not (h.roots["prod"] / ".env").exists()

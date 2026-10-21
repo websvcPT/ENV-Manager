@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from app.models import (
     DEPLOYMENT_FILES_NAME,
     Deployment,
+    DeployResultStatus,
     DeployStatus,
     DeployTrigger,
     Environment,
@@ -24,12 +25,13 @@ from app.services.compose_import import (
     FileChoice,
     import_compose,
 )
+from app.services.compose_scan import IN_FILES_REASON
 from app.services.docker_cli import NOT_MOUNTED_REASON, DockerCli
 from app.services.hook_settings import UNAVAILABLE_SUFFIX
 from app.services.services import ensure_deployment_files, find_deployment_files
 from app.services.versions import create_version
 from app.tests.compose_helpers import GEOTRAVEL, add_stack, mounted_cli, real_cli
-from app.tests.deploy_helpers import Harness, audit_of, runs, version_text
+from app.tests.deploy_helpers import Harness, audit_of, results_of, runs, version_text
 
 SERVICES = ("api", "db", "frontend")
 SERVICE_FILES = (FileChoice("environments/.env.db", "db"),)
@@ -233,7 +235,7 @@ async def test_deployment_files_made_before_the_import_do_not_block_it_and_recei
     await h.db.commit()
     with pytest.raises(ComposeImportError) as refused:
         await run_import(h, deployment, geotravel(), real_cli(tmp_path))
-    assert refused.value.errors == {".env": "This service already has a file named .env."}
+    assert refused.value.errors == {".env": IN_FILES_REASON}
     await h.db.refresh(deployment)
     await h.db.refresh(files)
     chosen = geotravel(files=(*SERVICE_FILES, OWN_FILES[1]))
@@ -243,3 +245,36 @@ async def test_deployment_files_made_before_the_import_do_not_block_it_and_recei
     with pytest.raises(ComposeImportError) as again:
         await run_import(h, deployment, chosen, real_cli(tmp_path))
     assert str(again.value) == HAS_SERVICES_MESSAGE
+
+
+async def test_an_edited_compose_file_deploys_and_runs_the_deployment_command(
+    harness: Harness, tmp_path: Path
+) -> None:
+    h = harness
+    deployment, root = await add_stack(h, GEOTRAVEL, name="geotravel")
+    chosen = geotravel(commands=((DEPLOYMENT_FILES_NAME, UP),))
+    await run_import(h, deployment, chosen, mounted_cli(tmp_path))
+    files = await find_deployment_files(h.db, deployment.id)
+    assert files is not None
+    compose = await h.db.scalar(
+        select(Environment).where(
+            Environment.service_id == files.id, Environment.name == "docker-compose.yml"
+        )
+    )
+    assert compose is not None
+    original = GEOTRAVEL["docker-compose.yml"]
+    bumped = original.replace("IMAGE_FRONTEND_VERSION:-latest", "IMAGE_FRONTEND_VERSION:-2.1.0")
+    assert bumped != original
+    await create_version(h.db, h.crypto, compose.id, bumped, author=h.seed.users.superadmin)
+    await h.db.commit()
+
+    outcome = await h.deploy(files.id, user="superadmin")
+
+    assert outcome.status is DeployStatus.SUCCESS and outcome.run_id is not None
+    results = await results_of(h.db, outcome.run_id)
+    assert results["docker-compose.yml"].status is DeployResultStatus.WRITTEN
+    assert results[".env"].status is DeployResultStatus.UNCHANGED
+    assert (root / "docker-compose.yml").read_text() == bumped
+    assert (root / ".env").read_text() == GEOTRAVEL[".env"]
+    request = h.runner.requests[-1]
+    assert request.changed is True and request.hook is not None and request.hook.commands == UP
