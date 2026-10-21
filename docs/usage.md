@@ -41,28 +41,35 @@ What is found:
 - The services of the merged Compose files, including those under a profile. A service name is
   made a lowercase slug, and a service whose name cannot be used (or repeats another one) is
   listed as not importable.
-- The files a service reads: each `env_file` entry, a bind mount of a single file, a secret or a
-  config that has a `file`, and the project `.env`. A folder, a socket, a path that does not exist
-  and a file outside the deployment folder or the allowed paths are listed as not offered or
-  disabled with the reason, and are never read.
+- The files a service reads: each `env_file` entry, a bind mount of a single file, and a secret or
+  a config that has a `file`. A bind mount whose source does not exist yet is offered when a dist
+  file sits beside it, or, unticked and marked "looks like a file", when its name or the path it
+  is mounted at reads like a file name (`.env`, `.env.api`, `nginx.conf`). A folder, a socket,
+  another path that does not exist and a file outside the deployment folder or the allowed paths
+  are listed as not offered or disabled with the reason, and are never read.
+- The deployment environment file (the `.env` beside the Compose file, which Compose reads for
+  `${VAR}` values) is not imported: it is listed as not offered, because files belong to a service
+  and this one belongs to the whole deployment.
 - A file used by several services belongs to the owner you choose (the first service in
-  alphabetical order by default). The project `.env` has no owner until you choose one, so it
-  starts unticked.
+  alphabetical order by default).
 - A file name ending in `.pem`, `.crt`, `.cer` or `.key` is offered as a certificate and any other
   as an ENV file. A type the text does not fit (a certificate without a PEM block, for example) is
   disabled in the type select and the file starts unticked. The type cannot be changed after the
-  import. A sibling named
-  `<name>-dist`, `<name>.example` or `<name>.dist` is offered, unticked, as the dist file. No
-  post-deploy command is set.
+  import. No post-deploy command is set.
+- A sibling named `<name>-dist`, `<name>.example` or `<name>.dist` is offered as the dist file,
+  whether the file exists or not. For a file on disk the link starts unticked. For a file that is
+  not on disk yet, the link and "Start from the dist file" start ticked: version 1 then holds the
+  dist file's text instead of being empty. Starting from the dist file needs the link.
 
 What the import creates, in one transaction (all or nothing):
 
 - The ticked services and files, each file with the mode, owner and group it has on the host
   (owner and group are kept only when they differ from the deployment defaults and the app user).
   A file that exists becomes version 1 with its exact text (comment "Imported from Docker
-  Compose"); a file that does not exist yet becomes an empty version 1 (comment "Created empty
-  from Docker Compose") and is never written to the host by the import. A certificate cannot be
-  created empty.
+  Compose"); a file that does not exist yet becomes version 1 with its dist file's text when it
+  starts from it (comment "Created from the dist file by the Docker Compose import"), else an
+  empty version 1 (comment "Created empty from Docker Compose"). Neither is written to the host by
+  the import: the first deploy writes it. A certificate cannot be created empty.
 - For each imported service that had files on the host, one run in Deploy history with the
   trigger shown as **Imported from Compose** and an unchanged result per file. It records version
   1 as the content the file held, which is the starting point of the drift check: a version 2
