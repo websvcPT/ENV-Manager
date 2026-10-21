@@ -201,7 +201,7 @@ test.describe('superadmin create', () => {
     await expectItemHeader(page, 'deployment', 'created-one');
     await expectLocation(page, 'deployment', {
       parents: `Project: ${scratch.name}`,
-      root: `Project path: ${SAMPLE_A}`,
+      root: `Deployment path: ${SAMPLE_A}`,
     });
     const policies = page.locator('[data-fragment="policies-panel"]');
     await expect(policies).toContainText('Warn and continue');
@@ -277,7 +277,7 @@ test.describe('superadmin edit', () => {
     await expect(page).toHaveURL(`/deployments/${id}?saved=true`);
     await expect(page.locator('[data-fragment="toast"]')).toContainText('Deployment saved');
     await expectItemHeader(page, 'deployment', 'edited-name');
-    await expect(page.locator('[data-location="root"]')).toHaveText(`Project path: ${SAMPLE_B}`);
+    await expect(page.locator('[data-location="root"]')).toHaveText(`Deployment path: ${SAMPLE_B}`);
     await expect(page.locator('[data-fragment="policies-panel"]')).toContainText(
       'Back up, then overwrite',
     );
@@ -293,7 +293,7 @@ test.describe('superadmin edit', () => {
     await expect(rootLines(page)).toHaveCount(1);
     await expect(rootLines(page).first()).toContainText('Path is outside the allowed paths');
     await page.goto(`/deployments/${id}`);
-    await expect(page.locator('[data-location="root"]')).toHaveText(`Project path: ${SAMPLE_A}`);
+    await expect(page.locator('[data-location="root"]')).toHaveText(`Deployment path: ${SAMPLE_A}`);
   });
 
   test('a deployment outside the allowed paths shows its error and must move', async ({

@@ -80,7 +80,7 @@ test.describe('superadmin editor', () => {
     await expect(header(page).locator('[data-status]')).toHaveAttribute('data-status', 'never');
     await expectLocation(page, 'environment', {
       parents: `Project: ${scratch.name}, Deployment: scratch-dep, Service: cache`,
-      root: `Project path: ${SAMPLE_A}`,
+      root: `Deployment path: ${SAMPLE_A}`,
       target: `Target: ${SAMPLE_A}/environments/.env.masked`,
     });
     await expect(header(page)).toContainText('Version 1 saved, never deployed');

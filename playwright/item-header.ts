@@ -19,11 +19,11 @@ export async function expectItemHeader(page: Page, type: ItemType, name: string)
   await expect(header.locator('h1')).toHaveText(`${label} ${name}`);
 }
 
-/** The location lines of an item header by key: its parents, the project path and the target. */
+/** The location lines of an item header by key: its parents, the deployment path and the target. */
 export type LocationKey = 'parents' | 'root' | 'target';
 
 /**
- * The header shows exactly the given location lines, in the order parents, project path, target,
+ * The header shows exactly the given location lines, in the order parents, deployment path, target,
  * each with its text; a key that is not given must be absent.
  */
 export async function expectLocation(

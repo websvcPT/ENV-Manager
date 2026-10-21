@@ -75,7 +75,7 @@ test.describe('superadmin', () => {
     await expect(header(page).locator('[data-status]')).toHaveText(['1 pending']);
     await expectLocation(page, 'service', {
       parents: 'Project: Fancy Proj. Name, Deployment: staging',
-      root: 'Project path: /opt/fancy/staging',
+      root: 'Deployment path: /opt/fancy/staging',
     });
     await expect(page.locator('nav[aria-label="Sections"] a')).toHaveText([
       'Environments 4',
@@ -312,7 +312,7 @@ test.describe('deployment grant', () => {
     await page.goto(`/services/${id}`);
     await expectLocation(page, 'service', {
       parents: 'Project: Fancy Proj. Name, Deployment: prod',
-      root: 'Project path: /opt/fancy/prod',
+      root: 'Deployment path: /opt/fancy/prod',
     });
     await expect(visibleRows(page)).toHaveCount(3);
     await expect(page.locator('[role="note"]')).toHaveCount(0);

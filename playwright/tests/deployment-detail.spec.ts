@@ -39,7 +39,7 @@ test.describe('superadmin', () => {
     await expect(header(page).locator('[data-status]')).toHaveText(['Failed']);
     await expectLocation(page, 'deployment', {
       parents: 'Project: Fancy Proj. Name',
-      root: 'Project path: /opt/fancy/prod',
+      root: 'Deployment path: /opt/fancy/prod',
     });
     expect(await locationLinks(page, 'deployment')).toEqual([expect.stringMatching(/^\/projects\/\d+$/)]);
     await expect(header(page).getByRole('link', { name: 'Check dist' })).toHaveAttribute(
@@ -193,7 +193,7 @@ test.describe('superadmin', () => {
     const id = await deploymentId(browser, 'billing', 'legacy');
     await page.goto(`/deployments/${id}`);
     await expect(header(page).locator('[data-location="root"]')).toHaveText(
-      'Project path: /srv/old/legacy',
+      'Deployment path: /srv/old/legacy',
     );
     await expect(page.locator('[role="note"]')).toHaveText(
       'This deployment is outside the allowed paths. It cannot be deployed or checked until the path is allowed again or the deployment is moved.',
@@ -265,7 +265,7 @@ test.describe('scoped users', () => {
       await expect(serviceRows(page).locator('th a')).toHaveText(['mysql', 'web']);
       await expectLocation(page, 'deployment', {
         parents: 'Project: Fancy Proj. Name',
-        root: 'Project path: /opt/fancy/prod',
+        root: 'Deployment path: /opt/fancy/prod',
       });
       await expect(page.locator('[data-fragment="policies-panel"]')).toBeVisible();
       await expect(page.locator('[role="note"]')).toHaveCount(0);

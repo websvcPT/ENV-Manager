@@ -511,7 +511,7 @@ async def test_every_page_of_a_file_shows_the_same_location_lines(
     await sign_in(web_client, "root")
     expected = {
         "parents": "Project: Fancy Proj. Name, Deployment: prod, Service: mysql",
-        "root": "Project path: /opt/fancy/prod",
+        "root": "Deployment path: /opt/fancy/prod",
         "target": "Target: /opt/fancy/prod/environments/.env.db",
     }
     for suffix in ("", "/history", "/dist", "/drift", "/access"):

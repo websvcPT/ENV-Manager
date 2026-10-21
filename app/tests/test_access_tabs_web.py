@@ -245,7 +245,7 @@ async def test_the_deployment_tab_has_the_handoff_header_and_links_back_to_the_p
     assert f'href="/deployments/{items.prod}/access" aria-current="page"' in body
     assert dict(item_header_of(body).location) == {
         "parents": "Project: Fancy Proj. Name",
-        "root": "Project path: /opt/fancy/prod",
+        "root": "Deployment path: /opt/fancy/prod",
     }
     assert "Check dist" not in body
     assert f'href="/deployments/{items.prod}/edit"' not in body
@@ -296,7 +296,7 @@ async def test_the_environment_tab_lists_direct_and_inherited_access(
     assert (header.type, header.title) == ("environment", "Environment: .env.db")
     assert dict(header.location) == {
         "parents": "Project: Fancy Proj. Name, Deployment: prod, Service: mysql",
-        "root": "Project path: /opt/fancy/prod",
+        "root": "Deployment path: /opt/fancy/prod",
         "target": "Target: /opt/fancy/prod/environments/.env.db",
     }
     assert header.details is not None and header.details.startswith("Version ")

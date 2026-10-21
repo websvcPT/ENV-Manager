@@ -90,7 +90,7 @@ async def test_superadmin_sees_everything_and_the_command_settings(
     assert header.subtitle is None
     assert dict(header.location) == {
         "parents": "Project: Fancy Proj. Name, Deployment: staging",
-        "root": "Project path: /opt/fancy/staging",
+        "root": "Deployment path: /opt/fancy/staging",
     }
     assert re.fullmatch(r"/deployments/\d+", header.links["Deployment"])
     assert re.fullmatch(r"/projects/\d+", header.links["Project"])

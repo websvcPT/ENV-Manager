@@ -215,7 +215,7 @@ def test_the_item_header_names_the_type_before_the_item_and_its_location_after()
     }
     assert lines == {
         "parents": "Project: Fancy &amp; Co, Deployment: prod, Service: mysql",
-        "root": "Project path: /srv/x",
+        "root": "Deployment path: /srv/x",
         "target": "Target: /srv/x/.env",
     }
     assert 'Project: <a href="/projects/1"' in environment

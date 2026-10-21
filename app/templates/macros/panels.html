@@ -33,7 +33,7 @@
 
 {#- The lines that say where an item lives, one fact per label: its parents on one line from the
     farthest ("Project: Fancy, Deployment: prod, Service: db", each name a link), then
-    "Project path" (the folder of the Docker Compose project, the deployment root) and, for a
+    "Deployment path" (the deployment root, the folder of its Docker Compose project) and, for a
     file, "Target". `parents` is a list of (label, name, href); a line without a value is left
     out, so a caller who may not see the root gets no path lines. -#}
 {% macro item_location(parents, root=none, target=none) -%}
@@ -42,7 +42,7 @@
 <p data-location="parents">{% for label, name, href in parents %}{% if not loop.first %}, {% endif %}{{ label }}: <a href="{{ href }}" class="font-semibold text-link hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ name }}</a>{% endfor %}</p>
 {%- endif -%}
 {%- if root -%}
-<p data-location="root">Project path: <span class="font-mono text-[13px] break-all text-ink">{{ root }}</span></p>
+<p data-location="root">Deployment path: <span class="font-mono text-[13px] break-all text-ink">{{ root }}</span></p>
 {%- endif -%}
 {%- if target -%}
 <p data-location="target">Target: <span class="font-mono text-[13px] break-all text-ink">{{ target }}</span></p>

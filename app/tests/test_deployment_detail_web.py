@@ -52,7 +52,7 @@ async def test_superadmin_sees_everything_and_the_edit_actions(
     assert header.subtitle is None
     assert dict(header.location) == {
         "parents": "Project: Fancy Proj. Name",
-        "root": "Project path: /opt/fancy/prod",
+        "root": "Deployment path: /opt/fancy/prod",
     }
     assert re.fullmatch(r"/projects/\d+", header.links["Project"])
     assert header.details is None

@@ -296,7 +296,7 @@ test.describe('superadmin: deployment Access tab', () => {
     await expectItemHeader(page, 'deployment', 'dep-a');
     await expectLocation(page, 'deployment', {
       parents: `Project: ${scratch.projectName}`,
-      root: 'Project path: /srv/deployments/sample-a',
+      root: 'Deployment path: /srv/deployments/sample-a',
     });
     await expect(page.locator('[data-fragment="page-header"] button')).toHaveCount(0);
     await expect(sections(page)).toHaveText(['Services', 'Deploy history', 'AccessSuperadmin']);
@@ -400,7 +400,7 @@ test.describe('superadmin: service Access tab', () => {
     await expectItemHeader(page, 'service', 'cache');
     await expectLocation(page, 'service', {
       parents: `Project: ${scratch.projectName}, Deployment: dep-a`,
-      root: 'Project path: /srv/deployments/sample-a',
+      root: 'Deployment path: /srv/deployments/sample-a',
     });
     await expect(sections(page)).toHaveText(['Environments', 'Deploy history', 'AccessSuperadmin']);
     await expect(sections(page).nth(0)).toHaveAttribute('href', `/services/${scratch.serviceA}`);
