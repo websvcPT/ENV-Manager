@@ -88,11 +88,32 @@ def imported_message(imported: str) -> str:
     return text
 
 
+def compose_linked_message(counts: str) -> str:
+    """The toast text for the counts a link of Compose files left in the address (files linked,
+    deployment files removed), empty when they are not two plain numbers."""
+    parts = counts.split(",")
+    if len(parts) != 2 or not all(part and plain_number_text(part) == part for part in parts):
+        return ""
+    linked, removed = (int(part) for part in parts)
+    text = f"{_counted(linked, 'Compose file')} linked." if linked else "Compose files unlinked."
+    if removed:
+        text += f" {_counted(removed, 'file')} removed from the deployment files."
+    return text
+
+
 def _page_context(access: DeploymentContext, **extra: Any) -> dict[str, Any]:
     """What the detail page and its panels need: the deployment and what the caller may do."""
     return {
         "deployment": access.deployment,
         "can_manage_structure": access.scope.can(Capability.MANAGE_STRUCTURE),
+        "compose_deployment_id": access.deployment.id,
+        "compose_files": access.deployment.compose_files,
+        "can_view_compose": access.deployment.can_view_compose,
+        "can_link_compose": (
+            access.scope.can(Capability.MANAGE_STRUCTURE)
+            and access.deployment.full
+            and not access.deployment.outside_allowed
+        ),
         "can_manage_grants": access.scope.can(Capability.MANAGE_GRANTS),
         "can_view_output": access.deployment.can_view_output,
         **extra,
@@ -123,12 +144,14 @@ async def deployment_page(
     saved: bool = False,
     deleted: str = "",
     imported: str = "",
+    compose_linked: str = "",
 ) -> Response:
     """The deployment detail page.
 
     ``saved`` shows the toast after the edit form saved, ``deleted`` (service) the one after a
-    service of the deployment was deleted and ``imported`` (the counts) the one after a Docker
-    Compose import.
+    service of the deployment was deleted, ``imported`` (the counts) the one after a Docker
+    Compose import and ``compose_linked`` (the counts) the one after its Compose files were
+    linked.
     """
     return render(
         request,
@@ -138,6 +161,7 @@ async def deployment_page(
             saved=saved,
             deleted="service" if deleted == "service" else "",
             imported=imported_message(imported),
+            compose_linked=compose_linked_message(compose_linked),
         ),
     )
 

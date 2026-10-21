@@ -31,6 +31,7 @@ from app.services.api_errors import ApiRefusal
 from app.services.backup_records import latest_snapshot_time
 from app.services.backup_run import BackupLocations, adopt_backups
 from app.services.backup_schedule import BackupScheduler
+from app.services.compose_files import drop_managed_compose_files_everywhere
 from app.services.deploy_recovery import recover_interrupted_runs
 from app.services.docker_cli import DockerCli
 from app.services.git_locations import GitLocations
@@ -51,6 +52,7 @@ from app.web.access_grid import router as access_grid_router
 from app.web.account import router as account_router
 from app.web.audit import router as audit_router
 from app.web.auth import router as auth_router
+from app.web.compose_files import router as compose_files_router
 from app.web.compose_import import router as compose_import_router
 from app.web.deploy_dialog import router as deploy_dialog_router
 from app.web.deployment_form import router as deployment_form_router
@@ -123,6 +125,13 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         async with session_factory() as session:
             if await seal_plain_webhook_url(session, crypto):
                 log.info("the webhook address was moved into the secret settings")
+        async with session_factory() as session:
+            dropped = await drop_managed_compose_files_everywhere(session)
+            if dropped.removed:
+                log.info(
+                    "%d linked Compose file(s) removed from the deployment files",
+                    len(dropped.removed),
+                )
         async with session_factory() as session:
             await recover_interrupted_runs(session, settings.lock_path)
         application.state.crypto = crypto
@@ -229,6 +238,7 @@ def create_app() -> FastAPI:
     application.include_router(deployments_router)
     application.include_router(deployment_form_router)
     application.include_router(compose_import_router)
+    application.include_router(compose_files_router)
     application.include_router(service_detail_router)
     application.include_router(deploy_dialog_router)
     application.include_router(service_form_router)

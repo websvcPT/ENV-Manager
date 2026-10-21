@@ -292,7 +292,7 @@ async def test_the_preview_shows_a_row_per_service_and_per_file(
     assert "api" in options and "worker-1" in options
     assert "Choose a service" not in page and 'name="file" value=".env"' not in page
     own = re.findall(r'<tr data-fragment="import-deployment-file-row" data-file="([^"]+)"', page)
-    assert own == [".env", "compose.yaml", "compose.override.yaml"]
+    assert own == [".env"]
     assert re.search(r'name="deployment_file" value="\.env"[^>]*checked', page)
     assert 'data-fragment="import-no-commands"' in page and 'name="run:' not in page
     guessed = row_of(page, "missing.conf")
@@ -307,7 +307,7 @@ async def test_the_preview_shows_a_row_per_service_and_per_file(
     assert " disabled" in row_of(page, outside.group(1)).split("</td>", 1)[0]
     assert "Not offered" in page and "A folder, not a file." in page
     assert (
-        "4 services and 12 files found (3 of the deployment itself), 1 cannot be created, "
+        "4 services and 10 files found (1 of the deployment itself), 1 cannot be created, "
         "1 file cannot be imported, 2 not offered."
     ) in page
     assert f'hx-post="{base(layout, "/confirm")}"' in page and 'data-js="compose-service"' in page
@@ -493,7 +493,7 @@ async def test_the_import_creates_everything_and_leaves_for_the_deployment_page(
     fields: dict[str, object] = dict(hidden_fields(confirm))
     response = await post(web_client, base(layout), fields)
     assert response.status_code == 200
-    assert response.headers["hx-redirect"] == f"/deployments/{layout.empty}?imported=3,7,6,1,7,0"
+    assert response.headers["hx-redirect"] == f"/deployments/{layout.empty}?imported=3,7,6,1,6,0"
     after = await counts(web_app)
     assert tuple(now - was for now, was in zip(after, before, strict=True)) == (3, 7, 1)
     async with web_app.state.session_factory() as db:
@@ -502,7 +502,7 @@ async def test_the_import_creates_everything_and_leaves_for_the_deployment_page(
     page = (await web_client.get(response.headers["hx-redirect"])).text
     assert "Import finished" in page
     assert (
-        "Imported 3 services and 7 files (6 with content, 1 created empty). 7 items not imported."
+        "Imported 3 services and 7 files (6 with content, 1 created empty). 6 items not imported."
         in page
     )
     assert "import-compose" not in page
@@ -653,13 +653,14 @@ async def test_files_not_on_disk_start_from_their_dist_file_by_default(
     carried = hidden_fields(confirm)
     assert carried["start:environments/.env.frontend"] == ["1"]
     response = await post(web_client, address, dict(carried))
-    assert response.headers["hx-redirect"] == f"/deployments/{deployment_id}?imported=3,3,3,0,5,0"
+    assert response.headers["hx-redirect"] == f"/deployments/{deployment_id}?imported=3,3,3,0,4,0"
     assert not (root / "environments/.env.frontend").exists()
 
 
 API_UP = "docker compose -f compose.yaml up -d --no-deps api"
 FILES_UP = "docker compose -f compose.yaml up -d"
 RUN_FILES = f"run:{DEPLOYMENT_FILES_NAME}"
+OWN_ROW = r'data-fragment="import-deployment-file-row" data-file="([^"]+)"'
 COMMAND_FILES = f"command:{DEPLOYMENT_FILES_NAME}"
 
 
@@ -787,70 +788,53 @@ async def test_what_the_deployment_files_hold_already_is_not_offered_again(
     await sign_in(web_client, "root")
     made = await post(web_client, f"/deployments/{layout.empty}/deployment-files", {})
     files_id = int(made.headers["hx-redirect"].split("/")[2])
+    async with web_app.state.session_factory() as db:
+        db.add(ServiceHook(service_id=files_id, type=HookType.POST_DEPLOY, commands=FILES_UP))
+        await db.commit()
+    preview = await post(web_client, base(layout, "/preview"), {"compose_file": ["compose.yaml"]})
+    assert 'data-fragment="import-command-set"' in preview.text
+    assert f'name="{RUN_FILES}"' not in preview.text
+    fields = with_commands(form_of(), {DEPLOYMENT_FILES_NAME: FILES_UP})
+    refused = await post(web_client, base(layout, "/confirm"), fields)
+    assert refused.status_code == 422 and COMMAND_STORED_MESSAGE in refused.text
+
     added = await post(
         web_client,
         f"/services/{files_id}/environments/new",
         {"service": str(files_id), "name": ".env", "target_path": ".env", "source": "import"},
     )
     assert added.status_code == 200, added.text
-    async with web_app.state.session_factory() as db:
-        db.add(ServiceHook(service_id=files_id, type=HookType.POST_DEPLOY, commands=FILES_UP))
-        await db.commit()
     preview = await post(web_client, base(layout, "/preview"), {"compose_file": ["compose.yaml"]})
     env = own_row_of(preview.text, ".env")
-    assert IN_FILES_REASON in env and 'name="deployment_file" value=".env" aria-label' in env
+    assert IN_FILES_REASON in env
     assert re.search(r'name="deployment_file" value="\.env"[^>]*disabled', env)
-    assert 'data-fragment="import-command-set"' in preview.text
-    assert f'name="{RUN_FILES}"' not in preview.text
-    fields = with_commands(form_of(), {DEPLOYMENT_FILES_NAME: FILES_UP})
-    fields["deployment_file"] = ["compose.yaml"]
-    response = await post(web_client, base(layout, "/confirm"), fields)
-    assert response.status_code == 422 and COMMAND_STORED_MESSAGE in response.text
 
 
-async def test_an_imported_compose_file_reads_as_one_text_in_the_editor_history_and_drift(
+async def test_the_import_links_the_compose_files_instead_of_importing_them(
     web_client: httpx.AsyncClient, web_app: FastAPI, layout: Layout
 ) -> None:
-    root = layout.root.parent / "geo-files"
-    root.mkdir()
-    write_project(root, GEOTRAVEL)
-    async with web_app.state.session_factory() as db:
-        project = (
-            await db.execute(select(Project.id).where(Project.name == "Fancy Proj. Name"))
-        ).scalar_one()
-        deployment = Deployment(project_id=project, name="geo-files", root_path=str(root))
-        db.add(deployment)
-        await db.commit()
-        deployment_id = deployment.id
     await sign_in(web_client, "root")
-    address = f"/deployments/{deployment_id}/import-compose"
-    fields = {
-        "compose_file": ["docker-compose.yml"],
-        "service": ["api", "db", "frontend"],
-        "deployment_file": [".env", "docker-compose.yml"],
-        "type:.env": "env",
-        "type:docker-compose.yml": "env",
-    }
-    confirm = (await post(web_client, f"{address}/confirm", fields)).text
-    assert 'data-import-count="deployment-files">2 files<' in confirm
-    done = await post(web_client, address, dict(hidden_fields(confirm)))
+    preview = await post(
+        web_client,
+        base(layout, "/preview"),
+        {"compose_file": ["compose.yaml", "compose.override.yaml"]},
+    )
+    own = re.findall(OWN_ROW, preview.text)
+    assert own == [".env"]
+    fields = with_commands(form_of(compose_files=["compose.yaml", "compose.override.yaml"]), {})
+    confirm = (await post(web_client, base(layout, "/confirm"), fields)).text
+    done = await post(web_client, base(layout), dict(hidden_fields(confirm)))
     assert done.status_code == 200, done.text
     async with web_app.state.session_factory() as db:
-        compose_id = await db.scalar(
-            select(Environment.id)
+        deployment = await db.get(Deployment, layout.empty)
+        assert deployment is not None
+        assert deployment.compose_files == ["compose.yaml", "compose.override.yaml"]
+        targets = await db.scalars(
+            select(Environment.target_path)
             .join(Service, Service.id == Environment.service_id)
-            .where(
-                Service.deployment_id == deployment_id,
-                Service.name == DEPLOYMENT_FILES_NAME,
-                Environment.name == "docker-compose.yml",
-            )
+            .where(Service.deployment_id == layout.empty)
         )
-    assert compose_id is not None
-    editor = (await web_client.get(f"/environments/{compose_id}")).text
-    assert 'data-fragment="raw-text"' in editor
-    assert "This file is not in KEY=VALUE format, so it is shown and edited as one text." in editor
-    assert GEOTRAVEL["docker-compose.yml"].splitlines()[0] not in editor
-    history = await web_client.get(f"/environments/{compose_id}/history")
-    assert history.status_code == 200
-    drift = await web_client.get(f"/environments/{compose_id}/drift")
-    assert drift.status_code == 200 and "Drift" in drift.text
+        assert not {"compose.yaml", "compose.override.yaml"} & set(targets)
+    page = main_of((await web_client.get(f"/deployments/{layout.empty}")).text)
+    rows = re.findall(r'data-fragment="compose-file-row" data-file="([^"]+)"', page)
+    assert rows == ["compose.yaml", "compose.override.yaml"]

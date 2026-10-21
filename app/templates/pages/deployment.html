@@ -1,6 +1,8 @@
-{#- Deployment detail: header, scope note, section links, status strip, deployment files, services, deploy history
-    and policies. Context: deployment (a DeploymentDetail), saved, deleted and imported (the
-    toast texts, optional), can_manage_structure, can_manage_grants, can_view_output. -#}
+{#- Deployment detail: header, scope note, section links, status strip, services, deployment
+    files, Compose files, deploy history and policies. Context: deployment (a DeploymentDetail),
+    saved, deleted, imported and compose_linked (the toast texts, optional),
+    can_manage_structure, can_manage_grants, can_view_output and the Compose files panel context
+    (compose_deployment_id, compose_files, can_view_compose, can_link_compose). -#}
 {% extends "layouts/app.html" %}
 {% from "macros/access.html" import deployment_tabs %}
 {% from "macros/badges.html" import badge, deploy_status_badge, dist_badge, post_deploy_badge %}
@@ -31,6 +33,7 @@
 </section>
 {% include "fragments/services_table.html" %}
 {% include "fragments/deployment_files_panel.html" %}
+{% include "fragments/compose_files_panel.html" %}
 {% include "fragments/deploy_history.html" %}
 {% if deployment.can_check_dist and not deployment.outside_allowed %}{{ deploy_shell() }}{% endif %}
 {% if deployment.policies %}
@@ -45,5 +48,5 @@
 {% endcall %}
 {% endif %}
 {% if can_manage_structure %}{{ loaded_dialog("deployment-delete", "Delete deployment", width="560") }}{{ loaded_dialog("service-delete", "Delete service", width="560") }}{% endif %}
-{% if saved | default(false) %}{{ toast("success", "The changes to " ~ deployment.name ~ " are saved.", "Deployment saved", floating=true) }}{% elif imported | default("") %}{{ toast("success", imported, "Import finished", floating=true) }}{% elif deleted | default("") == "service" %}{{ toast("success", "The service and its environments were deleted.", "Service deleted", floating=true) }}{% endif %}
+{% if saved | default(false) %}{{ toast("success", "The changes to " ~ deployment.name ~ " are saved.", "Deployment saved", floating=true) }}{% elif imported | default("") %}{{ toast("success", imported, "Import finished", floating=true) }}{% elif compose_linked | default("") %}{{ toast("success", compose_linked, "Compose files saved", floating=true) }}{% elif deleted | default("") == "service" %}{{ toast("success", "The service and its environments were deleted.", "Service deleted", floating=true) }}{% endif %}
 {% endblock %}

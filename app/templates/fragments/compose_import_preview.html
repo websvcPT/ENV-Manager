@@ -143,7 +143,7 @@
 <div class="border-t border-line px-4 py-4 md:px-5">{{ command_field(files_name, "Post-deploy command of the " ~ files_name | lower, scan.deployment_command, command_class) }}</div>
 {%- endif %}
 {%- else %}
-<p class="px-4 pb-5 text-ink2 md:px-5">No deployment environment file or Compose file to offer.</p>
+<p class="px-4 pb-5 text-ink2 md:px-5">No deployment environment file to offer. The Compose files are linked to the deployment, read only.</p>
 {%- endif %}
 {% endcall %}
 {%- if scan.ignored %}

@@ -271,6 +271,7 @@ CAPABILITY_MATRIX = [
     (Capability.VIEW_POST_DEPLOY_COMMAND, True, False, False),
     (Capability.VIEW_AUDIT, True, True, False),
     (Capability.MANAGE_OWN_TOKENS, True, True, False),
+    (Capability.VIEW_COMPOSE_FILES, True, True, False),
 ]
 
 

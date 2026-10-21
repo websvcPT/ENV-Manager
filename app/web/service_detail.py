@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.crypto import CryptoService
 from app.core.log import get_logger
 from app.core.templating import render
-from app.models import ServiceHook
+from app.models import Deployment, ServiceHook
 from app.services.access_grid import NodeKind
 from app.services.app_settings import StoredSettings
 from app.services.docker_cli import DockerCli
@@ -38,6 +38,7 @@ from app.services.service_detail import (
     load_service_header,
     load_service_history,
 )
+from app.services.services import is_deployment_files
 from app.web.access_tabs import AccessSubject, mount_access_routes
 from app.web.dependencies import (
     AuthContext,
@@ -87,6 +88,21 @@ service_access = item_access(
     "service not found",
     ServiceContext,
 )
+
+
+async def _compose_context(db: AsyncSession, access: ServiceContext) -> dict[str, Any]:
+    """The read only Compose files panel of a deployment files page: the Compose files linked to
+    their deployment, for a caller who reaches the whole deployment; nothing for a service."""
+    if not is_deployment_files(access.service.name) or not access.service.deployment_full:
+        return {}
+    deployment = await db.get(Deployment, access.service.deployment_id)
+    return {
+        "compose_deployment_id": access.service.deployment_id,
+        "compose_files": tuple(deployment.compose_files or ()) if deployment else (),
+        "can_view_compose": access.scope.active
+        and access.scope.group in CAPABILITY_GROUPS[Capability.VIEW_COMPOSE_FILES],
+        "can_link_compose": False,
+    }
 
 
 def _flags(access: ServiceContext) -> dict[str, Any]:
@@ -199,6 +215,7 @@ async def service_page(
             "added": added if added in ADDED_TOASTS else "",
             "renamed": renamed,
             "deleted": "environment" if deleted == "environment" else "",
+            **await _compose_context(db, access),
         },
     )
 

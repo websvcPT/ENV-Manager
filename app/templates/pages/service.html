@@ -27,6 +27,7 @@
 {% if service.hidden_environments %}{{ note("You see " ~ (environments | length) ~ (" environment" if environments | length == 1 else " environments") ~ " of this service. Deploys write only the environments you can see.") }}{% endif %}
 {% include "fragments/service_environments.html" %}
 {% include "fragments/service_postdeploy.html" %}
+{% if is_files and compose_files is defined %}{% include "fragments/compose_files_panel.html" %}{% endif %}
 {% include "fragments/service_history.html" %}
 {% if not is_files %}{% include "fragments/service_explainer.html" %}{% endif %}
 {% if can_deploy %}{{ deploy_shell() }}{% endif %}

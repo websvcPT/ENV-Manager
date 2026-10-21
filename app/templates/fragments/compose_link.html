@@ -1,0 +1,31 @@
+{#- The content of the Link Compose files dialog: the Compose files found in the deployment folder
+    and one folder below it, ticked when linked, and a path to type for another one. Saving links
+    them in that order (the found ones first, the typed one last); unticking every file unlinks
+    them. A refusal draws the dialog again with the reason. Context: action, deployment_name,
+    offers (ComposeFileOffer list), chosen (ticked paths), typed and error. -#}
+{% from "macros/buttons.html" import button %}
+{% from "macros/dialogs.html" import dialog_body, dialog_footer, dialog_head %}
+{% from "macros/feedback.html" import inline_error, note %}
+{% from "macros/forms.html" import field %}
+<form data-fragment="compose-link" hx-post="{{ action }}" hx-target="#compose-link" hx-swap="innerHTML" hx-sync="this:drop" class="group">
+{{ dialog_head("compose-link", "Link Compose files", deployment_name) }}
+{% call dialog_body() %}
+{%- if error %}
+{{ inline_error("The Compose files cannot be linked", error, in_dialog=true, retry=false) }}
+{%- endif %}
+{{ note("Link the Compose files this deployment runs from, base file first. They stay read only. A linked file that is one of the deployment files is removed from them, with its versions; the file on the host is not touched. Untick every file to unlink them.") }}
+<fieldset class="min-w-0"><legend class="mb-2 text-[13px] font-semibold">Compose files found</legend>
+{%- if offers %}
+<div class="flex flex-col gap-2">
+{%- for offer in offers %}
+<label data-fragment="compose-offer" class="flex min-h-11 cursor-pointer items-center gap-3 rounded-btn border border-line bg-surface px-3 py-2 text-[13px] has-checked:bg-accent-soft"><input type="checkbox" name="compose_file" value="{{ offer.path }}" id="cl-{{ loop.index0 }}"{% if offer.path in chosen %} checked{% endif %} class="size-[18px] shrink-0 accent-accent"><span class="min-w-0 flex-1 break-all font-mono text-[13px] font-semibold">{{ offer.path }}</span><span class="rounded-md bg-mute-bg px-1.5 py-px text-[11px] font-semibold text-mute-fg">{{ "Override" if offer.override else "Base" }}</span></label>
+{%- endfor %}
+</div>
+{%- else %}
+<p class="text-ink2">No Compose file was found in the deployment folder or in the folders directly below it. Type the path of one below.</p>
+{%- endif %}
+</fieldset>
+{{ field("cl-extra", "Another Compose file (optional)", name="extra_path", value=typed, mono=true, hint="A path relative to the deployment folder, for a file the list does not show. It is linked after the files ticked above.", autocomplete="off", spellcheck="false", maxlength="500") }}
+{% endcall %}
+{% call dialog_footer() %}{{ button("Cancel", data_js="dialog-close") }}{{ button("Save links", kind="primary", type="submit", id="compose-link-submit", extra_class="group-[.htmx-request]:opacity-60") }}{% endcall %}
+</form>

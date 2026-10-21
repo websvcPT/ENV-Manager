@@ -1,0 +1,30 @@
+{#- The Compose files panel: the Compose files linked to a deployment, read only. A row opens the
+    current text of the file, read from the host, for those who may; the superadmin links,
+    changes or unlinks them on the deployment page. Shown when files are linked and the caller
+    may read them, or when the caller may link them. Context: compose_deployment_id,
+    compose_files (paths, base first), can_view_compose and can_link_compose. -#}
+{% from "macros/buttons.html" import button %}
+{% from "macros/dialogs.html" import loaded_dialog %}
+{% from "macros/feedback.html" import empty_state %}
+{% from "macros/panels.html" import panel, table %}
+{% from "macros/row_actions.html" import row_actions %}
+{% set base_href = "/deployments/" ~ compose_deployment_id ~ "/compose-files" %}
+{% if (compose_files and can_view_compose) or can_link_compose %}
+{% set compose_actions %}{% if can_link_compose %}{{ button("Change links" if compose_files else "Link Compose files", icon_name="layers", icon_stroke="2", id="compose-link-open", data_js="dialog-open", data_target="compose-link", aria_haspopup="dialog", hx_get=base_href ~ "/link", hx_target="#compose-link", hx_swap="innerHTML") }}{% endif %}{% endset %}
+{% call panel("Compose files", "compose-files-title", fragment="compose-files", actions=compose_actions, id="compose-files") %}
+<p class="px-4 pb-3 text-[13px] text-ink2 md:px-5">The Compose files this deployment runs from. They are read only here: their text is read from the host when you open one, and they are never versioned or written.</p>
+{%- if compose_files -%}
+{% call table("Linked Compose files", ["File", "Role", "Actions"], right_columns=[2], min_width_class="min-w-[520px]") %}
+{%- for path in compose_files %}
+<tr data-fragment="compose-file-row" data-file="{{ path }}"><th scope="row" class="border-t border-line px-4 py-3.5 text-left"><span class="break-all font-mono text-[13px] font-semibold">{{ path }}</span></th>
+<td class="border-t border-line px-4 py-3.5 text-[13px] text-ink2">{{ "Base" if loop.first else "Override" }}</td>
+<td class="border-t border-line px-4 py-3.5 whitespace-nowrap text-right">{% if can_view_compose %}{{ row_actions("compose-file-" ~ loop.index0, path, [{"key": "view", "label": "View", "icon": "eye", "primary": true, "attrs": {"data_js": "dialog-open", "data_target": "compose-view", "aria_haspopup": "dialog", "hx_get": base_href ~ "/" ~ loop.index0, "hx_target": "#compose-view", "hx_swap": "innerHTML"}}]) }}{% endif %}</td></tr>
+{%- endfor %}
+{% endcall %}
+{%- else -%}
+{{ empty_state("No Compose files linked", "Link the Compose files this deployment runs from to read them here. They stay read only.") }}
+{%- endif -%}
+{% endcall %}
+{% if can_view_compose %}{{ loaded_dialog("compose-view", "Compose file", width="820") }}{% endif %}
+{% if can_link_compose %}{{ loaded_dialog("compose-link", "Link Compose files") }}{% endif %}
+{% endif %}

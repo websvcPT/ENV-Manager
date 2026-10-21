@@ -13,8 +13,9 @@ the target held, so the drift check has a baseline from the start and a version 
 the first deploy does not read as drift. Files that were not on the host get no result: their
 first deploy writes them.
 
-The deployment's own files (the deployment ``.env`` and the Compose files) go to its deployment
-files, created when one of them is chosen. A post-deploy command is stored only for a chosen
+The deployment ``.env`` goes to the deployment files, created when it is chosen. The Compose files
+are linked to the deployment, read only, and a linked file the deployment files held is removed
+from them (``app.services.compose_files``). A post-deploy command is stored only for a chosen
 service, or for the deployment files when one of their files is chosen, only while the Docker
 socket is usable, and only after the safety net accepts every line; each stored command has a
 ``service.hook_save`` entry like a save from the service page, which is the only place its text
@@ -44,6 +45,7 @@ from app.models import (
 )
 from app.services.audit import AuditActor, record_actor_audit
 from app.services.compose_config import ComposeScanError
+from app.services.compose_files import drop_managed_compose_files
 from app.services.compose_scan import (
     ComposeScan,
     FileCandidate,
@@ -405,6 +407,7 @@ async def import_compose(
         for owner, text in commands:
             await _store_command(db, who, deployment, owners[owner], text)
         deployment.compose_files = list(scan.compose_files)
+        dropped = await drop_managed_compose_files(db, deployment, who)
         skipped = _skipped(scan, selection, entries)
         from_dist = sum(1 for entry in entries if entry.choice.from_dist)
         with_content = sum(1 for entry in entries if entry.candidate.exists) + from_dist
@@ -427,6 +430,7 @@ async def import_compose(
                 "from_dist": from_dist,
                 "empty": len(created) - with_content,
                 "post_deploy": [owner for owner, _ in commands],
+                "removed_files": list(dropped.removed),
                 "skipped_count": len(skipped),
                 "skipped": skipped[:MAX_AUDITED_SKIPPED],
             },

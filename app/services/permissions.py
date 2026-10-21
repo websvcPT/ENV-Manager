@@ -51,6 +51,7 @@ class Capability(StrEnum):
     VIEW_POST_DEPLOY_COMMAND = "view_post_deploy_command"
     VIEW_AUDIT = "view_audit"
     MANAGE_OWN_TOKENS = "manage_own_tokens"
+    VIEW_COMPOSE_FILES = "view_compose_files"
 
 
 class Target(StrEnum):
@@ -79,6 +80,7 @@ CAPABILITY_GROUPS: dict[Capability, frozenset[UserGroup]] = {
     Capability.VIEW_POST_DEPLOY_COMMAND: _SUPERADMIN,
     Capability.VIEW_AUDIT: _ADMINS,
     Capability.MANAGE_OWN_TOKENS: _ADMINS,
+    Capability.VIEW_COMPOSE_FILES: _ADMINS,
 }
 
 CAPABILITY_TARGETS: dict[Capability, Target] = {
@@ -95,6 +97,7 @@ CAPABILITY_TARGETS: dict[Capability, Target] = {
     Capability.VIEW_POST_DEPLOY_COMMAND: Target.NONE,
     Capability.VIEW_AUDIT: Target.NONE,
     Capability.MANAGE_OWN_TOKENS: Target.NONE,
+    Capability.VIEW_COMPOSE_FILES: Target.ITEM,
 }
 
 

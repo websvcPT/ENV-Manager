@@ -108,7 +108,9 @@ class DeploymentDetail:
     ``can_check_dist`` is True for the groups that may deploy; dist checks follow that capability.
     ``can_view_output`` is True for the groups that may see post-deploy output, which the history
     already limits to runs in scope. ``deployment_files`` is the row of the deployment's own files
-    when they exist and are in scope; they are never one of ``services``.
+    when they exist and are in scope; they are never one of ``services``. ``compose_files`` are the
+    Compose files linked to the deployment (empty for a caller who reaches it only as a parent),
+    and ``can_view_compose`` whether the caller may open their text.
     """
 
     id: int
@@ -128,6 +130,8 @@ class DeploymentDetail:
     dist_outcome: DistOutcome | None = None
     drift_state: DriftState | None = None
     deployment_files: ServiceRow | None = None
+    compose_files: tuple[str, ...] = ()
+    can_view_compose: bool = False
 
 
 # From the outcome that holds a deploy back the most to the one that holds it back the least.
@@ -286,6 +290,12 @@ async def load_deployment_detail(
         dist_outcome=dist_outcome,
         drift_state=check_drift,
         deployment_files=deployment_files,
+        compose_files=tuple(deployment.compose_files or ()) if full else (),
+        can_view_compose=(
+            full
+            and scope.active
+            and scope.group in CAPABILITY_GROUPS[Capability.VIEW_COMPOSE_FILES]
+        ),
     )
 
 

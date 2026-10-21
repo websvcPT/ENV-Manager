@@ -269,7 +269,7 @@ async def test_every_source_of_a_file_is_found_and_shared_files_are_shown_once(
     assert (root / ".env").is_file()
     assert ".env" not in {item.label for item in scan.ignored}
     own = {item.key: item for item in scan.deployment_files}
-    assert list(own) == [".env", "compose.yaml"]
+    assert list(own) == [".env"]
 
 
 async def test_an_optional_file_that_is_absent_is_listed_but_not_ticked(
@@ -417,11 +417,7 @@ async def test_overrides_in_a_folder_below_the_root_are_read_against_that_folder
     assert [item.key for item in scan.files] == ["app/web.env", "app/more.env"]
     assert candidate(scan, "app/more.env").exists is False
     assert scan.ignored == ()
-    assert [item.key for item in scan.deployment_files] == [
-        "app/.env",
-        "app/compose.yaml",
-        "app/compose.override.yaml",
-    ]
+    assert [item.key for item in scan.deployment_files] == ["app/.env"]
     assert scan.deployment_command == (
         "docker compose -f app/compose.yaml -f app/compose.override.yaml up -d"
     )
@@ -541,11 +537,12 @@ def own_file(scan: ComposeScan, key: str) -> FileCandidate:
     return next(item for item in scan.deployment_files if item.key == key)
 
 
-async def test_the_deployment_env_and_the_compose_file_are_offered_as_deployment_files(
+async def test_the_deployment_env_is_offered_as_a_deployment_file_and_the_compose_file_is_not(
     harness: Harness, tmp_path: Path
 ) -> None:
     scan = await scan_geotravel(harness, tmp_path)
-    assert [item.key for item in scan.deployment_files] == [".env", "docker-compose.yml"]
+    assert scan.compose_files == ("docker-compose.yml",)
+    assert [item.key for item in scan.deployment_files] == [".env"]
     env = own_file(scan, ".env")
     assert (env.sources, env.users, env.owner) == (
         (FileSource.DEPLOYMENT_ENV,),
@@ -554,14 +551,6 @@ async def test_the_deployment_env_and_the_compose_file_are_offered_as_deployment
     )
     assert (env.name, env.exists, env.optional, env.file_type) == (".env", True, True, FileType.ENV)
     assert env.preselected is True and env.disabled_reason is None
-    compose = own_file(scan, "docker-compose.yml")
-    assert (compose.sources, compose.exists, compose.optional) == (
-        (FileSource.COMPOSE_FILE,),
-        True,
-        False,
-    )
-    assert compose.size == len(GEOTRAVEL["docker-compose.yml"].encode())
-    assert compose.preselected is True and compose.name == "docker-compose.yml"
     assert all(item.key not in {".env", "docker-compose.yml"} for item in scan.files)
 
 
@@ -614,7 +603,7 @@ async def test_a_missing_deployment_env_is_offered_only_with_a_dist_file(
     assert env.preselected is True
     bare, _ = await add_stack(harness, {"compose.yaml": compose}, name="without-dist")
     scan = await scan_compose(harness.db, real_cli(tmp_path), bare, ["compose.yaml"])
-    assert [item.key for item in scan.deployment_files] == ["compose.yaml"]
+    assert scan.deployment_files == ()
 
 
 async def test_a_deployment_env_a_service_names_itself_stays_a_service_file(
@@ -626,4 +615,4 @@ async def test_a_deployment_env_a_service_names_itself_stays_a_service_file(
     )
     scan = await scan_compose(harness.db, real_cli(tmp_path), deployment, ["compose.yaml"])
     assert candidate(scan, ".env").owner == "web"
-    assert [item.key for item in scan.deployment_files] == ["compose.yaml"]
+    assert scan.deployment_files == ()

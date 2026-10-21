@@ -12,10 +12,10 @@ way Compose prints them):
   ignored and reported in ``ignored``;
 - the files of the top-level ``secrets`` and ``configs`` entries a service uses.
 
-The files the whole stack reads are offered apart, as deployment files: the deployment
-environment file (the ``.env`` beside the base Compose file, which Compose reads for
-interpolation) when it exists or has a dist file, and the Compose files that were read, unless a
-service names them itself. The scan also writes the post-deploy commands the import offers: ``up
+The deployment environment file (the ``.env`` beside the base Compose file, which Compose reads
+for interpolation) is offered apart, as a deployment file, when it exists or has a dist file and
+no service names it itself. The Compose files are not offered: the import links them to the
+deployment, read only. The scan also writes the post-deploy commands the import offers: ``up
 -d`` with the chosen Compose files for the deployment files, and ``up -d --no-deps <service>``
 for each service.
 
@@ -124,7 +124,6 @@ class FileSource(StrEnum):
     SECRET_FILE = "secret_file"  # noqa: S105
     CONFIG_FILE = "config_file"
     DEPLOYMENT_ENV = "deployment_env"
-    COMPOSE_FILE = "compose_file"
 
 
 class FileState(StrEnum):
@@ -728,7 +727,8 @@ def _deployment_drafts(
     references: dict[str, _Reference],
 ) -> list[_Draft]:
     """The deployment files: the ``.env`` beside the base Compose file when it exists or has a
-    dist file, then the Compose files read. A path a service names itself is left to it."""
+    dist file, unless a service names it itself. The Compose files are never one: they are only
+    linked to the deployment, read only (``app.services.compose_files``)."""
     drafts: list[_Draft] = []
     env_path = os.path.normpath(str(resolved.project_directory / ".env"))
     if env_path not in references:
@@ -741,15 +741,6 @@ def _deployment_drafts(
         if found and facts.relative is not None:
             reference = _Reference(env_path, [FileSource.DEPLOYMENT_ENV], [DEPLOYMENT_FILES_NAME])
             drafts.append(_Draft(reference, facts, facts.relative))
-    for relative in resolved.relative:
-        absolute = os.path.normpath(str(root / relative))
-        if absolute in references:
-            continue
-        facts = _inspect(allowed, root, absolute)
-        reference = _Reference(
-            absolute, [FileSource.COMPOSE_FILE], [DEPLOYMENT_FILES_NAME], optional=False
-        )
-        drafts.append(_Draft(reference, facts, facts.relative or relative))
     return drafts
 
 
