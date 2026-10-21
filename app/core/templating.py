@@ -11,6 +11,7 @@ from starlette.templating import Jinja2Templates
 from app import VERSION
 from app.core.display_time import DisplayTime, display_of
 from app.core.navigation import initials, nav_items_for
+from app.models import DEPLOYMENT_FILES_NAME
 
 TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "templates"
 HTMX_VERSION = "4.0.0"
@@ -38,6 +39,7 @@ environment = Environment(
     undefined=StrictUndefined,
 )
 environment.globals["display"] = DisplayTime()
+environment.globals["DEPLOYMENT_FILES_NAME"] = DEPLOYMENT_FILES_NAME
 templates = Jinja2Templates(env=environment, context_processors=[base_context])
 
 

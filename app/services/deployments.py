@@ -32,6 +32,7 @@ from app.services.paths import (
     normalize_path,
     path_status,
 )
+from app.services.services import listed_service
 from app.services.slug_names import SLUG_MESSAGE, is_slug_name
 from app.services.token_guard import guard_delete, restrictions_below
 
@@ -404,7 +405,9 @@ async def delete_deployment(
         )
     services = (
         await db.execute(
-            select(func.count()).select_from(Service).where(Service.deployment_id == deployment.id)
+            select(func.count())
+            .select_from(Service)
+            .where(Service.deployment_id == deployment.id, listed_service())
         )
     ).scalar_one()
     await record_actor_audit(

@@ -1,13 +1,25 @@
-"""Service structure: name checks and superadmin-only create, rename and delete of a service."""
+"""Service structure: name checks and superadmin-only create, rename and delete of a service.
 
-from sqlalchemy import func, select
+A deployment may also hold one service of its own, the deployment files: the files the whole
+stack reads (the `.env` beside the Compose file, the Compose files), with their own deploy and
+post-deploy command. It is a service row under the reserved name ``DEPLOYMENT_FILES_NAME``,
+which the service name rule can never produce, so every rule of services applies to it
+unchanged. It is never listed or counted as a service, never renamed or deleted on its own (it
+goes with its deployment), and is created on first use.
+"""
+
+from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AuditResult, Deployment, Environment, Service, User
+from app.models import DEPLOYMENT_FILES_NAME, AuditResult, Deployment, Environment, Service, User
 from app.services.audit import AuditActor, record_actor_audit
 from app.services.slug_names import SLUG_MESSAGE, is_slug_name
 from app.services.token_guard import guard_delete, restrictions_below
+
+DEPLOYMENT_FILES_MESSAGE = (
+    "The deployment files go with their deployment: they are not renamed or deleted on their own."
+)
 
 
 class ServiceNameError(Exception):
@@ -16,6 +28,37 @@ class ServiceNameError(Exception):
 
 class ServiceInUseError(Exception):
     """API tokens are restricted to the service or something inside it, so it is not deleted."""
+
+
+def is_deployment_files(name: str) -> bool:
+    """Whether a service name is the reserved name of a deployment's own files."""
+    return name == DEPLOYMENT_FILES_NAME
+
+
+def listed_service() -> ColumnElement[bool]:
+    """The condition that keeps a deployment's own files out of service lists and counts."""
+    return Service.name != DEPLOYMENT_FILES_NAME
+
+
+async def find_deployment_files(db: AsyncSession, deployment_id: int) -> Service | None:
+    """The deployment files of a deployment, None until they are first used."""
+    query = select(Service).where(
+        Service.deployment_id == deployment_id, Service.name == DEPLOYMENT_FILES_NAME
+    )
+    return (await db.execute(query)).scalar_one_or_none()
+
+
+async def ensure_deployment_files(
+    db: AsyncSession, deployment: Deployment, *, actor: User, ip_address: str | None = None
+) -> Service:
+    """The deployment files of a deployment, added to the session (audited, not committed) when
+    they do not exist yet."""
+    found = await find_deployment_files(db, deployment.id)
+    if found is not None:
+        return found
+    return await add_service(
+        db, deployment, DEPLOYMENT_FILES_NAME, actor=actor, ip_address=ip_address
+    )
 
 
 async def validate_service_name(
@@ -97,10 +140,12 @@ async def rename_service(
 ) -> Service:
     """Rename a service and audit it. Renaming to the current name changes nothing.
 
-    Raises ``ServiceNameError`` for a name that breaks the rule or is taken in the deployment.
-    The post-deploy command stays as it was: it names the Compose service literally, so the
-    superadmin changes it where the service is configured.
+    Raises ``ServiceNameError`` for a name that breaks the rule or is taken in the deployment,
+    and for the deployment files. The post-deploy command stays as it was: it names the Compose
+    service literally, so the superadmin changes it where the service is configured.
     """
+    if is_deployment_files(service.name):
+        raise ServiceNameError(DEPLOYMENT_FILES_MESSAGE)
     deployment = await db.get(Deployment, service.deployment_id)
     if deployment is None:
         raise ServiceNameError("The deployment of this service no longer exists.")
@@ -140,7 +185,10 @@ async def delete_service(
     Refused with ``ServiceInUseError`` while a usable API token is restricted to the service or
     one of its environments (the refusal is audited); restrictions of revoked or expired tokens
     go with it. Deploy history keeps the copied names and loses only the link to the service.
+    The deployment files are refused with ``ServiceNameError``: they go with their deployment.
     """
+    if is_deployment_files(service.name):
+        raise ServiceNameError(DEPLOYMENT_FILES_MESSAGE)
     deployment = await db.get(Deployment, service.deployment_id)
     if deployment is None:
         raise ServiceNameError("The deployment of this service no longer exists.")

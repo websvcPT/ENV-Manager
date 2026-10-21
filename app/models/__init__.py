@@ -24,6 +24,7 @@ from app.models.git_sync import SYNC_STATE_ID, GitSyncState
 from app.models.notifications import NotificationStatus, UserSeenAddress
 from app.models.operations import AllowedPath, Backup, BackupStatus, BackupTrigger
 from app.models.structure import (
+    DEPLOYMENT_FILES_NAME,
     Deployment,
     DistMissingPolicy,
     DriftPolicy,
@@ -46,6 +47,7 @@ from app.models.user import (
 )
 
 __all__ = [
+    "DEPLOYMENT_FILES_NAME",
     "SYNC_STATE_ID",
     "AccessGrant",
     "AllowedPath",

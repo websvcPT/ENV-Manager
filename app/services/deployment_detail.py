@@ -42,6 +42,7 @@ from app.services.permissions import (
     compute_visibility,
 )
 from app.services.projects import LastDeploy, latest_runs
+from app.services.services import is_deployment_files
 from app.services.structure_lookup import deployment_with_project
 
 HISTORY_LIMIT = 50
@@ -106,7 +107,8 @@ class DeploymentDetail:
     root no longer lies inside the allowed paths. ``last_run`` is the newest real run in scope.
     ``can_check_dist`` is True for the groups that may deploy; dist checks follow that capability.
     ``can_view_output`` is True for the groups that may see post-deploy output, which the history
-    already limits to runs in scope.
+    already limits to runs in scope. ``deployment_files`` is the row of the deployment's own files
+    when they exist and are in scope; they are never one of ``services``.
     """
 
     id: int
@@ -125,6 +127,7 @@ class DeploymentDetail:
     policies: DeploymentPolicies | None
     dist_outcome: DistOutcome | None = None
     drift_state: DriftState | None = None
+    deployment_files: ServiceRow | None = None
 
 
 # From the outcome that holds a deploy back the most to the one that holds it back the least.
@@ -230,23 +233,27 @@ async def load_deployment_detail(
     dist_outcome, check_drift = await load_check_summary(db, service_ids, visible_environments)
     latest = await latest_runs(db, service_ids)
     service_rows: list[ServiceRow] = []
+    deployment_files: ServiceRow | None = None
     for service in services:
         run, actor = latest.get(service.id, (None, None))
-        service_rows.append(
-            ServiceRow(
-                id=service.id,
-                name=service.name,
-                environments=environment_counts.get(service.id, 0),
-                last_deploy=LastDeploy.of(run, actor) if run else None,
-                post_deploy=run.post_deploy_status if run else None,
-                flags=(run.status,) if run and run.status is not DeployStatus.SUCCESS else (),
-                can_deploy=service.id in deployable_services,
-            )
+        row = ServiceRow(
+            id=service.id,
+            name=service.name,
+            environments=environment_counts.get(service.id, 0),
+            last_deploy=LastDeploy.of(run, actor) if run else None,
+            post_deploy=run.post_deploy_status if run else None,
+            flags=(run.status,) if run and run.status is not DeployStatus.SUCCESS else (),
+            can_deploy=service.id in deployable_services,
         )
+        if is_deployment_files(service.name):
+            deployment_files = row
+        else:
+            service_rows.append(row)
+    every_row = [*service_rows, *([deployment_files] if deployment_files else [])]
     flags = tuple(
         status
         for status in DeployStatus
-        if any(status in service_row.flags for service_row in service_rows)
+        if any(status in service_row.flags for service_row in every_row)
     )
     return DeploymentDetail(
         id=deployment.id,
@@ -278,6 +285,7 @@ async def load_deployment_detail(
         ),
         dist_outcome=dist_outcome,
         drift_state=check_drift,
+        deployment_files=deployment_files,
     )
 
 

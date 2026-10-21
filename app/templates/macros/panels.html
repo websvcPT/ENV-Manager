@@ -27,7 +27,11 @@
     everything but a project), then the subtitle (a project's counts) or the location lines of
     the other types, then the details line with the status. The same on every page of the type. -#}
 {% macro item_header(kind, name, subtitle=none, details=none, badges=none, actions=none, location=none) -%}
+{%- if kind == "service" and name == DEPLOYMENT_FILES_NAME -%}
+{% set title %}<span data-item-name>{{ name }}</span>{% endset %}
+{%- else -%}
 {% set title %}<span class="font-normal">{{ kind | capitalize }}:</span> <span data-item-name{% if kind != "project" %} class="font-mono"{% endif %}>{{ name }}</span>{% endset %}
+{%- endif -%}
 {{ page_header(title, subtitle, badges=badges, actions=actions, item_type=kind, details=details, location=location) }}
 {%- endmacro %}
 
@@ -39,7 +43,7 @@
 {% macro item_location(parents, root=none, target=none) -%}
 <div data-item-location class="mt-1.5 flex flex-col gap-0.5 text-ink2">
 {%- if parents -%}
-<p data-location="parents">{% for label, name, href in parents %}{% if not loop.first %}, {% endif %}{{ label }}: <a href="{{ href }}" class="font-semibold text-link hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ name }}</a>{% endfor %}</p>
+<p data-location="parents">{% for label, name, href in parents %}{% if not loop.first %}, {% endif %}{% if label %}{{ label }}: {% endif %}<a href="{{ href }}" class="font-semibold text-link hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ name }}</a>{% endfor %}</p>
 {%- endif -%}
 {%- if root -%}
 <p data-location="root">Deployment path: <span class="font-mono text-[13px] break-all text-ink">{{ root }}</span></p>
@@ -62,7 +66,8 @@
 
 {#- The location lines of an environment page, from the header of the environment. -#}
 {% macro environment_location(env) -%}
-{{ item_location([("Project", env.project_name, "/projects/" ~ env.project_id), ("Deployment", env.deployment_name, "/deployments/" ~ env.deployment_id), ("Service", env.service_name, "/services/" ~ env.service_id)], env.root_path, env.shown_target) }}
+{%- set owner_label = "" if env.service_name == DEPLOYMENT_FILES_NAME else "Service" -%}
+{{ item_location([("Project", env.project_name, "/projects/" ~ env.project_id), ("Deployment", env.deployment_name, "/deployments/" ~ env.deployment_id), (owner_label, env.service_name, "/services/" ~ env.service_id)], env.root_path, env.shown_target) }}
 {%- endmacro %}
 
 {#- A titled panel; the call block is the body. `fragment` names the swappable unit, and

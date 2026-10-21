@@ -130,8 +130,16 @@ class Deployment(Base):
     updated_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utc_now, onupdate=utc_now)
 
 
+DEPLOYMENT_FILES_NAME = "Deployment files"
+"""The reserved name of the service that holds a deployment's own files. The service name rule
+(lowercase slugs) can never produce it, so it never collides with a real service."""
+
+
 class Service(Base):
-    """Groups the environments that feed one workload. Deploys run per service."""
+    """Groups the environments that feed one workload. Deploys run per service.
+
+    The service named ``DEPLOYMENT_FILES_NAME`` holds the files of the deployment itself.
+    """
 
     __tablename__ = "services"
     __table_args__ = (

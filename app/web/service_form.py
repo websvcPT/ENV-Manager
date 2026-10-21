@@ -15,6 +15,7 @@ from app.services.services import (
     ServiceNameError,
     create_service,
     delete_service,
+    ensure_deployment_files,
     rename_service,
 )
 from app.web.dependencies import get_db
@@ -64,6 +65,23 @@ async def create_service_route(
             status_code=422,
         )
     return hx_redirect(f"/services/{service.id}?added=service")
+
+
+@router.post("/deployments/{deployment_id:int}/deployment-files", include_in_schema=False)
+async def open_deployment_files(
+    request: Request,
+    access: Annotated[DeploymentContext, Depends(deployment_access(Capability.MANAGE_STRUCTURE))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> Response:
+    """Create the deployment's own files on first use (audited) and open the add file form."""
+    deployment = await db.get(Deployment, access.deployment.id)
+    if deployment is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "deployment not found")
+    files = await ensure_deployment_files(
+        db, deployment, actor=access.auth.user, ip_address=client_address(request)
+    )
+    await db.commit()
+    return hx_redirect(f"/services/{files.id}/environments/new")
 
 
 async def _stored_service(db: AsyncSession, access: ServiceContext) -> Service:
@@ -140,7 +158,7 @@ async def delete_service_route(
             await delete_service(
                 db, service, actor=access.auth.user, ip_address=client_address(request)
             )
-        except ServiceInUseError as refused:
+        except (ServiceInUseError, ServiceNameError) as refused:
             error = str(refused)
     if error is not None:
         return render(

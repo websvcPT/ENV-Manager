@@ -5,7 +5,7 @@
 {% from "macros/buttons.html" import button %}
 {% from "macros/feedback.html" import empty_state, inline_error %}
 {% from "macros/row_actions.html" import row_actions %}
-{% set add_environment %}{% if can_manage_structure %}{{ button("Add environment", href="/services/" ~ service.id ~ "/environments/new", icon_name="plus", icon_stroke="2.2") }}{% endif %}{% endset %}
+{% set add_environment %}{% if can_manage_structure %}{{ button("Add file" if service.name == DEPLOYMENT_FILES_NAME else "Add environment", href="/services/" ~ service.id ~ "/environments/new", icon_name="plus", icon_stroke="2.2") }}{% endif %}{% endset %}
 {% macro environment_actions(row, prefix) -%}
 {{ row_actions(prefix ~ row.id, row.name, [
   {"key": "edit" if row.can_edit else "view", "label": "Edit" if row.can_edit else "View", "icon": "pencil" if row.can_edit else "eye", "href": "/environments/" ~ row.id},
@@ -37,7 +37,7 @@
 {%- endfor %}
 </ul>
 {%- elif can_manage_structure -%}
-{% call empty_state("No environments yet", "An environment is one text file with a target path inside the deployment.") %}{{ button("Add environment", kind="primary", href="/services/" ~ service.id ~ "/environments/new", icon_name="plus", icon_stroke="2.2") }}{% endcall %}
+{% call empty_state("No environments yet", "An environment is one text file with a target path inside the deployment.") %}{{ button("Add file" if service.name == DEPLOYMENT_FILES_NAME else "Add environment", kind="primary", href="/services/" ~ service.id ~ "/environments/new", icon_name="plus", icon_stroke="2.2") }}{% endcall %}
 {%- else -%}
 {{ empty_state("No environments yet", "An environment is one text file with a target path inside the deployment.") }}
 {%- endif -%}
