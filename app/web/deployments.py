@@ -24,7 +24,7 @@ router = APIRouter()
 
 DELETE_FRAGMENT = "fragments/deployment_delete_form.html"
 DELETE_CONFIRM_ERROR = "Type the deployment name exactly to confirm."
-IMPORTED_FIELDS = 5
+IMPORTED_FIELDS = 6
 
 
 @dataclass(frozen=True)
@@ -65,8 +65,9 @@ def _counted(number: int, noun: str) -> str:
 
 
 def imported_message(imported: str) -> str:
-    """The toast text for the counts an import left in the address, empty when they are not five
-    plain numbers (services, files, files with content, files created empty, items not imported).
+    """The toast text for the counts an import left in the address, empty when they are not six
+    plain numbers (services, files, files with content, files created empty, items not imported,
+    post-deploy commands set).
 
     The numbers come from the address and are only echoed, as the version of a restore toast is.
     """
@@ -75,13 +76,15 @@ def imported_message(imported: str) -> str:
         part and plain_number_text(part) == part for part in parts
     ):
         return ""
-    services, files, with_content, empty, skipped = (int(part) for part in parts)
+    services, files, with_content, empty, skipped, commands = (int(part) for part in parts)
     text = (
         f"Imported {_counted(services, 'service')} and {_counted(files, 'file')} "
         f"({with_content} with content, {empty} created empty)."
     )
     if skipped:
         text += f" {_counted(skipped, 'item')} not imported."
+    if commands:
+        text += f" {_counted(commands, 'post-deploy command')} set."
     return text
 
 

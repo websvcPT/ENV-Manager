@@ -377,7 +377,8 @@
 
   /* The Docker Compose import preview: a file follows the services that use it. An owner select
      offers only the ticked services and moves to the first of them when its own is unticked, and
-     a file none of whose services is ticked is unticked and cannot be ticked until one is. */
+     a file none of whose services is ticked is unticked and cannot be ticked until one is, and
+     so is the post-deploy command of an unticked service. */
   function syncComposeFiles(form) {
     var ticked = {};
     form.querySelectorAll('[data-js=compose-service]:checked').forEach(function (box) {
@@ -403,6 +404,12 @@
         pick.disabled = false;
         pick.checked = pick.defaultChecked;
       }
+    });
+    form.querySelectorAll('[data-compose-run][data-owner]').forEach(function (run) {
+      if (!(run instanceof HTMLInputElement)) { return; }
+      var on = ticked[run.getAttribute('data-owner')] === true;
+      if (!on) { run.checked = false; }
+      run.disabled = !on;
     });
   }
 

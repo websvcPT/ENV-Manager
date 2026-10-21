@@ -62,8 +62,11 @@ async def deploy_audit(db: AsyncSession) -> list[AuditEntry]:
     return list(rows.scalars())
 
 
-async def deploy_as(world: World, user_name: str, service_id: int) -> DeployOutcome:
-    """Deploy a whole service in this process as a seeded user, with the real runner."""
+async def deploy_as(
+    world: World, user_name: str, service_id: int, *, force: bool = False
+) -> DeployOutcome:
+    """Deploy a whole service in this process as a seeded user, with the real runner; a forced
+    deploy runs a command that runs only when a file changed."""
     async with world.session() as db:
         user = await db.scalar(select(User).where(User.name == user_name))
         assert user is not None
@@ -74,5 +77,5 @@ async def deploy_as(world: World, user_name: str, service_id: int) -> DeployOutc
             db,
             await load_user_scope(db, user),
             AuditActor.for_user(user),
-            DeployRequest(service_id=service_id),
+            DeployRequest(service_id=service_id, force=force),
         )

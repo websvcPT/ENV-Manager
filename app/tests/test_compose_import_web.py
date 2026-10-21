@@ -11,10 +11,19 @@ import pytest
 from fastapi import FastAPI
 from sqlalchemy import func, select
 
-from app.models import AllowedPath, AuditEntry, Deployment, Environment, Project, Service
+from app.models import (
+    DEPLOYMENT_FILES_NAME,
+    AllowedPath,
+    AuditEntry,
+    Deployment,
+    Environment,
+    Project,
+    Service,
+    ServiceHook,
+)
 from app.services.compose_import import DIST_NEEDED_MESSAGE, HAS_SERVICES_MESSAGE
 from app.services.file_types import NOT_PEM_MESSAGE
-from app.tests.compose_helpers import GEOTRAVEL, PROJECT, write_project
+from app.tests.compose_helpers import GEOTRAVEL, PROJECT, mounted_cli, write_project
 from app.tests.conftest import sign_in
 from app.tests.web_helpers import assert_never_cached, item_header_of, main_of, post
 
@@ -121,12 +130,17 @@ async def counts(web_app: FastAPI) -> tuple[int, int, int]:
     return services, environments, entries
 
 
-def row_of(page: str, key: str) -> str:
+def row_of(page: str, key: str, fragment: str = "import-file-row") -> str:
     """The markup of the file row with this key."""
-    opening = rf'<tr data-fragment="import-file-row" data-file="{re.escape(key)}"'
+    opening = rf'<tr data-fragment="{fragment}" data-file="{re.escape(key)}"'
     found = re.search(opening + ".*?</tr>", page, re.DOTALL)
     assert found, key
     return found.group(0)
+
+
+def own_row_of(page: str, key: str) -> str:
+    """The markup of the deployment file row with this key."""
+    return row_of(page, key, "import-deployment-file-row")
 
 
 def hidden_fields(page: str) -> dict[str, list[str]]:
@@ -270,8 +284,11 @@ async def test_the_preview_shows_a_row_per_service_and_per_file(
     shared = row_of(page, ".env.shared")
     options = re.findall(r'<option value="([^"]*)"', shared.split('name="owner:', 1)[1])
     assert "api" in options and "worker-1" in options
-    assert 'data-file=".env"' not in page and "Choose a service" not in page
-    assert "The deployment environment file is not managed yet." in page
+    assert "Choose a service" not in page and 'name="file" value=".env"' not in page
+    own = re.findall(r'<tr data-fragment="import-deployment-file-row" data-file="([^"]+)"', page)
+    assert own == [".env", "compose.yaml", "compose.override.yaml"]
+    assert re.search(r'name="deployment_file" value="\.env"[^>]*checked', page)
+    assert 'data-fragment="import-no-commands"' in page and 'name="run:' not in page
     guessed = row_of(page, "missing.conf")
     assert "Not on disk, looks like a file" in guessed and "Bind mount" in guessed
     assert " checked" not in guessed.split("</td>", 1)[0]
@@ -284,8 +301,8 @@ async def test_the_preview_shows_a_row_per_service_and_per_file(
     assert " disabled" in row_of(page, outside.group(1)).split("</td>", 1)[0]
     assert "Not offered" in page and "A folder, not a file." in page
     assert (
-        "4 services and 9 files found, 1 cannot be created, 1 file cannot be imported, "
-        "3 not offered."
+        "4 services and 12 files found (3 of the deployment itself), 1 cannot be created, "
+        "1 file cannot be imported, 2 not offered."
     ) in page
     assert f'hx-post="{base(layout, "/confirm")}"' in page and 'data-js="compose-service"' in page
     href = re.search(r'href="([^"]*\?compose_file[^"]*)"', page)
@@ -470,7 +487,7 @@ async def test_the_import_creates_everything_and_leaves_for_the_deployment_page(
     fields: dict[str, object] = dict(hidden_fields(confirm))
     response = await post(web_client, base(layout), fields)
     assert response.status_code == 200
-    assert response.headers["hx-redirect"] == f"/deployments/{layout.empty}?imported=3,7,6,1,6"
+    assert response.headers["hx-redirect"] == f"/deployments/{layout.empty}?imported=3,7,6,1,7,0"
     after = await counts(web_app)
     assert tuple(now - was for now, was in zip(after, before, strict=True)) == (3, 7, 1)
     async with web_app.state.session_factory() as db:
@@ -479,7 +496,7 @@ async def test_the_import_creates_everything_and_leaves_for_the_deployment_page(
     page = (await web_client.get(response.headers["hx-redirect"])).text
     assert "Import finished" in page
     assert (
-        "Imported 3 services and 7 files (6 with content, 1 created empty). 6 items not imported."
+        "Imported 3 services and 7 files (6 with content, 1 created empty). 7 items not imported."
         in page
     )
     assert "import-compose" not in page
@@ -549,19 +566,25 @@ async def test_a_forged_import_is_judged_against_the_files_as_they_are(
 @pytest.mark.parametrize(
     ("query", "toast"),
     [
-        ("1,1,0,1,0", "Imported 1 service and 1 file (0 with content, 1 created empty)."),
+        ("1,1,0,1,0,0", "Imported 1 service and 1 file (0 with content, 1 created empty)."),
         (
-            "2,5,4,1,3",
+            "2,5,4,1,3,0",
             "Imported 2 services and 5 files (4 with content, 1 created empty). "
             "3 items not imported.",
         ),
+        (
+            "2,5,4,1,0,3",
+            "Imported 2 services and 5 files (4 with content, 1 created empty). "
+            "3 post-deploy commands set.",
+        ),
+        ("1,1,0,1,0", None),
         ("x", None),
         ("1,2,3", None),
-        ("1,2,3,4,-5", None),
-        ("<b>,1,1,1,1", None),
+        ("1,2,3,4,5,-6", None),
+        ("<b>,1,1,1,1,1", None),
     ],
 )
-async def test_the_toast_echoes_five_plain_numbers_and_nothing_else(
+async def test_the_toast_echoes_six_plain_numbers_and_nothing_else(
     web_client: httpx.AsyncClient, layout: Layout, query: str, toast: str | None
 ) -> None:
     await sign_in(web_client, "root")
@@ -601,8 +624,9 @@ async def test_files_not_on_disk_start_from_their_dist_file_by_default(
     api = row_of(page, "environments/.env.api")
     assert "Bind mount" in api and "Not on disk, looks like a file" in api
     assert re.search(r'name="start:environments/\.env\.api"[^>]*checked', api)
-    assert "The deployment environment file is not managed yet." in page
-    assert 'data-file=".env"' not in page
+    env = own_row_of(page, ".env")
+    assert "Deployment environment file" in env and "Not on disk" not in env
+    assert re.search(r'name="deployment_file" value="\.env"[^>]*checked', env)
     fields = {
         "compose_file": ["docker-compose.yml"],
         "service": ["api", "db", "frontend"],
@@ -623,5 +647,128 @@ async def test_files_not_on_disk_start_from_their_dist_file_by_default(
     carried = hidden_fields(confirm)
     assert carried["start:environments/.env.frontend"] == ["1"]
     response = await post(web_client, address, dict(carried))
-    assert response.headers["hx-redirect"] == f"/deployments/{deployment_id}?imported=3,3,3,0,4"
+    assert response.headers["hx-redirect"] == f"/deployments/{deployment_id}?imported=3,3,3,0,5,0"
     assert not (root / "environments/.env.frontend").exists()
+
+
+API_UP = "docker compose -f compose.yaml up -d --no-deps api"
+FILES_UP = "docker compose -f compose.yaml up -d"
+RUN_FILES = f"run:{DEPLOYMENT_FILES_NAME}"
+COMMAND_FILES = f"command:{DEPLOYMENT_FILES_NAME}"
+
+
+def with_commands(fields: dict[str, object], commands: dict[str, str]) -> dict[str, object]:
+    """The fields with the deployment ``.env`` ticked and a ticked command per owner."""
+    fields = {**fields, "deployment_file": [".env"], "type:.env": "env"}
+    for owner, text in commands.items():
+        fields[f"run:{owner}"] = "1"
+        fields[f"command:{owner}"] = text
+    return fields
+
+
+async def test_the_preview_offers_each_command_unticked_while_docker_is_usable(
+    web_client: httpx.AsyncClient, web_app: FastAPI, layout: Layout, tmp_path: Path
+) -> None:
+    web_app.state.docker_cli = mounted_cli(tmp_path)
+    await sign_in(web_client, "root")
+    preview = await post(web_client, base(layout, "/preview"), {"compose_file": ["compose.yaml"]})
+    page = preview.text
+    assert 'data-fragment="import-no-commands"' not in page
+    row = r'<tr data-fragment="import-service-row" data-service="api".*?</tr>'
+    api = re.search(row, page, re.S)
+    assert api is not None
+    assert f'name="command:api" value="{html.escape(API_UP)}"' in api.group(0)
+    assert re.search(r'<input type="checkbox" name="run:api" value="1"[^>]*>', api.group(0))
+    assert not re.search(r'name="run:[^"]*"[^>]*checked', page)
+    own = re.search(r'data-fragment="import-deployment-files".*?</section>', page, re.S)
+    assert own is not None
+    assert f'name="{COMMAND_FILES}" value="{html.escape(FILES_UP)}"' in own.group(0)
+    assert f'name="{RUN_FILES}"' in own.group(0)
+
+
+async def test_ticked_commands_are_reviewed_and_stored_by_the_import(
+    web_client: httpx.AsyncClient, web_app: FastAPI, layout: Layout, tmp_path: Path
+) -> None:
+    web_app.state.docker_cli = mounted_cli(tmp_path)
+    await sign_in(web_client, "root")
+    fields = with_commands(form_of(), {"api": API_UP, DEPLOYMENT_FILES_NAME: FILES_UP})
+    confirm = (await post(web_client, base(layout, "/confirm"), fields)).text
+    assert 'data-import-count="commands">2<' in confirm
+    assert 'data-import-count="deployment-files">1 file<' in confirm
+    review = re.search(r'data-import-command="api".*?</ol>', confirm, re.S)
+    assert review is not None
+    words = re.findall(r"<code[^>]*>([^<]*)</code>", review.group(0))
+    assert words == API_UP.split()
+    assert "No post-deploy command is set." not in confirm
+    carried = hidden_fields(confirm)
+    assert carried["run:api"] == ["1"] and carried["command:api"] == [API_UP]
+    assert carried["deployment_file"] == [".env"]
+    response = await post(web_client, base(layout), dict(carried))
+    assert response.status_code == 200, response.text
+    assert response.headers["hx-redirect"].endswith(",2")
+    async with web_app.state.session_factory() as db:
+        rows = await db.execute(
+            select(Service.name, ServiceHook.commands)
+            .join(ServiceHook, ServiceHook.service_id == Service.id)
+            .where(Service.deployment_id == layout.empty)
+        )
+        assert dict(rows.tuples().all()) == {"api": API_UP, DEPLOYMENT_FILES_NAME: FILES_UP}
+    page = (await web_client.get(response.headers["hx-redirect"])).text
+    assert "2 post-deploy commands set." in page
+
+
+@pytest.mark.parametrize(
+    ("commands", "label", "message"),
+    [
+        ({"api": "docker compose down"}, "Post-deploy commands: api", "down"),
+        ({"api": ""}, "Post-deploy commands: api", "Enter the command, or untick it."),
+    ],
+    ids=["safety-net", "empty"],
+)
+async def test_a_refused_command_is_named_in_the_confirmation(
+    web_client: httpx.AsyncClient,
+    web_app: FastAPI,
+    layout: Layout,
+    tmp_path: Path,
+    commands: dict[str, str],
+    label: str,
+    message: str,
+) -> None:
+    web_app.state.docker_cli = mounted_cli(tmp_path)
+    before = await counts(web_app)
+    await sign_in(web_client, "root")
+    response = await post(web_client, base(layout, "/confirm"), with_commands(form_of(), commands))
+    assert response.status_code == 422
+    assert label in response.text and message in response.text
+    assert await counts(web_app) == before
+
+
+async def test_a_command_needs_docker_and_the_deployment_command_a_deployment_file(
+    web_client: httpx.AsyncClient, web_app: FastAPI, layout: Layout
+) -> None:
+    await sign_in(web_client, "root")
+    preview = await post(web_client, base(layout, "/preview"), {"compose_file": ["compose.yaml"]})
+    page = preview.text
+    assert "No post-deploy command is offered. The Docker socket is not mounted." in page
+    fields = with_commands(form_of(), {"api": API_UP})
+    response = await post(web_client, base(layout, "/confirm"), fields)
+    assert response.status_code == 422
+    assert "The Docker socket is not mounted. Post-deploy commands are off" in response.text
+    refused = await post(web_client, base(layout), fields)
+    assert refused.status_code == 422 and "The Docker socket is not mounted." in refused.text
+    alone = {**form_of(), RUN_FILES: "1", COMMAND_FILES: FILES_UP}
+    response = await post(web_client, base(layout, "/confirm"), alone)
+    assert response.status_code == 422
+    assert "Select a deployment file for the post-deploy command" in response.text
+
+
+async def test_deployment_files_made_before_the_import_leave_it_offered(
+    web_client: httpx.AsyncClient, web_app: FastAPI, layout: Layout
+) -> None:
+    await sign_in(web_client, "root")
+    made = await post(web_client, f"/deployments/{layout.empty}/deployment-files", {})
+    assert made.status_code == 200
+    page = (await web_client.get(base(layout))).text
+    assert HAS_SERVICES_MESSAGE not in page
+    detail = main_of((await web_client.get(f"/deployments/{layout.empty}")).text)
+    assert f'href="/deployments/{layout.empty}/import-compose"' in detail

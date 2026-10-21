@@ -10,8 +10,14 @@ way Compose prints them):
 - the single-file bind mounts of ``volumes``; a folder, a named volume, a socket, a path that does
   not exist (Docker would create a folder there) and a path outside the deployment folder are
   ignored and reported in ``ignored``;
-- the files of the top-level ``secrets`` and ``configs`` entries a service uses;
-- the ``.env`` file of the project directory, which belongs to no service until one is chosen.
+- the files of the top-level ``secrets`` and ``configs`` entries a service uses.
+
+The files the whole stack reads are offered apart, as deployment files: the deployment
+environment file (the ``.env`` beside the base Compose file, which Compose reads for
+interpolation) when it exists or has a dist file, and the Compose files that were read, unless a
+service names them itself. The scan also writes the post-deploy commands the import offers: ``up
+-d`` with the chosen Compose files for the deployment files, and ``up -d --no-deps <service>``
+for each service.
 
 A file used by several services is one candidate with all its users and the first one as its
 default owner. Paths are stored relative to the deployment root. A file outside the root or the
@@ -24,6 +30,7 @@ import grp
 import os
 import pwd
 import re
+import shlex
 import stat
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
@@ -33,7 +40,7 @@ from pathlib import Path, PurePosixPath
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.log import get_logger
-from app.models import Deployment, FileType
+from app.models import DEPLOYMENT_FILES_NAME, Deployment, FileType
 from app.services.compose_config import (
     MAX_COMPOSE_FILE_BYTES,
     ComposeModel,
@@ -77,7 +84,6 @@ OUTSIDE_REASON = "Outside the deployment folder or the allowed paths."
 FOLDER_REASON = "A folder, not a file."
 SPECIAL_REASON = "Not a regular file (a socket or a device)."
 MISSING_BIND_REASON = "Does not exist, so it is not known whether it is a file or a folder."
-DEPLOYMENT_ENV_REASON = "The deployment environment file is not managed yet."
 UNREADABLE_REASON = "The file cannot be read."
 NO_NAME_REASON = "The name cannot be used as a service name."
 CERT_EMPTY_REASON = "A certificate cannot be created empty."
@@ -107,6 +113,8 @@ class FileSource(StrEnum):
     BIND_MOUNT = "bind_mount"
     SECRET_FILE = "secret_file"  # noqa: S105
     CONFIG_FILE = "config_file"
+    DEPLOYMENT_ENV = "deployment_env"
+    COMPOSE_FILE = "compose_file"
 
 
 class FileState(StrEnum):
@@ -139,7 +147,7 @@ class ServiceCandidate:
 
     ``name`` is the slug the service gets, ``compose_name`` the name in the Compose files.
     ``disabled_reason`` is set when it cannot be created. ``files`` are the keys of the file
-    candidates it uses.
+    candidates it uses. ``command`` is the post-deploy command offered for it.
     """
 
     name: str
@@ -147,6 +155,7 @@ class ServiceCandidate:
     profiles: tuple[str, ...]
     files: tuple[str, ...]
     disabled_reason: str | None = None
+    command: str = ""
 
 
 @dataclass(frozen=True)
@@ -209,12 +218,24 @@ class IgnoredItem:
 @dataclass(frozen=True)
 class ComposeScan:
     """The result of a scan: the Compose files read (relative to the root, base first), the
-    service and file candidates and the items that were ignored."""
+    service and file candidates and the items that were ignored.
+
+    ``deployment_files`` are the candidates of the deployment's own files, each owned by
+    ``DEPLOYMENT_FILES_NAME``, and ``deployment_command`` the post-deploy command offered for
+    them.
+    """
 
     compose_files: tuple[str, ...]
     services: tuple[ServiceCandidate, ...]
     files: tuple[FileCandidate, ...]
     ignored: tuple[IgnoredItem, ...]
+    deployment_files: tuple[FileCandidate, ...] = ()
+    deployment_command: str = ""
+
+    @property
+    def all_files(self) -> tuple[FileCandidate, ...]:
+        """The file candidates of the services, then those of the deployment files."""
+        return self.files + self.deployment_files
 
 
 @dataclass(frozen=True)
@@ -566,9 +587,10 @@ def _dist_suggestion(allowed: AllowedPaths, root: Path, relative: str) -> str | 
 
 
 def _service_candidates(
-    model: ComposeModel, files_of: dict[str, list[str]]
+    model: ComposeModel, files_of: dict[str, list[str]], compose_files: Sequence[str] = ()
 ) -> list[ServiceCandidate]:
-    """The service candidates: names cleaned to the slug rule, a name taken twice refused."""
+    """The service candidates: names cleaned to the slug rule, a name taken twice refused, each
+    with the command that brings its container up again from ``compose_files``."""
     candidates: list[ServiceCandidate] = []
     used: set[str] = set()
     for service in model.services:
@@ -588,6 +610,7 @@ def _service_candidates(
                 profiles=service.profiles,
                 files=tuple(files_of.get(service.name, ())),
                 disabled_reason=reason,
+                command=compose_command(compose_files, "--no-deps", service.name),
             )
         )
     return candidates
@@ -676,18 +699,46 @@ def _drafts(
     return drafts, ignored
 
 
-def _deployment_env(
-    allowed: AllowedPaths, root: Path, project_directory: Path, references: dict[str, _Reference]
-) -> IgnoredItem | None:
-    """The deployment environment file beside the base Compose file as an item not offered, when
-    it exists and no service names it itself."""
-    path = project_directory / ".env"
-    if os.path.normpath(str(path)) in references:
-        return None
-    facts = _inspect(allowed, root, str(path))
-    if facts.state is not FileState.FILE or facts.relative is None:
-        return None
-    return IgnoredItem(facts.relative, DEPLOYMENT_ENV_REASON)
+def compose_command(compose_files: Sequence[str], *tail: str) -> str:
+    """The ``docker compose -f <file>... up -d`` command line for the Compose files, relative to
+    the deployment root (the working directory of a post-deploy command), with the words of
+    ``tail`` after it; every word is quoted for the command parser when it needs to be."""
+    words = ["docker", "compose"]
+    for path in compose_files:
+        words.extend(("-f", path))
+    return shlex.join([*words, "up", "-d", *tail])
+
+
+def _deployment_drafts(
+    allowed: AllowedPaths,
+    root: Path,
+    resolved: ResolvedFiles,
+    references: dict[str, _Reference],
+) -> list[_Draft]:
+    """The deployment files: the ``.env`` beside the base Compose file when it exists or has a
+    dist file, then the Compose files read. A path a service names itself is left to it."""
+    drafts: list[_Draft] = []
+    env_path = os.path.normpath(str(resolved.project_directory / ".env"))
+    if env_path not in references:
+        facts = _inspect(allowed, root, env_path)
+        found = facts.state is FileState.FILE or (
+            facts.state is FileState.MISSING
+            and facts.relative is not None
+            and _dist_suggestion(allowed, root, facts.relative) is not None
+        )
+        if found and facts.relative is not None:
+            reference = _Reference(env_path, [FileSource.DEPLOYMENT_ENV], [DEPLOYMENT_FILES_NAME])
+            drafts.append(_Draft(reference, facts, facts.relative))
+    for relative in resolved.relative:
+        absolute = os.path.normpath(str(root / relative))
+        if absolute in references:
+            continue
+        facts = _inspect(allowed, root, absolute)
+        reference = _Reference(
+            absolute, [FileSource.COMPOSE_FILE], [DEPLOYMENT_FILES_NAME], optional=False
+        )
+        drafts.append(_Draft(reference, facts, facts.relative or relative))
+    return drafts
 
 
 def build_scan(
@@ -708,9 +759,6 @@ def build_scan(
         raise ComposeScanError(f"The Compose files name more than {MAX_FILES} files.")
     by_compose_name = {service.compose_name: service for service in _service_candidates(model, {})}
     drafts, ignored = _drafts(allowed, root, references.values())
-    deployment_env = _deployment_env(allowed, root, resolved.project_directory, references)
-    if deployment_env is not None:
-        ignored.append(deployment_env)
     owners: dict[str, str | None] = {}
     for draft in drafts:
         enabled = [
@@ -733,8 +781,36 @@ def build_scan(
         )
         for user in draft.reference.users:
             keys_of.setdefault(user, []).append(draft.key)
-    services = tuple(_service_candidates(model, keys_of))
-    return ComposeScan(resolved.relative, services, tuple(files), tuple(ignored))
+    services = tuple(_service_candidates(model, keys_of, resolved.relative))
+    taken = {draft.key for draft in drafts}
+    own = [
+        draft
+        for draft in _deployment_drafts(allowed, root, resolved, references)
+        if draft.key not in taken
+    ]
+    own_names = assign_names(
+        (draft.key, PurePosixPath(draft.key).name, DEPLOYMENT_FILES_NAME) for draft in own
+    )
+    deployment_files = tuple(
+        _file_candidate(
+            allowed,
+            root,
+            draft,
+            own_names[draft.key],
+            DEPLOYMENT_FILES_NAME,
+            (DEPLOYMENT_FILES_NAME,),
+            defaults,
+        )
+        for draft in own
+    )
+    return ComposeScan(
+        resolved.relative,
+        services,
+        tuple(files),
+        tuple(ignored),
+        deployment_files,
+        compose_command(resolved.relative),
+    )
 
 
 async def scan_compose(

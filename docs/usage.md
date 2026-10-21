@@ -47,15 +47,24 @@ What is found:
   is mounted at reads like a file name (`.env`, `.env.api`, `nginx.conf`). A folder, a socket,
   another path that does not exist and a file outside the deployment folder or the allowed paths
   are listed as not offered or disabled with the reason, and are never read.
-- The deployment environment file (the `.env` beside the Compose file, which Compose reads for
-  `${VAR}` values) is not imported: it is listed as not offered, because files belong to a service
-  and this one belongs to the whole deployment.
+- The files of the whole deployment, offered ticked in a **Deployment files** section: the
+  deployment environment file (the `.env` beside the base Compose file, which Compose reads for
+  `${VAR}` values) when it exists or has a dist file, and the Compose files that were read. They
+  go to the deployment files, which are deployed apart from the services with a post-deploy
+  command of their own, unless a service names one of them itself.
 - A file used by several services belongs to the owner you choose (the first service in
   alphabetical order by default).
 - A file name ending in `.pem`, `.crt`, `.cer` or `.key` is offered as a certificate and any other
   as an ENV file. A type the text does not fit (a certificate without a PEM block, for example) is
   disabled in the type select and the file starts unticked. The type cannot be changed after the
-  import. No post-deploy command is set.
+  import.
+- While the Docker socket is usable, a post-deploy command per service
+  (`docker compose -f <base> [-f <override>] up -d --no-deps <service>`) and one for the
+  deployment files (`docker compose -f <base> [-f <override>] up -d`), unticked and editable.
+  Only a ticked command is stored, after the safety net accepts it, with the defaults of the
+  settings form (the deployment folder as working directory, a 120 second timeout, run only when
+  a file changed); the confirmation shows the arguments each line is run with. Without a usable
+  socket the preview says why no command is offered.
 - A sibling named `<name>-dist`, `<name>.example` or `<name>.dist` is offered as the dist file,
   whether the file exists or not. For a file on disk the link starts unticked. For a file that is
   not on disk yet, the link and "Start from the dist file" start ticked: version 1 then holds the
@@ -70,6 +79,8 @@ What the import creates, in one transaction (all or nothing):
   starts from it (comment "Created from the dist file by the Docker Compose import"), else an
   empty version 1 (comment "Created empty from Docker Compose"). Neither is written to the host by
   the import: the first deploy writes it. A certificate cannot be created empty.
+- The deployment files are created when one of their files is ticked, or keep the ones made
+  earlier from the deployment page.
 - For each imported service that had files on the host, one run in Deploy history with the
   trigger shown as **Imported from Compose** and an unchanged result per file. It records version
   1 as the content the file held, which is the starting point of the drift check: a version 2
@@ -79,7 +90,8 @@ What the import creates, in one transaction (all or nothing):
   is the last deployment of the service until a real one follows. The API reports it with
   `trigger` set to `compose`.
 - The Compose files are stored on the deployment, and one `deployment.import_compose` audit entry
-  lists the choices and what was skipped, never a file's text.
+  lists the choices and what was skipped, never a file's text. Each stored command has its own
+  `service.hook_save` entry, whose text only the superadmin sees.
 
 How the files are read, and the limits:
 

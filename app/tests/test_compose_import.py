@@ -33,6 +33,7 @@ from app.services.compose_import import (
     HAS_SERVICES_MESSAGE,
     IMPORT_COMMENT,
     NO_SERVICE_MESSAGE,
+    NOT_SELECTED_REASON,
     ComposeImportError,
     ComposeSelection,
     FileChoice,
@@ -145,7 +146,8 @@ async def test_services_and_files_are_created_with_the_first_versions(
     notifier = Recorder()
     result = await run_import(h, deployment, selection(), tmp_path, notifier)
     assert (result.services, result.environments, result.with_content, result.empty) == (3, 7, 6, 1)
-    assert result.skipped == 6
+    assert result.skipped == 7
+    assert (result.deployment_files, result.commands) == (0, 0)
     services = (
         (await h.db.execute(select(Service.name).where(Service.deployment_id == deployment.id)))
         .scalars()
@@ -208,12 +210,14 @@ async def test_the_audit_holds_one_import_entry_and_the_usual_create_entries(
     assert details["compose_files"] == ["compose.yaml"]
     assert details["services"] == ["api", "web", "worker-1"]
     assert (details["environments"], details["with_content"], details["empty"]) == (7, 6, 1)
-    assert details["skipped_count"] == 6
+    assert details["skipped_count"] == 7
+    assert (details["deployment_files"], details["post_deploy"]) == (0, [])
     items = cast(list[dict[str, str]], details["skipped"])
     skipped = {(item["kind"], item["name"]): item["reason"] for item in items}
     assert skipped[("service", "worker-1")] == "Another service is already named worker-1."
     assert ("ignored", "data") in skipped and ("file", "missing.conf") in skipped
-    assert skipped[("ignored", ".env")] == "The deployment environment file is not managed yet."
+    assert skipped[("deployment_file", ".env")] == NOT_SELECTED_REASON
+    assert skipped[("deployment_file", "compose.yaml")] == NOT_SELECTED_REASON
     assert len(await audit_of(h.db, "service.create")) == 3
     created = [
         entry

@@ -98,6 +98,10 @@ function fileRow(page: Page, key: string) {
   return page.locator(`[data-fragment="import-file-row"][data-file="${key}"]`);
 }
 
+function ownRow(page: Page, key: string) {
+  return page.locator(`[data-fragment="import-deployment-file-row"][data-file="${key}"]`);
+}
+
 function serviceBox(page: Page, name: string) {
   return page.locator(
     `[data-fragment="import-service-row"][data-service="${name}"] input[name="service"]`,
@@ -151,8 +155,15 @@ test.describe('import from Docker Compose', () => {
     await expect(page.locator('[data-fragment="import-service-row"]')).toHaveCount(2);
     await expect(page.locator('[data-fragment="import-file-row"]')).toHaveCount(5);
     await expect(page.locator('[data-fragment="import-counts"]')).toContainText(
-      '2 services and 5 files found, 1 file cannot be imported',
+      '2 services and 6 files found (1 of the deployment itself), 1 file cannot be imported',
     );
+    // The Compose file is offered ticked as a deployment file. Without a Docker socket no
+    // post-deploy command is offered, and the preview says why.
+    await expect(ownRow(page, 'compose.yaml').locator('input[name="deployment_file"]')).toBeChecked();
+    await expect(page.locator('[data-fragment="import-no-commands"]')).toContainText(
+      'The Docker socket is not mounted.',
+    );
+    await expect(page.locator('input[name^="run:"]')).toHaveCount(0);
     const outside = page.locator('[data-fragment="import-file-row"][data-file$="/outside.env"]');
     await expect(outside).toContainText('Outside the deployment folder or the allowed paths.');
     await expect(outside.locator('input[name="file"]')).toBeDisabled();
@@ -189,16 +200,18 @@ test.describe('import from Docker Compose', () => {
     const dialog = page.locator('#import-confirm');
     await expect(dialog).toBeVisible();
     await expect(dialog.locator('[data-import-count="services"]')).toHaveText('2 services');
-    await expect(dialog.locator('[data-import-count="files"]')).toHaveText('4 files');
+    await expect(dialog.locator('[data-import-count="files"]')).toHaveText('5 files');
     await expect(dialog.locator('[data-import-count="content"]')).toContainText(
-      '4 saved as version 1 as they are on disk, 0 created empty',
+      '5 saved as version 1 as they are on disk, 0 created empty',
     );
+    await expect(dialog.locator('[data-import-count="deployment-files"]')).toHaveText('1 file');
+    await expect(dialog.locator('[data-import-count="commands"]')).toHaveText('0');
     await expect(dialog.locator('[data-import-count="linked"]')).toHaveText('1');
     await dialog.getByRole('button', { name: 'Import', exact: true }).click();
 
-    await expect(page).toHaveURL(new RegExp(`/deployments/${id}\\?imported=2,4,4,0,1$`));
+    await expect(page).toHaveURL(new RegExp(`/deployments/${id}\\?imported=2,5,5,0,1,0$`));
     await expect(toast(page)).toContainText(
-      'Imported 2 services and 4 files (4 with content, 0 created empty). 1 item not imported.',
+      'Imported 2 services and 5 files (5 with content, 0 created empty). 1 item not imported.',
     );
     const rows = page.locator('#services [data-fragment="service-row"]');
     await expect(rows.locator('th a')).toHaveText(['api', 'web']);
@@ -206,8 +219,9 @@ test.describe('import from Docker Compose', () => {
     await expect(page.locator('#import-compose-open')).toHaveCount(0);
     // Each service with files found on the host has one run in the history, labelled as an
     // import, and the files stay as they were.
-    await expect(page.locator('#hist [data-fragment="history-row"]')).toHaveCount(2);
-    await expect(page.locator('#hist [data-history-trigger]')).toHaveCount(2);
+    await expect(page.locator('#hist [data-fragment="history-row"]')).toHaveCount(3);
+    await expect(page.locator('#hist [data-history-trigger]')).toHaveCount(3);
+    await expect(page.locator('[data-fragment="deployment-files-row"]')).toContainText('1 file');
     expect(host.read('.env.web')).toBe(FILES['.env.web']);
     expect(host.read('.env.shared')).toBe(FILES['.env.shared']);
 
@@ -261,7 +275,7 @@ test.describe('import from Docker Compose', () => {
     await expect(page.locator('[data-fragment="import-files"]')).toContainText(HAS_SERVICES);
   });
 
-  test('starts files that are not on disk from their dist file and skips the deployment .env', async ({
+  test('starts files that are not on disk from their dist file and offers the deployment files', async ({
     page,
     request,
     scratch,
@@ -293,17 +307,27 @@ test.describe('import from Docker Compose', () => {
       await expect(api).toContainText('Not on disk, looks like a file');
       await expect(api.locator('input[name="file"]')).toBeChecked();
       const ignored = page.locator('[data-fragment="import-ignored"]');
-      await expect(ignored).toContainText('The deployment environment file is not managed yet.');
       await expect(ignored).toContainText('data/mysql/data');
+      await expect(ignored).not.toContainText('.env');
+      // The deployment .env and the Compose file are offered ticked as deployment files.
       await expect(page.locator('[data-fragment="import-file-row"][data-file=".env"]')).toHaveCount(0);
+      await expect(page.locator('[data-fragment="import-deployment-file-row"]')).toHaveCount(2);
+      const env = ownRow(page, '.env');
+      await expect(env).toContainText('Deployment environment file');
+      await expect(env.locator('input[name="deployment_file"]')).toBeChecked();
+      await expect(
+        ownRow(page, 'docker-compose.yml').locator('input[name="deployment_file"]'),
+      ).toBeChecked();
 
       await page.getByRole('button', { name: 'Import selected…' }).click();
       const dialog = page.locator('#import-confirm');
       await expect(dialog.locator('[data-import-count="content"]')).toContainText(
-        '1 saved as version 1 as they are on disk, 2 started from their dist file, 0 created empty',
+        '3 saved as version 1 as they are on disk, 2 started from their dist file, 0 created empty',
       );
       await dialog.getByRole('button', { name: 'Import', exact: true }).click();
-      await expect(page).toHaveURL(new RegExp(`/deployments/${id}\\?imported=3,3,3,0,4$`));
+      await expect(page).toHaveURL(new RegExp(`/deployments/${id}\\?imported=3,5,5,0,3,0$`));
+      await expect(page.locator('[data-fragment="deployment-files-row"]')).toContainText('2 files');
+      expect(geo.read('.env')).toBe(GEOTRAVEL['.env']);
       expect(geo.list('environments')).toEqual([
         '.env.api-dist',
         '.env.db',

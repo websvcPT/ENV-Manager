@@ -8,13 +8,16 @@ the import left alone, what the deploy wrote, mode, backups, what was not touche
 runs and results recorded.
 """
 
+import html
 import re
 import stat
+import time
 
 import httpx
 from sqlalchemy import select
 
 from app.models import (
+    DEPLOYMENT_FILES_NAME,
     Deployment,
     DeployResult,
     DeployResultStatus,
@@ -23,11 +26,13 @@ from app.models import (
     DeployTrigger,
     Environment,
     EnvironmentVersion,
+    PostDeployStatus,
     Service,
 )
 from app.real_scenarios.conftest import DemoStack, Workloads, World
 from app.real_scenarios.helpers import BASELINE_NAMES, deploy_as, snapshot
 from app.services.deploy_trigger import COMPOSE_IMPORT_LABEL
+from app.services.services import find_deployment_files
 from app.tests.conftest import sign_in
 from app.tests.web_helpers import post
 
@@ -184,3 +189,80 @@ async def test_an_imported_file_edited_to_version_two_deploys_without_a_halt(
     history = (await web.get(f"/deployments/{scratch}/history")).text
     assert history.count("data-history-trigger") == 2
     assert workloads.container_ids() == []
+
+
+STACK_UP = "docker compose -f compose.yaml up -d"
+COMMANDS = {
+    "api": f"{STACK_UP} --no-deps api",
+    "db": f"{STACK_UP} --no-deps db",
+    DEPLOYMENT_FILES_NAME: STACK_UP,
+}
+API_NAMES = {"DEMO_API_MODE", "DEMO_API_PORT", "DEMO_API_TOKEN"}
+
+
+async def test_an_import_with_commands_brings_the_stack_up_and_recreates_one_service(
+    demo: DemoStack, world: World, web: httpx.AsyncClient, workloads: Workloads
+) -> None:
+    compose_before = (demo.root / "compose.yaml").read_bytes()
+    scratch = await scratch_deployment(world)
+    await sign_in(web, "root")
+    base = f"/deployments/{scratch}/import-compose"
+    page = (await post(web, f"{base}/preview", {"compose_file": ["compose.yaml"]})).text
+    own = re.findall(r'data-fragment="import-deployment-file-row" data-file="([^"]+)"', page)
+    assert own == ["compose.yaml"]
+    offered = re.findall(r'<input type="text" name="command:([^"]+)" value="([^"]*)"', page)
+    assert {owner: html.unescape(text) for owner, text in offered} == COMMANDS
+    form: dict[str, object] = {"compose_file": ["compose.yaml"], "service": SERVICES}
+    form["file"] = list(OWNERS)
+    for key, owner in OWNERS.items():
+        form[f"owner:{key}"] = owner
+        form[f"type:{key}"] = "env"
+    form["deployment_file"] = ["compose.yaml"]
+    form["type:compose.yaml"] = "env"
+    for owner in ("api", DEPLOYMENT_FILES_NAME):
+        form[f"run:{owner}"] = "1"
+        form[f"command:{owner}"] = COMMANDS[owner]
+    confirm = await post(web, f"{base}/confirm", form)
+    assert confirm.status_code == 200 and 'data-import-count="commands">2<' in confirm.text
+    done = await post(web, base, dict(hidden_fields(confirm.text)))
+    assert done.status_code == 200 and done.headers["hx-redirect"].endswith(",2")
+    assert (demo.root / "compose.yaml").read_bytes() == compose_before
+    assert workloads.container_ids() == []
+    async with world.session() as db:
+        files = await find_deployment_files(db, scratch)
+        assert files is not None
+        services = {
+            service.name: service.id
+            for service in await db.scalars(select(Service).where(Service.deployment_id == scratch))
+        }
+
+    # A forced deploy of the deployment files writes nothing and brings the whole stack up.
+    stack = await deploy_as(world, "root", files.id, force=True)
+
+    assert stack.status is DeployStatus.SUCCESS, stack.message
+    assert stack.post_deploy.status is PostDeployStatus.RAN and stack.post_deploy.exit_code == 0
+    assert (demo.root / "compose.yaml").read_bytes() == compose_before
+    assert len(workloads.container_ids("api")) == 1 and len(workloads.container_ids("db")) == 1
+    (db_container,) = workloads.container_ids("db")
+    workloads.wait_for_names("api", API_NAMES)
+
+    # A changed file of one service recreates its container alone.
+    async with world.session() as db:
+        api_file = await db.scalar(
+            select(Environment).where(
+                Environment.service_id == services["api"],
+                Environment.target_path == "environments/.env.api",
+            )
+        )
+        assert api_file is not None
+    current = (demo.targets / ".env.api").read_text()
+    await world.save_version(api_file.id, current + SECOND_VERSION)
+    before = time.time()
+
+    deployed = await deploy_as(world, "root", services["api"])
+
+    assert deployed.status is DeployStatus.SUCCESS
+    assert deployed.post_deploy.status is PostDeployStatus.RAN
+    assert workloads.created_since("api", before) == 1
+    assert workloads.container_ids("db") == [db_container]
+    workloads.wait_for_names("api", {*API_NAMES, "DEMO_SCRATCH_VERSION"})

@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from app.models import Deployment
-from app.services.docker_cli import DockerCli
+from app.services.docker_cli import DockerCli, DockerStatus
 from app.tests.deploy_helpers import Harness
 
 PEM = (
@@ -159,6 +159,20 @@ def write_project(root: Path, files: Mapping[str, str | bytes]) -> None:
 def real_cli(tmp_path: Path) -> DockerCli:
     """The real docker command on a socket path that does not exist, as in the development stack."""
     return DockerCli(socket_path=tmp_path / "no-docker.sock", scratch=tmp_path / "scratch")
+
+
+class MountedCli(DockerCli):
+    """The real docker command for Compose, reporting the socket, the daemon and the compose
+    plugin as usable, so post-deploy commands may be stored."""
+
+    async def status(self, *, fresh: bool = False) -> DockerStatus:
+        """A usable Docker, whatever the socket path."""
+        return DockerStatus(True, True, "2.40.0")
+
+
+def mounted_cli(tmp_path: Path) -> DockerCli:
+    """The real docker command, reported as usable for post-deploy commands."""
+    return MountedCli(socket_path=tmp_path / "no-docker.sock", scratch=tmp_path / "scratch")
 
 
 async def add_stack(

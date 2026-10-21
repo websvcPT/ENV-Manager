@@ -1,19 +1,51 @@
 {#- Step two of the Docker Compose import: what the real Compose reads from the chosen files, one
-    row per service and per file, each to tick. A service that is unticked unticks the files only
-    it uses (app.js). Importing opens the confirmation dialog, which scans again. Context:
-    deployment (a DeploymentDetail), scan (a ComposeScan), rows (FileRow list), usable_services,
-    importable_files, back_href and confirm_action. -#}
+    row per service, per file and per deployment file, each to tick. A service that is unticked
+    unticks the files only it uses and its command (app.js). Importing opens the confirmation
+    dialog, which scans again. Context: deployment (a DeploymentDetail), scan (a ComposeScan),
+    rows and own_rows (FileRow lists of the service files and of the deployment files),
+    files_name, commands_offered and docker_reason (post-deploy commands are offered unticked
+    only while Docker is usable), usable_services, importable_files, back_href and
+    confirm_action. -#}
 {% from "macros/badges.html" import badge %}
 {% from "macros/buttons.html" import button %}
 {% from "macros/feedback.html" import note %}
 {% from "macros/icons.html" import icon %}
 {% from "macros/panels.html" import cell, panel, row_header, table %}
-{% set source_labels = {"env_file": "env_file", "bind_mount": "Bind mount", "secret_file": "Secret", "config_file": "Config"} %}
+{% set source_labels = {"env_file": "env_file", "bind_mount": "Bind mount", "secret_file": "Secret", "config_file": "Config", "deployment_env": "Deployment environment file", "compose_file": "Compose file"} %}
 {% set type_labels = {"env": "ENV file", "cert": "Certificate"} %}
 {% set select_class = "h-11 md:h-ctl w-full min-w-40 rounded-ctl border border-line-strong bg-surface px-3 text-sm text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-60" %}
+{% set command_class = "h-11 md:h-ctl w-full min-w-64 rounded-ctl border border-line-strong bg-surface px-3 font-mono text-[13px] text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus" %}
 {% set service_count = scan.services | length %}
 {% set unusable_services = service_count - usable_services %}
-{% set blocked_files = rows | length - importable_files %}
+{% set file_count = rows | length + own_rows | length %}
+{% set blocked_files = file_count - importable_files %}
+{#- The name, environment, sources and host state of a file candidate. -#}
+{% macro file_label(candidate, labels) -%}
+{%- set off = candidate.disabled_reason is not none -%}
+<span class="break-all font-mono text-[13px] font-semibold">{{ candidate.key }}</span><span class="mt-0.5 block text-xs text-ink2">Environment {{ candidate.name }} · {% for source in candidate.sources %}{{ labels[source.value] }}{% if not loop.last %}, {% endif %}{% endfor %}</span>{% if not off %}<span data-file-state class="block text-xs text-ink2">{% if candidate.exists %}{{ candidate.size }} B{% elif candidate.guessed %}Not on disk, looks like a file{% elif candidate.dist_suggestion %}Not on disk{% else %}Not on disk, created empty{% endif %}{% if candidate.optional %} · Optional{% endif %}{% if candidate.file_mode %} · <span class="font-mono">{{ candidate.file_mode }}</span>{% endif %}{% if candidate.file_owner or candidate.file_group %} · <span class="font-mono">{{ candidate.file_owner or "" }}:{{ candidate.file_group or "" }}</span>{% endif %}</span>{% endif %}{% if off %}<span class="mt-1 flex flex-wrap items-center gap-2">{{ badge("skipped", "Cannot be imported") }}<span class="text-xs text-ink2">{{ candidate.disabled_reason }}</span></span>{% endif %}
+{%- endmacro %}
+{#- The dist file cell of a file row: link the suggested dist file, and start from it when the
+    file is not on disk. -#}
+{% macro dist_cell(row) -%}
+{%- set candidate = row.candidate -%}
+<td class="min-w-48 border-t border-line px-4 py-2.5">
+{%- if candidate.dist_suggestion and candidate.disabled_reason is none -%}
+<label class="flex min-h-11 items-start gap-2.5 py-2 text-[13px] font-semibold"><input type="checkbox" name="dist:{{ candidate.key }}" value="{{ candidate.dist_suggestion }}" data-compose-dist{% if row.from_dist %} checked{% endif %} class="mt-0.5 size-[18px] shrink-0 accent-accent"><span>Link <span class="font-mono text-[13px]">{{ candidate.dist_suggestion }}</span></span></label>
+{%- if not candidate.exists %}
+<label class="flex min-h-11 items-start gap-2.5 py-2 text-[13px]"><input type="checkbox" name="start:{{ candidate.key }}" value="1" data-compose-start{% if row.from_dist %} checked{% endif %} class="mt-0.5 size-[18px] shrink-0 accent-accent"><span>Start from the dist file</span></label>
+{%- endif %}
+{%- else -%}
+<span class="text-ink3">None found</span>
+{%- endif -%}
+</td>
+{%- endmacro %}
+{#- The tick and the editable text of the post-deploy command of an owner, unticked at first. -#}
+{% macro command_field(owner, label, command, input_class, service=none) -%}
+<div class="flex flex-col gap-1" data-compose-command>
+<label class="flex min-h-11 items-center gap-2.5 text-[13px] font-semibold"><input type="checkbox" name="run:{{ owner }}" value="1" data-compose-run{% if service %} data-owner="{{ service }}"{% endif %} class="size-[18px] shrink-0 accent-accent"><span>Set this command</span></label>
+<input type="text" name="command:{{ owner }}" value="{{ command }}" aria-label="{{ label }}" autocomplete="off" spellcheck="false" class="{{ input_class }}">
+</div>
+{%- endmacro %}
 <form id="import-form" data-fragment="import-preview" class="flex flex-col gap-5">
 {%- for path in scan.compose_files %}
 <input type="hidden" name="compose_file" value="{{ path }}">
@@ -22,21 +54,30 @@
 <div class="flex flex-col gap-3 px-4 pb-5 md:px-5">
 <p class="text-xs font-bold uppercase tracking-wide text-ink3">Step 2 of 3</p>
 <p class="text-ink2">Read from <span class="break-all font-mono text-[13px] text-ink">{{ scan.compose_files | join(", ") }}</span>. Untick what is not to be imported. Nothing is changed yet.</p>
-<div role="status" data-fragment="import-counts" class="flex items-start gap-3 rounded-btn bg-info-bg px-4 py-3 font-semibold text-info-fg">{{ icon("info", "size-[18px] mt-0.5", "2") }}<span>{{ service_count }} {{ "service" if service_count == 1 else "services" }} and {{ rows | length }} {{ "file" if rows | length == 1 else "files" }} found{% if unusable_services %}, {{ unusable_services }} cannot be created{% endif %}{% if blocked_files %}, {{ blocked_files }} {{ "file" if blocked_files == 1 else "files" }} cannot be imported{% endif %}{% if scan.ignored %}, {{ scan.ignored | length }} not offered{% endif %}.</span></div>
+<div role="status" data-fragment="import-counts" class="flex items-start gap-3 rounded-btn bg-info-bg px-4 py-3 font-semibold text-info-fg">{{ icon("info", "size-[18px] mt-0.5", "2") }}<span>{{ service_count }} {{ "service" if service_count == 1 else "services" }} and {{ file_count }} {{ "file" if file_count == 1 else "files" }} found{% if own_rows %} ({{ own_rows | length }} of the deployment itself){% endif %}{% if unusable_services %}, {{ unusable_services }} cannot be created{% endif %}{% if blocked_files %}, {{ blocked_files }} {{ "file" if blocked_files == 1 else "files" }} cannot be imported{% endif %}{% if scan.ignored %}, {{ scan.ignored | length }} not offered{% endif %}.</span></div>
 {%- if usable_services == 0 %}
 {{ note("None of the services can be created, so there is nothing to import.", tone="warn") }}
 {%- endif %}
+{%- if commands_offered %}
+{{ note("Post-deploy commands are offered unticked. Tick the ones to set and edit them first: they run after a deploy that changes a file, in the deployment folder.") }}
+{%- else %}
+<div data-fragment="import-no-commands">{{ note("No post-deploy command is offered. " ~ docker_reason) }}</div>
+{%- endif %}
 </div>
 {% endcall %}
+{% set service_columns = ["Import", "Service", "Compose name", "Files"] + (["Post-deploy command"] if commands_offered else []) %}
 {% call panel("Services", "import-services-title", fragment="import-services") %}
-{% call table("Services found in the Compose files", ["Import", "Service", "Compose name", "Files"], min_width_class="min-w-[640px]") %}
+{% call table("Services found in the Compose files", service_columns, min_width_class=("min-w-[900px]" if commands_offered else "min-w-[640px]")) %}
 {%- for service in scan.services %}
 {%- set service_name %}<span class="font-mono text-[13px] font-semibold">{{ service.name }}</span>{% if service.disabled_reason %}<span class="mt-1 flex flex-wrap items-center gap-2">{{ badge("skipped", "Cannot be created") }}<span class="text-xs text-ink2">{{ service.disabled_reason }}</span></span>{% endif %}{% endset %}
-<tr data-fragment="import-service-row" data-service="{{ service.name }}"{% if service.disabled_reason %} class="bg-surface2"{% endif %}>
+<tr data-fragment="import-service-row" data-service="{{ service.name }}" class="align-top{% if service.disabled_reason %} bg-surface2{% endif %}">
 <td class="border-t border-line px-2 py-1 md:px-4"><label class="flex size-11 items-center justify-center"><input type="checkbox" name="service" value="{{ service.name }}" data-js="compose-service" aria-label="Import service {{ service.name }}"{% if service.disabled_reason %} disabled{% else %} checked{% endif %} class="size-[18px] accent-accent"></label></td>
 {{ row_header(service_name, mono=false) }}
 {% call cell() %}<span class="font-mono text-[13px]">{{ service.compose_name }}</span>{% if service.profiles %}<span class="mt-0.5 block text-xs text-ink2">Profiles: {{ service.profiles | join(", ") }}</span>{% endif %}{% endcall %}
 {% call cell() %}{{ service.files | length }}{% endcall %}
+{%- if commands_offered %}
+<td class="border-t border-line px-4 py-2.5">{% if service.disabled_reason %}<span class="text-ink3">None</span>{% else %}{{ command_field(service.name, "Post-deploy command of " ~ service.name, service.command, command_class, service=service.name) }}{% endif %}</td>
+{%- endif %}
 </tr>
 {%- endfor %}
 {% endcall %}
@@ -49,10 +90,9 @@
 {%- set key = candidate.key %}
 {%- set off = candidate.disabled_reason is not none %}
 {%- set homeless = not off and not row.owner_options %}
-{%- set file_name %}<span class="break-all font-mono text-[13px] font-semibold">{{ key }}</span><span class="mt-0.5 block text-xs text-ink2">Environment {{ candidate.name }} · {% for source in candidate.sources %}{{ source_labels[source.value] }}{% if not loop.last %}, {% endif %}{% endfor %}</span>{% if not off %}<span data-file-state class="block text-xs text-ink2">{% if candidate.exists %}{{ candidate.size }} B{% elif candidate.guessed %}Not on disk, looks like a file{% elif candidate.dist_suggestion %}Not on disk{% else %}Not on disk, created empty{% endif %}{% if candidate.optional %} · Optional{% endif %}{% if candidate.file_mode %} · <span class="font-mono">{{ candidate.file_mode }}</span>{% endif %}{% if candidate.file_owner or candidate.file_group %} · <span class="font-mono">{{ candidate.file_owner or "" }}:{{ candidate.file_group or "" }}</span>{% endif %}</span>{% endif %}{% if off %}<span class="mt-1 flex flex-wrap items-center gap-2">{{ badge("skipped", "Cannot be imported") }}<span class="text-xs text-ink2">{{ candidate.disabled_reason }}</span></span>{% endif %}{% endset %}
 <tr data-fragment="import-file-row" data-file="{{ key }}"{% if not off %} data-compose-file data-users="{{ row.owner_options | join(" ") }}"{% endif %} class="align-top{% if off %} bg-surface2{% endif %}">
 <td class="border-t border-line px-2 py-1 md:px-4"><label class="flex size-11 items-center justify-center"><input type="checkbox" name="file" value="{{ key }}" aria-label="Import {{ key }}"{% if not off %} data-compose-pick{% endif %}{% if row.checked and not homeless %} checked{% endif %}{% if off or homeless %} disabled{% endif %} class="size-[18px] accent-accent"></label></td>
-{{ row_header(file_name, mono=false) }}
+{{ row_header(file_label(candidate, source_labels), mono=false) }}
 {% call cell() %}<span class="font-mono text-[13px]">{{ candidate.users | join(", ") }}</span>{% endcall %}
 <td class="border-t border-line px-4 py-2.5">
 {%- if off or homeless -%}
@@ -73,21 +113,35 @@
 {%- endif %}
 {%- endif -%}
 </td>
-<td class="min-w-48 border-t border-line px-4 py-2.5">
-{%- if candidate.dist_suggestion and not off -%}
-<label class="flex min-h-11 items-start gap-2.5 py-2 text-[13px] font-semibold"><input type="checkbox" name="dist:{{ key }}" value="{{ candidate.dist_suggestion }}" data-compose-dist{% if row.from_dist %} checked{% endif %} class="mt-0.5 size-[18px] shrink-0 accent-accent"><span>Link <span class="font-mono text-[13px]">{{ candidate.dist_suggestion }}</span></span></label>
-{%- if not candidate.exists %}
-<label class="flex min-h-11 items-start gap-2.5 py-2 text-[13px]"><input type="checkbox" name="start:{{ key }}" value="1" data-compose-start{% if row.from_dist %} checked{% endif %} class="mt-0.5 size-[18px] shrink-0 accent-accent"><span>Start from the dist file</span></label>
-{%- endif %}
-{%- else -%}
-<span class="text-ink3">None found</span>
-{%- endif -%}
-</td>
+{{ dist_cell(row) }}
 </tr>
 {%- endfor %}
 {% endcall %}
 {%- else %}
 <p class="px-4 pb-5 text-ink2 md:px-5">The services read no file that can be imported.</p>
+{%- endif %}
+{% endcall %}
+{% call panel(files_name, "import-own-title", fragment="import-deployment-files") %}
+<p class="px-4 pb-4 text-[13px] text-ink2 md:px-5">Files the whole deployment reads. They go to the {{ files_name | lower }} of this deployment, which are deployed on their own.</p>
+{%- if own_rows %}
+{% call table("Files of the deployment itself", ["Import", "File", "Type", "Dist file"], min_width_class="min-w-[720px]") %}
+{%- for row in own_rows %}
+{%- set candidate = row.candidate %}
+{%- set key = candidate.key %}
+{%- set off = candidate.disabled_reason is not none %}
+<tr data-fragment="import-deployment-file-row" data-file="{{ key }}" class="align-top{% if off %} bg-surface2{% endif %}">
+<td class="border-t border-line px-2 py-1 md:px-4"><label class="flex size-11 items-center justify-center"><input type="checkbox" name="deployment_file" value="{{ key }}" aria-label="Import {{ key }}"{% if row.checked and not off %} checked{% endif %}{% if off %} disabled{% endif %} class="size-[18px] accent-accent"></label></td>
+{{ row_header(file_label(candidate, source_labels), mono=false) }}
+<td class="border-t border-line px-4 py-2.5">{{ type_labels[row.file_type] }}{% if not off %}<input type="hidden" name="type:{{ key }}" value="{{ row.file_type }}">{% endif %}</td>
+{{ dist_cell(row) }}
+</tr>
+{%- endfor %}
+{% endcall %}
+{%- if commands_offered %}
+<div class="border-t border-line px-4 py-4 md:px-5">{{ command_field(files_name, "Post-deploy command of the " ~ files_name | lower, scan.deployment_command, command_class) }}</div>
+{%- endif %}
+{%- else %}
+<p class="px-4 pb-5 text-ink2 md:px-5">No deployment environment file or Compose file to offer.</p>
 {%- endif %}
 {% endcall %}
 {%- if scan.ignored %}

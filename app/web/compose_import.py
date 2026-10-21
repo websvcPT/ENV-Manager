@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.client_address import client_address
 from app.core.crypto import CryptoService
 from app.core.templating import render
-from app.models import Deployment
+from app.models import DEPLOYMENT_FILES_NAME, Deployment
 from app.services.compose_config import ComposeScanError
 from app.services.compose_import import (
     HAS_SERVICES_MESSAGE,
@@ -39,6 +39,7 @@ from app.services.docker_cli import DockerCli
 from app.services.notify_events import FullNotifier
 from app.services.permissions import Capability
 from app.web.compose_import_form import (
+    deployment_rows,
     parse_posted,
     preview_rows,
     review_import,
@@ -189,20 +190,31 @@ async def import_preview(
             status_code=422,
             fragment=True,
         )
-    return render(request, PREVIEW_FRAGMENT, _preview_context(target, scan))
+    docker = await cli.status()
+    return render(request, PREVIEW_FRAGMENT, _preview_context(target, scan, docker.reason))
 
 
-def _preview_context(target: ImportTarget, scan: ComposeScan) -> dict[str, object]:
-    """What the preview fragment shows: the scan, a row per file with its first choices, the
-    counts, and the addresses that lead back to step one and on to the confirmation."""
+def _preview_context(
+    target: ImportTarget, scan: ComposeScan, docker_reason: str | None
+) -> dict[str, object]:
+    """What the preview fragment shows: the scan, a row per file and per deployment file with its
+    first choices, the counts, whether commands are offered (``docker_reason`` says why not), and
+    the addresses that lead back to step one and on to the confirmation."""
     rows = preview_rows(scan)
+    own_rows = deployment_rows(scan)
     back = urlencode([("compose_file", path) for path in scan.compose_files])
     return {
         "deployment": target.access.deployment,
         "scan": scan,
         "rows": rows,
+        "own_rows": own_rows,
+        "files_name": DEPLOYMENT_FILES_NAME,
+        "commands_offered": docker_reason is None,
+        "docker_reason": docker_reason,
         "usable_services": len(usable_services(scan)),
-        "importable_files": sum(1 for row in rows if row.candidate.disabled_reason is None),
+        "importable_files": sum(
+            1 for row in rows + own_rows if row.candidate.disabled_reason is None
+        ),
         "back_href": f"{_address(target)}?{back}",
         "confirm_action": _address(target, "/confirm"),
     }
@@ -242,7 +254,10 @@ async def import_confirm(
         scan = await scan_compose(db, cli, target.deployment, posted.compose_files)
     except ComposeScanError as refused:
         return _problem(request, "The Compose files cannot be read", str(refused))
-    review = review_import(scan, posted)
+    docker_reason = None
+    if any(posted.runs.values()):
+        docker_reason = (await cli.status(fresh=True)).reason
+    review = review_import(scan, posted, docker_reason)
     if review.problems:
         return _problem(
             request,
@@ -266,6 +281,11 @@ async def import_confirm(
             "empty": len(review.picks) - with_content - from_dist,
             "linked": sum(1 for _, choice in review.picks if choice.dist_path),
             "left_services": sum(1 for service in scan.services if service.name not in chosen),
+            "own_files": sum(
+                1 for _, choice in review.picks if choice.owner == DEPLOYMENT_FILES_NAME
+            ),
+            "files_name": DEPLOYMENT_FILES_NAME,
+            "commands": review.commands,
         },
     )
 
@@ -309,6 +329,7 @@ async def import_services(
             result.with_content,
             result.empty,
             result.skipped,
+            result.commands,
         )
     )
     return hx_redirect(f"/deployments/{target.deployment.id}?imported={counts}")

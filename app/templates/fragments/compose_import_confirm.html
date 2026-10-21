@@ -1,8 +1,10 @@
 {#- Step three of the Docker Compose import, the content of the confirmation dialog. Two states.
     Confirmation (context: action, selection, picks, dropped, with_content, from_dist, empty,
-    linked, left_services): what the import creates, with the judged choices as hidden fields that the
-    import posts, and the running line while it works. Problem (context: problem_title, problem
-    and items, the pairs of an item and its reason): the reason the import cannot go on. -#}
+    linked, left_services, own_files, files_name and commands, the owner and parsed lines of each
+    ticked post-deploy command): what the import creates, with the judged choices as hidden
+    fields that the import posts, and the running line while it works. Problem (context:
+    problem_title, problem and items, the pairs of an item and its reason): the reason the import
+    cannot go on. -#}
 {% from "macros/buttons.html" import button %}
 {% from "macros/dialogs.html" import dialog_body, dialog_footer, dialog_head, working_status %}
 {% from "macros/feedback.html" import inline_error, note %}
@@ -31,7 +33,10 @@
 <input type="hidden" name="service" value="{{ name }}">
 {%- endfor %}
 {%- for choice in selection.files %}
-<input type="hidden" name="file" value="{{ choice.key }}"><input type="hidden" name="owner:{{ choice.key }}" value="{{ choice.owner }}"><input type="hidden" name="type:{{ choice.key }}" value="{{ choice.file_type.value }}">{% if choice.dist_path %}<input type="hidden" name="dist:{{ choice.key }}" value="{{ choice.dist_path }}">{% endif %}{% if choice.from_dist %}<input type="hidden" name="start:{{ choice.key }}" value="1">{% endif %}
+{% if choice.owner == files_name %}<input type="hidden" name="deployment_file" value="{{ choice.key }}">{% else %}<input type="hidden" name="file" value="{{ choice.key }}"><input type="hidden" name="owner:{{ choice.key }}" value="{{ choice.owner }}">{% endif %}<input type="hidden" name="type:{{ choice.key }}" value="{{ choice.file_type.value }}">{% if choice.dist_path %}<input type="hidden" name="dist:{{ choice.key }}" value="{{ choice.dist_path }}">{% endif %}{% if choice.from_dist %}<input type="hidden" name="start:{{ choice.key }}" value="1">{% endif %}
+{%- endfor %}
+{%- for owner, text in selection.commands %}
+<input type="hidden" name="run:{{ owner }}" value="1"><input type="hidden" name="command:{{ owner }}" value="{{ text }}">
 {%- endfor %}
 {{ dialog_head("import-confirm", "Import services and files", "Step 3 of 3") }}
 {% call dialog_body() %}
@@ -41,11 +46,22 @@
 <div><dt class="text-xs font-bold uppercase tracking-wide text-ink3">Files</dt><dd class="mt-0.5" data-import-count="content">{{ with_content }} saved as version 1 as they are on disk, {% if from_dist %}{{ from_dist }} started from their dist file, {% endif %}{{ empty }} created empty</dd></div>
 <div><dt class="text-xs font-bold uppercase tracking-wide text-ink3">Dist files linked</dt><dd class="mt-0.5" data-import-count="linked">{{ linked }}</dd></div>
 <div><dt class="text-xs font-bold uppercase tracking-wide text-ink3">Services left out</dt><dd class="mt-0.5" data-import-count="left">{{ left_services }}</dd></div>
+<div><dt class="text-xs font-bold uppercase tracking-wide text-ink3">{{ files_name }}</dt><dd class="mt-0.5" data-import-count="deployment-files">{{ counted(own_files, "file") }}</dd></div>
+<div><dt class="text-xs font-bold uppercase tracking-wide text-ink3">Post-deploy commands</dt><dd class="mt-0.5" data-import-count="commands">{{ commands | length }}</dd></div>
 </dl>
+{%- if commands %}
+<section data-fragment="import-commands" aria-labelledby="import-commands-title" class="flex flex-col gap-3 rounded-btn border border-line bg-surface2 p-3.5">
+<div><h3 id="import-commands-title" class="text-[13px] font-bold">Review the commands</h3><p class="text-[13px] text-ink2">Each command is split into the arguments below and run exactly like this, with no shell, in the deployment folder after a deploy that changes a file.</p></div>
+{%- for owner, lines in commands %}
+<div data-import-command="{{ owner }}" class="flex flex-col gap-1.5"><p class="text-xs font-bold uppercase tracking-wide text-ink3">{{ owner }}</p>
+<ol class="flex flex-col gap-2">{% for words in lines %}<li class="flex min-w-0 items-start gap-2.5"><span class="mt-0.5 w-5 shrink-0 text-right font-mono text-xs text-ink3">{{ loop.index }}</span><span class="flex min-w-0 flex-wrap gap-1.5">{% for word in words %}<code class="max-w-full break-all rounded-ctl border border-line-strong bg-surface px-1.5 py-0.5 font-mono text-[13px] text-ink">{% if word %}{{ word }}{% else %}<span aria-label="empty argument">""</span>{% endif %}</code>{% endfor %}</span></li>{% endfor %}</ol></div>
+{%- endfor %}
+</section>
+{%- endif %}
 {%- if dropped %}
 {{ note("Not imported, because no service that uses them is selected: " ~ dropped | join(", ") ~ ".", tone="warn") }}
 {%- endif %}
-{{ note("Nothing is deployed. No file on the host is written or changed: a file that exists is saved as version 1 as it is, and a missing one starts from its dist file when chosen, else empty, and is written by its first deploy. No post-deploy command is set.") }}
+{{ note("Nothing is deployed. No file on the host is written or changed: a file that exists is saved as version 1 as it is, and a missing one starts from its dist file when chosen, else empty, and is written by its first deploy." ~ ("" if commands else " No post-deploy command is set.")) }}
 {% endcall %}
 {% call dialog_footer() %}{{ working_status("Working. Scanning the Compose files and importing can take up to 30 seconds.") }}<span class="flex-1"></span>{{ button("Cancel", data_js="dialog-close") }}{{ button("Import", kind="primary", type="submit", id="import-confirm-submit", extra_class="group-[.htmx-request]:opacity-60") }}{% endcall %}
 </form>

@@ -12,6 +12,13 @@ Compose" trigger and an unchanged result per such file, which records version 1 
 the target held, so the drift check has a baseline from the start and a version 2 saved before
 the first deploy does not read as drift. Files that were not on the host get no result: their
 first deploy writes them.
+
+The deployment's own files (the deployment ``.env`` and the Compose files) go to its deployment
+files, created when one of them is chosen. A post-deploy command is stored only for a chosen
+service, or for the deployment files when one of their files is chosen, only while the Docker
+socket is usable, and only after the safety net accepts every line; each stored command has a
+``service.hook_save`` entry like a save from the service page, which is the only place its text
+is recorded.
 """
 
 from collections.abc import Sequence
@@ -24,12 +31,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.crypto import CryptoService
 from app.models import (
+    DEPLOYMENT_FILES_NAME,
     AuditResult,
     Deployment,
     Environment,
     EnvironmentVersion,
     FileType,
+    HookType,
     Service,
+    ServiceHook,
     User,
 )
 from app.services.audit import AuditActor, record_actor_audit
@@ -50,9 +60,17 @@ from app.services.environments import (
     announce_created,
     validate_environment,
 )
+from app.services.hook_commands import CommandError, normalize_commands, parse_commands
+from app.services.hook_settings import ACTION_SAVE, DEFAULT_TIMEOUT_SECONDS, UNAVAILABLE_SUFFIX
 from app.services.notify_events import NO_EVENT_NOTIFIER, EventNotifier
 from app.services.paths import load_allowed_paths
-from app.services.services import ServiceNameError, add_service, validate_service_name
+from app.services.services import (
+    ServiceNameError,
+    add_service,
+    ensure_deployment_files,
+    listed_service,
+    validate_service_name,
+)
 
 HAS_SERVICES_MESSAGE = "This deployment already has services, so nothing can be imported."
 CONFLICT_MESSAGE = "The deployment changed while importing. Nothing was imported."
@@ -64,8 +82,12 @@ EMPTY_COMMENT = "Created empty from Docker Compose"
 DIST_COMMENT = "Created from the dist file by the Docker Compose import"
 EXISTS_FROM_DIST_MESSAGE = "The file is on disk, so it is imported as it is."
 DIST_NEEDED_MESSAGE = "Starting from the dist file needs the dist file linked."
+COMMAND_OWNER_MESSAGE = "A post-deploy command needs its service or a deployment file selected."
+COMMAND_STORED_MESSAGE = "A post-deploy command is already set here."
+EMPTY_COMMAND_MESSAGE = "Enter the command, or untick it."
 MAX_AUDITED_SKIPPED = 100
 ACTION = "deployment.import_compose"
+COMMAND_PREFIX = "command:"
 
 
 class ComposeImportError(Exception):
@@ -98,18 +120,25 @@ class FileChoice:
 
 @dataclass(frozen=True)
 class ComposeSelection:
-    """What the user chose: the Compose files (base first), the service names and the files."""
+    """What the user chose: the Compose files (base first), the service names and the files.
+
+    A file of the deployment files has ``DEPLOYMENT_FILES_NAME`` as its owner. ``commands`` are
+    the ticked post-deploy commands as (owner, command text) pairs, the owner being a service
+    name or ``DEPLOYMENT_FILES_NAME``.
+    """
 
     compose_files: tuple[str, ...]
     services: tuple[str, ...]
     files: tuple[FileChoice, ...]
+    commands: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
 class ComposeImportResult:
     """What an import created: counts only. ``with_content`` files start with text (from the file
     on disk or from their dist file), ``from_dist`` of them from the dist file, ``empty`` ones
-    start empty."""
+    start empty. ``environments`` counts the deployment files too, ``deployment_files`` only
+    them, and ``commands`` the post-deploy commands stored."""
 
     services: int
     environments: int
@@ -117,6 +146,8 @@ class ComposeImportResult:
     empty: int
     skipped: int
     from_dist: int = 0
+    deployment_files: int = 0
+    commands: int = 0
 
 
 @dataclass(frozen=True)
@@ -139,7 +170,8 @@ def _plan(scan: ComposeScan, selection: ComposeSelection) -> list[_Entry]:
     for name in chosen:
         if name not in usable:
             errors[f"service:{name}"] = UNKNOWN_SERVICE_MESSAGE
-    by_key = {candidate.key: candidate for candidate in scan.files}
+    by_key = {candidate.key: candidate for candidate in scan.all_files}
+    own = {candidate.key for candidate in scan.deployment_files}
     seen: set[str] = set()
     picked: list[tuple[FileCandidate, FileChoice, FileType]] = []
     for choice in selection.files:
@@ -149,10 +181,11 @@ def _plan(scan: ComposeScan, selection: ComposeSelection) -> list[_Entry]:
             continue
         seen.add(choice.key)
         file_type = choice.file_type or candidate.file_type
+        owners = [DEPLOYMENT_FILES_NAME] if choice.key in own else chosen
         problem = (
             candidate.disabled_reason
             or candidate.type_problems.get(file_type.value)
-            or _choice_problem(candidate, choice, file_type, chosen)
+            or _choice_problem(candidate, choice, file_type, owners)
         )
         if problem:
             errors[choice.key] = problem
@@ -173,10 +206,43 @@ def _plan(scan: ComposeScan, selection: ComposeSelection) -> list[_Entry]:
     return entries
 
 
+def plan_commands(
+    selection: ComposeSelection, services: Sequence[str], has_deployment_files: bool
+) -> list[tuple[str, str]]:
+    """The ticked post-deploy commands in their stored form, as (owner, commands) pairs.
+
+    An owner must be one of the chosen ``services``, or the deployment files when one of their
+    files is chosen, and every line must pass the safety net; otherwise ``ComposeImportError``
+    names each refused command by ``command:<owner>``.
+    """
+    errors: dict[str, str] = {}
+    planned: list[tuple[str, str]] = []
+    for owner, text in dict(selection.commands).items():
+        key = f"{COMMAND_PREFIX}{owner}"
+        own = owner == DEPLOYMENT_FILES_NAME
+        if not (has_deployment_files if own else owner in services):
+            errors[key] = COMMAND_OWNER_MESSAGE
+            continue
+        try:
+            parse_commands(text)
+        except CommandError as error:
+            errors[key] = str(error)
+            continue
+        commands = normalize_commands(text)
+        if not commands:
+            errors[key] = EMPTY_COMMAND_MESSAGE
+            continue
+        planned.append((owner, commands))
+    if errors:
+        raise ComposeImportError("Some of the post-deploy commands cannot be set.", errors)
+    return planned
+
+
 def _choice_problem(
     candidate: FileCandidate, choice: FileChoice, file_type: FileType, services: Sequence[str]
 ) -> str | None:
-    """Why the owner or the dist file of a choice is refused, None when both are fine."""
+    """Why the owner or the dist file of a choice is refused, None when both are fine.
+    ``services`` are the owners the file may have."""
     if choice.owner not in services:
         return "Choose one of the selected services as the owner."
     if choice.dist_path is not None:
@@ -239,11 +305,12 @@ def _skipped(
                     "reason": service.disabled_reason or NOT_SELECTED_REASON,
                 }
             )
-    for candidate in scan.files:
+    own = {candidate.key for candidate in scan.deployment_files}
+    for candidate in scan.all_files:
         if candidate.key not in chosen_files:
             skipped.append(
                 {
-                    "kind": "file",
+                    "kind": "deployment_file" if candidate.key in own else "file",
                     "name": candidate.key,
                     "reason": candidate.disabled_reason or NOT_SELECTED_REASON,
                 }
@@ -269,9 +336,15 @@ async def import_compose(
 
     Scans the Compose files again and matches the choices against the result. Refused with
     ``ComposeImportError`` (nothing is changed) when the deployment has services, the scan fails,
-    a choice does not match, or a file cannot be created: the error then lists each file.
+    a choice does not match, a command is refused or Docker is not usable for it, or a file
+    cannot be created: the error then lists each file and command. Deployment files that exist
+    already are kept and receive the chosen files.
     """
-    count = select(func.count()).select_from(Service).where(Service.deployment_id == deployment.id)
+    count = (
+        select(func.count())
+        .select_from(Service)
+        .where(Service.deployment_id == deployment.id, listed_service())
+    )
     if (await db.execute(count)).scalar_one():
         raise ComposeImportError(HAS_SERVICES_MESSAGE)
     try:
@@ -279,10 +352,17 @@ async def import_compose(
     except ComposeScanError as error:
         raise ComposeImportError(str(error)) from error
     entries = _plan(scan, selection)
+    own = [entry for entry in entries if entry.choice.owner == DEPLOYMENT_FILES_NAME]
+    chosen = list(dict.fromkeys(selection.services))
+    commands = plan_commands(selection, chosen, bool(own))
+    if commands:
+        docker = await cli.status(fresh=True)
+        if not docker.available:
+            raise ComposeImportError(f"{docker.reason} {UNAVAILABLE_SUFFIX}")
     allowed = await load_allowed_paths(db)
     try:
         services: dict[str, Service] = {}
-        for name in dict.fromkeys(selection.services):
+        for name in chosen:
             try:
                 checked = await validate_service_name(db, deployment.id, name)
             except ServiceNameError as error:
@@ -292,11 +372,16 @@ async def import_compose(
             services[name] = await add_service(
                 db, deployment, checked, actor=actor, ip_address=ip_address
             )
+        owners = dict(services)
+        if own:
+            owners[DEPLOYMENT_FILES_NAME] = await ensure_deployment_files(
+                db, deployment, actor=actor, ip_address=ip_address
+            )
         created: list[tuple[Environment, EnvironmentVersion]] = []
         found_on_host: dict[str, list[tuple[Environment, EnvironmentVersion]]] = {}
         errors: dict[str, str] = {}
         for entry in entries:
-            form = _form_for(entry, services[entry.choice.owner].id)
+            form = _form_for(entry, owners[entry.choice.owner].id)
             try:
                 clean = await validate_environment(db, allowed, deployment, form)
             except EnvironmentFormError as error:
@@ -316,13 +401,16 @@ async def import_compose(
                 found_on_host.setdefault(entry.choice.owner, []).append(pair)
         if errors:
             raise ComposeImportError("Some of the files cannot be imported.", errors)
+        who = AuditActor.for_user(actor, ip_address)
+        for owner, text in commands:
+            await _store_command(db, who, deployment, owners[owner], text)
         deployment.compose_files = list(scan.compose_files)
         skipped = _skipped(scan, selection, entries)
         from_dist = sum(1 for entry in entries if entry.choice.from_dist)
         with_content = sum(1 for entry in entries if entry.candidate.exists) + from_dist
         audit_entry = await record_actor_audit(
             db,
-            AuditActor.for_user(actor, ip_address),
+            who,
             action=ACTION,
             result=AuditResult.SUCCESS,
             target_type="deployment",
@@ -334,9 +422,11 @@ async def import_compose(
                 "compose_files": list(scan.compose_files),
                 "services": list(services),
                 "environments": len(created),
+                "deployment_files": len(own),
                 "with_content": with_content,
                 "from_dist": from_dist,
                 "empty": len(created) - with_content,
+                "post_deploy": [owner for owner, _ in commands],
                 "skipped_count": len(skipped),
                 "skipped": skipped[:MAX_AUDITED_SKIPPED],
             },
@@ -344,7 +434,7 @@ async def import_compose(
         for owner, files in found_on_host.items():
             await record_import_run(
                 db,
-                service=services[owner],
+                service=owners[owner],
                 deployment=deployment,
                 user=actor,
                 audit_entry_id=audit_entry.id,
@@ -366,4 +456,54 @@ async def import_compose(
         empty=len(created) - with_content,
         skipped=len(skipped),
         from_dist=from_dist,
+        deployment_files=len(own),
+        commands=len(commands),
+    )
+
+
+async def _store_command(
+    db: AsyncSession, who: AuditActor, deployment: Deployment, service: Service, commands: str
+) -> None:
+    """Add the post-deploy command of a service, with the defaults of the settings form (the
+    deployment root as working directory, run only when the deploy changed a file), and the
+    ``service.hook_save`` entry that keeps its text for the superadmin. Raises
+    ``ComposeImportError`` when the service has a command already."""
+    stored = await db.scalar(
+        select(ServiceHook.id).where(
+            ServiceHook.service_id == service.id, ServiceHook.type == HookType.POST_DEPLOY
+        )
+    )
+    if stored is not None:
+        raise ComposeImportError(
+            "Some of the post-deploy commands cannot be set.",
+            {f"{COMMAND_PREFIX}{service.name}": COMMAND_STORED_MESSAGE},
+        )
+    db.add(
+        ServiceHook(
+            service_id=service.id,
+            type=HookType.POST_DEPLOY,
+            commands=commands,
+            working_directory=None,
+            timeout_seconds=DEFAULT_TIMEOUT_SECONDS,
+            run_only_if_changed=True,
+        )
+    )
+    await record_actor_audit(
+        db,
+        who,
+        action=ACTION_SAVE,
+        result=AuditResult.SUCCESS,
+        target_type="service",
+        target_id=service.id,
+        target_name=service.name,
+        project_id=deployment.project_id,
+        deployment_id=deployment.id,
+        service_id=service.id,
+        details={
+            "hook": HookType.POST_DEPLOY.value,
+            "changed": ["commands", "timeout", "run_only_if_changed"],
+            "commands": len(parse_commands(commands)),
+            "previous_commands": "",
+            "new_commands": commands,
+        },
     )
