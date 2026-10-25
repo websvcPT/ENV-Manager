@@ -1,0 +1,12 @@
+{#- The Registries tab: the Docker registry logins that post-deploy commands pull private images
+    with, and the dialogs that add, edit, remove and test one (all loaded when they open).
+    Context: the settings tab context, rows (RegistryRow list) and docker (a DockerStatus). -#}
+{% extends "layouts/settings.html" %}
+{% from "macros/dialogs.html" import loaded_dialog %}
+{% block tab %}
+{% include "fragments/settings_registries_table.html" %}
+{{ loaded_dialog("registry-add", "Add registry login", width="560", clear_on_close=true) }}
+{{ loaded_dialog("registry-edit", "Edit registry login", width="560", clear_on_close=true) }}
+{{ loaded_dialog("registry-remove", "Remove registry login", width="560") }}
+{{ loaded_dialog("registry-test", "Test login", width="560", clear_on_close=true, working="Testing the login. This can take up to 30 seconds.") }}
+{% endblock %}

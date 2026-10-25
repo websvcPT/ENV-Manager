@@ -14,6 +14,7 @@ SETTINGS_TABS: tuple[tuple[str, str], ...] = (
     ("backup", "Backup"),
     ("security", "Security"),
     ("post-deploy", "Post-deploy"),
+    ("registries", "Registries"),
     ("notifications", "Notifications"),
     ("general", "General"),
 )

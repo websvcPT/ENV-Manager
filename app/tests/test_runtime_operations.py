@@ -120,6 +120,7 @@ PAGE_LIMITS = (
     ("smtp tab", "/settings/smtp", 6),
     ("git tab", "/settings/git", 6),
     ("notifications tab", "/settings/notifications", 6),
+    ("registries tab", "/settings/registries", 7),
 )
 
 

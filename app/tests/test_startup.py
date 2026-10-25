@@ -1,6 +1,7 @@
 """Tests that the application lifespan enforces the master key."""
 
 import logging
+import tempfile
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -11,6 +12,8 @@ from sqlalchemy import text
 from app.config import get_settings
 from app.core.crypto import KeyConfigurationError, KeyMismatchError, generate_master_key
 from app.main import create_app
+from app.services.docker_cli import DockerCli
+from app.services.scratch_sweep import LOCK_FILE_NAME, SCRATCH_PREFIX
 
 
 @pytest.fixture
@@ -142,3 +145,42 @@ async def test_the_seeded_application_starts_on_a_database_already_at_head(
     async with web_app.state.engine.connect() as connection:
         count = (await connection.execute(text("SELECT count(*) FROM users"))).scalar()
     assert count == 10
+
+
+async def test_startup_removes_the_docker_run_folders_a_killed_process_left_and_keeps_live_ones(
+    configured: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The sweep of the temporary directory runs at startup and logs only a count."""
+    temp_root = configured / "temp"
+    temp_root.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(temp_root))
+    stale = temp_root / f"{SCRATCH_PREFIX}stale"
+    (stale / "run-a").mkdir(parents=True)
+    (stale / "run-b").mkdir()
+    (stale / "run-a" / "config.json").write_text('{"auths": {}}', encoding="utf-8")
+    (stale / LOCK_FILE_NAME).touch()
+    live = DockerCli()
+    live_run = live.scratch / "run-live"
+    live_run.mkdir()
+    records: list[str] = []
+
+    class Listener(logging.Handler):
+        """Keeps the messages it is given."""
+
+        def emit(self, record: logging.LogRecord) -> None:
+            """Remember the message."""
+            records.append(record.getMessage())
+
+    application = create_app()
+    logger = logging.getLogger("envmanager.main")
+    listener = Listener(logging.INFO)
+    logger.addHandler(listener)
+    try:
+        async with application.router.lifespan_context(application):
+            pass
+    finally:
+        logger.removeHandler(listener)
+    assert not stale.exists() and live_run.is_dir()
+    swept = [message for message in records if "Docker run folder" in message]
+    assert swept == ["2 leftover Docker run folder(s) of a stopped process removed"]
+    assert str(temp_root) not in swept[0]

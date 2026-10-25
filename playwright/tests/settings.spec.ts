@@ -17,6 +17,7 @@ const TABS = [
   ['backup', 'Backup'],
   ['security', 'Security'],
   ['post-deploy', 'Post-deploy'],
+  ['registries', 'Registries'],
   ['notifications', 'Notifications'],
   ['general', 'General'],
 ] as const;
@@ -58,7 +59,7 @@ function pathRow(page: Page, path: string): Locator {
 }
 
 test.describe('layout and tabs', () => {
-  test('the sidebar opens the first tab with the header and all eight tabs', async ({ page }) => {
+  test('the sidebar opens the first tab with the header and all nine tabs', async ({ page }) => {
     await page.goto('/projects');
     if (isWide(page)) {
       await sidebarLink(page).click();
@@ -123,7 +124,12 @@ for (const role of [
         expect(response?.status(), path).toBe(403);
         await expect(page.locator('main')).toContainText('No access');
       }
-      for (const path of ['/settings/paths/table', '/settings/paths/new']) {
+      for (const path of [
+        '/settings/paths/table',
+        '/settings/paths/new',
+        '/settings/registries/table',
+        '/settings/registries/new',
+      ]) {
         const response = await page.request.get(path, { headers: { 'HX-Request': 'true' } });
         expect(response.status(), path).toBe(403);
       }

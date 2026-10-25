@@ -17,8 +17,8 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from app.services.registries import RegistryLogin, docker_config
+from app.services.scratch_sweep import RUN_FOLDER_PREFIX
 
-RUN_FOLDER_PREFIX = "run-"
 CONFIG_FILE_NAME = "config.json"
 CONFIG_FILE_MODE = 0o600
 

@@ -397,22 +397,42 @@ async def remove_registry(
     return registry
 
 
+def open_registry_login(crypto: CryptoService, registry: DockerRegistry) -> RegistryLogin:
+    """The login of a registry row with its token opened.
+
+    Raises ``RegistryTokenError`` naming the registry when the token cannot be opened (another
+    key, a value moved to another row).
+    """
+    try:
+        token = crypto.decrypt_text(registry.token_encrypted, registry_context(registry.id))
+    except CryptoError as error:
+        raise RegistryTokenError(registry.host) from error
+    return RegistryLogin(registry.host, registry.username, token)
+
+
+async def load_registry_login(
+    db: AsyncSession, crypto: CryptoService, registry_id: int
+) -> RegistryLogin:
+    """One login with its token opened.
+
+    Raises ``RegistryNotFoundError`` when the registry is gone and ``RegistryTokenError`` when
+    its token cannot be opened.
+    """
+    registry = await db.get(DockerRegistry, registry_id)
+    if registry is None:
+        raise RegistryNotFoundError
+    return open_registry_login(crypto, registry)
+
+
 async def load_registry_logins(
     db: AsyncSession, crypto: CryptoService
 ) -> tuple[RegistryLogin, ...]:
     """Every login with its token opened, in host order.
 
-    A token that cannot be opened (another key, a value moved to another row) raises
-    ``RegistryTokenError`` naming the registry; nothing is skipped silently.
+    A token that cannot be opened raises ``RegistryTokenError`` naming the registry; nothing is
+    skipped silently.
     """
-    logins = []
-    for registry in await list_registries(db):
-        try:
-            token = crypto.decrypt_text(registry.token_encrypted, registry_context(registry.id))
-        except CryptoError as error:
-            raise RegistryTokenError(registry.host) from error
-        logins.append(RegistryLogin(registry.host, registry.username, token))
-    return tuple(logins)
+    return tuple(open_registry_login(crypto, registry) for registry in await list_registries(db))
 
 
 def docker_config(logins: Iterable[RegistryLogin]) -> dict[str, dict[str, dict[str, str]]]:

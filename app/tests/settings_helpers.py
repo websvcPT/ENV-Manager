@@ -14,8 +14,26 @@ from app.models.app_setting import KEY_CHECK_SETTING
 from app.services.app_settings import StoredSettings, load_stored_settings
 from app.tests.conftest import sign_in
 
-TABS = ("paths", "smtp", "git", "backup", "security", "post-deploy", "notifications", "general")
-SETTINGS_ACTIONS = ("settings.update", "allowed_path.add", "allowed_path.remove")
+TABS = (
+    "paths",
+    "smtp",
+    "git",
+    "backup",
+    "security",
+    "post-deploy",
+    "registries",
+    "notifications",
+    "general",
+)
+SETTINGS_ACTIONS = (
+    "settings.update",
+    "allowed_path.add",
+    "allowed_path.remove",
+    "registry.add",
+    "registry.update",
+    "registry.remove",
+    "registry.test",
+)
 NON_SUPERADMINS = (
     "admin",
     "project_admin",

@@ -1,0 +1,26 @@
+{#- The add and edit registry login dialog content: host, username and token. A refused save swaps
+    this again (422) with the reasons next to the fields. The token field is never filled, also
+    after a refusal; on edit an empty token keeps the stored one. Context: mode (add or edit),
+    registry_id (edit), stored_host (edit, the host as stored, for the subtitle), form (host and
+    username as typed) and errors (messages by field, form for one about the whole login). -#}
+{% from "macros/buttons.html" import button %}
+{% from "macros/dialogs.html" import dialog_body, dialog_footer, dialog_head %}
+{% from "macros/feedback.html" import note %}
+{% from "macros/forms.html" import field %}
+{% set editing = mode == "edit" %}
+{% set dialog_id = "registry-edit" if editing else "registry-add" %}
+{% set prefix = "re" if editing else "ra" %}
+<div data-fragment="{{ dialog_id }}">
+{{ dialog_head(dialog_id, "Edit registry login" if editing else "Add registry login", stored_host if editing else none) }}
+<form id="{{ dialog_id }}-form" hx-post="{{ '/settings/registries/' ~ registry_id ~ '/edit' if editing else '/settings/registries' }}" hx-target="#{{ dialog_id }}" hx-swap="innerHTML">
+{% call dialog_body() %}
+{%- if errors.get("form") %}
+{{ note(errors.form, tone="error") }}
+{%- endif %}
+{{ field(prefix ~ "-host", "Registry host", name="host", value=form.host, placeholder="registry.example.com", hint="The host and an optional port, such as registry.example.com:5000. Use docker.io for Docker Hub.", error=errors.get("host"), mono=true, autocomplete="off", spellcheck="false", autocapitalize="off") }}
+{{ field(prefix ~ "-user", "Username", name="username", value=form.username, error=errors.get("username"), autocomplete="off", spellcheck="false", autocapitalize="off") }}
+{{ field(prefix ~ "-token", "Token or password", name="token", type="password", placeholder=("••••••••" if editing else ""), hint=("Stored. Leave empty to keep it." if editing else "Stored encrypted and never shown again."), error=errors.get("token"), autocomplete="new-password", spellcheck="false") }}
+{% endcall %}
+{% call dialog_footer() %}{{ button("Cancel", data_js="dialog-close") }}{{ button("Save login" if editing else "Add registry", kind="primary", type="submit") }}{% endcall %}
+</form>
+</div>

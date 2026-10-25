@@ -21,8 +21,10 @@ import weakref
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import BinaryIO
 
 from app.services.hook_process import BoundedOutput, run_process
+from app.services.scratch_sweep import SCRATCH_PREFIX, claim_scratch
 
 DOCKER_SOCKET = Path("/var/run/docker.sock")
 CHILD_PATH = "/usr/local/bin:/usr/bin:/bin"
@@ -61,6 +63,8 @@ class DockerCli:
     ``executable`` defaults to the ``docker`` found on the fixed child PATH. ``scratch`` is the
     private directory used as HOME and Docker config folder of children; it is created on first
     use inside the temporary directory unless given, and removed again when the object goes away.
+    A scratch directory made here is locked by this object for as long as it lives, which is how
+    ``app.services.scratch_sweep`` tells a folder in use from one a killed process left behind.
     ``clock`` is the monotonic time the status cache reads, replaceable in tests.
     """
 
@@ -76,6 +80,7 @@ class DockerCli:
         self._executable = executable
         self.socket_path = socket_path
         self._scratch = scratch
+        self._scratch_claim: BinaryIO | None = None
         self._clock = clock
         self._probed: tuple[float, DockerStatus] | None = None
 
@@ -90,8 +95,14 @@ class DockerCli:
     def scratch(self) -> Path:
         """The private directory children use as HOME and Docker config folder."""
         if self._scratch is None:
-            self._scratch = Path(tempfile.mkdtemp(prefix="envmanager-docker-"))
-            weakref.finalize(self, shutil.rmtree, self._scratch, ignore_errors=True)
+            folder = Path(tempfile.mkdtemp(prefix=SCRATCH_PREFIX))
+            try:
+                self._scratch_claim = claim_scratch(folder)
+            except OSError:
+                shutil.rmtree(folder, ignore_errors=True)
+                raise
+            self._scratch = folder
+            weakref.finalize(self, shutil.rmtree, folder, ignore_errors=True)
         self._scratch.mkdir(mode=0o700, parents=True, exist_ok=True)
         return self._scratch
 

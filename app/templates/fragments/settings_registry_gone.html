@@ -1,0 +1,10 @@
+{#- The dialog content of a registry login that was removed meanwhile, for any of the registry
+    dialogs. Context: dialog_id (the dialog it fills). -#}
+{% from "macros/buttons.html" import button %}
+{% from "macros/dialogs.html" import dialog_body, dialog_footer, dialog_head %}
+{% from "macros/feedback.html" import note %}
+<div data-fragment="{{ dialog_id }}">
+{{ dialog_head(dialog_id, "Registry already removed") }}
+{% call dialog_body() %}{{ note("This registry is no longer in the list.") }}{% endcall %}
+{% call dialog_footer() %}{{ button("Close", data_js="dialog-close") }}{% endcall %}
+</div>

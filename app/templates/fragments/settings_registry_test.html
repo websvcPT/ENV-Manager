@@ -1,0 +1,18 @@
+{#- The result of a login test, the content of the test dialog: what was tested, the outcome in
+    words and, for a login that was refused, the scrubbed and truncated output of Docker. Context:
+    registry (a RegistryRow) and check (a LoginCheck: ok, message, output). -#}
+{% from "macros/buttons.html" import button %}
+{% from "macros/dialogs.html" import dialog_body, dialog_footer, dialog_head %}
+{% from "macros/feedback.html" import code_block, note %}
+<div data-fragment="registry-test" data-result="{{ 'ok' if check.ok else 'failed' }}">
+{{ dialog_head("registry-test", "Test login", registry.host ~ " as " ~ registry.username) }}
+{% call dialog_body() %}
+<div aria-live="polite" class="flex flex-col gap-3">
+{{ note(check.message, tone="success" if check.ok else "error") }}
+{%- if check.output %}
+<div hx-ignore>{{ code_block(check.output) }}</div>
+{%- endif %}
+</div>
+{% endcall %}
+{% call dialog_footer() %}{{ button("Close", data_js="dialog-close") }}{% endcall %}
+</div>

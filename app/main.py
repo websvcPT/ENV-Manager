@@ -1,6 +1,8 @@
 """Application factory."""
 
+import asyncio
 import os
+import tempfile
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -40,6 +42,7 @@ from app.services.git_services import GitServices
 from app.services.key_check import ensure_key_check
 from app.services.mailer import FastapiMailTransport
 from app.services.notifier import Notifications
+from app.services.scratch_sweep import sweep_stale_scratch
 from app.services.server_lock import (
     ServerLock,
     ServerLockBusyError,
@@ -74,6 +77,7 @@ from app.web.settings_backup import router as settings_backup_router
 from app.web.settings_git import router as settings_git_router
 from app.web.settings_notifications import router as settings_notifications_router
 from app.web.settings_paths import router as settings_paths_router
+from app.web.settings_registries import router as settings_registries_router
 from app.web.settings_smtp import router as settings_smtp_router
 from app.web.tokens import router as tokens_router
 from app.web.users import router as users_router
@@ -89,7 +93,8 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
 
     A missing, malformed or mismatching master key stops startup before anything is served, and
     so does a data folder that another process holds (a second server or a key rotation).
-    Deploy runs left running by a process that is gone are closed before the first request.
+    Deploy runs left running by a process that is gone are closed before the first request, and
+    the Docker config folders of runs that a killed process never removed are swept away.
     The scheduler runs inside this process, which is assumed to be the only worker.
     """
     settings = get_settings()
@@ -134,6 +139,9 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
                 )
         async with session_factory() as session:
             await recover_interrupted_runs(session, settings.lock_path)
+        removed = await asyncio.to_thread(sweep_stale_scratch, Path(tempfile.gettempdir()))
+        if removed:
+            log.info("%d leftover Docker run folder(s) of a stopped process removed", removed)
         application.state.crypto = crypto
         application.state.login_ip_max_failures = settings.login_ip_max_failures
         transport = FastapiMailTransport()
@@ -255,6 +263,7 @@ def create_app() -> FastAPI:
     application.include_router(tokens_router)
     application.include_router(account_router)
     application.include_router(settings_paths_router)
+    application.include_router(settings_registries_router)
     application.include_router(settings_backup_router)
     application.include_router(settings_git_router)
     application.include_router(settings_smtp_router)

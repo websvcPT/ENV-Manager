@@ -1,0 +1,36 @@
+{#- The registries panel: what the logins are for, then one row per registry with its username, the
+    stored token (never shown) and when it changed, or an empty state. Test login shows only while
+    Docker works; otherwise the reason is on the panel. The panel refreshes when a login is added,
+    changed or removed. Context: rows (RegistryRow list) and docker (a DockerStatus). -#}
+{% from "macros/badges.html" import badge %}
+{% from "macros/buttons.html" import button %}
+{% from "macros/feedback.html" import empty_state, note %}
+{% from "macros/panels.html" import cell, panel, table %}
+{% from "macros/row_actions.html" import row_actions %}
+{% from "macros/time.html" import moment with context %}
+{% set add_attrs = {"data_js": "dialog-open", "data_target": "registry-add", "aria_haspopup": "dialog", "hx_get": "/settings/registries/new", "hx_target": "#registry-add", "hx_swap": "innerHTML"} %}
+{% set add_button %}{{ button("Add registry", kind="primary-sm", icon_name="plus", icon_stroke="2.2", **add_attrs) }}{% endset %}
+{% call panel("Registries", "registries-title", fragment="registries-table", actions=add_button, id="registries-table", hx_get="/settings/registries/table", hx_trigger="registries-changed from:body", hx_swap="outerHTML") %}
+<p class="px-4 pb-3 text-[13px] text-ink2 md:px-5">Post-deploy commands sign in to these registries to pull private images. Keep one login per registry host. A pull-only bot account or a read-only token is better than a personal password. Tokens are stored encrypted and never shown again.</p>
+{%- if not docker.available %}
+<div id="registries-docker-note" class="mx-4 mb-4 md:mx-5">{{ note((docker.reason or "Docker is not available.") ~ " Test login is unavailable.", tone="warn") }}</div>
+{%- endif %}
+{%- if rows %}
+{% call table("Registry logins", ["Host", "Username", "Token", "Updated", "Actions"], right_columns=[4], min_width_class="min-w-[720px]") %}
+{%- for row in rows %}
+<tr data-fragment="registry-row" id="registry-{{ row.id }}"><th scope="row" class="border-t border-line px-4 py-3.5 text-left font-semibold"><span class="wrap-anywhere font-mono text-[13px]">{{ row.host }}</span></th>
+{%- call cell() %}<span class="wrap-anywhere">{{ row.username }}</span>{% endcall %}
+{%- call cell() %}{{ badge("deployed", "Stored") }}{% endcall %}
+<td class="border-t border-line px-4 py-3.5 whitespace-nowrap">{{ moment(row.updated_at) }}</td>
+<td class="border-t border-line px-4 py-3.5 whitespace-nowrap text-right">{{ row_actions("registry-" ~ row.id, row.host, (
+  [{"key": "test", "label": "Test login", "icon": "key", "attrs": {"data_js": "dialog-open", "data_target": "registry-test", "aria_haspopup": "dialog", "hx_post": "/settings/registries/" ~ row.id ~ "/test", "hx_target": "#registry-test", "hx_swap": "innerHTML", "hx_sync": "this:drop"}}] if docker.available else []
+) + [
+  {"key": "edit", "label": "Edit", "icon": "pencil", "attrs": {"data_js": "dialog-open", "data_target": "registry-edit", "aria_haspopup": "dialog", "hx_get": "/settings/registries/" ~ row.id ~ "/edit", "hx_target": "#registry-edit", "hx_swap": "innerHTML"}},
+  {"key": "remove", "label": "Remove", "icon": "trash", "danger": true, "attrs": {"data_js": "dialog-open", "data_target": "registry-remove", "aria_haspopup": "dialog", "hx_get": "/settings/registries/" ~ row.id ~ "/remove", "hx_target": "#registry-remove", "hx_swap": "innerHTML"}}
+]) }}</td></tr>
+{%- endfor %}
+{% endcall %}
+{%- else %}
+{% call empty_state("No registry logins", "Add a login so post-deploy commands can pull images from a private registry. Public images need none.", "key") %}{{ button("Add registry", kind="primary", icon_name="plus", icon_stroke="2.2", **add_attrs) }}{% endcall %}
+{%- endif %}
+{% endcall %}
