@@ -23,7 +23,7 @@
 {%- call cell() %}{{ badge("deployed", "Stored") }}{% endcall %}
 <td class="border-t border-line px-4 py-3.5 whitespace-nowrap">{{ moment(row.updated_at) }}</td>
 <td class="border-t border-line px-4 py-3.5 whitespace-nowrap text-right">{{ row_actions("registry-" ~ row.id, row.host, (
-  [{"key": "test", "label": "Test login", "icon": "key", "attrs": {"data_js": "dialog-open", "data_target": "registry-test", "aria_haspopup": "dialog", "hx_post": "/settings/registries/" ~ row.id ~ "/test", "hx_target": "#registry-test", "hx_swap": "innerHTML", "hx_sync": "this:drop"}}] if docker.available else []
+  [{"key": "test", "label": "Test login", "icon": "lock", "attrs": {"data_js": "dialog-open", "data_target": "registry-test", "aria_haspopup": "dialog", "hx_post": "/settings/registries/" ~ row.id ~ "/test", "hx_target": "#registry-test", "hx_swap": "innerHTML", "hx_sync": "this:drop"}}] if docker.available else []
 ) + [
   {"key": "edit", "label": "Edit", "icon": "pencil", "attrs": {"data_js": "dialog-open", "data_target": "registry-edit", "aria_haspopup": "dialog", "hx_get": "/settings/registries/" ~ row.id ~ "/edit", "hx_target": "#registry-edit", "hx_swap": "innerHTML"}},
   {"key": "remove", "label": "Remove", "icon": "trash", "danger": true, "attrs": {"data_js": "dialog-open", "data_target": "registry-remove", "aria_haspopup": "dialog", "hx_get": "/settings/registries/" ~ row.id ~ "/remove", "hx_target": "#registry-remove", "hx_swap": "innerHTML"}}

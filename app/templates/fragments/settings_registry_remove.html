@@ -4,7 +4,7 @@
 <div data-fragment="registry-remove">
 {{ dialog_head("registry-remove", "Remove " ~ registry.host) }}
 <form hx-post="/settings/registries/{{ registry.id }}/remove" hx-target="#registry-remove" hx-swap="innerHTML">
-{% call dialog_body() %}{% call confirm_message() %}The stored login for {{ registry.username }} and its token are deleted. A post-deploy command that pulls from {{ registry.host }} fails with unauthorized until a login is added again.{% endcall %}{% endcall %}
+{% call dialog_body() %}{% call confirm_message() %}The stored login for {{ registry.username }} and its token are deleted. A post-deploy command that pulls from {{ registry.host }} is refused by the registry until a login is added again.{% endcall %}{% endcall %}
 {{ confirm_footer("Remove login", type="submit") }}
 </form>
 </div>

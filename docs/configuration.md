@@ -51,13 +51,14 @@ secret, trusted proxies and allowed sources stay in environment variables (see
   again: the edit dialog leaves the field empty and an empty token keeps the stored one. Adding,
   changing and removing a login is audited (`registry.add`, `registry.update`, `registry.remove`)
   with the host and the username and, for a change, only whether the token changed. Test login
-  runs `docker login <host>` through the Docker socket in a private config folder that holds that
-  one login, with no standard input and a limit of 30 seconds, and shows OK or Docker's own
+  runs `docker login <host>` (`docker login` with no host for Docker Hub) through the Docker
+  socket in a private config folder that holds that one login, with no standard input and a limit of 30 seconds, and shows OK or Docker's own
   refusal with the token scrubbed out of it; it needs a usable Docker (socket, daemon and compose
   plugin, as for the Post-deploy tab), otherwise the action is absent and the panel says why.
   Every test is audited as `registry.test` with the host, the username and the result, never the
   output. Removing a login deletes nothing on the host: the images already pulled stay, and the
-  next pull of a private image fails with `unauthorized` until the login is added again. How the
+  next pull of a private image from that registry is refused (Docker reports `no basic auth
+  credentials`, or `unauthorized` for a wrong token) until the login is added again. How the
   logins reach a command is described under
   [Post-deploy commands](usage.md#post-deploy-commands).
 - **General.** The time zone and date format apply to the times on the audit log, project

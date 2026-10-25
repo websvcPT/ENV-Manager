@@ -259,7 +259,7 @@ test('removing a login asks first, then refreshes the table and is audited', asy
   await (await rowAction(row, 'remove')).click();
   const dialog = page.locator('#registry-remove');
   await expect(dialog.locator('h2')).toHaveText(`Remove ${host}`);
-  await expect(dialog).toContainText('fails with unauthorized until a login is added again');
+  await expect(dialog).toContainText('is refused by the registry until a login is added again');
   await dialog.getByRole('button', { name: 'Cancel' }).click();
   await expect(row).toBeVisible();
 

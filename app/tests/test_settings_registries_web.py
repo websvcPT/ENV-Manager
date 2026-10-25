@@ -449,7 +449,7 @@ async def test_the_remove_dialog_confirms_and_the_post_removes_the_login(
     number = await registry_id(web_app, "registry.example.com")
     page = await fragment(root, f"/settings/registries/{number}/remove")
     assert 'data-fragment="registry-remove"' in page and "Remove registry.example.com" in page
-    assert "fails with unauthorized until a login is added again" in page
+    assert "is refused by the registry until a login is added again" in page
     assert f'hx-post="/settings/registries/{number}/remove"' in page
     assert ">Remove login</button>" in page
     response = await post(root, f"/settings/registries/{number}/remove")
