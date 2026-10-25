@@ -6,7 +6,9 @@
 #
 # The demo service runs the specs in `playwright/docker-tests` against the stack with the demo
 # override up (`make e2e-demo`), where the app reaches the host Docker daemon. It also gets the
-# demo folder of the host, which the specs use as a deployment root.
+# demo folder of the host, which the specs use as a deployment root, and, from `make e2e-demo`,
+# the address and the test login of a local registry (E2E_DEMO_REGISTRY, E2E_DEMO_REGISTRY_USER
+# and E2E_DEMO_REGISTRY_PASSWORD, given with `run -e`).
 name: env-manager-e2e
 
 x-browser: &browser

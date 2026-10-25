@@ -1,6 +1,6 @@
 .PHONY: up up-app upforce up-bg wait-app stop destroy logs app app-logs lint format tests \
 	tests-docker migrate revision seed dev-cleanup dev-reset check-pins e2e e2e-lock e2e-demo demo-up \
-	demo-down demo-reset demo-root-scenarios frontend-build tailwind-download tailwind-build tailwind-watch \
+	demo-down demo-reset demo-registry-down demo-root-scenarios frontend-build tailwind-download tailwind-build tailwind-watch \
 	static-fetch help
 
 # Extra arguments for `make tests` (pytest) and `make e2e` (playwright test); empty runs everything.
@@ -30,6 +30,8 @@ export DEMO_ROOT := $(CURDIR)/demo
 DEMO_PROJECT := env-manager-demo
 DEMO_COMPOSE := docker compose -f docker-compose.yml -f docker-compose-demo.yml
 DOCKER_SOCKET := /var/run/docker.sock
+# The label of the containers of the local test registry (LABEL in app/real_scenarios/registry.py).
+REGISTRY_LABEL := env-manager.test-registry
 
 # --- Environment lifecycle ---
 up: dev-dirs $(TAILWIND_OUTPUT) ## Start environment
@@ -136,11 +138,19 @@ demo-down: ## Stop the demo workloads and return the app to the default stack (n
 demo-reset: ## Restore the demo target files to the baseline (drift, identical, missing)
 	sh scripts/demo-reset.sh
 
+# The test registry of the real scenarios and the Docker browser specs
+# (app/real_scenarios/registry.py) labels its containers; this removes them with their volumes,
+# whichever run left them behind.
+demo-registry-down: ## Remove the local test registry containers and their volumes
+	@ids=$$(docker ps --all --quiet --filter label=$(REGISTRY_LABEL)); \
+	[ -z "$$ids" ] || docker rm --force --volumes $$ids > /dev/null
+
 # Real-scenario tests (app/real_scenarios, outside the default test run) deploy the demo stack
 # through the real CLI onto the host folder mounted at its host path. The browser specs in
 # playwright/docker-tests run against the same stack, whose app reaches the host Docker daemon.
-# The demo override is always taken down again, and the target files left at the baseline,
-# whether or not they pass.
+# The scenarios start their own local registry and the browser run gets one started by the
+# target, both for the registry logins. The demo override is always taken down again, the
+# registries removed and the target files left at the baseline, whether or not they pass.
 demo-root-scenarios: ## Run the owner and group scenarios as root in a throwaway container of the demo stack
 	DOCKER_GID=$$(stat -c %g $(DOCKER_SOCKET)) $(DEMO_COMPOSE) run --rm -T --no-deps --user 0 app \
 		sh -c 'sh /app/scripts/test.sh -n 0 app/real_scenarios/test_demo_owner_root.py; \
@@ -154,7 +164,12 @@ e2e-demo: ## Bring the demo override up, run the real-scenario tests and the Doc
 			--ignore=app/real_scenarios/test_demo_owner_root.py \
 		&& $(MAKE) --no-print-directory demo-root-scenarios \
 		&& sh scripts/e2e-seed.sh \
-		&& docker compose -f docker-compose-e2e.yml run --rm playwright-demo; } || status=$$?; \
+		&& registry=$$(docker compose exec -T app python -m app.real_scenarios.registry start) \
+		&& set -- $$registry \
+		&& docker compose -f docker-compose-e2e.yml run --rm \
+			-e E2E_DEMO_REGISTRY="$$1" -e E2E_DEMO_REGISTRY_USER="$$2" \
+			-e E2E_DEMO_REGISTRY_PASSWORD="$$3" playwright-demo; } || status=$$?; \
+	$(MAKE) --no-print-directory demo-registry-down || status=$$?; \
 	$(MAKE) --no-print-directory demo-reset || status=$$?; \
 	$(MAKE) --no-print-directory demo-down || status=$$?; \
 	exit $$status

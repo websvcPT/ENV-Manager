@@ -22,9 +22,13 @@ from app.core.db import create_engine, create_session_factory
 from app.core.migrations import migrate_database
 from app.main import create_app
 from app.models import HookType, ServiceHook, User
+from app.real_scenarios.registry import LocalRegistry, remove_local_image, start_registry
 from app.seeds import SeedData, SeedDemo, seed
 from app.services.versions import create_version
 
+SOURCE_IMAGE = "alpine:3.24.2"
+PRIVATE_REPOSITORY = "private/alpine"
+PRIVATE_TAG = "1"
 DEMO_ROOT_VARIABLE = "ENVMANAGER_DEMO_ROOT"
 DIST_SUFFIX = "-dist"
 COMPOSE_PROJECT = "env-manager-demo"
@@ -269,3 +273,27 @@ def workloads(demo: DemoStack) -> Iterator[Workloads]:
     found.stop()
     yield found
     found.stop()
+
+
+@pytest.fixture(scope="session")
+def local_registry() -> Iterator[LocalRegistry]:
+    """A private registry with the test login on 127.0.0.1, started once and always removed."""
+    registry = start_registry()
+    try:
+        yield registry
+    finally:
+        registry.remove()
+
+
+@pytest.fixture
+def private_image(local_registry: LocalRegistry) -> Iterator[str]:
+    """The reference of a private image in the registry, with no copy on the host daemon.
+
+    The image is the pinned alpine pushed under a name of the registry and untagged locally, so a
+    pull has to authenticate against the registry. Whatever a scenario pulled is removed again.
+    """
+    reference = local_registry.push(SOURCE_IMAGE, PRIVATE_REPOSITORY, PRIVATE_TAG)
+    try:
+        yield reference
+    finally:
+        remove_local_image(reference)
