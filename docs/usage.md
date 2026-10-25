@@ -304,7 +304,10 @@ check right before a command runs always probe the daemon.
   `--volumes` options of `rm` are refused. The rules read the parsed words and err on the side
   of refusing: a word `down` after `compose`, a word `prune` anywhere, and `--volumes` or a short
   option holding `v` (`-v`, `-fv`) anywhere after a word `rm` are refused even where a name
-  happens to look like one. Every other docker command is allowed.
+  happens to look like one. `docker login`, `docker logout` and the global `--config` option
+  (`docker --config <folder> ...`) are refused too, because the registry logins are the app's own
+  (see [Registry logins](#registry-logins)); the message points to Settings, Registries. Every
+  other docker command is allowed.
 - Saving changed commands is a review first: the first Save shows the exact arguments each line
   was split into (one chip per argument, so quoting is visible) and stores nothing; Confirm and
   save stores exactly the text that was shown, and editing the commands after the review asks
@@ -316,9 +319,11 @@ check right before a command runs always probe the daemon.
   allowed path, checked again when the command runs) and stop at the first non-zero exit. One
   timeout (default 120 seconds) covers all of them and the deploy lock stays held until they
   end; at the deadline the whole process group is killed and the run counts as failed.
-- The command gets a minimal environment (`PATH`, `HOME`, `LANG`, `DOCKER_CONFIG` and a
-  `DOCKER_HOST` pinned to the checked socket), never the environment of the app, so the master
-  key, the CSRF secret and the error reporting DSN do not reach it.
+- The command gets a minimal environment (`PATH`, `HOME`, `LANG`, `DOCKER_HOST` pinned to the
+  checked socket and `DOCKER_CONFIG`, a private folder of that run that holds the stored registry
+  logins and is removed afterwards, see [Registry logins](#registry-logins)), never the
+  environment of the app, so the master key, the CSRF secret and the error reporting DSN do not
+  reach it.
 - The run records the status (ran, skipped with a reason, failed), the exit code and the first
   and last 4 KB of the output, in the run and in the audit entry. While the command executes the
   run reads `running`. A failing command makes the deploy "deployed, post-deploy failed". Status is
@@ -335,3 +340,42 @@ check right before a command runs always probe the daemon.
   than Compose prints it, base64, hashed) is not recognized, a value that exists only on disk (a
   drifted target file) is not in the set, and a value that only appears in a comment line of a
   file is not a value. The output of a failed Test command is scrubbed the same way.
+
+### Registry logins
+
+A private image needs credentials, and the Docker daemon keeps none: the `docker` command sends
+the ones it reads from its config folder. The app starts every command with a config folder of
+its own, so a command such as `docker compose up -d --no-deps api` would fail with `unauthorized`
+on an image from a private registry. The superadmin stores the logins in Settings, Registries
+(see [Configuration](configuration.md#settings)), and the app makes them available to every
+command it runs.
+
+- **How a login reaches a command.** For each run of a service's commands the app makes a new
+  private folder (readable by the app's user only), writes the stored logins into it as a Docker
+  `config.json`, points `DOCKER_CONFIG` at it and removes the folder when the run ends, however it
+  ended (success, failure, timeout or cancellation). The folder holds every stored login and
+  Docker sends a registry only its own entry, so one service can pull from several registries.
+  With no login stored nothing is written. The token is sealed in the database
+  (see [Operations](operations.md#key-rotation)) and opened in memory for the run only. A token
+  that cannot be opened (a different master key) fails the post-deploy step with a message that
+  asks for it to be entered again in Settings, Registries.
+- **Which account to use.** Best is a pull-only bot account: a service or robot account of the
+  registry whose only permission is to read the images the deployments use, so a leaked token can
+  pull and nothing else. Next is a read-only personal access token (a scope such as read packages
+  or read registry), which stops working when the person leaves or revokes it. A personal
+  password is the last choice: it opens everything that person can reach, including writing, and
+  it changes whenever they change it. The app stores them all the same way (a username and a
+  secret), so the choice is yours to make well.
+- **Not supported.** Registries that only issue short-lived tokens through a credential helper,
+  such as AWS ECR or `gcloud` for Google Artifact Registry, because the stored login is a fixed
+  username and token and the app does not run credential helpers.
+- **The safety net.** `docker login`, `docker logout` and `--config` are refused when the
+  commands are saved and again before a run, so a command can neither replace the logins of the
+  app nor write a credential of its own.
+- **Output.** Every stored token, and its base64 `user:token` form that a Docker config file
+  holds, is replaced with `****` in the output of a run before it is stored or shown, like the
+  managed values. A token shorter than four characters is not scrubbed by itself (its base64 form
+  is), like any value that short.
+- **Test login.** The button of a row in Settings, Registries runs `docker login` for that one
+  login and says whether the registry accepted it, with the registry's own reason when it did not
+  (for example `401 Unauthorized`).

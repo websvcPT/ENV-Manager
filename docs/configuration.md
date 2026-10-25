@@ -15,6 +15,7 @@ secret, trusted proxies and allowed sources stay in environment variables (see
 | Allowed paths | The list with mounted and writable status and the deployments under each entry, add with a live check, remove behind a confirm dialog. |
 | Security | Idle and absolute session timeouts, failed logins before lockout per user, per address and for the API per address, lockout duration, minimum password length, and the two-factor policy (Optional, shown read-only). |
 | Post-deploy | The Docker socket status and the switch for post-deploy commands. |
+| Registries | The Docker registry logins post-deploy commands pull private images with (host, username, token): add, edit and remove in dialogs, and Test login. |
 | General | Time zone and date format, audit retention, the defaults of a new deployment, and the read-only diagnostics. |
 | Backup | Schedule, retention, an optional extra destination, the list of backups with Run now, Download and a confirmed Restore (see [Backup and restore](operations.md#backup-and-restore)). |
 | SMTP | The mail server (host, port, TLS mode, username, password, from address) and a Send test mail button (see [Notifications](operations.md#notifications)). |
@@ -39,6 +40,26 @@ secret, trusted proxies and allowed sources stay in environment variables (see
   it off the deploy engine skips a service's stored command, records Skipped with the reason
   "Post-deploy commands are switched off in settings.", and the deploy dialog preview and the
   service page say the same. Force does not override it.
+- **Registries.** The logins that let a post-deploy command pull images from a private registry,
+  one list for the whole app and one login per registry host (Docker sends each registry only its
+  own entry, so deployments that pull from several registries work with the one list). A login is
+  a host, a username and a token or password. The host is typed as `registry.example.com`, with a
+  port when it has one (`127.0.0.1:5000`), and stored in lowercase without `https://` or `http://`
+  and a trailing slash; a path is refused, and `docker.io`, `index.docker.io` and
+  `registry-1.docker.io` all mean Docker Hub. The token is required when a login is added (at most
+  4096 characters), is sealed with the master key like the other secrets and is never shown
+  again: the edit dialog leaves the field empty and an empty token keeps the stored one. Adding,
+  changing and removing a login is audited (`registry.add`, `registry.update`, `registry.remove`)
+  with the host and the username and, for a change, only whether the token changed. Test login
+  runs `docker login <host>` through the Docker socket in a private config folder that holds that
+  one login, with no standard input and a limit of 30 seconds, and shows OK or Docker's own
+  refusal with the token scrubbed out of it; it needs a usable Docker (socket, daemon and compose
+  plugin, as for the Post-deploy tab), otherwise the action is absent and the panel says why.
+  Every test is audited as `registry.test` with the host, the username and the result, never the
+  output. Removing a login deletes nothing on the host: the images already pulled stay, and the
+  next pull of a private image fails with `unauthorized` until the login is added again. How the
+  logins reach a command is described under
+  [Post-deploy commands](usage.md#post-deploy-commands).
 - **General.** The time zone and date format apply to the times on the audit log, project
   activity and user activity (stored times stay UTC; the audit date filters are days of that zone;
   the CSV export stays UTC). The audit retention (90 days by default, 0 keeps every entry) is

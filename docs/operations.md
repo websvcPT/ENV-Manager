@@ -1,12 +1,13 @@
 # Operations
 
-Backup and restore, key rotation, git sync and notifications.
+Backup and restore, key rotation, the Docker scratch folder, git sync and notifications.
 
 ## Backup and restore
 
 A backup is a consistent copy of the SQLite database taken with SQLite's online backup, so the
 application keeps running and writing while it is made. It holds the database as it is: environment
-values, SMTP and git credentials are encrypted fields, and the master key is never in the database,
+values, SMTP and git credentials and Docker registry tokens are encrypted fields (so a backup
+holds the registry logins, sealed), and the master key is never in the database,
 so it is never in a backup. A backup is not secret-free, though: it also holds user names, email
 addresses, password hashes, structure and the audit log in the clear. Treat the file like the
 database.
@@ -117,9 +118,9 @@ start the container with the same key, copy a downloaded backup in and run `back
 
 ## Key rotation
 
-The master key seals every environment value, the second factor secrets and the secret settings
-(the SMTP password, the webhook address and secret, the git deploy key and token), and it keys the hashes that
-drift detection compares. A rotation replaces it with a new key. It is offline: the application
+The master key seals every environment value, the second factor secrets, the secret settings
+(the SMTP password, the webhook address and secret, the git deploy key and token) and the Docker
+registry tokens (Settings, Registries), and it keys the hashes that drift detection compares. A rotation replaces it with a new key. It is offline: the application
 is stopped, the command rewrites the database in one transaction, and the application is started
 with the new key.
 
@@ -174,7 +175,7 @@ What the command does, in order:
   database, and the rotation itself is refused when one of them holds the lock.
 - In one transaction it seals every value again with the new key and recomputes every keyed hash:
   the content of every environment version and its hash, the second factor secrets, every secret
-  setting, the hashes of deploy results (the baselines of the drift checks) and the key check
+  setting, every registry token, the hashes of deploy results (the baselines of the drift checks) and the key check
   record. Every value is opened with the new key before the transaction is committed, and the audit
   entry `key.rotate` (counts and the name of the backup, never key material) is part of it. Any
   failure rolls everything back and the database is as it was; the new key file stays and the next
@@ -210,6 +211,25 @@ never leaves it held: a file that still holds the line of a holder that did not 
 stale lock, reported in the log and taken over. The lock works between containers that share the
 data folder on a local filesystem (a bind mount or a Docker volume); a network filesystem that does
 not honour locks cannot enforce it.
+
+## Docker scratch folder
+
+The `docker` command of the app (post-deploy commands, the Docker status probes and Test login in
+Settings, Registries) works in a private scratch folder in the temporary directory of the
+container, `envmanager-docker-*`, made by each process and used as `HOME` and as the base Docker
+config. A run of post-deploy commands, and a Test login, make a `run-*` folder inside it that
+holds the registry logins as a `config.json` (mode 0600 in a 0700 folder) and remove it when the
+run ends. These files are in the temporary directory only: never in `/data`, never in a backup.
+
+A process that is killed hard (SIGKILL, the out-of-memory killer) cannot remove its folders, and a
+container that restarts keeps its temporary directory. So each process holds an exclusive lock
+(`flock`) on a `.lock` file in the scratch folder it made, for as long as it lives; the kernel drops
+the lock when the process ends, however it ended. At startup the app removes the
+`envmanager-docker-*` folders in the temporary directory that are real folders owned by its own
+user and whose lock it can take, which means no running process uses them (a command line deploy
+or another worker of the container holds its own folder's lock, so its folder is never touched),
+and logs how many leftover run folders it removed, never what was in them. A folder with no lock
+file is removed after 60 seconds. Nothing needs to be done by hand.
 
 ## Git sync
 

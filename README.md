@@ -32,6 +32,10 @@ https://www.buymeacoffee.com/websvc
 - **Deploys to host paths.** Write a version to the folder a deployment reads, with the mode,
   owner and group you set, atomically, and optionally run a post-deploy Docker command such as
   recreating the Compose service.
+- **Private registry logins.** Store the logins of the Docker registries your images come from
+  (a pull-only bot account or a read-only token is best), sealed with the master key and never
+  shown again, and post-deploy commands can pull private images; each run gets a private Docker
+  config that is removed afterwards, and Test login checks a login against the registry.
 - **Import from Docker Compose.** Create the services and files of a new deployment from its
   Compose files: the real `docker compose config` finds the `env_file`, secret, config and bind
   mount files, you review them in a preview, and the files that exist become version 1 with the
@@ -196,8 +200,8 @@ The start script of the image also reads `ENVMANAGER_HOST` (the address the serv
   the Docker socket, upgrades, trusted proxies and allowed sources.
 - [Configuration and observability](docs/configuration.md): the Settings tabs, Sentry and
   OpenTelemetry.
-- [Operations](docs/operations.md): backup and restore, key rotation, git sync, email
-  notifications and the deploy webhook.
+- [Operations](docs/operations.md): backup and restore, key rotation, the Docker scratch folder,
+  git sync, email notifications and the deploy webhook.
 - [Using ENV Manager](docs/usage.md): deploying from the command line, the drift view, users,
   accounts and post-deploy commands.
 - [API tokens and the API](docs/api.md): creating tokens and calling the deploy API.

@@ -68,7 +68,8 @@ mounts the Docker socket.
 | `make demo-up` | Restores the baseline when no target file exists yet, restarts the app container with `docker-compose-demo.yml` (the Docker socket, the host docker group id in `group_add`, and `demo/` mounted at the same absolute path as on the host), waits for it and seeds the demo project. |
 | `make demo-reset` | Restores the demo target files to the baseline. Database state (versions, deploy results) is not touched. |
 | `make demo-down` | Stops the demo workloads (Compose project `env-manager-demo`) and recreates the app container from the default stack, without the socket. |
-| `make e2e-demo` | Runs `make demo-up` and `make demo-reset`, then the real-scenario tests in `app/real_scenarios` inside the app container, then the browser specs in `playwright/docker-tests` (the post-deploy settings against the real daemon), then `make demo-reset` and `make demo-down`, whether or not they pass. |
+| `make demo-registry-down` | Removes the containers (with their volumes) of the local test registry, described below, whichever run left them. |
+| `make e2e-demo` | Runs `make demo-up` and `make demo-reset`, then the real-scenario tests in `app/real_scenarios` inside the app container, then the browser specs in `playwright/docker-tests` (against the real daemon and a local registry), then `make demo-registry-down`, `make demo-reset` and `make demo-down`, whether or not they pass. |
 
 The real-scenario tests are outside the default test run. Each one seeds a throwaway database,
 runs the real `envmanager deploy` command against the demo stack on the mounted host folder and
@@ -87,6 +88,29 @@ make demo-down
 ```
 
 The Docker socket is root-equivalent on the host; keep the demo override for local runs only.
+
+### Local registry
+
+The registry logins are proved against a real private registry, for tests only. It is the pinned
+`registry` image (see `IMAGE` in `app/real_scenarios/registry.py`) with basic authentication,
+published on a free port of `127.0.0.1` that Docker picks. The host daemon treats `127.0.0.0/8`
+as insecure, so it talks plain http to it and nothing else can reach it. Its only login is a
+fixed development and testing one: the user and password are constants of
+`app/real_scenarios/registry.py` and the matching bcrypt entry is committed in
+`demo/registry/htpasswd`, which is copied into the created container (not mounted, so it works
+from inside the app container). Nothing of it is part of the production image or the default
+stacks.
+
+- The scenarios in `app/real_scenarios/test_demo_registry.py` start one registry per run, push the
+  pinned `alpine` image to it as a private image with the test login in a private Docker config
+  folder (removed right after), remove the local tag so that a pull really goes to the registry,
+  and remove the container, its volume and the tags afterwards.
+- `make e2e-demo` starts another one for the browser specs
+  (`python -m app.real_scenarios.registry start` in the app container) and hands its address and
+  login to the Playwright container as `E2E_DEMO_REGISTRY`, `E2E_DEMO_REGISTRY_USER` and
+  `E2E_DEMO_REGISTRY_PASSWORD`. `make demo-registry-down` removes the containers that carry its
+  label, and `make e2e-demo` runs it at the end whether or not the specs passed. The image itself
+  stays in the local image cache like the other pinned images (`docker rmi` removes it).
 
 ## Continuous integration
 
