@@ -11,6 +11,7 @@ What is sealed or keyed by the master key is listed here and nowhere else:
 * the second factor secret of every user (sealed, bound to the user),
 * every secret setting named in ``SECRET_KEYS`` (sealed, bound to the setting name) and the key
   check record,
+* the token of every Docker registry login (sealed, bound to the registry),
 * the hashes of deploy results (keyed): the hash a deploy wrote is the content hash of its
   version, so it follows the version; the hash of the file found before a deploy cannot be
   derived from anything stored, so it follows a version when the file held one and is dropped
@@ -40,6 +41,7 @@ from app.models import (
     AppSetting,
     AuditResult,
     DeployResult,
+    DockerRegistry,
     EnvironmentVersion,
     GitSyncState,
     User,
@@ -50,6 +52,7 @@ from app.services import totp
 from app.services.app_settings import SECRET_KEYS, secret_context
 from app.services.audit import AuditActor, record_actor_audit
 from app.services.git_state import reset_progress
+from app.services.registries import registry_context
 
 ACTION_ROTATE = "key.rotate"
 TARGET_TYPE = "key"
@@ -68,6 +71,7 @@ class RekeyReport:
     versions: int
     totp_secrets: int
     setting_secrets: int
+    registry_tokens: int
     deploy_hashes_recomputed: int
     deploy_hashes_dropped: int
     seen_addresses_cleared: int
@@ -177,6 +181,32 @@ async def _rekey_settings(db: AsyncSession, old: CryptoService, new: CryptoServi
     return secrets_resealed
 
 
+async def _sealed_registries(db: AsyncSession) -> list[tuple[int, str]]:
+    """The id and sealed token of every Docker registry login."""
+    rows = (
+        await db.execute(
+            select(DockerRegistry.id, DockerRegistry.token_encrypted).order_by(DockerRegistry.id)
+        )
+    ).all()
+    return [(registry_id, sealed) for registry_id, sealed in rows]
+
+
+async def _rekey_registries(db: AsyncSession, old: CryptoService, new: CryptoService) -> int:
+    """Reseal the token of every registry login. The time of the last edit is left as it was."""
+    count = 0
+    for registry_id, sealed in await _sealed_registries(db):
+        context = registry_context(registry_id)
+        plain = _open(old, sealed, context, f"the token of registry {registry_id}")
+        resealed = new.encrypt(plain, context)
+        await db.execute(
+            update(DockerRegistry)
+            .where(DockerRegistry.id == registry_id)
+            .values(token_encrypted=resealed, updated_at=DockerRegistry.updated_at)
+        )
+        count += 1
+    return count
+
+
 def _moved(value: str | None, hashes: dict[str, str]) -> str | None:
     """The new hash for an old one, or None when the old one maps to no known version."""
     return hashes.get(value) if value is not None else None
@@ -241,6 +271,13 @@ async def _verify(db: AsyncSession, new: CryptoService) -> None:
                 raise RotationError(f"the hash of version {row_id} does not match after the re-key")
     for user_id, sealed in await _users_with_secret(db):
         _open(new, sealed, totp.secret_context(user_id), f"the second factor of user {user_id}")
+    for registry_id, sealed in await _sealed_registries(db):
+        _open(
+            new,
+            sealed,
+            registry_context(registry_id),
+            f"the token of registry {registry_id} after the re-key",
+        )
     for name, sealed in (await _sealed_settings(db)).items():
         if name != KEY_CHECK_SETTING:
             _open(new, sealed, secret_context(name), f"the setting {name} after the re-key")
@@ -261,6 +298,7 @@ async def rekey_database(db: AsyncSession, old: CryptoService, new: CryptoServic
     versions, hashes = await _rekey_versions(db, old, new)
     totp_secrets = await _rekey_totp_secrets(db, old, new)
     setting_secrets = await _rekey_settings(db, old, new)
+    registry_tokens = await _rekey_registries(db, old, new)
     recomputed, dropped = await _rekey_deploy_hashes(db, hashes)
     cleared = await _forget_signed_in_addresses(db)
     reset = await _reset_git_progress(db)
@@ -269,6 +307,7 @@ async def rekey_database(db: AsyncSession, old: CryptoService, new: CryptoServic
         versions=versions,
         totp_secrets=totp_secrets,
         setting_secrets=setting_secrets,
+        registry_tokens=registry_tokens,
         deploy_hashes_recomputed=recomputed,
         deploy_hashes_dropped=dropped,
         seen_addresses_cleared=cleared,

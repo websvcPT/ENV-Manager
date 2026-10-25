@@ -17,6 +17,7 @@ from app.models import (
     DeployResult,
     DeployResultStatus,
     DeployStatus,
+    DockerRegistry,
     DriftState,
     EnvironmentVersion,
     GitSyncState,
@@ -33,6 +34,12 @@ from app.services.deploy_types import DeployOutcome
 from app.services.git_state import load_state
 from app.services.key_check import ensure_key_check
 from app.services.key_rotation import ACTION_ROTATE, RotationError, rotate_master_key
+from app.services.registries import (
+    RegistryTokenError,
+    add_registry,
+    load_registry_logins,
+    registry_context,
+)
 from app.services.seen_addresses import note_sign_in_address
 from app.services.versions import create_version
 from app.tests.deploy_helpers import Harness, audit_of
@@ -46,6 +53,10 @@ KEYED_COLUMNS = {
     ("git_sync_state", "watermark"),
 }
 DRIFTED_TEXT = "WORKERS=99\n"
+REGISTRY_TOKENS = {
+    "registry.example.com": "registry-token-for-the-first-host",
+    "ghcr.io": "registry-token-for-the-second-host",
+}
 
 
 @dataclass
@@ -59,6 +70,7 @@ class World:
     new_encoded: str
     path: Path
     secrets: dict[str, str]
+    registry_tokens: dict[int, str]
     versions: dict[int, str]
     sealed_before: set[str]
     keyed_before: set[str]
@@ -94,6 +106,12 @@ async def build_world(h: Harness, master_key: str) -> World:
     secrets = {name: f"secret-value-for-{name}" for name in sorted(SECRET_KEYS)}
     for name, value in secrets.items():
         await write_secret(db, h.crypto, name, value, actor=actor)
+    registry_tokens = {}
+    for host, token in REGISTRY_TOKENS.items():
+        registry = await add_registry(
+            db, h.crypto, host, "bot", token, actor=h.seed.users.superadmin
+        )
+        registry_tokens[registry.id] = token
     for user in (h.seed.users.admin, h.seed.users.viewer):
         await note_sign_in_address(db, h.crypto, user.id, "203.0.113.7", utc_now())
     state = await load_state(db)
@@ -125,6 +143,7 @@ async def build_world(h: Harness, master_key: str) -> World:
         new_encoded=new_encoded,
         path=path,
         secrets=secrets,
+        registry_tokens=registry_tokens,
         versions=versions,
         sealed_before={value for _, _, value in sealed_values(path)},
         keyed_before=keyed,
@@ -143,6 +162,9 @@ async def test_the_world_holds_every_kind_of_value_a_rotation_must_move(world: W
     db = h.db
     assert len(world.versions) >= 12
     assert len(world.secrets) == len(SECRET_KEYS) >= 4
+    assert len(world.registry_tokens) == len(REGISTRY_TOKENS) >= 2
+    stored = (await db.execute(select(DockerRegistry))).scalars().all()
+    assert {registry.id for registry in stored} == set(world.registry_tokens)
     assert (await db.execute(select(User).where(User.totp_secret.is_not(None)))).scalars().all()
     assert (await db.execute(select(UserSeenAddress))).scalars().all()
     results = (await db.execute(select(DeployResult))).scalars().all()
@@ -180,9 +202,40 @@ async def test_every_sealed_value_opens_with_the_new_key_to_the_same_plaintext(
         row = await h.db.get(AppSetting, name)
         assert row is not None
         assert world.new.decrypt_text(row.value, secret_context(name)) == value
+    for registry in (await h.db.execute(select(DockerRegistry))).scalars():
+        context = registry_context(registry.id)
+        assert (
+            world.new.decrypt_text(registry.token_encrypted, context)
+            == (world.registry_tokens[registry.id])
+        )
+        with pytest.raises(CryptoError):
+            world.old.decrypt(registry.token_encrypted, context)
     check = await h.db.get(AppSetting, KEY_CHECK_SETTING)
     assert check is not None
     world.new.verify_key_check(check.value)
+
+
+async def test_registry_logins_load_with_the_new_key_and_keep_their_edit_time(
+    world: World,
+) -> None:
+    h = world.harness
+    edited = {
+        registry.id: registry.updated_at
+        for registry in (await h.db.execute(select(DockerRegistry))).scalars()
+    }
+    report = await world.rotate()
+    h.db.expire_all()
+    assert report.registry_tokens == len(world.registry_tokens)
+
+    logins = await load_registry_logins(h.db, world.new)
+    assert {login.token for login in logins} == set(world.registry_tokens.values())
+    with pytest.raises(RegistryTokenError):
+        await load_registry_logins(h.db, world.old)
+    after = {
+        registry.id: registry.updated_at
+        for registry in (await h.db.execute(select(DockerRegistry))).scalars()
+    }
+    assert after == edited
 
 
 async def test_every_content_hash_is_recomputed_and_deploy_hashes_follow_their_versions(
@@ -231,6 +284,7 @@ async def test_nothing_sealed_or_keyed_under_the_old_key_is_left_in_any_table(
 
     contexts = [b"", *(secret_context(name) for name in SECRET_KEYS)]
     contexts += [totp.secret_context(user_id) for user_id in range(1, 40)]
+    contexts += [registry_context(registry_id) for registry_id in world.registry_tokens]
     contexts.append(b"key-check")
     for table, column, value in sealed_values(world.path):
         opened = []
@@ -305,9 +359,16 @@ async def test_the_audit_entry_has_counts_and_the_backup_and_never_key_material(
     assert entry.details["backup"] == "envmanager-test-rotation.db"
     assert entry.details["versions"] == len(world.versions)
     assert entry.details["setting_secrets"] == len(SECRET_KEYS)
+    assert entry.details["registry_tokens"] == len(world.registry_tokens)
     assert entry.details["git_progress_reset"] is True
     text = json.dumps(entry.details) + str(entry.target_name)
-    for needle in (world.old_encoded, world.new_encoded, *world.secrets.values()):
+    needles = (
+        world.old_encoded,
+        world.new_encoded,
+        *world.secrets.values(),
+        *world.registry_tokens.values(),
+    )
+    for needle in needles:
         assert needle not in text
 
 
@@ -357,6 +418,21 @@ async def test_a_secret_setting_sealed_under_another_name_stops_the_rotation(
     await h.db.commit()
     before = dump_database(world.path)
     with pytest.raises(RotationError, match=f"the setting {names[0]} cannot be opened"):
+        await world.rotate()
+    assert dump_database(world.path) == before
+
+
+async def test_a_registry_token_sealed_for_another_row_stops_the_rotation(
+    world: World,
+) -> None:
+    h = world.harness
+    first, second = (
+        (await h.db.execute(select(DockerRegistry).order_by(DockerRegistry.id))).scalars().all()
+    )
+    first.token_encrypted = second.token_encrypted
+    await h.db.commit()
+    before = dump_database(world.path)
+    with pytest.raises(RotationError, match=f"the token of registry {first.id} cannot be opened"):
         await world.rotate()
     assert dump_database(world.path) == before
 

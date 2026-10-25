@@ -91,7 +91,11 @@ async def _rotate(
         )
     await announce_event(
         cli_notifier(db, new),
-        MasterKeyRotated(report.versions, report.totp_secrets + report.setting_secrets, "cli"),
+        MasterKeyRotated(
+            report.versions,
+            report.totp_secrets + report.setting_secrets + report.registry_tokens,
+            "cli",
+        ),
     )
     return RotationOutcome(
         report,
@@ -106,8 +110,9 @@ def _print_outcome(outcome: RotationOutcome, new_key_file: Path) -> None:
     """The counts, the backup, and the steps that are left."""
     report = outcome.report
     typer.echo(
-        f"key rotated: {report.versions} versions, {report.totp_secrets} second factor secrets "
-        f"and {report.setting_secrets} secret settings were sealed again with the new key"
+        f"key rotated: {report.versions} versions, {report.totp_secrets} second factor secrets, "
+        f"{report.setting_secrets} secret settings and {report.registry_tokens} registry tokens "
+        "were sealed again with the new key"
     )
     typer.echo(
         f"{report.deploy_hashes_recomputed} deploy hashes were recomputed, "

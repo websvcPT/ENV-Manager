@@ -23,6 +23,7 @@ from app.models.deploy import (
 from app.models.git_sync import SYNC_STATE_ID, GitSyncState
 from app.models.notifications import NotificationStatus, UserSeenAddress
 from app.models.operations import AllowedPath, Backup, BackupStatus, BackupTrigger
+from app.models.registry import DockerRegistry
 from app.models.structure import (
     DEPLOYMENT_FILES_NAME,
     Deployment,
@@ -69,6 +70,7 @@ __all__ = [
     "Deployment",
     "DistMissingPolicy",
     "DistOutcome",
+    "DockerRegistry",
     "DriftPolicy",
     "DriftState",
     "Environment",

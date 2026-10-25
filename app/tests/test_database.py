@@ -818,3 +818,59 @@ async def test_deployment_names_become_unique_ignoring_case_and_the_way_back_dro
             assert sorted(names) == ["Web EU", "d", "web eu"]
     finally:
         await engine.dispose()
+
+
+async def test_docker_registries_are_added_and_dropped_by_the_migration_and_keep_other_rows(
+    database_path: Path, backup_dir: Path
+) -> None:
+    """Migration 0022 adds the registries table next to existing rows, with a host that is unique
+    ignoring case and ids that are never handed out twice; the way back drops the table and its
+    index and keeps every other row, and going forward again gives an empty table."""
+    insert = (
+        "INSERT INTO docker_registries (host, username, token_encrypted, created_at, updated_at)"
+        " VALUES (:host, 'bot', 'sealed', '2026-01-01', '2026-01-01')"
+    )
+    engine = create_engine(database_path)
+    try:
+        await _migrate(engine, "0021")
+        async with engine.begin() as connection:
+            for statement in TREE_STATEMENTS:
+                await connection.execute(text(statement))
+        await migrate_database(engine, database_path, backup_dir)
+        async with engine.begin() as connection:
+            await connection.execute(text(insert), {"host": "Registry.Example.com"})
+            await connection.execute(text(insert), {"host": "ghcr.io"})
+            with pytest.raises(IntegrityError):
+                await connection.execute(text(insert), {"host": "REGISTRY.example.COM"})
+        async with engine.begin() as connection:
+            await connection.execute(text("DELETE FROM docker_registries WHERE host = 'ghcr.io'"))
+            await connection.execute(text(insert), {"host": "quay.io"})
+            ids = (
+                (await connection.execute(text("SELECT id FROM docker_registries ORDER BY id")))
+                .scalars()
+                .all()
+            )
+            table_sql = (
+                await connection.execute(
+                    text("SELECT sql FROM sqlite_master WHERE name = 'docker_registries'")
+                )
+            ).scalar_one()
+        assert ids == [1, 3] and "AUTOINCREMENT" in table_sql
+        await _migrate(engine, "0021", down=True)
+        async with engine.connect() as connection:
+            left = (
+                await connection.execute(
+                    text("SELECT name FROM sqlite_master WHERE name LIKE '%docker_registries%'")
+                )
+            ).all()
+            kept = [
+                (await connection.execute(text(f"SELECT count(*) FROM {table}"))).scalar_one()  # noqa: S608
+                for table in CHILD_TABLES
+            ]
+        assert left == [] and kept == [1] * len(CHILD_TABLES)
+        await _migrate(engine, "head")
+        async with engine.connect() as connection:
+            again = await connection.execute(text("SELECT count(*) FROM docker_registries"))
+        assert again.scalar_one() == 0
+    finally:
+        await engine.dispose()
