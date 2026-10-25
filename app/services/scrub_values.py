@@ -87,11 +87,13 @@ async def load_scrubber(
     written: Iterable[EnvironmentVersion | None] = (),
     *,
     opened: dict[int, str] | None = None,
+    extra: Iterable[str] = (),
 ) -> OutputScrubber:
     """The scrubber for a deployment: current versions of all its files plus ``written``.
 
     ``opened`` maps version ids to text the caller's operation already decrypted: those versions
-    are not decrypted again, and each one decrypted here is added to it.
+    are not decrypted again, and each one decrypted here is added to it. ``extra`` are further
+    values to remove, such as the registry logins of the run.
     """
     newest = await _newest_versions(db, deployment_id)
     versions = {version.id: version for version, _file_type in newest}
@@ -99,7 +101,7 @@ async def load_scrubber(
     for version in written:
         if version is not None:
             versions.setdefault(version.id, version)
-    values: list[str] = []
+    values: list[str] = list(extra)
     for version in versions.values():
         text = opened.get(version.id) if opened is not None else None
         if text is None:

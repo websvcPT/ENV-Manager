@@ -10,6 +10,12 @@ stops the rest, and one deadline covers all of them, so the deploy lock is never
 the timeout. Reasons and output never contain the text of a command, which only the superadmin
 may read.
 
+A request that holds registry logins runs every command of the hook with a Docker config folder
+of its own for that run (``app.services.run_config``), which holds the logins and is removed when
+the run ends, so a command can pull from a private registry and nothing about a login stays on
+disk. Without logins nothing is written and the commands run with the plain environment of the
+Docker CLI.
+
 A non-zero exit or a timeout is an expected outcome: it is returned as a failed result and logged
 below error level, so error reporting is not triggered.
 """
@@ -25,12 +31,16 @@ from app.services.hook_commands import Command, CommandError, parse_commands
 from app.services.hook_process import BoundedOutput, run_process
 from app.services.hooks import PostDeployHook, PostDeployRequest, PostDeployResult
 from app.services.paths import AllowedPaths, PathValidationError, normalize_path
+from app.services.run_config import RunConfigError, private_docker_config
 
 log = get_logger("hook_runner")
 
 NOT_CHANGED_REASON = "No file changed and the command runs only when one did."
 REFUSED_REASON = "The command was not run because its settings are no longer valid."
 NOT_STARTED_REASON = "The command could not be started."
+LOGINS_NOT_WRITTEN_REASON = (
+    "The command was not run because the registry logins could not be prepared for it."
+)
 OUTSIDE_PATHS_MESSAGE = "The working directory is outside the allowed paths."
 NOT_A_FOLDER_MESSAGE = "The working directory does not exist or is not a folder."
 ROOT_OUTSIDE_MESSAGE = "The deployment is outside the allowed paths."
@@ -99,9 +109,9 @@ class DockerHookRunner:
     async def run_post_deploy(self, request: PostDeployRequest) -> PostDeployResult:
         """Run the commands once, or report why they were skipped or that there are none."""
         hook = request.hook
-        if hook is None or not hook.commands.strip():
+        if hook is None or not hook.has_command:
             return PostDeployResult(PostDeployStatus.NONE)
-        if hook.run_only_if_changed and not (request.changed or request.force):
+        if not hook.is_due(changed=request.changed, force=request.force):
             return _skipped(NOT_CHANGED_REASON)
         status = await self.cli.status(fresh=True)
         executable = self.cli.executable
@@ -118,6 +128,25 @@ class DockerHookRunner:
     async def _execute(
         self, request: PostDeployRequest, hook: PostDeployHook, plan: _Plan, executable: str
     ) -> PostDeployResult:
+        """Run the commands, with the config folder of the registry logins when there are any."""
+        if not request.registry_logins:
+            environment = self.cli.environment()
+            return await self._run_commands(request, hook, plan, executable, environment)
+        try:
+            with private_docker_config(self.cli.scratch, request.registry_logins) as folder:
+                environment = {**self.cli.environment(), "DOCKER_CONFIG": str(folder)}
+                return await self._run_commands(request, hook, plan, executable, environment)
+        except RunConfigError:
+            return self._failed(request, BoundedOutput(), None, LOGINS_NOT_WRITTEN_REASON)
+
+    async def _run_commands(
+        self,
+        request: PostDeployRequest,
+        hook: PostDeployHook,
+        plan: _Plan,
+        executable: str,
+        environment: dict[str, str],
+    ) -> PostDeployResult:
         """Run the commands in order under one deadline and stop at the first failure."""
         timeout = max(hook.timeout_seconds or DEFAULT_TIMEOUT_SECONDS, 1)
         output = BoundedOutput()
@@ -131,7 +160,7 @@ class DockerHookRunner:
                 result = await run_process(
                     [executable, *command[1:]],
                     cwd=plan.directory,
-                    env=self.cli.environment(),
+                    env=environment,
                     timeout=max(deadline - loop.time(), 0.0),
                     output=output,
                 )

@@ -92,6 +92,12 @@ from app.services.hooks import (
 from app.services.output_scrub import OutputScrubber
 from app.services.paths import AllowedPaths, PathValidationError, load_allowed_paths
 from app.services.permissions import AccessScope, Capability, permitted_environment_ids
+from app.services.registries import (
+    RegistryLogin,
+    RegistryTokenError,
+    load_registry_logins,
+    login_secrets,
+)
 from app.services.scrub_values import load_scrubber
 from app.services.structure_lookup import service_with_deployment
 from app.services.target_files import (
@@ -125,6 +131,13 @@ POST_DEPLOY_NOT_RUN_REASON = "Not run because an environment was not deployed."
 POST_DEPLOY_ROOT_REASON = "Not run because the deployment is outside the allowed paths."
 POST_DEPLOY_ERROR_REASON = "The post-deploy runner failed unexpectedly."
 SCRUBBER_FAILED_REASON = "The command was not run because its output could not be protected."
+REGISTRY_UNREADABLE_REASON = (
+    "The command was not run because a stored registry token cannot be opened with the current "
+    "key. Enter it again in Settings, Registries."
+)
+REGISTRY_LOGINS_FAILED_REASON = (
+    "The command was not run because the registry logins could not be read."
+)
 
 _DEPLOYED = (DeployResultStatus.WRITTEN, DeployResultStatus.UNCHANGED)
 
@@ -729,14 +742,23 @@ class DeployEngine:
         When a command is stored, the values of the deployment's files are loaded first and
         removed from whatever the runner returns, so no output, whichever runner produced it,
         reaches the run record, the audit entry or a caller with a configuration value in it. If
-        the values cannot be loaded the command is not run.
+        the values cannot be loaded the command is not run. When the command will run, the
+        Docker registry logins are loaded as well and handed to the runner, and their tokens
+        join the values that are removed; a token that cannot be opened stops the command, which
+        never runs with a login silently missing.
         """
         try:
             root = allowed.resolve(context.deployment.root_path)
         except PathValidationError:
             return PostDeployResult(PostDeployStatus.SKIPPED, reason=POST_DEPLOY_ROOT_REASON)
+        changed = any(outcome.status is DeployResultStatus.WRITTEN for outcome in outcomes)
         scrubber = OutputScrubber()
-        if context.hook is not None and context.hook.commands.strip():
+        logins: tuple[RegistryLogin, ...] = ()
+        if context.hook is not None and context.hook.has_command:
+            if context.hook.is_due(changed=changed, force=request.force):
+                logins, refusal = await self._open_registry_logins(db)
+                if refusal is not None:
+                    return refusal
             try:
                 scrubber = await load_scrubber(
                     db,
@@ -744,6 +766,7 @@ class DeployEngine:
                     context.deployment.id,
                     context.versions.values(),
                     opened=context.opened,
+                    extra=login_secrets(logins),
                 )
             except Exception as error:
                 log.error("output scrubbing values could not be loaded: %s", type(error).__name__)
@@ -753,10 +776,11 @@ class DeployEngine:
             deployment_id=context.deployment.id,
             deployment_root=root,
             hook=context.hook,
-            changed=any(outcome.status is DeployResultStatus.WRITTEN for outcome in outcomes),
+            changed=changed,
             force=request.force,
             allowed=allowed,
             scrubber=scrubber,
+            registry_logins=logins,
         )
         try:
             result = await self._call_hook_runner(context, hook_request)
@@ -770,6 +794,24 @@ class DeployEngine:
             output=scrubber.scrub_text(result.output) if result.output else result.output,
             reason=scrubber.scrub_text(result.reason) if result.reason else result.reason,
         )
+
+    async def _open_registry_logins(
+        self, db: AsyncSession
+    ) -> tuple[tuple[RegistryLogin, ...], PostDeployResult | None]:
+        """The opened registry logins, or the failed result that stops the command.
+
+        The reasons name no registry and no value; the host of a token that cannot be opened is
+        only logged.
+        """
+        try:
+            return await load_registry_logins(db, self.crypto), None
+        except RegistryTokenError as error:
+            log.warning("a registry token could not be opened for %s", error.host)
+            reason = REGISTRY_UNREADABLE_REASON
+        except Exception as error:
+            log.error("registry logins could not be loaded: %s", type(error).__name__)
+            reason = REGISTRY_LOGINS_FAILED_REASON
+        return (), PostDeployResult(PostDeployStatus.FAILED, reason=reason)
 
     async def _call_hook_runner(
         self, context: _Context, hook_request: PostDeployRequest

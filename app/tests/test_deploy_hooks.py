@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import time
+from collections.abc import Awaitable
 from pathlib import Path
 
 import pytest
@@ -12,18 +13,21 @@ from sqlalchemy import select
 from app.core.db import create_session_factory
 from app.models import (
     AuditResult,
+    DeployResultStatus,
     DeployRun,
     DeployStatus,
+    DockerRegistry,
     HookType,
     PostDeployStatus,
     ServiceHook,
 )
-from app.services.deploy import DeployEngine
+from app.services.deploy import REGISTRY_UNREADABLE_REASON, DeployEngine
 from app.services.deploy_lock import DeployLockBusyError, hold_deploy_lock
 from app.services.deploy_recovery import INTERRUPTED_REASON
 from app.services.deploy_types import DeployOutcome, DeployRefusal
 from app.services.docker_cli import NOT_MOUNTED_REASON
 from app.services.hook_runner import NOT_CHANGED_REASON, DockerHookRunner
+from app.services.registries import RegistryLogin, add_registry, registry_context
 from app.services.service_detail import (
     load_post_deploy,
     load_service_header,
@@ -36,7 +40,10 @@ from app.tests.deploy_helpers import (
     set_environment,
 )
 from app.tests.fake_docker import FakeDocker
+from app.tests.grant_helpers import count_statements
 from app.tests.test_hook_process import wait_until_gone
+from app.tests.test_hook_runner import TOKEN, credentials
+from app.tests.test_post_deploy_switch import switch
 
 
 @pytest.fixture
@@ -299,3 +306,156 @@ async def test_cancelling_a_deploy_while_the_command_runs_closes_the_run_as_fail
     assert await wait_until_gone(int(pid_file.read_text(encoding="utf-8")))
     with hold_deploy_lock(h.lock_dir, str(h.roots["staging"])):
         pass
+
+
+SECOND_TOKEN = "ghp_second-registry-token-77"
+
+
+async def store_registry(
+    h: Harness,
+    host: str = "registry.example.com",
+    username: str = "bot",
+    token: str = TOKEN,
+) -> DockerRegistry:
+    """Add a registry login as the superadmin."""
+    return await add_registry(h.db, h.crypto, host, username, token, actor=h.seed.users.superadmin)
+
+
+async def registry_reads(h: Harness, deploy: Awaitable[DeployOutcome]) -> int:
+    """How many statements read the registries while the deploy ran."""
+    with count_statements(h.database) as statements:
+        await deploy
+    return sum(1 for statement in statements if "docker_registries" in statement)
+
+
+async def test_a_deploy_hands_the_stored_logins_to_the_runner_and_hides_them_in_the_output(
+    harness: Harness,
+) -> None:
+    h = harness
+    await store_registry(h)
+    await store_registry(h, "docker.io", "hub-user", SECOND_TOKEN)
+    outcome = await deploy_staging(h)
+    assert outcome.post_deploy.status is PostDeployStatus.RAN
+    (request,) = h.runner.requests
+    assert request.registry_logins == (
+        RegistryLogin("docker.io", "hub-user", SECOND_TOKEN),
+        RegistryLogin("registry.example.com", "bot", TOKEN),
+    )
+    assert TOKEN not in repr(request) and SECOND_TOKEN not in repr(request)
+    for secret in (
+        TOKEN,
+        SECOND_TOKEN,
+        credentials("bot", TOKEN),
+        credentials("hub-user", SECOND_TOKEN),
+    ):
+        assert request.scrubber.scrub_text(f"before {secret} after") == "before **** after"
+
+
+async def test_a_deploy_without_registries_hands_the_runner_no_logins(harness: Harness) -> None:
+    h = harness
+    await deploy_staging(h)
+    (request,) = h.runner.requests
+    assert request.registry_logins == ()
+
+
+async def test_a_deploy_that_runs_a_command_reads_the_registries_once(hooked: Harness) -> None:
+    h = hooked
+    await store_registry(h)
+    assert await registry_reads(h, deploy_staging(h)) == 1
+    assert await registry_reads(h, deploy_staging(h, force=True)) == 1
+
+
+@pytest.mark.parametrize(
+    "situation", ["no command", "unchanged", "switch off", "dry run", "blocked"]
+)
+async def test_no_registry_is_read_unless_a_command_will_run(
+    hooked: Harness, situation: str
+) -> None:
+    h = hooked
+    await store_registry(h)
+    only_tuning = False
+    if situation == "no command":
+        await change_hook(h, commands="")
+    if situation == "unchanged":
+        assert (await deploy_staging(h)).post_deploy.status is PostDeployStatus.RAN
+    if situation == "switch off":
+        await switch(h, False)
+    if situation == "blocked":
+        await require_extra_key(h)
+        only_tuning = True
+    deploy = deploy_staging(h, dry_run=situation == "dry run", only_tuning=only_tuning)
+    assert await registry_reads(h, deploy) == 0
+
+
+async def test_a_token_that_cannot_be_opened_stops_the_command_and_names_no_secret(
+    hooked: Harness, fake: FakeDocker, caplog: pytest.LogCaptureFixture
+) -> None:
+    h = hooked
+    registry = await store_registry(h)
+    sealed = registry.token_encrypted
+    unreadable = h.crypto.encrypt(TOKEN, registry_context(registry.id + 1))
+    registry.token_encrypted = unreadable
+    await h.db.commit()
+    caplog.set_level(logging.DEBUG)
+
+    outcome = await deploy_staging(h)
+
+    assert outcome.status is DeployStatus.POST_DEPLOY_FAILED
+    assert all(env.status is DeployResultStatus.WRITTEN for env in outcome.environments)
+    assert outcome.post_deploy.status is PostDeployStatus.FAILED
+    reason = outcome.post_deploy.reason
+    assert reason == REGISTRY_UNREADABLE_REASON and "Settings, Registries" in reason
+    assert outcome.post_deploy.exit_code is None and outcome.post_deploy.output is None
+    assert fake.calls() == []
+    run = await stored_run(h, outcome)
+    assert (run.post_deploy_status, run.post_deploy_reason) == (
+        PostDeployStatus.FAILED,
+        REGISTRY_UNREADABLE_REASON,
+    )
+    (entry,) = await audit_of(h.db, "service.deploy")
+    assert entry.details["post_deploy"] == "failed"
+    everything = json.dumps(entry.details) + repr(outcome) + caplog.text
+    assert TOKEN not in everything
+    assert unreadable not in everything and sealed not in everything
+    assert not [record for record in caplog.records if record.levelno >= logging.ERROR]
+    (event,) = h.notifier.events
+    assert event.post_deploy is PostDeployStatus.FAILED
+
+
+async def test_the_command_runs_with_the_stored_logins_and_prints_none_of_them(
+    hooked: Harness, fake: FakeDocker
+) -> None:
+    h = hooked
+    await store_registry(h)
+    fake.capture_config(f'echo "pulling with {TOKEN}"; cat "$DOCKER_CONFIG/config.json"')
+
+    outcome = await deploy_staging(h)
+
+    assert outcome.post_deploy.status is PostDeployStatus.RAN
+    captured = fake.captured_config()
+    assert captured is not None
+    assert captured.content == {
+        "auths": {"registry.example.com": {"auth": credentials("bot", TOKEN)}}
+    }
+    assert list((fake.folder / "scratch").iterdir()) == []
+    output = outcome.post_deploy.output
+    assert output is not None and output.startswith("pulling with ****\n")
+    run = await stored_run(h, outcome)
+    (entry,) = await audit_of(h.db, "service.deploy")
+    for secret in (TOKEN, credentials("bot", TOKEN)):
+        assert secret not in output
+        assert secret not in str(run.post_deploy_output)
+        assert secret not in json.dumps(entry.details)
+
+
+async def test_a_failing_command_output_is_scrubbed_of_the_logins_too(
+    hooked: Harness, fake: FakeDocker
+) -> None:
+    h = hooked
+    await store_registry(h)
+    fake.behavior(f'echo "denied for bot:{TOKEN}" >&2; exit 1')
+    outcome = await deploy_staging(h)
+    assert outcome.status is DeployStatus.POST_DEPLOY_FAILED
+    assert outcome.post_deploy.output == "denied for bot:****\n"
+    run = await stored_run(h, outcome)
+    assert run.post_deploy_output == "denied for bot:****\n"

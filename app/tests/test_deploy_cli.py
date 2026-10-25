@@ -9,9 +9,11 @@ import pytest
 from sqlalchemy import select
 from typer.testing import CliRunner
 
+from app.cli import main as cli_main
 from app.cli.main import _print_deploy as print_deploy
 from app.cli.main import app
 from app.config import get_settings
+from app.core.crypto import CryptoService
 from app.core.db import create_engine, create_session_factory
 from app.models import (
     AuditActorType,
@@ -22,6 +24,8 @@ from app.models import (
     DeployStatus,
     DeployTrigger,
     PostDeployStatus,
+    User,
+    UserGroup,
 )
 from app.models.types import utc_now
 from app.services.deploy_lock import hold_deploy_lock
@@ -29,8 +33,11 @@ from app.services.deploy_policy import HALT_DRIFT_MESSAGE
 from app.services.deploy_recovery import INTERRUPTED_REASON
 from app.services.deploy_types import DeployOutcome
 from app.services.hooks import PostDeployResult
+from app.services.registries import add_registry
 from app.tests.dist_helpers import relocate_deployments
+from app.tests.fake_docker import FakeDocker
 from app.tests.template_databases import SeededTemplate, copy_database
+from app.tests.test_hook_runner import TOKEN, credentials
 
 runner = CliRunner()
 
@@ -237,6 +244,43 @@ def test_a_deploy_first_closes_runs_that_a_dead_process_left_running(
     assert closed.post_deploy_status is PostDeployStatus.FAILED
     assert closed.status is DeployStatus.POST_DEPLOY_FAILED
     assert closed.post_deploy_reason == INTERRUPTED_REASON
+
+
+def test_a_deploy_runs_its_command_with_the_stored_registry_logins(
+    roots: dict[str, Path],
+    crypto: CryptoService,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = FakeDocker(tmp_path / "fake")
+    fake.capture_config(f'echo "token {TOKEN}"')
+    monkeypatch.setattr(cli_main, "DockerCli", lambda socket_path: fake.cli())
+
+    async def store_login() -> None:
+        engine = create_engine(get_settings().database_path)
+        try:
+            async with create_session_factory(engine)() as db:
+                superadmin = await db.scalar(select(User).where(User.group == UserGroup.SUPERADMIN))
+                assert superadmin is not None
+                await add_registry(
+                    db, crypto, "registry.example.com", "bot", TOKEN, actor=superadmin
+                )
+        finally:
+            await engine.dispose()
+
+    asyncio.run(store_login())
+    result = runner.invoke(
+        app, ["deploy", "Fancy Proj. Name/staging/web", "--env", ".env.web.tuning"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "  post-deploy: ran" in result.output.splitlines()
+    captured = fake.captured_config()
+    assert captured is not None
+    assert captured.content == {
+        "auths": {"registry.example.com": {"auth": credentials("bot", TOKEN)}}
+    }
+    assert "    token ****" in result.output.splitlines() and TOKEN not in result.output
+    assert list((fake.folder / "scratch").iterdir()) == []
 
 
 def test_a_deployment_name_with_spaces_and_capitals_is_named_on_the_command_line(

@@ -120,6 +120,11 @@ class RegistryLogin:
     username: str
     token: str = field(repr=False)
 
+    @property
+    def credentials(self) -> str:
+        """The base64 of ``username:token``, the form Docker keeps in its config file."""
+        return base64.b64encode(f"{self.username}:{self.token}".encode()).decode("ascii")
+
 
 @dataclass(frozen=True)
 class _Clean:
@@ -418,6 +423,13 @@ def docker_config(logins: Iterable[RegistryLogin]) -> dict[str, dict[str, dict[s
     """
     auths: dict[str, dict[str, str]] = {}
     for login in logins:
-        credentials = base64.b64encode(f"{login.username}:{login.token}".encode()).decode("ascii")
-        auths.setdefault(auth_key(login.host), {"auth": credentials})
+        auths.setdefault(auth_key(login.host), {"auth": login.credentials})
     return {"auths": auths}
+
+
+def login_secrets(logins: Iterable[RegistryLogin]) -> list[str]:
+    """The strings of these logins that must never appear in output.
+
+    Each token, and each ``username:token`` in the base64 form of the config file.
+    """
+    return [secret for login in logins for secret in (login.token, login.credentials)]

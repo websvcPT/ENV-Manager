@@ -154,17 +154,42 @@ async def test_the_post_deploy_panel_and_the_pre_flight_read_the_settings_once(
     assert settings_reads(preflight) == 1 and structure_loads(preflight) <= 1
 
 
+def registry_reads(statements: list[str]) -> int:
+    """How many statements read the Docker registry logins."""
+    return sum(1 for statement in statements if "FROM docker_registries" in statement)
+
+
 async def test_a_deploy_reads_the_settings_twice_by_design_and_the_structure_once(
     web_app: FastAPI, web_client: httpx.AsyncClient, ids: Ids
 ) -> None:
-    """The second read is the switch of the post-deploy feature, checked at deploy time."""
+    """The second read is the switch of the post-deploy feature, checked at deploy time.
+
+    The limit counts one statement for the registry logins a command runs with (31 before they
+    were read); a deploy without a command never reads them (next test).
+    """
     await sign_in(web_client, "root")
     data = {"selection": "explicit", "environment": [ids.environment]}
     status, statements = await measure(
         web_app, post(web_client, f"/services/{ids.service}/deploy", data)
     )
-    assert status == 200 and len(statements) <= 31
+    assert status == 200 and len(statements) <= 32
     assert settings_reads(statements) == 2 and structure_loads(statements) <= 1
+    assert registry_reads(statements) == 1
+
+
+async def test_a_deploy_without_a_command_costs_what_it_did_before_and_reads_no_registry(
+    web_app: FastAPI, web_client: httpx.AsyncClient, ids: Ids
+) -> None:
+    async with web_app.state.session_factory() as db:
+        await db.execute(delete(ServiceHook).where(ServiceHook.service_id == ids.service))
+        await db.commit()
+    await sign_in(web_client, "root")
+    data = {"selection": "explicit", "environment": [ids.environment]}
+    status, statements = await measure(
+        web_app, post(web_client, f"/services/{ids.service}/deploy", data)
+    )
+    assert status == 200 and len(statements) <= 29
+    assert registry_reads(statements) == 0
 
 
 async def test_a_scoped_caller_loads_the_structure_once_and_a_revoked_grant_applies_next_request(

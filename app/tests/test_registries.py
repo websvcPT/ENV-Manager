@@ -40,6 +40,7 @@ from app.services.registries import (
     docker_config,
     list_registries,
     load_registry_logins,
+    login_secrets,
     normalize_host,
     registry_context,
     remove_registry,
@@ -612,3 +613,12 @@ async def test_the_config_of_the_stored_logins_has_every_registry_once(
     assert decoded(config["auths"]["registry.example.com"]) == ("bot", TOKEN)
     count = (await db.execute(select(func.count()).select_from(DockerRegistry))).scalar_one()
     assert count == 2
+
+
+def test_the_secrets_of_a_login_are_its_token_and_its_credentials_form() -> None:
+    login = RegistryLogin("registry.example.com", "bot", TOKEN)
+    credentials = base64.b64encode(f"bot:{TOKEN}".encode()).decode("ascii")
+    assert login.credentials == credentials
+    assert login_secrets([login]) == [TOKEN, credentials]
+    assert docker_config([login]) == {"auths": {"registry.example.com": {"auth": credentials}}}
+    assert login_secrets([]) == []

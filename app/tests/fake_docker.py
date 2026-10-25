@@ -9,6 +9,7 @@ number is available to the snippet as ``$n``. The "socket" is a real socket file
 check is the real one.
 """
 
+import json
 import os
 import socket
 import stat
@@ -41,6 +42,13 @@ env > "$dir/calls/$n.env"
 """
 
 
+CAPTURE_CONFIG = """mkdir -p "$dir/configs"
+cp "$DOCKER_CONFIG/config.json" "$dir/configs/$n.json"
+stat -c %a "$DOCKER_CONFIG/config.json" > "$dir/configs/$n.file-mode"
+stat -c %a "$DOCKER_CONFIG" > "$dir/configs/$n.folder-mode"
+"""
+
+
 @dataclass(frozen=True)
 class Call:
     """One recorded call of the fake docker."""
@@ -48,6 +56,19 @@ class Call:
     arguments: tuple[str, ...]
     working_directory: str
     environment: dict[str, str]
+
+
+@dataclass(frozen=True)
+class CapturedConfig:
+    """The ``config.json`` a call found in its Docker config folder, copied while it ran.
+
+    ``file_mode`` and ``folder_mode`` are the permission bits of the file and of the folder as the
+    call saw them, which stay readable after the run removed both.
+    """
+
+    content: dict[str, dict[str, dict[str, str]]]
+    file_mode: int
+    folder_mode: int
 
 
 class FakeDocker:
@@ -77,6 +98,26 @@ class FakeDocker:
     def behavior(self, script: str) -> None:
         """Replace what recorded calls do with a shell snippet."""
         (self.folder / "behavior.sh").write_text(script + "\n", encoding="utf-8")
+
+    def capture_config(self, then: str = "") -> None:
+        """Make recorded calls copy ``$DOCKER_CONFIG/config.json`` and the modes beside the calls.
+
+        ``then`` is what the call does afterwards (nothing by default). The copies live outside
+        the ``calls`` folder, whose entries are counted to number the calls.
+        """
+        self.behavior(CAPTURE_CONFIG + then)
+
+    def captured_config(self, number: int = 1) -> CapturedConfig | None:
+        """What call ``number`` (from 1) found in its config folder, None when it held no file."""
+        records = self.folder / "configs"
+        copy = records / f"{number}.json"
+        if not copy.exists():
+            return None
+        return CapturedConfig(
+            content=json.loads(copy.read_text(encoding="utf-8")),
+            file_mode=int((records / f"{number}.file-mode").read_text("utf-8").strip(), 8),
+            folder_mode=int((records / f"{number}.folder-mode").read_text("utf-8").strip(), 8),
+        )
 
     def switch(self, name: str, on: bool = True) -> None:
         """Turn a failure mode on or off: ``no-daemon``, ``no-compose`` or ``slow-daemon``."""

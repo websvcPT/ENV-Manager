@@ -207,3 +207,108 @@ def test_a_refusal_names_the_line_of_the_typed_text_and_never_the_command() -> N
     message = str(raised.value)
     assert message.startswith("Line 3:")
     assert "hunter2" not in message and "secret-flag" not in message
+
+
+LOGIN_REFUSAL = "Line 1: docker login and docker logout are not allowed."
+CONFIG_REFUSAL = "Line 1: the docker --config option is not allowed"
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "docker login",
+        "docker logout",
+        "docker login registry.example.com",
+        "docker login -u bob -p hunter2 registry.example.com",
+        "docker 'log'in",
+        'docker "logout" registry.example.com',
+        "docker -D login",
+        "docker --debug logout",
+        "docker --tls login",
+        "docker -H tcp://host:2375 login",
+        "docker -Htcp://host:2375 login",
+        "docker -H=tcp://host:2375 login",
+        "docker --host tcp://host:2375 login",
+        "docker --host=tcp://host:2375 login",
+        "docker --context remote login",
+        "docker --context=remote logout",
+        "docker -c remote login",
+        "docker -l debug logout",
+        "docker --log-level debug login",
+        "docker --log-level=debug login",
+        "docker -Dc remote login",
+        "docker -Dl debug login",
+        "docker --tlsverify --tlscacert ca.pem --tlscert c.pem --tlskey k.pem login",
+        "docker --context remote -H tcp://host:2375 --debug login",
+        "docker -- login",
+    ],
+)
+def test_docker_login_and_logout_are_refused_however_they_are_spelled(line: str) -> None:
+    with pytest.raises(CommandError) as raised:
+        parse_commands(line)
+    message = str(raised.value)
+    assert message.startswith(LOGIN_REFUSAL)
+    assert "Settings, Registries" in message
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "docker --config /x ps",
+        "docker --config=/x ps",
+        "docker --config=/x compose up -d",
+        "docker -D --config /x ps",
+        "docker --context remote --config /x compose up -d",
+        "docker --config /x login",
+    ],
+)
+def test_the_global_config_option_before_the_subcommand_is_refused(line: str) -> None:
+    with pytest.raises(CommandError) as raised:
+        parse_commands(line)
+    message = str(raised.value)
+    assert message.startswith(CONFIG_REFUSAL)
+    assert "Settings, Registries" in message
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "docker compose up -d login",
+        "docker compose up -d --no-deps login",
+        "docker compose logs --tail 20 login",
+        "docker compose -f login.yml up -d",
+        "docker compose restart logout",
+        "docker --context login ps",
+        "docker -H login ps",
+        "docker -Hlogin ps",
+        "docker -c login ps",
+        "docker -Dc login ps",
+        "docker --log-level login ps",
+        "docker --context=login ps",
+        "docker run --rm alpine login",
+        "docker run --rm --name login alpine true",
+        "docker ps --filter name=login",
+        "docker compose config",
+        "docker config ls",
+        "docker service create --config source=app,target=/app.conf alpine",
+        "docker compose --env-file login.env up -d",
+        "docker image ls login",
+    ],
+)
+def test_a_name_that_looks_like_login_or_config_outside_the_subcommand_is_allowed(
+    line: str,
+) -> None:
+    assert parse_commands(line)
+
+
+def test_the_login_and_config_refusals_name_the_line_never_its_text() -> None:
+    for text, name in (
+        ("docker ps\n\ndocker login -u bob -p hunter2 registry.internal", "Line 3:"),
+        ("docker ps\ndocker --config /secret-folder/hunter2 ps", "Line 2:"),
+    ):
+        with pytest.raises(CommandError) as raised:
+            parse_commands(text)
+        message = str(raised.value)
+        assert message.startswith(name)
+        for fragment in ("bob", "hunter2", "registry.internal", "secret-folder"):
+            assert fragment not in message

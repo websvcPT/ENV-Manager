@@ -16,6 +16,7 @@ from typing import Protocol
 from app.models import PostDeployStatus
 from app.services.output_scrub import OutputScrubber
 from app.services.paths import AllowedPaths
+from app.services.registries import RegistryLogin
 
 POST_DEPLOY_OFF_REASON = "Post-deploy commands are switched off in settings."
 
@@ -29,6 +30,18 @@ class PostDeployHook:
     timeout_seconds: int
     run_only_if_changed: bool
 
+    @property
+    def has_command(self) -> bool:
+        """Whether a command is stored (blank text is no command)."""
+        return bool(self.commands.strip())
+
+    def is_due(self, *, changed: bool, force: bool) -> bool:
+        """Whether the command runs for a deploy that did (``changed``) or did not write a file.
+
+        A hook set to run only if something changed still runs when the deploy is forced.
+        """
+        return self.has_command and (not self.run_only_if_changed or changed or force)
+
 
 @dataclass(frozen=True)
 class PostDeployRequest:
@@ -39,7 +52,9 @@ class PostDeployRequest:
     allowed path list loaded for this deploy, which a working directory must lie in.
     ``scrubber`` knows the configuration values that must not appear in the output; the engine
     removes them again from whatever a runner returns, a runner that keeps output uses it to
-    protect values at the edges of the kept part as well.
+    protect values at the edges of the kept part as well. ``registry_logins`` are the opened
+    Docker registry logins the command runs with; they are secrets, so the field is left out of
+    the representation, and a runner with none behaves as it always did.
     """
 
     service_id: int
@@ -50,6 +65,7 @@ class PostDeployRequest:
     force: bool
     allowed: AllowedPaths
     scrubber: OutputScrubber = field(default_factory=OutputScrubber)
+    registry_logins: tuple[RegistryLogin, ...] = field(default=(), repr=False)
 
 
 @dataclass(frozen=True)

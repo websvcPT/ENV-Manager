@@ -1,6 +1,8 @@
 """The post-deploy runner: when it runs, what it runs, where, and with which environment."""
 
 import asyncio
+import base64
+import json
 import logging
 import time
 from pathlib import Path
@@ -13,6 +15,7 @@ from app.services import hook_runner
 from app.services.docker_cli import DAEMON_UNREACHABLE_REASON, NOT_MOUNTED_REASON, DockerCli
 from app.services.hook_process import ProcessResult
 from app.services.hook_runner import (
+    LOGINS_NOT_WRITTEN_REASON,
     NOT_A_FOLDER_MESSAGE,
     NOT_CHANGED_REASON,
     NOT_STARTED_REASON,
@@ -23,7 +26,8 @@ from app.services.hook_runner import (
 from app.services.hooks import PostDeployHook, PostDeployRequest, PostDeployResult
 from app.services.output_scrub import OutputScrubber
 from app.services.paths import AllowedPaths
-from app.tests.fake_docker import FakeDocker
+from app.services.registries import RegistryLogin
+from app.tests.fake_docker import Call, FakeDocker
 from app.tests.test_hook_process import wait_until_gone
 
 COMMAND = "docker compose up -d --no-deps --force-recreate api"
@@ -34,6 +38,13 @@ APP_ENVIRONMENT = {
     "UNRELATED_PARENT_VARIABLE": "parent-value",
     "DOCKER_HOST": "tcp://elsewhere.invalid:2375",
 }
+TOKEN = "dckr_pat_Zq81-secret.token_value"
+HUB_TOKEN = "ghp_hub-token-4471"
+LOGINS = (
+    RegistryLogin("registry.example.com", "bot", TOKEN),
+    RegistryLogin("docker.io", "hub-user", HUB_TOKEN),
+)
+SHELL_ADDED = {"PWD", "OLDPWD", "SHLVL", "_"}
 
 
 class Setup:
@@ -59,6 +70,7 @@ class Setup:
         working_directory: str | None = None,
         root: Path | None = None,
         scrubber: OutputScrubber | None = None,
+        logins: tuple[RegistryLogin, ...] = (),
     ) -> PostDeployRequest:
         """A request for the service; ``commands`` None means the service has no hook."""
         hook = (
@@ -75,7 +87,13 @@ class Setup:
             force=force,
             allowed=self.allowed,
             scrubber=scrubber or OutputScrubber(),
+            registry_logins=logins,
         )
+
+    @property
+    def scratch(self) -> Path:
+        """The scratch folder of the docker CLI, where per-run folders are made."""
+        return self.fake.folder / "scratch"
 
     async def run(self, commands: str | None = COMMAND, **options: Any) -> PostDeployResult:
         """Run the request through the runner."""
@@ -276,6 +294,9 @@ async def test_a_deployment_root_outside_the_allowed_paths_is_refused(
         ("docker system prune -af", "prune commands are not allowed"),
         ("docker ps\n\ndocker compose rm -sfv api", "Line 3: the -v and --volumes options of rm"),
         ("docker ps\n" + "docker ps\n" * 10, "Use at most 10 commands"),
+        ("docker ps\ndocker login registry.example.com", "Line 2: docker login and docker logout"),
+        ("docker -H tcp://host:2375 logout", "Line 1: docker login and docker logout"),
+        ("docker --config=/x compose up -d", "Line 1: the docker --config option is not allowed"),
     ],
 )
 async def test_a_stored_command_that_breaks_the_safety_net_fails_with_the_rule_and_runs_nothing(
@@ -403,3 +424,214 @@ async def test_a_value_split_by_the_cut_of_long_output_is_scrubbed_at_both_edges
     assert result.output is not None and "bytes omitted" in result.output
     assert "seed" not in result.output and "ecret" not in result.output
     assert result.output.count("****") == 2
+
+
+def without_shell_variables(call: Call) -> dict[str, str]:
+    """The environment a call recorded, minus the variables the shell added itself."""
+    return {name: value for name, value in call.environment.items() if name not in SHELL_ADDED}
+
+
+def credentials(username: str, token: str) -> str:
+    """The ``auth`` value Docker keeps for a login, written out here and not by the app."""
+    return base64.b64encode(f"{username}:{token}".encode()).decode("ascii")
+
+
+EXPECTED_CONFIG = {
+    "auths": {
+        "registry.example.com": {"auth": credentials("bot", TOKEN)},
+        "https://index.docker.io/v1/": {"auth": credentials("hub-user", HUB_TOKEN)},
+    }
+}
+
+
+async def test_a_run_with_logins_gets_a_private_config_folder_inside_the_scratch_folder(
+    setup: Setup,
+) -> None:
+    setup.fake.capture_config()
+    result = await setup.run(logins=LOGINS)
+    assert result.status is PostDeployStatus.RAN
+    (call,) = setup.fake.calls()
+    folder = Path(call.environment["DOCKER_CONFIG"])
+    assert folder.parent == setup.scratch and folder != setup.scratch
+    assert folder.name.startswith("run-")
+    environment = without_shell_variables(call)
+    assert environment == {**setup.runner.cli.environment(), "DOCKER_CONFIG": str(folder)}
+
+
+async def test_the_config_file_holds_every_login_and_is_private_while_the_command_runs(
+    setup: Setup,
+) -> None:
+    setup.fake.capture_config()
+    await setup.run(logins=LOGINS)
+    captured = setup.fake.captured_config()
+    assert captured is not None
+    assert captured.content == EXPECTED_CONFIG
+    assert captured.file_mode == 0o600 and captured.folder_mode == 0o700
+
+
+async def test_every_command_of_the_hook_runs_with_the_same_folder_and_logins(
+    setup: Setup,
+) -> None:
+    setup.fake.capture_config()
+    result = await setup.run("docker one\ndocker two", logins=LOGINS)
+    assert result.status is PostDeployStatus.RAN
+    first, second = setup.fake.calls()
+    assert first.environment["DOCKER_CONFIG"] == second.environment["DOCKER_CONFIG"]
+    assert setup.fake.captured_config(1) == setup.fake.captured_config(2)
+    assert setup.fake.captured_config(2) is not None
+
+
+@pytest.mark.parametrize(
+    ("ending", "timeout", "status"),
+    [
+        ("exit 0", 30, PostDeployStatus.RAN),
+        ("exit 3", 30, PostDeployStatus.FAILED),
+        ("sleep 300", 1, PostDeployStatus.FAILED),
+    ],
+    ids=["success", "non-zero exit", "timeout"],
+)
+async def test_the_config_folder_is_removed_when_the_run_ends(
+    setup: Setup, ending: str, timeout: int, status: PostDeployStatus
+) -> None:
+    setup.fake.capture_config(ending)
+    result = await setup.run(logins=LOGINS, timeout=timeout)
+    assert result.status is status
+    assert setup.fake.captured_config() is not None, "the file was there while the command ran"
+    (call,) = setup.fake.calls()
+    assert not Path(call.environment["DOCKER_CONFIG"]).exists()
+    assert list(setup.scratch.iterdir()) == []
+
+
+async def test_a_failing_second_command_still_removes_the_config_folder(setup: Setup) -> None:
+    setup.fake.capture_config('[ "$n" = 2 ] && exit 4; exit 0')
+    result = await setup.run("docker one\ndocker two\ndocker three", logins=LOGINS)
+    assert result.status is PostDeployStatus.FAILED and result.exit_code == 4
+    assert len(setup.fake.calls()) == 2
+    assert list(setup.scratch.iterdir()) == []
+
+
+async def test_the_config_folder_is_removed_when_the_deploy_is_cancelled(setup: Setup) -> None:
+    pid_file = setup.fake.folder / "child.pid"
+    setup.fake.capture_config(f"sleep 300 & echo $! > {pid_file}; wait")
+    task = asyncio.create_task(setup.run(logins=LOGINS, timeout=60))
+    for _ in range(200):
+        if pid_file.exists() and pid_file.read_text(encoding="utf-8").strip():
+            break
+        await asyncio.sleep(0.05)
+    (call,) = setup.fake.calls()
+    folder = Path(call.environment["DOCKER_CONFIG"])
+    assert (folder / "config.json").is_file()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert not folder.exists() and list(setup.scratch.iterdir()) == []
+    assert await wait_until_gone(int(pid_file.read_text(encoding="utf-8")))
+
+
+async def test_two_runs_at_the_same_time_use_two_folders_that_are_both_removed(
+    setup: Setup,
+) -> None:
+    setup.fake.behavior(
+        'echo "$DOCKER_CONFIG" >> "$dir/folders"\n'
+        'cp "$DOCKER_CONFIG/config.json" "$dir/seen.$$"\n'
+        'touch "$dir/started.$$"\n'
+        "for _ in $(seq 1 100); do\n"
+        '  [ "$(ls "$dir" | grep -c "^started\\.")" -ge 2 ] && break\n'
+        "  sleep 0.05\n"
+        "done"
+    )
+    first, second = await asyncio.gather(setup.run(logins=LOGINS), setup.run(logins=LOGINS[:1]))
+    assert first.status is PostDeployStatus.RAN and second.status is PostDeployStatus.RAN
+    folders = (setup.fake.folder / "folders").read_text(encoding="utf-8").splitlines()
+    assert len(folders) == 2 and len(set(folders)) == 2
+    assert {Path(folder).parent for folder in folders} == {setup.scratch}
+    assert not any(Path(folder).exists() for folder in folders)
+    assert list(setup.scratch.iterdir()) == []
+    seen = [
+        len(json.loads(path.read_text(encoding="utf-8"))["auths"])
+        for path in setup.fake.folder.glob("seen.*")
+    ]
+    assert sorted(seen) == [1, 2], "each run saw the logins of its own request"
+
+
+async def test_without_logins_nothing_is_written_and_the_environment_is_the_plain_one(
+    setup: Setup, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def refuse(*arguments: object, **options: object) -> None:
+        raise AssertionError("a config folder was made for a run without logins")
+
+    monkeypatch.setattr(hook_runner, "private_docker_config", refuse)
+    setup.fake.capture_config()
+    result = await setup.run()
+    assert result.status is PostDeployStatus.RAN
+    (call,) = setup.fake.calls()
+    environment = without_shell_variables(call)
+    assert environment == setup.runner.cli.environment()
+    assert call.environment["DOCKER_CONFIG"] == str(setup.scratch)
+    assert setup.fake.captured_config() is None
+    assert list(setup.scratch.iterdir()) == []
+
+
+async def test_a_config_folder_that_cannot_be_made_stops_the_command_with_a_fixed_reason(
+    setup: Setup, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    def refuse(*arguments: object, **options: object) -> str:
+        raise OSError(f"no room for {TOKEN} in /secret-folder")
+
+    monkeypatch.setattr("app.services.run_config.tempfile.mkdtemp", refuse)
+    caplog.set_level(logging.DEBUG)
+    result = await setup.run(logins=LOGINS)
+    assert result.status is PostDeployStatus.FAILED and result.exit_code is None
+    assert result.reason == LOGINS_NOT_WRITTEN_REASON and result.output is None
+    assert setup.fake.calls() == []
+    assert not [record for record in caplog.records if record.levelno >= logging.ERROR]
+    assert TOKEN not in caplog.text and "secret-folder" not in caplog.text
+
+
+def test_the_request_keeps_its_logins_out_of_its_representation() -> None:
+    request = PostDeployRequest(
+        service_id=1,
+        deployment_id=1,
+        deployment_root=Path("/srv/stack"),
+        hook=None,
+        changed=True,
+        force=False,
+        allowed=AllowedPaths([Path("/srv")]),
+        registry_logins=LOGINS,
+    )
+    assert request.registry_logins == LOGINS
+    text = repr(request)
+    assert "registry_logins" not in text
+    assert TOKEN not in text and HUB_TOKEN not in text and "bot" not in text
+
+
+def test_a_request_without_logins_holds_an_empty_tuple() -> None:
+    request = PostDeployRequest(
+        service_id=1,
+        deployment_id=1,
+        deployment_root=Path("/srv/stack"),
+        hook=None,
+        changed=True,
+        force=False,
+        allowed=AllowedPaths([Path("/srv")]),
+    )
+    assert request.registry_logins == ()
+
+
+@pytest.mark.parametrize(
+    ("commands", "only_if_changed", "changed", "force", "due"),
+    [
+        (COMMAND, True, True, False, True),
+        (COMMAND, True, False, False, False),
+        (COMMAND, True, False, True, True),
+        (COMMAND, False, False, False, True),
+        ("  \n ", False, True, True, False),
+        ("", True, True, False, False),
+    ],
+)
+def test_a_hook_is_due_when_it_has_a_command_and_something_changed_or_the_switch_is_off(
+    commands: str, only_if_changed: bool, changed: bool, force: bool, due: bool
+) -> None:
+    hook = PostDeployHook(commands, None, 30, only_if_changed)
+    assert hook.is_due(changed=changed, force=force) is due
+    assert hook.has_command is bool(commands.strip())

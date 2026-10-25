@@ -11,8 +11,12 @@ The safety net refuses what could destroy a deployment's containers or data: mor
 any ``prune`` and the ``-v`` and ``--volumes`` options of ``rm``. The rules read the parsed words
 and err on the side of refusing: a word ``down`` after ``compose``, a word ``prune`` anywhere and
 a volumes option anywhere after a word ``rm`` are refused even when a name happens to look like
-one. Saving and running use the same check. Error messages name a line number and the rule,
-never the text of the line.
+one. Registry logins belong to the app (Settings, Registries) and every command runs with them,
+so ``docker login``, ``docker logout`` and the global ``--config`` option (another config folder)
+are refused too; the subcommand is the first word after ``docker`` that is not an option, with
+the value of a global option that takes one skipped, so a service named ``login`` in
+``docker compose up -d login`` is not a login. Saving and running use the same check. Error
+messages name a line number and the rule, never the text of the line.
 """
 
 import re
@@ -26,6 +30,13 @@ _OPERATOR_CHARACTERS = frozenset("();<>|&")
 _LINE_BREAK = re.compile(r"\r\n|\n|\r")
 # A short option cluster with a v ("-v", "-fv", "-sfv", "-v=true"), as pflag reads it.
 _SHORT_VOLUMES = re.compile(r"-[A-Za-z]*v[A-Za-z]*(=.*)?")
+# The global options of docker that read the next word as their value, as ``-H host`` or
+# ``--context name`` (a value attached with ``=`` or to a short option is part of the word).
+_GLOBAL_LONG_VALUE_OPTIONS = frozenset(
+    {"--context", "--host", "--log-level", "--tlscacert", "--tlscert", "--tlskey"}
+)
+_GLOBAL_SHORT_VALUE_OPTIONS = frozenset("cHl")
+LOGINS_IN_SETTINGS = "Registry logins are set in Settings, Registries."
 
 Command = tuple[str, ...]
 
@@ -48,10 +59,53 @@ def _is_volumes_option(word: str) -> bool:
     )
 
 
+def _takes_next_word(option: str) -> bool:
+    """Whether a global option of docker reads the next word as its value.
+
+    A long option does when it is written without ``=``; in a short option cluster the option
+    that takes a value reads the rest of the word when something follows it (``-Hhost``) and the
+    next word otherwise (``-H host``, ``-Dc name``).
+    """
+    if option.startswith("--"):
+        return option in _GLOBAL_LONG_VALUE_OPTIONS
+    for index, letter in enumerate(option[1:], start=1):
+        if letter in _GLOBAL_SHORT_VALUE_OPTIONS:
+            return index == len(option) - 1
+    return False
+
+
+def _check_registry_logins(rest: Command, number: int) -> None:
+    """Refuse ``docker login``, ``docker logout`` and a global ``--config`` option.
+
+    ``rest`` are the words after ``docker``. The words up to the subcommand are the global
+    options and their values; the subcommand is the first other word.
+    """
+    skip_value = False
+    for word in rest:
+        if word == "--config" or word.startswith("--config="):
+            raise CommandError(
+                f"Line {number}: the docker --config option is not allowed, because it replaces "
+                f"the registry logins of the app. {LOGINS_IN_SETTINGS}"
+            )
+        if skip_value:
+            skip_value = False
+        elif word.startswith("-"):
+            skip_value = _takes_next_word(word)
+        elif word in {"login", "logout"}:
+            raise CommandError(
+                f"Line {number}: docker login and docker logout are not allowed. "
+                f"{LOGINS_IN_SETTINGS}"
+            )
+        else:
+            return
+
+
 def _check_safety(words: Command, number: int) -> None:
     """Refuse a command that removes a project, prunes Docker data or removes volumes.
 
-    ``words`` start with ``docker``. Raises ``CommandError`` naming the line.
+    It also refuses what would bypass the registry logins of the app (see
+    ``_check_registry_logins``). ``words`` start with ``docker``. Raises ``CommandError`` naming
+    the line.
     """
     rest = words[1:]
     if "prune" in rest:
@@ -66,6 +120,7 @@ def _check_safety(words: Command, number: int) -> None:
             f"Line {number}: the -v and --volumes options of rm are not allowed, "
             "because they delete volumes."
         )
+    _check_registry_logins(rest, number)
 
 
 def _split_line(line: str, number: int) -> Command:
