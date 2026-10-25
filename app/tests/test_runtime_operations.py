@@ -74,7 +74,15 @@ async def seeded_ids(web_app: FastAPI) -> Ids:
 
 
 async def measure(web_app: FastAPI, request: Awaitable[httpx.Response]) -> tuple[int, list[str]]:
-    """The status of an answer and every statement run while it was made."""
+    """The status of an answer and every statement run while it was made.
+
+    Notifications announced before (the sign-in from a new address, for one) are delivered in
+    the background and read the settings; they are waited for first, so they never land in the
+    count of the request.
+    """
+    notifier = getattr(web_app.state, "notifier", None)
+    if notifier is not None and hasattr(notifier, "idle"):
+        await notifier.idle()
     with count_statements(web_app.state.engine) as seen:
         response = await request
     return response.status_code, seen
