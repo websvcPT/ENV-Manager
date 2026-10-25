@@ -10,7 +10,7 @@
 <div aria-live="polite" class="flex flex-col gap-3">
 {{ note(check.message, tone="success" if check.ok else "error") }}
 {%- if check.output %}
-<div hx-ignore>{{ code_block(check.output) }}</div>
+<div hx-ignore>{{ code_block(check.output, wrap=true) }}</div>
 {%- endif %}
 </div>
 {% endcall %}

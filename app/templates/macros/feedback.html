@@ -53,9 +53,10 @@
 <div aria-busy="true" data-fragment="skeleton" class="{{ extra_class }} flex-col gap-0"><p class="sr-only" role="status">{{ label }}</p>{% for _ in range(rows) %}<div class="flex items-center gap-4 border-t border-line px-5 py-4 motion-safe:animate-pulse"><span class="h-4 w-40 rounded bg-mute-bg"></span><span class="h-4 flex-1 rounded bg-mute-bg"></span><span class="h-6 w-24 rounded-full bg-mute-bg"></span><span class="hidden h-4 w-20 rounded bg-mute-bg md:block"></span></div>{% endfor %}</div>
 {%- endmacro %}
 
-{#- Command text, output and examples; focusable so keyboards can scroll it. -#}
-{% macro code_block(text) -%}
-<pre tabindex="0" class="overflow-auto rounded-ctl bg-code p-3.5 font-mono text-[13px] leading-relaxed text-code-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ text }}</pre>
+{#- Command text, output and examples; focusable so keyboards can scroll it. `wrap` breaks long
+    lines instead of scrolling them sideways, for short messages that must be read whole. -#}
+{% macro code_block(text, wrap=false) -%}
+<pre tabindex="0" class="overflow-auto{% if wrap %} whitespace-pre-wrap wrap-anywhere{% endif %} rounded-ctl bg-code p-3.5 font-mono text-[13px] leading-relaxed text-code-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ text }}</pre>
 {%- endmacro %}
 
 {#- The parsed arguments of changed post-deploy commands, shown before they are stored. Each

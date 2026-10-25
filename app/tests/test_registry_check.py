@@ -168,6 +168,49 @@ async def test_a_non_zero_exit_is_a_refusal_with_the_scrubbed_and_truncated_outp
     assert list((fake.folder / "scratch").iterdir()) == []
 
 
+async def test_a_refusal_keeps_the_registrys_reason_and_drops_the_prompt_lines_docker_adds(
+    db: AsyncSession, crypto: CryptoService, seed_data: SeedData, fake: FakeDocker
+) -> None:
+    """What Docker 29 printed for a stored token the registry refused, with stdin closed."""
+    registry_id = await add(db, crypto, seed_data)
+    fake.behavior(
+        """echo "Authenticating with existing credentials... [Username: bot]"
+echo ""
+echo " Info -> To login with a different account, run 'docker logout' followed by 'docker login'"
+echo ""
+echo ""
+echo "Login did not succeed, error: Error response from daemon: login attempt to \
+https://registry.example.com/v2/ failed with status: 401 Unauthorized"
+echo "error: cannot perform an interactive login from a non-TTY device"
+exit 1"""
+    )
+    result = await check(db, crypto, seed_data, fake, registry_id)
+    assert (result.ok, result.message, result.outcome) == (False, REFUSED_MESSAGE, "refused")
+    assert result.output == (
+        "Authenticating with existing credentials... [Username: bot]\n"
+        "Login did not succeed, error: Error response from daemon: login attempt to "
+        "https://registry.example.com/v2/ failed with status: 401 Unauthorized"
+    )
+
+
+@pytest.mark.parametrize(
+    ("text", "shown"),
+    [
+        (
+            "Error response from daemon: unauthorized\nError: Cannot perform an interactive "
+            "login from a non TTY device\n",
+            "Error response from daemon: unauthorized",
+        ),
+        ("one\n\n  \ntwo\n", "one\ntwo"),
+        ("Error: Cannot perform an interactive login from a non TTY device", None),
+    ],
+)
+def test_only_the_lines_about_prompting_are_dropped_and_never_all_of_the_text(
+    text: str, shown: str | None
+) -> None:
+    assert registry_check.without_prompt_noise(text) == (text if shown is None else shown)
+
+
 async def test_a_check_that_takes_too_long_is_stopped_and_its_folder_removed(
     db: AsyncSession,
     crypto: CryptoService,

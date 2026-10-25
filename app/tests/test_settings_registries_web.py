@@ -551,6 +551,7 @@ async def test_a_refused_login_shows_the_output_without_the_token(
     page = response.text
     assert 'data-result="failed"' in page and REFUSED_MESSAGE in page
     assert "<pre" in page and "Error response from daemon: unauthorized for **** (****)" in page
+    assert "whitespace-pre-wrap" in page, "the reason is read whole, not scrolled sideways"
     assert TOKEN not in page and encoded(TOKEN) not in page
     assert list((docker.folder / "scratch").glob("run-*")) == []
     (entry,) = await entries(web_app, ACTION_TEST)

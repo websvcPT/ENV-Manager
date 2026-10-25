@@ -8,11 +8,13 @@ standard input, so it can never fall back to asking for them. The token is never
 it is not visible in the process list either.
 
 The answer is OK when Docker exits with 0, and otherwise a refusal with the output of Docker,
-scrubbed of the token and of its base64 form and truncated. Every attempt on a stored registry is
-audited as ``registry.test`` with the host and the result, never the token or the output, also
-when Docker is not usable and nothing was run.
+scrubbed of the token and of its base64 form and truncated, without the lines about prompting that
+Docker adds when it has no input to ask for new credentials with. Every attempt on a stored
+registry is audited as ``registry.test`` with the host and the result, never the token or the
+output, also when Docker is not usable and nothing was run.
 """
 
+import re
 from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -53,6 +55,8 @@ NOT_STARTED_MESSAGE = "The check could not be started."
 UNAVAILABLE_SUFFIX = "The login cannot be tested."
 DOCKER_UNAVAILABLE_REASON = "Docker is not available."
 
+_PROMPT_NOISE = re.compile(r"interactive login|non[- ]?tty|docker logout", re.IGNORECASE)
+
 
 @dataclass(frozen=True)
 class LoginCheck:
@@ -66,6 +70,19 @@ class LoginCheck:
     message: str
     outcome: str
     output: str | None = None
+
+
+def without_prompt_noise(text: str) -> str:
+    """The output of a refused login without the lines that only talk about asking for input.
+
+    When the registry refuses the stored login, Docker goes on to ask for another one, and with
+    no standard input it ends with a complaint about a non-TTY device after a hint to run
+    ``docker logout``. Neither says why the login failed, and the hint names a command the app
+    refuses, so what is left is the registry's own reason. Blank lines go too, and the text is
+    left as it is when nothing else would remain.
+    """
+    kept = [line for line in text.splitlines() if line.strip() and not _PROMPT_NOISE.search(line)]
+    return "\n".join(kept) if kept else text
 
 
 def login_arguments(host: str) -> tuple[str, ...]:
@@ -108,7 +125,9 @@ async def _run_login(crypto: CryptoService, cli: DockerCli, registry: DockerRegi
     if result.timed_out:
         return LoginCheck(False, TIMED_OUT_MESSAGE, OUTCOME_TIMED_OUT, shown)
     if result.exit_code != 0:
-        return LoginCheck(False, REFUSED_MESSAGE, OUTCOME_REFUSED, shown)
+        return LoginCheck(
+            False, REFUSED_MESSAGE, OUTCOME_REFUSED, without_prompt_noise(shown) if shown else None
+        )
     return LoginCheck(True, OK_MESSAGE, OUTCOME_OK)
 
 
