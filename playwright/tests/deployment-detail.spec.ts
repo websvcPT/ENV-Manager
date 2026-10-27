@@ -2,7 +2,14 @@ import type { Browser, Page } from '@playwright/test';
 
 import { deploymentId } from '../deployments-api';
 import { stateFile } from '../global-setup';
-import { expectItemHeader, expectLocation, locationLinks } from '../item-header';
+import {
+  breadcrumbLinks,
+  breadcrumbTypes,
+  compactBreadcrumb,
+  expectBreadcrumb,
+  expectItemHeader,
+  expectLocation,
+} from '../item-header';
 import { horizontalOverflow, isWide } from '../viewport';
 import { actionControls, rowAction } from './row-actions';
 import { expect, test } from './scratch-project';
@@ -38,10 +45,12 @@ test.describe('superadmin', () => {
     await expectItemHeader(page, 'deployment', 'prod');
     await expect(header(page).locator('[data-status]')).toHaveText(['Failed']);
     await expectLocation(page, 'deployment', {
-      parents: 'Project: Fancy Proj. Name',
       root: 'Deployment path: /opt/fancy/prod',
     });
-    expect(await locationLinks(page, 'deployment')).toEqual([expect.stringMatching(/^\/projects\/\d+$/)]);
+    expect(await breadcrumbLinks(page)).toEqual([
+      '/projects',
+      expect.stringMatching(/^\/projects\/\d+$/),
+    ]);
     await expect(header(page).getByRole('link', { name: 'Check dist' })).toHaveAttribute(
       'href',
       `/deployments/${id}/dist`,
@@ -50,13 +59,8 @@ test.describe('superadmin', () => {
       'href',
       `/deployments/${id}/edit`,
     );
-    await expect(page.locator('nav[aria-label="Breadcrumb"] li')).toHaveText([
-      'Projects',
-      '/',
-      'Fancy Proj. Name',
-      '/',
-      'prod',
-    ]);
+    await expectBreadcrumb(page, ['Projects', ['Fancy Proj. Name', 'Project'], ['prod', 'Deployment']]);
+    await expect(breadcrumbTypes(page)).toHaveText(['Project', 'Deployment']);
     await expect(sections(page)).toHaveText(['Services', 'Deploy history', 'AccessSuperadmin']);
     await expect(sections(page).first()).toHaveAttribute('aria-current', 'page');
 
@@ -158,12 +162,17 @@ test.describe('superadmin', () => {
     const row = page.locator('[data-fragment="deployment-row"]', { hasText: '/opt/fancy/prod' });
     await (await rowAction(row, 'open')).click();
     await expect(page).toHaveURL(new RegExp(`/deployments/${id}$`));
-    const breadcrumb = page.locator('nav[aria-label="Breadcrumb"]');
+    const breadcrumb = page.locator('nav[data-breadcrumb="full"]');
     if (isWide(page)) {
+      await expect(compactBreadcrumb(page)).toBeHidden();
       await breadcrumb.getByRole('link', { name: 'Fancy Proj. Name' }).click();
     } else {
       await expect(breadcrumb).toBeHidden();
-      await page.goBack();
+      await expect(compactBreadcrumb(page).locator('li:not([aria-hidden="true"])')).toHaveText([
+        'Fancy Proj. Name Project',
+        'prod Deployment',
+      ]);
+      await compactBreadcrumb(page).getByRole('link', { name: /Fancy Proj\. Name/ }).click();
     }
     await expect(page).toHaveURL(/\/projects\/\d+$/);
   });
@@ -238,7 +247,7 @@ test.describe('viewer', () => {
     const id = await prod(browser);
     await page.goto(`/deployments/${id}`);
     await expectItemHeader(page, 'deployment', 'prod');
-    await expect(header(page).getByRole('link')).toHaveCount(1);
+    await expect(header(page).getByRole('link')).toHaveCount(0);
     await expect(header(page).getByRole('button')).toHaveCount(0);
     await expect(serviceRows(page).locator('th a')).toHaveText(['mysql', 'web']);
     await expect(actionControls(serviceRows(page), 'deploy')).toHaveCount(0);
@@ -264,7 +273,6 @@ test.describe('scoped users', () => {
       await page.goto(`/deployments/${await prod(browser)}`);
       await expect(serviceRows(page).locator('th a')).toHaveText(['mysql', 'web']);
       await expectLocation(page, 'deployment', {
-        parents: 'Project: Fancy Proj. Name',
         root: 'Deployment path: /opt/fancy/prod',
       });
       await expect(page.locator('[data-fragment="policies-panel"]')).toBeVisible();
@@ -280,7 +288,8 @@ test.describe('scoped users', () => {
       browser,
     }) => {
       await page.goto(`/deployments/${await prod(browser)}`);
-      await expectLocation(page, 'deployment', { parents: 'Project: Fancy Proj. Name' });
+      await expectLocation(page, 'deployment', {});
+      await expectBreadcrumb(page, ['Projects', ['Fancy Proj. Name', 'Project'], ['prod', 'Deployment']]);
       await expect(page.locator('[role="note"]')).toHaveText(
         'You have access to one environment of this deployment. Only its service is shown.',
       );
@@ -308,7 +317,7 @@ test.describe('scoped users', () => {
     test('has no check or deploy on its file', async ({ page, browser }) => {
       await page.goto(`/deployments/${await prod(browser)}`);
       await expect(serviceRows(page).locator('th a')).toHaveText(['mysql']);
-      await expect(header(page).getByRole('link')).toHaveCount(1);
+      await expect(header(page).getByRole('link')).toHaveCount(0);
       await expect(actionControls(serviceRows(page), 'deploy')).toHaveCount(0);
     });
   });

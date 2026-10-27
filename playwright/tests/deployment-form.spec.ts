@@ -2,7 +2,7 @@ import type { Browser, Page } from '@playwright/test';
 
 import { deploymentId } from '../deployments-api';
 import { stateFile, SUPERADMIN_STATE } from '../global-setup';
-import { expectItemHeader, expectLocation } from '../item-header';
+import { expectBreadcrumb, expectItemHeader, expectLocation } from '../item-header';
 import { listProjects } from '../projects-api';
 import { horizontalOverflow, isWide } from '../viewport';
 import { expect, test } from './scratch-project';
@@ -66,13 +66,7 @@ test.describe('superadmin create', () => {
     await expect(page.locator('[data-fragment="page-header"] p')).toHaveText(
       'Post-deploy commands are configured per service, not here.',
     );
-    await expect(page.locator('nav[aria-label="Breadcrumb"] li')).toHaveText([
-      'Projects',
-      '/',
-      scratch.name,
-      '/',
-      'New deployment',
-    ]);
+    await expectBreadcrumb(page, ['Projects', [scratch.name, 'Project'], 'New deployment']);
     await expect(form(page)).toHaveAttribute('hx-post', `/projects/${scratch.id}/deployments`);
     await expect(form(page).locator('[data-fragment="form-section"] h2')).toHaveText([
       'General',
@@ -229,7 +223,6 @@ test.describe('superadmin create', () => {
     await expect(page).toHaveURL(/\/deployments\/\d+$/);
     await expectItemHeader(page, 'deployment', 'created-one');
     await expectLocation(page, 'deployment', {
-      parents: `Project: ${scratch.name}`,
       root: `Deployment path: ${SAMPLE_A}`,
     });
     const policies = page.locator('[data-fragment="policies-panel"]');
@@ -282,7 +275,7 @@ test.describe('superadmin edit', () => {
     const id = await createDeployment(page, scratch.id, 'edit-me', SAMPLE_A);
     await page.goto(`/deployments/${id}/edit`);
     await expect(page.locator('[data-fragment="page-header"] h1')).toHaveText('Edit edit-me');
-    await expect(page.locator('nav[aria-label="Breadcrumb"] li').last()).toHaveText('Edit edit-me');
+    await expectBreadcrumb(page, ['Projects', [scratch.name, 'Project'], 'Edit edit-me']);
     await expect(form(page)).toHaveAttribute('hx-post', `/deployments/${id}/edit`);
     await expect(page.locator('#name')).toHaveValue('edit-me');
     await expect(page.locator('#root')).toHaveValue(SAMPLE_A);

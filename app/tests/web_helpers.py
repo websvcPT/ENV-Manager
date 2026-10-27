@@ -95,8 +95,9 @@ def events_of(response: httpx.Response) -> dict[str, object]:
 
 
 def main_of(page: str) -> str:
-    """The page body without the sidebar and top bar."""
-    return page.split("<main", 1)[1].split("</main>", 1)[0]
+    """The page body without the sidebar, the top bar and the compact breadcrumb."""
+    body = page.split("<main", 1)[1].split("</main>", 1)[0]
+    return re.sub(r'<nav [^>]*data-breadcrumb="compact".*?</nav>', "", body, flags=re.DOTALL)
 
 
 def hx_vals(page: str, path: str) -> dict[str, object]:
@@ -131,8 +132,7 @@ class ItemHeader:
     """The visible text of the header of a project, deployment, service or environment page.
 
     ``subtitle`` is the line of a project (None on the other types). ``location`` maps the key of
-    each location line (``parents``, ``root``, ``target``) to its text and ``links`` maps the
-    label of each parent to the address its name links to.
+    each path line (``root``, ``target``) to its text.
     """
 
     type: str
@@ -140,7 +140,6 @@ class ItemHeader:
     subtitle: str | None
     details: str | None
     location: Mapping[str, str]
-    links: Mapping[str, str]
 
 
 def _text(markup: str) -> str:
@@ -149,7 +148,7 @@ def _text(markup: str) -> str:
 
 
 def item_header_of(page: str) -> ItemHeader:
-    """The item header of a page: its type, title, subtitle, location lines and details line."""
+    """The item header of a page: its type, title, subtitle, path lines and details line."""
     header = re.search(
         r'<section data-fragment="page-header" data-item-type="(\w+)".*?</section>',
         page,
@@ -168,8 +167,41 @@ def item_header_of(page: str) -> ItemHeader:
         _text(subtitle.group(1)) if subtitle else None,
         _text(details.group(1)) if details else None,
         {key: _text(line) for key, line in lines},
-        dict(re.findall(r'(\w+): <a href="([^"]+)"', markup)),
     )
+
+
+@dataclass(frozen=True)
+class Crumb:
+    """One item of a breadcrumb: its label, its type line (None without one) and its link."""
+
+    label: str
+    type: str | None
+    href: str | None
+
+
+def breadcrumb_of(page: str, compact: bool = False) -> list[Crumb]:
+    """The items of the breadcrumb of a page, the separators left out.
+
+    The last item is the current page and has no link. ``compact`` reads the phone version (the
+    parent as a back link and the current item) instead of the full trail.
+    """
+    kind = "compact" if compact else "full"
+    nav = re.search(rf'<nav [^>]*data-breadcrumb="{kind}".*?</nav>', page, re.DOTALL)
+    assert nav is not None, f"no {kind} breadcrumb on the page"
+    crumbs = []
+    for item in re.findall(r"<li(?![^>]*aria-hidden)[^>]*>.*?</li>", nav.group(0), re.DOTALL):
+        label = re.search(r"<span data-crumb-label[^>]*>(.*?)</span>", item, re.DOTALL)
+        kind_line = re.search(r"<span data-crumb-type[^>]*>(.*?)</span>", item, re.DOTALL)
+        link = re.search(r'<a href="([^"]+)"', item)
+        assert label is not None
+        crumbs.append(
+            Crumb(
+                _text(label.group(1)),
+                _text(kind_line.group(1)) if kind_line else None,
+                link.group(1) if link else None,
+            )
+        )
+    return crumbs
 
 
 async def add_version(web_app: FastAPI, environment: int, text: str) -> None:

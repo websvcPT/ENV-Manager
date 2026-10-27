@@ -5,13 +5,11 @@
 {% from "macros/badges.html" import dist_badge %}
 {% from "macros/buttons.html" import button %}
 {% from "macros/feedback.html" import empty_state, note %}
-{% from "macros/icons.html" import icon %}
 {% from "macros/panels.html" import cell, page_header, panel, row_header, table, text_link %}
 {% set active_nav = "projects" %}
-{% set breadcrumbs = [("Projects", "/projects"), (deployment.project_name, "/projects/" ~ deployment.project_id), (deployment.name, "/deployments/" ~ deployment.id), ("Dist check", none)] %}
+{% set breadcrumbs = [("Projects", "/projects"), (deployment.project_name, "/projects/" ~ deployment.project_id, "Project"), (deployment.name, "/deployments/" ~ deployment.id, "Deployment"), ("Dist check", none)] %}
 {% block title %}Dist check · {{ deployment.name }}{% endblock %}
 {% block content %}
-<nav aria-label="Breadcrumb" class="-mb-2 md:hidden"><a href="/deployments/{{ deployment.id }}" class="inline-flex min-h-11 items-center gap-1 text-ink2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ icon("chevron-left", "size-4", "2.2") }}{{ deployment.project_name }} / {{ deployment.name }}</a></nav>
 {% set subtitle %}Deployment <strong class="text-ink">{{ deployment.name }}</strong> in {{ deployment.project_name }}{% if checks %} · checked {{ checks[0].checked_at.strftime("%Y-%m-%d %H:%M") }} by {{ checks[0].checked_by }}{% endif %}{% endset %}
 {% set actions %}{% if not deployment.outside_allowed %}{{ button("Run check again", href="/deployments/" ~ deployment.id ~ "/dist", icon_name="check", icon_stroke="2.4") }}{% endif %}{{ button("Back to deployment", href="/deployments/" ~ deployment.id) }}{% endset %}
 {{ page_header("Dist check", subtitle, actions=actions) }}

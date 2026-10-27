@@ -11,7 +11,7 @@
 {% from "macros/icons.html" import icon %}
 {% from "macros/panels.html" import environment_location, item_header %}
 {% set active_nav = "projects" %}
-{% set breadcrumbs = [("Projects", "/projects"), (env.project_name, "/projects/" ~ env.project_id), (env.deployment_name, "/deployments/" ~ env.deployment_id), (env.service_name, "/services/" ~ env.service_id), (env.name, none)] %}
+{% set breadcrumbs = [("Projects", "/projects"), (env.project_name, "/projects/" ~ env.project_id, "Project"), (env.deployment_name, "/deployments/" ~ env.deployment_id, "Deployment"), (env.service_name, "/services/" ~ env.service_id, "Service"), (env.name, none, "Environment")] %}
 {% block title %}Drift · {{ env.name }}{% endblock %}
 {% block content %}
 {% set state_badges = {

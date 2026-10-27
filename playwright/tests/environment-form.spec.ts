@@ -2,7 +2,7 @@ import type { APIRequestContext, Browser, Page } from '@playwright/test';
 
 import { createDeployment, deploymentId } from '../deployments-api';
 import { stateFile } from '../global-setup';
-import { expectItemHeader } from '../item-header';
+import { expectBreadcrumb, expectItemHeader } from '../item-header';
 import { createService, serviceId } from '../services-api';
 import { horizontalOverflow, isWide, usesMenus } from '../viewport';
 import { expect, test } from './scratch-project';
@@ -72,13 +72,10 @@ test.describe('superadmin add service', () => {
     await page.goto(`/deployments/${deployment}/services/new`);
     await expect(header(page).locator('h1')).toHaveText('Add service');
     await expect(header(page)).toContainText('Superadmin');
-    await expect(page.locator('nav[aria-label="Breadcrumb"] li')).toHaveText([
+    await expectBreadcrumb(page, [
       'Projects',
-      '/',
-      scratch.name,
-      '/',
-      'scratch-dep',
-      '/',
+      [scratch.name, 'Project'],
+      ['scratch-dep', 'Deployment'],
       'Add service',
     ]);
     const serviceForm = page.locator('#service-form');
@@ -164,15 +161,11 @@ test.describe('superadmin add environment', () => {
     await expect(header(page).locator('h1')).toHaveText('Add environment');
     await expect(header(page)).toContainText('Superadmin');
     await expect(header(page).locator('p')).toHaveText('Superadmin only.');
-    await expect(page.locator('nav[aria-label="Breadcrumb"] li')).toHaveText([
+    await expectBreadcrumb(page, [
       'Projects',
-      '/',
-      scratch.name,
-      '/',
-      'scratch-dep',
-      '/',
-      'cache',
-      '/',
+      [scratch.name, 'Project'],
+      ['scratch-dep', 'Deployment'],
+      ['cache', 'Service'],
       'Add environment',
     ]);
     await expect(form(page)).toHaveAttribute('hx-post', `/services/${service}/environments/new`);

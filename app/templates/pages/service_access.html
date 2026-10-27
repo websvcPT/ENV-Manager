@@ -7,7 +7,7 @@
 {% from "macros/dialogs.html" import loaded_dialog %}
 {% from "macros/panels.html" import item_header, service_location %}
 {% set active_nav = "projects" %}
-{% set breadcrumbs = [("Projects", "/projects"), (service.project_name, "/projects/" ~ service.project_id), (service.deployment_name, "/deployments/" ~ service.deployment_id), (service.name, none)] %}
+{% set breadcrumbs = [("Projects", "/projects"), (service.project_name, "/projects/" ~ service.project_id, "Project"), (service.deployment_name, "/deployments/" ~ service.deployment_id, "Deployment"), (service.name, none, "Service")] %}
 {% block title %}{{ service.name }}{% endblock %}
 {% block content %}
 {{ item_header("service", service.name, location=service_location(service)) }}

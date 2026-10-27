@@ -23,7 +23,7 @@ from app.models import (
 from app.services.notify_events import FileChange, FileChanged
 from app.tests.conftest import sign_in
 from app.tests.notify_helpers import RecordingEvents
-from app.tests.web_helpers import HTMX, post
+from app.tests.web_helpers import HTMX, breadcrumb_of, post
 
 CERT_TEXT = "-----BEGIN CERTIFICATE-----\nc2VlZA==\n-----END CERTIFICATE-----\n"
 
@@ -124,10 +124,15 @@ async def test_new_environment_page_has_every_field(
     assert re.search(r"<span data-dist-ready hidden>", page)
     assert ">Add environment</button>" in page
     assert f'href="/services/{layout.mysql}"' in page and ">Cancel</a>" in page
-    crumbs = re.search(r'aria-label="Breadcrumb".*?</nav>', page, re.DOTALL)
-    assert crumbs is not None
-    assert f'href="/services/{layout.mysql}"' in crumbs.group(0)
-    assert 'aria-current="page" class="font-semibold text-ink">Add environment' in crumbs.group(0)
+    crumbs = breadcrumb_of(page)
+    assert [(crumb.label, crumb.type) for crumb in crumbs] == [
+        ("Projects", None),
+        ("Fancy Proj. Name", "Project"),
+        ("prod", "Deployment"),
+        ("mysql", "Service"),
+        ("Add environment", None),
+    ]
+    assert crumbs[3].href == f"/services/{layout.mysql}"
 
 
 async def test_the_form_page_loads_for_a_deployment_outside_the_allowed_paths(

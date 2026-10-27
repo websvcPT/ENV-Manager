@@ -31,7 +31,13 @@ from app.services.compose_scan import IN_FILES_REASON
 from app.services.file_types import NOT_PEM_MESSAGE
 from app.tests.compose_helpers import GEOTRAVEL, PROJECT, mounted_cli, write_project
 from app.tests.conftest import sign_in
-from app.tests.web_helpers import assert_never_cached, item_header_of, main_of, post
+from app.tests.web_helpers import (
+    assert_never_cached,
+    breadcrumb_of,
+    item_header_of,
+    main_of,
+    post,
+)
 
 OVERRIDE = "services:\n  web:\n    environment:\n      MODE: test\n"
 SUB_COMPOSE = "services:\n  tool:\n    image: t\n"
@@ -207,11 +213,13 @@ async def test_step_one_lists_the_compose_files_under_the_deployment_header(
     assert_never_cached(response)
     header = item_header_of(page)
     assert (header.type, header.title) == ("deployment", "Deployment: imported")
-    assert dict(header.location) == {
-        "parents": "Project: Fancy Proj. Name",
-        "root": f"Deployment path: {layout.root}",
-    }
-    assert ">Import from Docker Compose</li>" in page
+    assert dict(header.location) == {"root": f"Deployment path: {layout.root}"}
+    assert [(crumb.label, crumb.type) for crumb in breadcrumb_of(page)] == [
+        ("Projects", None),
+        ("Fancy Proj. Name", "Project"),
+        ("imported", "Deployment"),
+        ("Import from Docker Compose", None),
+    ]
     body = main_of(page)
     offers = re.findall(
         r'<input type="checkbox" name="compose_file" value="([^"]+)" id="cf-\d+"( checked)?', body

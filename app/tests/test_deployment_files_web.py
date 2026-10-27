@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 from app.models import DEPLOYMENT_FILES_NAME, AuditEntry, Deployment, Environment, Service
 from app.services.services import DEPLOYMENT_FILES_MESSAGE
 from app.tests.conftest import sign_in
-from app.tests.web_helpers import main_of, post
+from app.tests.web_helpers import breadcrumb_of, main_of, post
 
 
 @pytest.fixture
@@ -121,10 +121,13 @@ async def test_a_file_page_names_the_deployment_files_where_a_service_would_be(
     files_id = await open_files(web_client, prod)
     environment_id = await add_file(web_client, web_app, files_id, ".env")
     page = (await web_client.get(f"/environments/{environment_id}")).text
-    parents = re.search(r'<p data-location="parents">(.*?)</p>', page, re.S)
-    assert parents is not None
-    text = re.sub(r"<[^>]+>", "", parents.group(1))
-    assert text == f"Project: Fancy Proj. Name, Deployment: prod, {DEPLOYMENT_FILES_NAME}"
+    assert [(crumb.label, crumb.type) for crumb in breadcrumb_of(page)] == [
+        ("Projects", None),
+        ("Fancy Proj. Name", "Project"),
+        ("prod", "Deployment"),
+        (DEPLOYMENT_FILES_NAME, None),
+        (".env", "Environment"),
+    ]
     async with web_app.state.session_factory() as db:
         environment = await db.get(Environment, environment_id)
         assert environment is not None and environment.service_id == files_id

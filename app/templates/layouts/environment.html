@@ -8,7 +8,7 @@
 {% from "macros/dialogs.html" import loaded_dialog %}
 {% from "macros/panels.html" import environment_location, item_header, tabs %}
 {% set active_nav = "projects" %}
-{% set breadcrumbs = [("Projects", "/projects"), (env.project_name, "/projects/" ~ env.project_id), (env.deployment_name, "/deployments/" ~ env.deployment_id), (env.service_name, "/services/" ~ env.service_id), (env.name, none)] %}
+{% set breadcrumbs = [("Projects", "/projects"), (env.project_name, "/projects/" ~ env.project_id, "Project"), (env.deployment_name, "/deployments/" ~ env.deployment_id, "Deployment"), (env.service_name, "/services/" ~ env.service_id, "Service"), (env.name, none, "Environment")] %}
 {% block title %}{{ env.name }}{% endblock %}
 {% block content %}
 {% block header %}

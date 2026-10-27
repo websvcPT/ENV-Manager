@@ -14,6 +14,7 @@ from app.core.csrf import CSRF_COOKIE_NAME
 from app.core.security_headers import CONTENT_SECURITY_POLICY
 from app.models import UserGroup
 from app.tests.conftest import sign_in
+from app.tests.web_helpers import Crumb, breadcrumb_of
 from app.web.dependencies import require_auth, require_group
 
 NAV_PATTERN = re.compile(r'<nav aria-label="Primary".*?</nav>', re.DOTALL)
@@ -391,3 +392,22 @@ async def test_logout_form_ends_the_session(web_client: httpx.AsyncClient) -> No
     done = await web_client.post("/logout", data={"csrf_token": token.group(1)})
     assert (done.status_code, done.headers["location"]) == (303, "/login")
     assert (await web_client.get("/projects")).status_code == 303
+
+
+async def test_a_page_with_one_item_has_only_that_in_the_compact_breadcrumb(
+    web_client: httpx.AsyncClient,
+) -> None:
+    """No back link when there is no parent; with a parent the trail is parent and current."""
+    await sign_in(web_client, "root")
+    projects = (await web_client.get("/projects")).text
+    assert breadcrumb_of(projects, compact=True) == [Crumb("Projects", None, None)]
+    compact = re.search(r'<nav [^>]*data-breadcrumb="compact".*?</nav>', projects, re.DOTALL)
+    assert compact is not None and "<svg" not in compact.group(0)
+
+    section = (await web_client.get("/settings/smtp")).text
+    full = breadcrumb_of(section)
+    assert [crumb.type for crumb in full] == [None, None]
+    assert [(crumb.label, crumb.href) for crumb in breadcrumb_of(section, compact=True)] == [
+        ("Settings", "/settings"),
+        (full[-1].label, None),
+    ]

@@ -1,7 +1,7 @@
 import type { Browser, Page } from '@playwright/test';
 
 import { stateFile, SUPERADMIN_STATE } from '../global-setup';
-import { expectItemHeader, expectLocation } from '../item-header';
+import { expectBreadcrumb, expectItemHeader, expectLocation } from '../item-header';
 import { listProjects } from '../projects-api';
 import { seededEmail } from '../users-api';
 import { horizontalOverflow, isWide } from '../viewport';
@@ -44,9 +44,7 @@ test.describe('superadmin', () => {
     await expect(page.locator('[data-fragment="page-header"] p')).toHaveText(
       /^2 deployments · \d+ members$/,
     );
-    await expect(page.locator('nav[aria-label="Breadcrumb"] [aria-current="page"]')).toHaveText(
-      'Fancy Proj. Name',
-    );
+    await expectBreadcrumb(page, ['Projects', ['Fancy Proj. Name', 'Project']]);
     await expect(tabs(page)).toHaveText([
       'Deployments',
       'Members and accessSuperadmin',
@@ -177,9 +175,7 @@ test.describe('superadmin', () => {
     await expect(page).toHaveURL(new RegExp(`/projects/${scratch.id}/settings\\?renamed=true$`));
     await expect(page.locator('[data-fragment="toast"]')).toContainText('Project renamed');
     await expectItemHeader(page, 'project', renamed);
-    await expect(page.locator('nav[aria-label="Breadcrumb"] [aria-current="page"]')).toHaveText(
-      renamed,
-    );
+    await expectBreadcrumb(page, ['Projects', [renamed, 'Project']]);
     await expect(page.locator('#project-rename #rn')).toHaveValue(renamed);
   });
 

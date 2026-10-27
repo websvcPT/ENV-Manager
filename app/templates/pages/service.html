@@ -13,10 +13,9 @@
 {% from "macros/icons.html" import icon %}
 {% from "macros/panels.html" import item_header, service_location %}
 {% set active_nav = "projects" %}
-{% set breadcrumbs = [("Projects", "/projects"), (service.project_name, "/projects/" ~ service.project_id), (service.deployment_name, "/deployments/" ~ service.deployment_id), (service.name, none)] %}
+{% set breadcrumbs = [("Projects", "/projects"), (service.project_name, "/projects/" ~ service.project_id, "Project"), (service.deployment_name, "/deployments/" ~ service.deployment_id, "Deployment"), (service.name, none, "Service")] %}
 {% block title %}{{ service.name }}{% endblock %}
 {% block content %}
-<nav aria-label="Breadcrumb" class="-mb-2 md:hidden"><a href="/deployments/{{ service.deployment_id }}" class="inline-flex min-h-11 items-center gap-1 text-ink2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ icon("chevron-left", "size-4", "2.2") }}{{ service.project_name }} / {{ service.deployment_name }}</a></nav>
 {% set is_files = service.name == DEPLOYMENT_FILES_NAME %}
 {% set header_badges %}{% if pending %}{{ badge("pending", pending ~ " pending") }}{% endif %}{% endset %}
 {% set header_actions %}{% if can_manage_structure and not is_files %}{{ button("Rename", href="/services/" ~ service.id ~ "/rename", icon_name="pencil", icon_stroke="2", id="service-rename-open") }}{{ button("Delete…", kind="danger", icon_name="trash", icon_stroke="2", id="service-delete-open", data_js="dialog-open", data_target="service-delete", aria_haspopup="dialog", hx_get="/services/" ~ service.id ~ "/delete", hx_target="#service-delete", hx_swap="innerHTML") }}{% endif %}{% if can_deploy %}<button type="button" data-js="dialog-open" data-target="deploy-dialog" aria-haspopup="dialog" hx-post="/services/{{ service.id }}/deploy/preflight" hx-target="#deploy-dialog" hx-swap="innerHTML" class="inline-flex h-11 md:h-ctl items-center justify-center gap-2 rounded-btn bg-accent px-5 text-base font-bold text-accent-ink hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus w-full md:w-auto">{{ icon("arrow-up", "size-[18px]", "2.4") }}{{ "Deploy deployment files" if is_files else "Deploy service" }}</button>{% endif %}{% endset %}

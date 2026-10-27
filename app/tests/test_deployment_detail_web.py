@@ -10,7 +10,7 @@ from sqlalchemy import select
 
 from app.models import Deployment
 from app.tests.conftest import sign_in
-from app.tests.web_helpers import HTMX, item_header_of, main_of, section_links
+from app.tests.web_helpers import HTMX, breadcrumb_of, item_header_of, main_of, section_links
 
 
 @dataclass(frozen=True)
@@ -50,11 +50,16 @@ async def test_superadmin_sees_everything_and_the_edit_actions(
     header = item_header_of(page)
     assert (header.type, header.title) == ("deployment", "Deployment: prod")
     assert header.subtitle is None
-    assert dict(header.location) == {
-        "parents": "Project: Fancy Proj. Name",
-        "root": "Deployment path: /opt/fancy/prod",
-    }
-    assert re.fullmatch(r"/projects/\d+", header.links["Project"])
+    assert dict(header.location) == {"root": "Deployment path: /opt/fancy/prod"}
+    crumbs = breadcrumb_of(page)
+    assert [(crumb.label, crumb.type) for crumb in crumbs] == [
+        ("Projects", None),
+        ("Fancy Proj. Name", "Project"),
+        ("prod", "Deployment"),
+    ]
+    assert re.fullmatch(r"/projects/\d+", crumbs[1].href or "")
+    assert crumbs[2].href is None
+    assert "Project:" not in page.split("</h1>", 1)[1].split("</section>", 1)[0]
     assert header.details is None
     assert ">Failed<" in page
     assert section_links(page) == ["Services", "Deploy history", "AccessSuperadmin"]
@@ -117,7 +122,8 @@ async def test_environment_grant_gets_a_name_only_view_with_a_note(
     assert "Post-deploy exit code n/a, output truncated." in body
     for hidden in (".env.db.secrets", ".env.web", "web</a>", "/opt/fancy", "Policies"):
         assert hidden not in body
-    assert dict(item_header_of(body).location) == {"parents": "Project: Fancy Proj. Name"}
+    assert not item_header_of(body).location
+    assert breadcrumb_of(page)[1].label == "Fancy Proj. Name"
 
 
 async def test_outside_allowed_path_disables_the_check_and_says_why(

@@ -5,7 +5,7 @@
 {% from "macros/badges.html" import deploy_status_badge %}
 {% from "macros/panels.html" import deployment_location, item_header %}
 {% set active_nav = "projects" %}
-{% set breadcrumbs = [("Projects", "/projects"), (deployment.project_name, "/projects/" ~ deployment.project_id), (deployment.name, none)] %}
+{% set breadcrumbs = [("Projects", "/projects"), (deployment.project_name, "/projects/" ~ deployment.project_id, "Project"), (deployment.name, none, "Deployment")] %}
 {% block title %}{{ deployment.name }}{% endblock %}
 {% block content %}
 {% set header_badges %}{% for flag in deployment.flags %}{{ deploy_status_badge(flag.value) }}{% endfor %}{% endset %}

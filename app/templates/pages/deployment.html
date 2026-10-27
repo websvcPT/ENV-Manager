@@ -12,7 +12,7 @@
 {% from "macros/feedback.html" import note, toast %}
 {% from "macros/panels.html" import deployment_location, item_header, panel, text_link %}
 {% set active_nav = "projects" %}
-{% set breadcrumbs = [("Projects", "/projects"), (deployment.project_name, "/projects/" ~ deployment.project_id), (deployment.name, none)] %}
+{% set breadcrumbs = [("Projects", "/projects"), (deployment.project_name, "/projects/" ~ deployment.project_id, "Project"), (deployment.name, none, "Deployment")] %}
 {% set run = deployment.last_run %}
 {% set drift_labels = {"halt": "Halt", "overwrite": "Overwrite", "backup_overwrite": "Back up, then overwrite"} %}
 {% set drift_badges = {"in_sync": ("deployed", "In sync"), "drift": ("drift", none), "missing": ("never", "Target missing")} %}

@@ -4,7 +4,7 @@ import { expect, test } from '@playwright/test';
 
 import { deploymentId } from '../deployments-api';
 import { stateFile } from '../global-setup';
-import { expectItemHeader, expectLocation } from '../item-header';
+import { expectBreadcrumb, expectItemHeader, expectLocation } from '../item-header';
 import { serviceId } from '../services-api';
 import { horizontalOverflow, isWide } from '../viewport';
 import { actionControls, rowAction } from './row-actions';
@@ -74,7 +74,6 @@ test.describe('superadmin', () => {
     await expectItemHeader(page, 'service', 'web');
     await expect(header(page).locator('[data-status]')).toHaveText(['1 pending']);
     await expectLocation(page, 'service', {
-      parents: 'Project: Fancy Proj. Name, Deployment: staging',
       root: 'Deployment path: /opt/fancy/staging',
     });
     await expect(page.locator('nav[aria-label="Sections"] a')).toHaveText([
@@ -82,14 +81,11 @@ test.describe('superadmin', () => {
       'Deploy history',
       'AccessSuperadmin',
     ]);
-    await expect(page.locator('nav[aria-label="Breadcrumb"] li')).toHaveText([
+    await expectBreadcrumb(page, [
       'Projects',
-      '/',
-      'Fancy Proj. Name',
-      '/',
-      'staging',
-      '/',
-      'web',
+      ['Fancy Proj. Name', 'Project'],
+      ['staging', 'Deployment'],
+      ['web', 'Service'],
     ]);
     await expectLayout(page);
 
@@ -299,7 +295,7 @@ test.describe('environment grant', () => {
     await expect(page.locator('#postdeploy')).toContainText(
       'This service also loads environments outside your access.',
     );
-    await expectLocation(page, 'service', { parents: 'Project: Fancy Proj. Name, Deployment: prod' });
+    await expectLocation(page, 'service', {});
     await expect(page.locator('main')).not.toContainText('.env.db.secrets');
   });
 });
@@ -311,7 +307,6 @@ test.describe('deployment grant', () => {
     const id = await prodMysql(browser);
     await page.goto(`/services/${id}`);
     await expectLocation(page, 'service', {
-      parents: 'Project: Fancy Proj. Name, Deployment: prod',
       root: 'Deployment path: /opt/fancy/prod',
     });
     await expect(visibleRows(page)).toHaveCount(3);

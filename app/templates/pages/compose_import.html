@@ -6,7 +6,7 @@
 {% from "macros/dialogs.html" import loaded_dialog %}
 {% from "macros/panels.html" import deployment_location, item_header %}
 {% set active_nav = "projects" %}
-{% set breadcrumbs = [("Projects", "/projects"), (deployment.project_name, "/projects/" ~ deployment.project_id), (deployment.name, "/deployments/" ~ deployment.id), ("Import from Docker Compose", none)] %}
+{% set breadcrumbs = [("Projects", "/projects"), (deployment.project_name, "/projects/" ~ deployment.project_id, "Project"), (deployment.name, "/deployments/" ~ deployment.id, "Deployment"), ("Import from Docker Compose", none)] %}
 {% block title %}Import from Docker Compose · {{ deployment.name }}{% endblock %}
 {% block content %}
 {% set superadmin_tag %}<span class="rounded-md bg-mute-bg px-1.5 py-px text-[11px] font-semibold text-mute-fg">Superadmin</span>{% endset %}

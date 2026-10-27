@@ -22,7 +22,7 @@ from app.models import (
 from app.models.types import utc_now
 from app.tests.conftest import sign_in
 from app.tests.settings_helpers import browser_as
-from app.tests.web_helpers import HTMX, item_header_of, main_of, section_links
+from app.tests.web_helpers import HTMX, breadcrumb_of, item_header_of, main_of, section_links
 from app.web import service_detail as service_detail_web
 
 FRAGMENTS = ("environments", "postdeploy", "history")
@@ -88,13 +88,17 @@ async def test_superadmin_sees_everything_and_the_command_settings(
     header = item_header_of(page)
     assert (header.type, header.title) == ("service", "Service: web")
     assert header.subtitle is None
-    assert dict(header.location) == {
-        "parents": "Project: Fancy Proj. Name, Deployment: staging",
-        "root": "Deployment path: /opt/fancy/staging",
-    }
-    assert re.fullmatch(r"/deployments/\d+", header.links["Deployment"])
-    assert re.fullmatch(r"/projects/\d+", header.links["Project"])
-    assert ">Service</span>" not in page and ">1 pending</span>" in page
+    assert dict(header.location) == {"root": "Deployment path: /opt/fancy/staging"}
+    crumbs = breadcrumb_of(page)
+    assert [(crumb.label, crumb.type) for crumb in crumbs] == [
+        ("Projects", None),
+        ("Fancy Proj. Name", "Project"),
+        ("staging", "Deployment"),
+        ("web", "Service"),
+    ]
+    assert re.fullmatch(r"/projects/\d+", crumbs[1].href or "")
+    assert re.fullmatch(r"/deployments/\d+", crumbs[2].href or "")
+    assert ">Service</span>" not in main_of(page) and ">1 pending</span>" in page
     assert section_links(page) == ["Environments 4", "Deploy history", "AccessSuperadmin"]
     assert f'href="/services/{ids.staging_web}/access"' in page
     assert page.count('data-fragment="service-explainer"') == 2
@@ -274,9 +278,7 @@ async def test_environment_grant_sees_a_name_only_view_with_notes(
         in body
     )
     assert "This service also loads environments outside your access." in body
-    assert dict(item_header_of(body).location) == {
-        "parents": "Project: Fancy Proj. Name, Deployment: prod"
-    }
+    assert not item_header_of(body).location
     assert "deploy did not finish" in body
     assert "Command text and settings are visible to the superadmin only." in body
     for hidden in (".env.db.secrets", "/opt/fancy", "Add environment", "Read-only view"):
@@ -378,11 +380,14 @@ async def test_environment_fragment_failure_answers_a_retry_panel(
 async def test_page_links_lead_back_to_the_structure(
     web_client: httpx.AsyncClient, ids: ServiceIds
 ) -> None:
-    """The mobile back link and breadcrumb point at the deployment and project."""
+    """The breadcrumb points at the project and deployment, the phone one back at the deployment."""
     await sign_in(web_client, "root")
     page = (await web_client.get(f"/services/{ids.mysql}")).text
-    back_link = r'<nav aria-label="Breadcrumb" class="-mb-2 md:hidden"><a href="/deployments/\d+"'
-    assert re.search(back_link, page)
-    assert "Fancy Proj. Name / prod" in page
-    assert re.search(r'<li><a href="/projects/\d+"[^>]*>Fancy Proj. Name</a></li>', page)
-    assert re.search(r'<li><a href="/deployments/\d+"[^>]*>prod</a></li>', page)
+    crumbs = breadcrumb_of(page)
+    assert re.fullmatch(r"/projects/\d+", crumbs[1].href or "")
+    assert re.fullmatch(r"/deployments/\d+", crumbs[2].href or "")
+    compact = breadcrumb_of(page, compact=True)
+    assert [(crumb.label, crumb.type, crumb.href) for crumb in compact] == [
+        ("prod", "Deployment", crumbs[2].href),
+        ("mysql", "Service", None),
+    ]

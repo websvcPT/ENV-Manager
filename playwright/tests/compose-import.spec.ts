@@ -4,7 +4,7 @@ import type { APIRequestContext, Page } from '@playwright/test';
 
 import { createDeployment, deploymentId } from '../deployments-api';
 import { createHostFolder, type HostFolder } from '../host-files';
-import { expectItemHeader, expectLocation } from '../item-header';
+import { expectBreadcrumb, expectItemHeader, expectLocation } from '../item-header';
 import { TOUCH_TARGET, horizontalOverflow, isWide } from '../viewport';
 import { expect, test as scratchTest } from './scratch-project';
 
@@ -134,16 +134,12 @@ test.describe('import from Docker Compose', () => {
 
     await expectItemHeader(page, 'deployment', 'compose-dep');
     await expectLocation(page, 'deployment', {
-      parents: `Project: ${scratch.name}`,
       root: `Deployment path: ${host.root}`,
     });
-    await expect(page.locator('nav[aria-label="Breadcrumb"] li')).toHaveText([
+    await expectBreadcrumb(page, [
       'Projects',
-      '/',
-      scratch.name,
-      '/',
-      'compose-dep',
-      '/',
+      [scratch.name, 'Project'],
+      ['compose-dep', 'Deployment'],
       'Import from Docker Compose',
     ]);
     await expect(page.locator('input[name="compose_file"]')).toHaveCount(1);

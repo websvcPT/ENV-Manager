@@ -2,7 +2,7 @@
 {% extends "layouts/app.html" %}
 {% from "macros/panels.html" import page_header %}
 {% set active_nav = "projects" %}
-{% set breadcrumbs = [("Projects", "/projects"), (env.project_name, "/projects/" ~ env.project_id), (env.deployment_name, "/deployments/" ~ env.deployment_id), (env.service_name, "/services/" ~ env.service_id), (env.name, "/environments/" ~ env.id), ("Settings", none)] %}
+{% set breadcrumbs = [("Projects", "/projects"), (env.project_name, "/projects/" ~ env.project_id, "Project"), (env.deployment_name, "/deployments/" ~ env.deployment_id, "Deployment"), (env.service_name, "/services/" ~ env.service_id, "Service"), (env.name, "/environments/" ~ env.id, "Environment"), ("Settings", none)] %}
 {% block title %}File settings{% endblock %}
 {% block content %}
 {% set superadmin_tag %}<span class="rounded-md bg-mute-bg px-1.5 py-px text-[11px] font-semibold text-mute-fg">Superadmin</span>{% endset %}

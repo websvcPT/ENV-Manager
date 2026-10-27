@@ -23,6 +23,7 @@ from app.tests.conftest import sign_in
 from app.tests.web_helpers import (
     HTMX,
     assert_never_cached,
+    breadcrumb_of,
     events_of,
     item_header_of,
     main_of,
@@ -243,10 +244,12 @@ async def test_the_deployment_tab_has_the_handoff_header_and_links_back_to_the_p
     assert f'href="/deployments/{items.prod}" ' in body
     assert f'href="/deployments/{items.prod}#hist"' in body
     assert f'href="/deployments/{items.prod}/access" aria-current="page"' in body
-    assert dict(item_header_of(body).location) == {
-        "parents": "Project: Fancy Proj. Name",
-        "root": "Deployment path: /opt/fancy/prod",
-    }
+    assert dict(item_header_of(body).location) == {"root": "Deployment path: /opt/fancy/prod"}
+    assert [(crumb.label, crumb.type) for crumb in breadcrumb_of(response.text)] == [
+        ("Projects", None),
+        ("Fancy Proj. Name", "Project"),
+        ("prod", "Deployment"),
+    ]
     assert "Check dist" not in body
     assert f'href="/deployments/{items.prod}/edit"' not in body
     rows = listed(body)
@@ -268,7 +271,13 @@ async def test_the_service_tab_has_no_grant_controls_and_links_to_the_grant_leve
     body = main_of(response.text)
     assert section_labels(response.text) == ["Environments", "Deploy history", "Access"]
     assert f'href="/services/{items.mysql}" ' in body
-    assert item_header_of(body).location["parents"] == "Project: Fancy Proj. Name, Deployment: prod"
+    assert dict(item_header_of(body).location) == {"root": "Deployment path: /opt/fancy/prod"}
+    assert [(crumb.label, crumb.type) for crumb in breadcrumb_of(response.text)] == [
+        ("Projects", None),
+        ("Fancy Proj. Name", "Project"),
+        ("prod", "Deployment"),
+        ("mysql", "Service"),
+    ]
     assert item_header_of(body).title == "Service: mysql" and "Deploy service" not in body
     assert "Add access" not in body and "grant-dialog" not in body
     assert 'id="access-remove"' in body and "Remove the grant on project Fancy Proj. Name" in body
@@ -295,10 +304,16 @@ async def test_the_environment_tab_lists_direct_and_inherited_access(
     header = item_header_of(body)
     assert (header.type, header.title) == ("environment", "Environment: .env.db")
     assert dict(header.location) == {
-        "parents": "Project: Fancy Proj. Name, Deployment: prod, Service: mysql",
         "root": "Deployment path: /opt/fancy/prod",
         "target": "Target: /opt/fancy/prod/environments/.env.db",
     }
+    assert [(crumb.label, crumb.type) for crumb in breadcrumb_of(response.text)] == [
+        ("Projects", None),
+        ("Fancy Proj. Name", "Project"),
+        ("prod", "Deployment"),
+        ("mysql", "Service"),
+        (".env.db", "Environment"),
+    ]
     assert header.details is not None and header.details.startswith("Version ")
     rows = listed(body)
     assert "Direct" in rows["env_scoped_admin"]

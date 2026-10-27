@@ -193,14 +193,12 @@ def test_dialog_and_confirm_dialog() -> None:
     assert 'hx-delete="/x"' in page and "border-danger" in page
 
 
-def test_the_item_header_names_the_type_before_the_item_and_its_location_after() -> None:
-    """Label in regular weight, name in its own style, labelled location lines, details apart."""
+def test_the_item_header_names_the_type_before_the_item_and_its_path_lines_after() -> None:
+    """Label in regular weight, name in its own style, path lines, details apart, no parents."""
     page = render_snippet(
         "{% from 'macros/panels.html' import item_header, item_location %}"
         "{{ item_header('environment', '.env.<db>', details='Version 2 saved',"
-        " location=item_location([('Project', 'Fancy & Co', '/projects/1'),"
-        " ('Deployment', 'prod', '/deployments/2'), ('Service', 'mysql', '/services/3')],"
-        " '/srv/x', '/srv/x/.env')) }}"
+        " location=item_location('/srv/x', '/srv/x/.env')) }}"
         "{{ item_header('project', 'Fancy', 'two deployments') }}"
     )
     assert page.count('data-item-type="') == 2 and 'data-item-type="environment"' in page
@@ -213,22 +211,83 @@ def test_the_item_header_names_the_type_before_the_item_and_its_location_after()
         key: " ".join(re.sub(r"<[^>]+>", "", text).split())
         for key, text in re.findall(r'<p data-location="(\w+)">(.*?)</p>', environment)
     }
-    assert lines == {
-        "parents": "Project: Fancy &amp; Co, Deployment: prod, Service: mysql",
-        "root": "Deployment path: /srv/x",
-        "target": "Target: /srv/x/.env",
-    }
-    assert 'Project: <a href="/projects/1"' in environment
-    assert 'Service: <a href="/services/3"' in environment
+    assert lines == {"root": "Deployment path: /srv/x", "target": "Target: /srv/x/.env"}
+    assert 'data-location="parents"' not in page and "<a " not in environment
     assert environment.index("Target:") < environment.index("Version 2 saved")
     assert page.count("data-header-details") == 1
-    parents_only = render_snippet(
-        "{% from 'macros/panels.html' import item_location %}"
-        "{{ item_location([('Project', 'Fancy', '/projects/1')]) }}"
+    project = page.split("</section>", 1)[1]
+    assert "data-item-location" not in project
+    assert "data-item-location" not in render_snippet(
+        "{% from 'macros/panels.html' import item_location %}{{ item_location() }}"
     )
-    assert 'data-location="parents"' in parents_only
-    assert 'data-location="root"' not in parents_only
-    assert 'data-location="target"' not in parents_only
+
+
+def test_the_breadcrumb_names_the_type_of_object_items_only() -> None:
+    """Projects, deployments, services and environments carry a type line, nothing else does."""
+    page = render_snippet(
+        "{% from 'macros/panels.html' import breadcrumb %}"
+        "{{ breadcrumb([('Projects', '/projects'), ('Fancy', '/projects/1', 'Project'),"
+        " ('prod', '/deployments/2', 'Deployment'), ('mysql', '/services/3', 'Service'),"
+        " ('.env', '/environments/4', 'Environment'), ('Settings', none)]) }}"
+    )
+    crumb = page.split("</nav>", 1)[0]
+    types = re.findall(r"<span data-crumb-type[^>]*>(.*?)</span>", crumb)
+    assert types == ["Project", "Deployment", "Service", "Environment"]
+    assert crumb.count("data-crumb-label") == 6 and crumb.count("<li aria-hidden") == 5
+    assert crumb.count('aria-current="page"') == 1
+    assert re.search(
+        r'aria-current="page"[^>]*><span data-crumb-label[^>]*>Settings</span></li>', crumb
+    )
+
+    current_object = render_snippet(
+        "{% from 'macros/panels.html' import breadcrumb %}"
+        "{{ breadcrumb([('Projects', '/projects'), ('Fancy', none, 'Project')]) }}"
+    )
+    assert re.search(
+        r'aria-current="page"[^>]*><span data-crumb-label[^>]*>Fancy</span>'
+        r" <span data-crumb-type[^>]*>Project</span></li>",
+        current_object,
+    )
+
+
+def test_the_deployment_files_service_has_no_type_line_in_the_breadcrumb() -> None:
+    """The reserved service is shown as "Deployment files", never as a service."""
+    page = render_snippet(
+        "{% from 'macros/panels.html' import breadcrumb %}"
+        "{{ breadcrumb([('Projects', '/projects'),"
+        " (DEPLOYMENT_FILES_NAME, '/services/3', 'Service'),"
+        " ('.env', none, 'Environment')]) }}"
+    )
+    assert ">Deployment files</span>" in page
+    assert re.findall(r"<span data-crumb-type[^>]*>(.*?)</span>", page) == ["Environment"]
+
+
+def test_the_compact_breadcrumb_is_the_parent_as_a_back_link_and_the_current_item() -> None:
+    """Below md: a back link with a chevron and a 44 px target, then the current item."""
+    page = render_snippet(
+        "{% from 'macros/panels.html' import breadcrumb_compact %}"
+        "{{ breadcrumb_compact([('Projects', '/projects'), ('Fancy', '/projects/1', 'Project'),"
+        " ('prod', none, 'Deployment')]) }}"
+    )
+    assert 'data-breadcrumb="compact"' in page and "md:hidden" in page
+    back = re.search(r'<a href="([^"]+)" class="([^"]*)">(.*?)</a>', page, re.DOTALL)
+    assert back is not None
+    assert back.group(1) == "/projects/1"
+    assert "min-h-11" in back.group(2) and "min-w-11" in back.group(2)
+    assert "<svg" in back.group(3)
+    assert re.findall(r"<span data-crumb-label[^>]*>(.*?)</span>", page) == ["Fancy", "prod"]
+    assert re.findall(r"<span data-crumb-type[^>]*>(.*?)</span>", page) == [
+        "Project",
+        "Deployment",
+    ]
+    assert page.count('aria-current="page"') == 1 and page.count("<a ") == 1
+
+    single = render_snippet(
+        "{% from 'macros/panels.html' import breadcrumb_compact %}"
+        "{{ breadcrumb_compact([('Users', none)]) }}"
+    )
+    assert "<a " not in single and "<svg" not in single and ">Users</span>" in single
+    assert "data-crumb-type" not in single
 
 
 def test_the_load_more_row_replaces_itself_with_the_next_rows() -> None:

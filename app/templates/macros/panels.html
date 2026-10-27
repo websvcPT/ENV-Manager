@@ -35,16 +35,12 @@
 {{ page_header(title, subtitle, badges=badges, actions=actions, item_type=kind, details=details, location=location) }}
 {%- endmacro %}
 
-{#- The lines that say where an item lives, one fact per label: its parents on one line from the
-    farthest ("Project: Fancy, Deployment: prod, Service: db", each name a link), then
-    "Deployment path" (the deployment root, the folder of its Docker Compose project) and, for a
-    file, "Target". `parents` is a list of (label, name, href); a line without a value is left
-    out, so a caller who may not see the root gets no path lines. -#}
-{% macro item_location(parents, root=none, target=none) -%}
+{#- The lines that say where an item lives, one fact per label: "Deployment path" (the deployment
+    root, the folder of its Docker Compose project) and, for a file, "Target". A line without a
+    value is left out, so a caller who may not see the root gets no lines at all. -#}
+{% macro item_location(root=none, target=none) -%}
+{%- if root or target -%}
 <div data-item-location class="mt-1.5 flex flex-col gap-0.5 text-ink2">
-{%- if parents -%}
-<p data-location="parents">{% for label, name, href in parents %}{% if not loop.first %}, {% endif %}{% if label %}{{ label }}: {% endif %}<a href="{{ href }}" class="font-semibold text-link hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ name }}</a>{% endfor %}</p>
-{%- endif -%}
 {%- if root -%}
 <p data-location="root">Deployment path: <span class="font-mono text-[13px] break-all text-ink">{{ root }}</span></p>
 {%- endif -%}
@@ -52,22 +48,22 @@
 <p data-location="target">Target: <span class="font-mono text-[13px] break-all text-ink">{{ target }}</span></p>
 {%- endif -%}
 </div>
+{%- endif -%}
 {%- endmacro %}
 
 {#- The location lines of a deployment page, from its detail. -#}
 {% macro deployment_location(deployment) -%}
-{{ item_location([("Project", deployment.project_name, "/projects/" ~ deployment.project_id)], deployment.root_path) }}
+{{ item_location(deployment.root_path) }}
 {%- endmacro %}
 
 {#- The location lines of a service page, from its header. -#}
 {% macro service_location(service) -%}
-{{ item_location([("Project", service.project_name, "/projects/" ~ service.project_id), ("Deployment", service.deployment_name, "/deployments/" ~ service.deployment_id)], service.root_path) }}
+{{ item_location(service.root_path) }}
 {%- endmacro %}
 
 {#- The location lines of an environment page, from the header of the environment. -#}
 {% macro environment_location(env) -%}
-{%- set owner_label = "" if env.service_name == DEPLOYMENT_FILES_NAME else "Service" -%}
-{{ item_location([("Project", env.project_name, "/projects/" ~ env.project_id), ("Deployment", env.deployment_name, "/deployments/" ~ env.deployment_id), (owner_label, env.service_name, "/services/" ~ env.service_id)], env.root_path, env.shown_target) }}
+{{ item_location(env.root_path, env.shown_target) }}
 {%- endmacro %}
 
 {#- A titled panel; the call block is the body. `fragment` names the swappable unit, and
@@ -102,7 +98,24 @@
 <nav aria-label="Sections" class="-mt-1 flex gap-6 overflow-x-auto overflow-y-hidden border-b border-line md:gap-7">{% for item in items %}<a href="{{ item.href }}"{% if item.href == current %} aria-current="page"{% endif %} class="whitespace-nowrap border-b-[3px] border-transparent py-3 font-semibold text-ink2 hover:text-ink aria-[current=page]:border-accent aria-[current=page]:font-bold aria-[current=page]:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ item.label }}{% if item.count is defined and item.count is not none %} <span class="font-semibold text-ink3">{{ item.count }}</span>{% endif %}{% if item.superadmin is defined and item.superadmin %}<span class="ml-1.5 rounded-md bg-mute-bg px-1.5 py-px text-[11px] font-semibold text-mute-fg">Superadmin</span>{% endif %}</a>{% endfor %}</nav>
 {%- endmacro %}
 
-{#- Breadcrumb trail for the top bar: a list of (label, href) pairs, the last without a link. -#}
+{#- The text of one breadcrumb item: its label and, for a project, deployment, service or
+    environment, the type on a muted second line (the reserved deployment files service is not a
+    service, so it has none). `item` is (label, href) or (label, href, type). -#}
+{% macro crumb_text(item) -%}
+{%- set kind = item[2] if item | length > 2 else none -%}
+{%- if kind == "Service" and item[0] == DEPLOYMENT_FILES_NAME %}{% set kind = none %}{% endif -%}
+<span data-crumb-label class="block truncate">{{ item[0] }}</span>{% if kind %} <span data-crumb-type class="block truncate text-xs font-normal leading-4 text-ink3">{{ kind }}</span>{% endif %}
+{%- endmacro %}
+
+{#- Breadcrumb trail for the top bar from `md`: a list of (label, href) or (label, href, type)
+    items, the last without a link. -#}
 {% macro breadcrumb(items) -%}
-<nav aria-label="Breadcrumb" class="hidden min-w-0 flex-1 md:block"><ol class="flex list-none items-center gap-2 overflow-hidden whitespace-nowrap text-sm text-ink3">{% for label, href in items %}{% if not loop.first %}<li aria-hidden="true">/</li>{% endif %}{% if loop.last %}<li aria-current="page" class="font-semibold text-ink">{{ label }}</li>{% else %}<li><a href="{{ href }}" class="hover:text-ink hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ label }}</a></li>{% endif %}{% endfor %}</ol></nav>
+<nav aria-label="Breadcrumb" data-breadcrumb="full" class="hidden min-w-0 flex-1 md:block"><ol class="flex list-none items-start gap-2 overflow-hidden whitespace-nowrap text-sm text-ink3">{% for item in items %}{% if not loop.first %}<li aria-hidden="true">/</li>{% endif %}{% if loop.last %}<li aria-current="page" class="font-semibold text-ink">{{ crumb_text(item) }}</li>{% else %}<li><a href="{{ item[1] }}" class="hover:text-ink hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ crumb_text(item) }}</a></li>{% endif %}{% endfor %}</ol></nav>
+{%- endmacro %}
+
+{#- The breadcrumb below `md`, at the top of the page: the parent as a back link and the current
+    item, both with their types; a page with one item shows just that. -#}
+{% macro breadcrumb_compact(items) -%}
+{%- set parent = items[-2] if items | length > 1 else none -%}
+<nav aria-label="Breadcrumb, compact" data-breadcrumb="compact" class="-mb-2 min-w-0 md:hidden"><ol class="flex list-none items-center gap-2 text-sm text-ink3">{% if parent %}<li class="flex min-w-0 max-w-[50%]"><a href="{{ parent[1] }}" class="inline-flex min-h-11 min-w-11 items-center gap-1 text-ink2 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ icon("chevron-left", "size-4 shrink-0", "2.2") }}<span class="min-w-0">{{ crumb_text(parent) }}</span></a></li><li aria-hidden="true">/</li>{% endif %}<li aria-current="page" class="min-w-0 flex-1 font-semibold text-ink">{{ crumb_text(items[-1]) }}</li></ol></nav>
 {%- endmacro %}

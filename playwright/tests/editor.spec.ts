@@ -3,7 +3,7 @@ import type { APIRequestContext, Browser, Page } from '@playwright/test';
 import { createDeployment } from '../deployments-api';
 import { createEnvironment, saveRaw, seededEnvironmentId } from '../environments-api';
 import { stateFile } from '../global-setup';
-import { expectItemHeader, expectLocation } from '../item-header';
+import { expectBreadcrumb, expectItemHeader, expectLocation } from '../item-header';
 import { csrfHeaders } from '../http';
 import { createService } from '../services-api';
 import { horizontalOverflow } from '../viewport';
@@ -79,7 +79,6 @@ test.describe('superadmin editor', () => {
     await expectItemHeader(page, 'environment', '.env.masked');
     await expect(header(page).locator('[data-status]')).toHaveAttribute('data-status', 'never');
     await expectLocation(page, 'environment', {
-      parents: `Project: ${scratch.name}, Deployment: scratch-dep, Service: cache`,
       root: `Deployment path: ${SAMPLE_A}`,
       target: `Target: ${SAMPLE_A}/environments/.env.masked`,
     });
@@ -93,7 +92,13 @@ test.describe('superadmin editor', () => {
     await expect(page.locator('nav[aria-label="Sections"] a[aria-current="page"]')).toHaveText(
       'Edit',
     );
-    await expect(page.locator('nav[aria-label="Breadcrumb"] li').last()).toHaveText('.env.masked');
+    await expectBreadcrumb(page, [
+      'Projects',
+      [scratch.name, 'Project'],
+      ['scratch-dep', 'Deployment'],
+      ['cache', 'Service'],
+      ['.env.masked', 'Environment'],
+    ]);
     await expect(page.locator('[data-fragment="kv-row"]')).toHaveCount(3);
     await expect(row(page, 'PASSWORD')).toContainText('••••••••••••');
     await expect(row(page, 'PASSWORD').locator('button[data-js="reveal-hide"]')).toBeHidden();

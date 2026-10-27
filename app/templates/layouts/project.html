@@ -6,7 +6,7 @@
 {% from "macros/buttons.html" import button %}
 {% from "macros/panels.html" import item_header, tabs %}
 {% set active_nav = "projects" %}
-{% set breadcrumbs = [("Projects", "/projects"), (project.name, none)] %}
+{% set breadcrumbs = [("Projects", "/projects"), (project.name, none, "Project")] %}
 {% block title %}{{ project.name }}{% endblock %}
 {% block content %}
 {% set base_href = "/projects/" ~ project.id %}

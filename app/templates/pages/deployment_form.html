@@ -3,7 +3,7 @@
 {% extends "layouts/app.html" %}
 {% from "macros/panels.html" import page_header %}
 {% set active_nav = "projects" %}
-{% set breadcrumbs = [("Projects", "/projects"), (project_name, "/projects/" ~ project_id), (title, none)] %}
+{% set breadcrumbs = [("Projects", "/projects"), (project_name, "/projects/" ~ project_id, "Project"), (title, none)] %}
 {% block title %}{{ title }}{% endblock %}
 {% block content %}
 {% set superadmin_tag %}<span class="rounded-md bg-mute-bg px-1.5 py-px text-[11px] font-semibold text-mute-fg">Superadmin</span>{% endset %}

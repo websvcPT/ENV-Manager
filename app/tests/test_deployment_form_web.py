@@ -11,7 +11,7 @@ from sqlalchemy import select
 
 from app.models import AllowedPath, AuditEntry, Deployment, Project
 from app.tests.conftest import sign_in
-from app.tests.web_helpers import HTMX, post
+from app.tests.web_helpers import HTMX, breadcrumb_of, post
 
 
 @dataclass(frozen=True)
@@ -89,9 +89,11 @@ async def test_new_page_has_the_form_and_the_picker(
     assert f'href="/projects/{layout.fancy}"' in page and ">Cancel</a>" in page
     assert '<dialog id="path-picker"' in page and str(layout.host) in page
     assert 'data-js="pick-path"' in page
-    crumbs = re.search(r'aria-label="Breadcrumb".*?</nav>', page, re.DOTALL)
-    assert crumbs is not None and "Fancy Proj. Name" in crumbs.group(0)
-    assert 'aria-current="page" class="font-semibold text-ink">New deployment' in crumbs.group(0)
+    assert [(crumb.label, crumb.type) for crumb in breadcrumb_of(page)] == [
+        ("Projects", None),
+        ("Fancy Proj. Name", "Project"),
+        ("New deployment", None),
+    ]
 
 
 async def test_edit_page_is_prefilled_and_shows_the_root_checks(

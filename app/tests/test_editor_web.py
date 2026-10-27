@@ -19,6 +19,7 @@ from app.tests.web_helpers import (
     HTMX,
     EnvironmentIds,
     assert_never_cached,
+    breadcrumb_of,
     item_header_of,
     main_of,
     post,
@@ -486,7 +487,7 @@ async def test_saving_a_version_announces_the_file_change_to_the_notifier(
     assert refused.status_code == 422 and len(recorder.events) == 1
 
 
-async def test_the_header_of_a_scoped_user_names_the_parents_and_no_sibling_file(
+async def test_the_header_of_a_scoped_user_has_the_relative_target_and_the_breadcrumb_the_parents(
     web_client: httpx.AsyncClient, ids: EnvironmentIds
 ) -> None:
     """The chain above a granted file is names only, and the other files of its service stay out."""
@@ -495,10 +496,14 @@ async def test_the_header_of_a_scoped_user_names_the_parents_and_no_sibling_file
     header = item_header_of(main_of(page))
     assert (header.type, header.title) == ("environment", "Environment: .env.db")
     assert header.subtitle is None
-    assert dict(header.location) == {
-        "parents": "Project: Fancy Proj. Name, Deployment: prod, Service: mysql",
-        "target": "Target: environments/.env.db",
-    }
+    assert dict(header.location) == {"target": "Target: environments/.env.db"}
+    assert [(crumb.label, crumb.type) for crumb in breadcrumb_of(page)] == [
+        ("Projects", None),
+        ("Fancy Proj. Name", "Project"),
+        ("prod", "Deployment"),
+        ("mysql", "Service"),
+        (".env.db", "Environment"),
+    ]
     assert header.details is not None and header.details.startswith("Version ")
     assert EDITOR_ENVIRONMENT_NAME not in f"{header.location} {header.details}"
     assert "/opt/fancy" not in page
@@ -507,10 +512,9 @@ async def test_the_header_of_a_scoped_user_names_the_parents_and_no_sibling_file
 async def test_every_page_of_a_file_shows_the_same_location_lines(
     web_client: httpx.AsyncClient, ids: EnvironmentIds
 ) -> None:
-    """The editor, history, dist, drift and access pages share one header: parents, path, target."""
+    """The editor, history, dist, drift and access pages share one header: path and target."""
     await sign_in(web_client, "root")
     expected = {
-        "parents": "Project: Fancy Proj. Name, Deployment: prod, Service: mysql",
         "root": "Deployment path: /opt/fancy/prod",
         "target": "Target: /opt/fancy/prod/environments/.env.db",
     }
@@ -520,9 +524,17 @@ async def test_every_page_of_a_file_shows_the_same_location_lines(
         header = item_header_of(main_of(response.text))
         assert dict(header.location) == expected, suffix
         assert header.subtitle is None
-        assert re.fullmatch(r"/projects/\d+", header.links["Project"])
-        assert re.fullmatch(r"/deployments/\d+", header.links["Deployment"])
-        assert header.links["Service"].startswith("/services/")
+        crumbs = breadcrumb_of(response.text)
+        assert [(crumb.label, crumb.type) for crumb in crumbs[:4]] == [
+            ("Projects", None),
+            ("Fancy Proj. Name", "Project"),
+            ("prod", "Deployment"),
+            ("mysql", "Service"),
+        ], suffix
+        assert re.fullmatch(r"/projects/\d+", crumbs[1].href or "")
+        assert re.fullmatch(r"/deployments/\d+", crumbs[2].href or "")
+        assert (crumbs[3].href or "").startswith("/services/")
+        assert crumbs[4].type == "Environment" and crumbs[4].label == ".env.db", suffix
 
 
 async def test_a_file_scoped_user_sees_no_root_on_any_page_of_the_file(
@@ -534,6 +546,6 @@ async def test_a_file_scoped_user_sees_no_root_on_any_page_of_the_file(
         response = await web_client.get(f"/environments/{ids.db}{suffix}")
         assert response.status_code == 200, suffix
         header = item_header_of(main_of(response.text))
-        assert set(header.location) == {"parents", "target"}, suffix
+        assert set(header.location) == {"target"}, suffix
         assert header.location["target"] == "Target: environments/.env.db"
         assert "/opt/fancy" not in response.text, suffix

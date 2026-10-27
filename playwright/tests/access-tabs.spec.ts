@@ -2,7 +2,7 @@ import type { APIRequestContext, Browser, Locator, Page } from '@playwright/test
 
 import { SESSION_USERS, stateFile, SUPERADMIN_STATE } from '../global-setup';
 import { csrfHeaders } from '../http';
-import { expectItemHeader, expectLocation } from '../item-header';
+import { expectBreadcrumb, expectItemHeader, expectLocation } from '../item-header';
 import { listProjects } from '../projects-api';
 import { disableUser, listUsers, seededEmail, type CreatedUser } from '../users-api';
 import { horizontalOverflow, isWide, TOUCH_TARGET } from '../viewport';
@@ -156,9 +156,7 @@ test.describe('superadmin: project Access tab', () => {
       'aria-current',
       'page',
     );
-    await expect(page.locator('nav[aria-label="Breadcrumb"] [aria-current="page"]')).toHaveText(
-      scratch.projectName,
-    );
+    await expectBreadcrumb(page, ['Projects', [scratch.projectName, 'Project']]);
     await expect(list(page).locator('th[scope="col"]')).toHaveText([
       'User',
       'Group',
@@ -302,7 +300,6 @@ test.describe('superadmin: deployment Access tab', () => {
     await openTab(page, 'deployment', scratch.depA);
     await expectItemHeader(page, 'deployment', 'dep-a');
     await expectLocation(page, 'deployment', {
-      parents: `Project: ${scratch.projectName}`,
       root: 'Deployment path: /srv/deployments/sample-a',
     });
     await expect(page.locator('[data-fragment="page-header"] button')).toHaveCount(0);
@@ -310,7 +307,11 @@ test.describe('superadmin: deployment Access tab', () => {
     await expect(sections(page).nth(0)).toHaveAttribute('href', `/deployments/${scratch.depA}`);
     await expect(sections(page).nth(1)).toHaveAttribute('href', `/deployments/${scratch.depA}#hist`);
     await expect(sections(page).nth(2)).toHaveAttribute('aria-current', 'page');
-    await expect(page.locator('nav[aria-label="Breadcrumb"] [aria-current="page"]')).toHaveText('dep-a');
+    await expectBreadcrumb(page, [
+      'Projects',
+      [scratch.projectName, 'Project'],
+      ['dep-a', 'Deployment'],
+    ]);
     await expect(list(page)).toContainText('A deployment grant includes the services and environments');
     await expect(row(page, inherited)).toContainText(`from ${scratch.projectName} (Project)`);
     await expect(actionControls(row(page, inherited), 'remove').first()).toHaveAttribute(
@@ -406,7 +407,6 @@ test.describe('superadmin: service Access tab', () => {
     await openTab(page, 'service', scratch.serviceA);
     await expectItemHeader(page, 'service', 'cache');
     await expectLocation(page, 'service', {
-      parents: `Project: ${scratch.projectName}, Deployment: dep-a`,
       root: 'Deployment path: /srv/deployments/sample-a',
     });
     await expect(sections(page)).toHaveText(['Environments', 'Deploy history', 'AccessSuperadmin']);
