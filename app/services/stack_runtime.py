@@ -14,11 +14,11 @@ networks they use, and how all of it lines up with the services stored in the ap
   here.
 - A container reads its ``env_file`` values when it is created, so a restart does not apply a
   deploy. A container created before the files of its service were last written is marked
-  ``recreate_to_apply``. Only deploys that changed a file count: a dry run, an import from
-  Compose, a deploy that was blocked, halted or failed, and a result that found the file
-  identical wrote nothing. The time compared is the one the result was recorded at, which is
-  after the files were written and before the post-deploy command ran, so a container that
-  command recreated is not marked.
+  ``recreate_to_apply``. Only a result that wrote a file counts, whatever the run ended as (the
+  files are written one by one, so a halted or failed run can have written some): a dry run, an
+  import from Compose and a result that found the file identical wrote nothing. The time compared
+  is the one the result was recorded at, which is after the files were written and before the
+  post-deploy command ran, so a container that command recreated is not marked.
 - What Docker answered is kept for five seconds per deployment and project (the clock is
   injectable), by the docker command object like its status, so the periodic refresh of the tab
   and several viewers cost one set of docker commands. Deploy history and the match with the
@@ -41,7 +41,6 @@ from app.models import (
     DeployResult,
     DeployResultStatus,
     DeployRun,
-    DeployStatus,
     DeployTrigger,
     Service,
 )
@@ -62,7 +61,6 @@ from app.services.stack_runtime_reads import (
 
 CACHE_TTL_SECONDS = 5.0
 RUNNING_STATE = "running"
-_WROTE_FILES = (DeployStatus.SUCCESS, DeployStatus.POST_DEPLOY_FAILED)
 
 
 class RuntimeState(StrEnum):
@@ -199,7 +197,6 @@ async def _last_writes(db: AsyncSession, service_ids: set[int]) -> dict[int, dat
             DeployRun.service_id.in_(service_ids),
             DeployRun.dry_run.is_(False),
             DeployRun.trigger != DeployTrigger.COMPOSE,
-            DeployRun.status.in_(_WROTE_FILES),
             DeployResult.status == DeployResultStatus.WRITTEN,
         )
         .group_by(DeployRun.service_id)

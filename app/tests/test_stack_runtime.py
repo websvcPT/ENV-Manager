@@ -465,7 +465,6 @@ async def test_a_container_created_before_the_last_write_is_marked_to_recreate(
     await add_run(engine, deployment_id, ids["cache"], written, dry_run=True)
     await add_run(engine, deployment_id, ids["cache"], written, trigger=DeployTrigger.COMPOSE)
     await add_run(engine, deployment_id, ids["cache"], written, result=DeployResultStatus.UNCHANGED)
-    await add_run(engine, deployment_id, ids["cache"], written, status=DeployStatus.HALTED)
     runtime = await load(engine, fake.cli(), deployment_id)
     by_service = {item.name: item for item in runtime.services}
     assert by_service["api"].recreate_to_apply is True
@@ -478,8 +477,11 @@ async def test_a_container_created_before_the_last_write_is_marked_to_recreate(
     assert runtime.recreate_count == 1
 
 
-async def test_a_deploy_whose_post_deploy_command_failed_still_wrote_its_files(
-    engine: AsyncEngine, fake: FakeDocker
+@pytest.mark.parametrize(
+    "status", [DeployStatus.POST_DEPLOY_FAILED, DeployStatus.FAILED, DeployStatus.HALTED]
+)
+async def test_a_run_that_ended_badly_after_writing_a_file_still_marks_the_container(
+    engine: AsyncEngine, fake: FakeDocker, status: DeployStatus
 ) -> None:
     deployment_id, ids = await add_deployment(engine, ("api",))
     serve(fake, ps=[ps_entry("api", 1)], inspect=[inspect_entry(1)])
@@ -488,7 +490,7 @@ async def test_a_deploy_whose_post_deploy_command_failed_still_wrote_its_files(
         deployment_id,
         ids["api"],
         CREATED_AT + timedelta(minutes=1),
-        status=DeployStatus.POST_DEPLOY_FAILED,
+        status=status,
     )
     (container,) = (await load(engine, fake.cli(), deployment_id)).containers
     assert container.recreate_to_apply is True
