@@ -786,6 +786,50 @@ async def test_the_compose_files_column_is_added_and_removed_in_place_and_keeps_
         await engine.dispose()
 
 
+async def test_the_compose_project_column_is_added_and_removed_in_place_and_keeps_deployments(
+    database_path: Path, backup_dir: Path
+) -> None:
+    """Migration 0023 gives a deployment that existed before it no Compose project, keeps what
+    is stored later until the way back drops the column, and keeps the rows and the autoincrement
+    ids both ways."""
+    engine = create_engine(database_path)
+    try:
+        await _migrate(engine, "0022")
+        async with engine.begin() as connection:
+            for statement in TREE_STATEMENTS:
+                await connection.execute(text(statement))
+        await migrate_database(engine, database_path, backup_dir)
+        async with engine.begin() as connection:
+            columns = (await connection.execute(text("PRAGMA table_info(deployments)"))).all()
+            added = next(row for row in columns if row[1] == "compose_project")
+            assert added[3] == 0 and added[4] is None
+            stored = await connection.execute(text("SELECT id, compose_project FROM deployments"))
+            assert [tuple(row) for row in stored.all()] == [(1, None)]
+            await connection.execute(text("UPDATE deployments SET compose_project = 'web-prod'"))
+            violations = (await connection.execute(text("PRAGMA foreign_key_check"))).all()
+            assert violations == []
+        await _migrate(engine, "0022", down=True)
+        async with engine.connect() as connection:
+            names = [
+                row[1]
+                for row in (await connection.execute(text("PRAGMA table_info(deployments)"))).all()
+            ]
+            kept = (await connection.execute(text("SELECT id, name FROM deployments"))).all()
+            table_sql = (
+                await connection.execute(
+                    text("SELECT sql FROM sqlite_master WHERE name = 'deployments'")
+                )
+            ).scalar_one()
+        assert "compose_project" not in names and [tuple(row) for row in kept] == [(1, "d")]
+        assert "AUTOINCREMENT" in table_sql
+        await _migrate(engine, "head")
+        async with engine.connect() as connection:
+            again = await connection.execute(text("SELECT compose_project FROM deployments"))
+        assert again.scalar_one() is None
+    finally:
+        await engine.dispose()
+
+
 async def test_deployment_names_become_unique_ignoring_case_and_the_way_back_drops_the_index(
     database_path: Path, backup_dir: Path
 ) -> None:

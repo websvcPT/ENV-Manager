@@ -295,6 +295,19 @@ def _offers_in(folder: Path, label: str) -> list[ComposeFileOffer]:
     return offers
 
 
+def default_compose_files(folder: Path) -> tuple[str, ...]:
+    """The Compose files Compose loads by default in a folder, as names: the first base file and
+    the first override file that goes with it (``compose.override.*`` for a ``compose.*`` base,
+    ``docker-compose.override.*`` for a ``docker-compose.*`` base). Empty without a base file."""
+    offers = _offers_in(folder, "")
+    bases = [offer.path for offer in offers if not offer.override]
+    if not bases:
+        return ()
+    prefix = "docker-compose." if bases[0].startswith("docker-compose.") else "compose."
+    overrides = [offer.path for offer in offers if offer.override and offer.path.startswith(prefix)]
+    return (bases[0], *overrides[:1])
+
+
 def discover_compose_files(allowed: AllowedPaths, root_path: str) -> tuple[ComposeFileOffer, ...]:
     """The Compose files in the deployment root and in the folders directly below it.
 

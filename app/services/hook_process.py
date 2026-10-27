@@ -5,13 +5,16 @@ plugin as a child) shares one process group that is killed as a whole on a timeo
 caller is cancelled. Its standard output and error are merged and read as they arrive; only the
 first and the last ``OUTPUT_PART_BYTES`` bytes are kept, so a command that prints a lot never
 fills the memory of the app. The child has no standard input.
+
+``capture_process`` is the variant for commands whose output is parsed: standard output and error
+stay apart and standard output is kept whole or the command is killed for printing too much.
 """
 
 import asyncio
 import os
 import signal
 import subprocess
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -148,3 +151,99 @@ async def run_process(
             with suppress(Exception):
                 await asyncio.wait_for(process.wait(), REAP_SECONDS)
         reader.cancel()
+
+
+@dataclass(frozen=True)
+class CapturedProcess:
+    """How a captured child ended and what it printed.
+
+    ``stdout`` is whole (never cut) unless ``too_large`` says it passed the limit, in which case
+    the child was killed and ``stdout`` holds only what was read before. ``stderr`` is its first
+    bytes up to the limit, for the caller to classify and not to show.
+    """
+
+    exit_code: int | None
+    stdout: bytes
+    stderr: bytes
+    timed_out: bool = False
+    too_large: bool = False
+
+
+async def _collect(
+    stream: asyncio.StreamReader, sink: bytearray, limit: int, on_overflow: Callable[[], None]
+) -> None:
+    """Read the stream into ``sink``; at more than ``limit`` bytes call ``on_overflow`` and stop."""
+    while chunk := await stream.read(READ_CHUNK_BYTES):
+        room = limit - len(sink)
+        sink += chunk[: max(room, 0)]
+        if len(chunk) > room:
+            on_overflow()
+            return
+
+
+async def _discard_after(stream: asyncio.StreamReader, sink: bytearray, limit: int) -> None:
+    """Keep the first ``limit`` bytes of the stream and drain the rest."""
+    while chunk := await stream.read(READ_CHUNK_BYTES):
+        room = limit - len(sink)
+        if room > 0:
+            sink += chunk[:room]
+
+
+async def capture_process(
+    argv: Sequence[str],
+    *,
+    cwd: Path,
+    env: Mapping[str, str],
+    timeout: float,
+    stdout_limit: int,
+    stderr_limit: int,
+) -> CapturedProcess:
+    """Run ``argv`` like ``run_process`` but keep standard output and error apart.
+
+    Standard output is kept whole: when it grows past ``stdout_limit`` the whole process group is
+    killed and the result says ``too_large``, so nothing is ever cut in the middle. Standard
+    error keeps its first ``stderr_limit`` bytes. The deadline and a cancellation kill the group
+    as in ``run_process``. Raises ``OSError`` when the program cannot be started.
+    """
+    process = await asyncio.create_subprocess_exec(
+        *argv,
+        cwd=cwd,
+        env=dict(env),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
+    )
+    out_stream = cast(asyncio.StreamReader, process.stdout)  # a PIPE was requested
+    err_stream = cast(asyncio.StreamReader, process.stderr)
+    out, err = bytearray(), bytearray()
+    overflowed = False
+
+    def overflow() -> None:
+        nonlocal overflowed
+        overflowed = True
+        if process.returncode is None:
+            kill_group(process)
+
+    readers = [
+        asyncio.create_task(_collect(out_stream, out, stdout_limit, overflow)),
+        asyncio.create_task(_discard_after(err_stream, err, stderr_limit)),
+    ]
+    try:
+        try:
+            async with asyncio.timeout(timeout):
+                exit_code = await process.wait()
+        except TimeoutError:
+            kill_group(process)
+            await process.wait()
+            await asyncio.gather(*(_finish_output(reader) for reader in readers))
+            return CapturedProcess(None, bytes(out), bytes(err), timed_out=True)
+        await asyncio.gather(*(_finish_output(reader) for reader in readers))
+        return CapturedProcess(exit_code, bytes(out), bytes(err), too_large=overflowed)
+    finally:
+        if process.returncode is None:
+            kill_group(process)
+            with suppress(Exception):
+                await asyncio.wait_for(process.wait(), REAP_SECONDS)
+        for reader in readers:
+            reader.cancel()

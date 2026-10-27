@@ -233,15 +233,6 @@ def failure_message(output: str) -> str:
     return UNREADABLE_MESSAGE
 
 
-def _child_environment(cli: DockerCli) -> dict[str, str]:
-    """The environment of the scan: the fixed one of ``DockerCli`` with remote sources off."""
-    return {
-        **cli.environment(),
-        "COMPOSE_EXPERIMENTAL_GIT_REMOTE": "false",
-        "COMPOSE_EXPERIMENTAL_OCI_REMOTE": "false",
-    }
-
-
 def _read_document(path: Path) -> object:
     """The JSON document Compose wrote, refused when it is larger than the limit."""
     with path.open("rb") as handle:
@@ -305,7 +296,7 @@ async def read_compose_model(
             result = await run_process(
                 arguments,
                 cwd=project_directory,
-                env=_child_environment(cli),
+                env=cli.compose_environment(),
                 timeout=SCAN_TIMEOUT_SECONDS,
                 output=output,
             )

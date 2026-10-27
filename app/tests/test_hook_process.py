@@ -11,7 +11,9 @@ import pytest
 from app.services.hook_process import (
     OUTPUT_PART_BYTES,
     BoundedOutput,
+    CapturedProcess,
     ProcessResult,
+    capture_process,
     run_process,
 )
 
@@ -178,3 +180,98 @@ async def test_cancelling_the_caller_kills_the_process_group(tmp_path: Path) -> 
     with pytest.raises(asyncio.CancelledError):
         await task
     assert await wait_until_gone(child)
+
+
+async def capture_shell(
+    script: str,
+    tmp_path: Path,
+    *,
+    timeout: float = 20.0,
+    stdout_limit: int = 1000,
+    stderr_limit: int = 100,
+) -> CapturedProcess:
+    """Run a shell script through the capturing runner in the temporary folder."""
+    return await capture_process(
+        ["/bin/sh", "-c", script],
+        cwd=tmp_path,
+        env=ENVIRONMENT,
+        timeout=timeout,
+        stdout_limit=stdout_limit,
+        stderr_limit=stderr_limit,
+    )
+
+
+async def test_a_captured_process_keeps_standard_output_and_error_apart(tmp_path: Path) -> None:
+    result = await capture_shell("echo warn >&2; echo '{}'; exit 3", tmp_path)
+    assert (result.exit_code, result.stdout, result.stderr) == (3, b"{}\n", b"warn\n")
+    assert not result.timed_out and not result.too_large
+
+
+async def test_a_captured_process_has_no_standard_input(tmp_path: Path) -> None:
+    result = await capture_shell("cat; echo done", tmp_path, timeout=5)
+    assert result.exit_code == 0 and result.stdout == b"done\n"
+
+
+async def test_captured_output_of_exactly_the_limit_is_whole(tmp_path: Path) -> None:
+    result = await capture_shell("head -c 1000 /dev/zero | tr '\\0' x", tmp_path)
+    assert result.exit_code == 0 and result.stdout == b"x" * 1000 and not result.too_large
+
+
+async def test_captured_output_past_the_limit_kills_the_process_group(tmp_path: Path) -> None:
+    pid_file = tmp_path / "child.pid"
+    started = time.monotonic()
+    result = await capture_shell(
+        f"sleep 300 & echo $! > {pid_file}; head -c 1001 /dev/zero | tr '\\0' x; wait", tmp_path
+    )
+    assert result.too_large and not result.timed_out
+    assert len(result.stdout) == 1000
+    assert time.monotonic() - started < 10
+    assert await wait_until_gone(int(pid_file.read_text(encoding="utf-8")))
+
+
+async def test_captured_standard_error_keeps_only_its_first_bytes(tmp_path: Path) -> None:
+    result = await capture_shell("yes e | head -c 100000 >&2; echo ok", tmp_path)
+    assert result.exit_code == 0 and result.stdout == b"ok\n"
+    assert result.stderr == (b"e\n" * 50)
+
+
+async def test_the_deadline_kills_a_captured_process_group_and_keeps_what_was_read(
+    tmp_path: Path,
+) -> None:
+    pid_file = tmp_path / "child.pid"
+    started = time.monotonic()
+    result = await capture_shell(
+        f"sleep 300 & echo $! > {pid_file}; echo before; wait", tmp_path, timeout=1.0
+    )
+    assert (result.exit_code, result.timed_out) == (None, True)
+    assert result.stdout == b"before\n"
+    assert time.monotonic() - started < 10
+    assert await wait_until_gone(int(pid_file.read_text(encoding="utf-8")))
+
+
+async def test_cancelling_a_captured_process_kills_the_process_group(tmp_path: Path) -> None:
+    pid_file = tmp_path / "child.pid"
+    task = asyncio.create_task(
+        capture_shell(f"sleep 300 & echo $! > {pid_file}; wait", tmp_path, timeout=60)
+    )
+    for _ in range(100):
+        if pid_file.exists() and pid_file.read_text(encoding="utf-8").strip():
+            break
+        await asyncio.sleep(0.05)
+    child = int(pid_file.read_text(encoding="utf-8"))
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert await wait_until_gone(child)
+
+
+async def test_a_captured_program_that_does_not_exist_raises_os_error(tmp_path: Path) -> None:
+    with pytest.raises(OSError):
+        await capture_process(
+            [str(tmp_path / "missing")],
+            cwd=tmp_path,
+            env={},
+            timeout=5,
+            stdout_limit=10,
+            stderr_limit=10,
+        )

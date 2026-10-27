@@ -125,6 +125,15 @@ class DockerCli:
             "DOCKER_HOST": f"unix://{self.socket_path}",
         }
 
+    def compose_environment(self) -> dict[str, str]:
+        """The environment of a Compose command: the fixed one with remote sources (git, OCI) off,
+        so Compose refuses them before any connection."""
+        return {
+            **self.environment(),
+            "COMPOSE_EXPERIMENTAL_GIT_REMOTE": "false",
+            "COMPOSE_EXPERIMENTAL_OCI_REMOTE": "false",
+        }
+
     async def _probe(self, executable: str, *arguments: str) -> str | None:
         """The output of a short docker command, None when it fails, times out or is empty."""
         output = BoundedOutput()

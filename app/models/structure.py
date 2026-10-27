@@ -98,8 +98,10 @@ class Deployment(Base):
     (or numeric ids) they are given; both are empty when the files keep the app user.
     ``compose_files`` holds the Compose files linked to the deployment (by the import or later),
     as paths relative to the root with the base file first; it is None for a deployment that has
-    none. They are read only: the app shows their text but never manages or writes them. The name
-    is a display name, unique in the project ignoring case through the index below.
+    none. They are read only: the app shows their text but never manages or writes them.
+    ``compose_project`` is the Compose project name of the deployment's containers (see
+    ``app.services.compose_project``), None until it is set. The name is a display name, unique in
+    the project ignoring case through the index below.
     """
 
     __tablename__ = "deployments"
@@ -128,6 +130,7 @@ class Deployment(Base):
     file_owner: Mapped[str | None] = mapped_column(String(64), default=None)
     file_group: Mapped[str | None] = mapped_column(String(64), default=None)
     compose_files: Mapped[list[str] | None] = mapped_column(JSON, default=None)
+    compose_project: Mapped[str | None] = mapped_column(String(63), default=None)
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utc_now, onupdate=utc_now)
 
