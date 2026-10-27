@@ -164,11 +164,13 @@ async def files_tab(
     access: Annotated[DeploymentContext, Depends(deployment_access())],
     deleted: str = "",
     imported: str = "",
+    saved: bool = False,
 ) -> Response:
     """The Files tab: the services with their actions and the deployment files.
 
-    ``deleted`` (service) shows the toast after a service of the deployment was deleted and
-    ``imported`` (the counts) the one after a Docker Compose import.
+    ``deleted`` (service) shows the toast after a service of the deployment was deleted,
+    ``imported`` (the counts) the one after a Docker Compose import and ``saved`` the one after
+    the deployment was created.
     """
     return render(
         request,
@@ -178,6 +180,7 @@ async def files_tab(
             "files",
             deleted="service" if deleted == "service" else "",
             imported=imported_message(imported),
+            saved=saved,
         ),
     )
 

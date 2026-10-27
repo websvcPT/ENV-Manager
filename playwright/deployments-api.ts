@@ -61,7 +61,7 @@ export async function createDeployment(
     headers: await csrfHeaders(request),
   });
   const target = response.headers()['hx-redirect'] ?? '';
-  const found = /^\/deployments\/(\d+)\/settings$/.exec(target);
+  const found = /^\/deployments\/(\d+)\/files\?saved=true$/.exec(target);
   if (!response.ok() || !found) {
     throw new Error(`creating deployment ${name} failed with status ${response.status()}`);
   }

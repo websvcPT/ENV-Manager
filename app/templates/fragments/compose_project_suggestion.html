@@ -1,0 +1,5 @@
+{#- The offer to fill the Compose project of the edit form from the running containers. Context:
+    suggested (the project name Docker has for this folder, or none). The button fills the field
+    on the page without a request. -#}
+{% from "macros/buttons.html" import button %}
+<div id="compose-project-suggestion" data-fragment="compose-project-suggestion" class="flex max-w-md flex-wrap items-center gap-3">{% if suggested %}<p class="text-[13px] text-ink2">The running containers of this folder use <span class="font-mono text-ink">{{ suggested }}</span>.</p>{{ button("Fill from the running containers", data_js="fill-field", data_target="compose_project", data_value=suggested) }}{% endif %}</div>

@@ -309,7 +309,8 @@ async def test_settings_tab_of_the_superadmin_edits_and_deletes(
     page = await get_tab(web_client, ids.prod, "/settings")
     assert 'data-fragment="policies-panel"' in page
     assert "Edit policies" in page and "Read-only" not in page
-    assert page.count(f'href="/deployments/{ids.prod}/edit"') == 2
+    assert page.count(f'href="/deployments/{ids.prod}/edit"') == 3
+    assert 'data-fragment="compose-project"' in page and "Not set" in page
     assert "Edit deployment" in page
     assert "0600, www-data:www-data" in page
     assert 'data-fragment="compose-files"' in page and 'id="compose-link-open"' in page
@@ -364,9 +365,12 @@ async def test_settings_tab_shows_its_toasts_only(
         not in (await web_client.get(f"{base}/settings?compose_linked=x")).text
     )
     assert "Deployment saved" not in (await web_client.get(f"{base}/settings")).text
-    for path in ("", "/files", "/activity"):
+    for path in ("", "/activity"):
         page = (await web_client.get(f"{base}{path}?saved=true&compose_linked=2,1")).text
         assert "Deployment saved" not in page and "Compose files saved" not in page, path
+    files = (await web_client.get(f"{base}/files?saved=true&compose_linked=2,1")).text
+    assert "Deployment saved" in files and "Compose files saved" not in files
+    assert "Deployment saved" not in (await web_client.get(f"{base}/files")).text
 
 
 async def test_deployments_outside_the_scope_are_not_found(

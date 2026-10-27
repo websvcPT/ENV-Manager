@@ -1,0 +1,55 @@
+{#- The Detected stacks panel: the Compose stacks found on the host, as a table from `md` and a
+    list below it. A stack that a deployment uses links to it, one that cannot be used says why,
+    and the others have Use, which fills the form below. Context: rows (StackRow: the stack and
+    the address that fills the form, none when it cannot be used), docker_reason (why Docker was
+    not used, or none), scan_href (the loading state, which asks for this list again) and
+    folder_href. -#}
+{% from "macros/badges.html" import badge %}
+{% from "macros/buttons.html" import button %}
+{% from "macros/feedback.html" import empty_state, note %}
+{% from "macros/panels.html" import panel, table, text_link %}
+{% from "macros/row_actions.html" import row_actions %}
+{% set found_by = {"docker": "Docker", "folder": "Folder", "both": "Docker and folder"} %}
+{% macro containers(stack) -%}
+{%- if stack.total is none -%}<span class="text-[13px] text-ink3">Not in Docker</span>
+{%- elif stack.running == stack.total -%}{{ badge("deployed", stack.running ~ " running") }}
+{%- elif stack.running == 0 -%}{{ badge("never", "0 of " ~ stack.total ~ " running") }}
+{%- else -%}{{ badge("halted", stack.running ~ " of " ~ stack.total ~ " running") }}
+{%- endif -%}
+{%- endmacro %}
+{% macro action(row, prefix) -%}
+{%- if row.stack.used_by -%}{{ text_link("Used by " ~ row.stack.used_by.name, "/deployments/" ~ row.stack.used_by.id, data_stack_used=true) }}
+{%- elif row.use_href -%}{{ row_actions(prefix, row.stack.name, [{"key": "use", "label": "Use", "icon": "arrow-right", "primary": true, "attrs": {"aria_label": "Use " ~ row.stack.name, "hx_get": row.use_href, "hx_target": "#stack-form", "hx_swap": "innerHTML show:top showTarget:#stack-form"}}]) }}
+{%- else -%}<span data-stack-reason class="text-[13px] text-ink2">{{ row.stack.reason }}</span>
+{%- endif -%}
+{%- endmacro %}
+{% set rescan %}{{ button("Scan again", icon_name="restore", icon_stroke="2", id="detected-stacks-scan", hx_get=scan_href, hx_target="#detected-stacks", hx_swap="outerHTML", hx_disable="this") }}{% endset %}
+{% call panel("Detected stacks", "detected-stacks-title", fragment="detected-stacks", actions=rescan, id="detected-stacks", aria_busy="false") %}
+<p class="px-4 pb-3 text-[13px] text-ink2 md:px-5">Compose stacks found in Docker and in the allowed paths. Use one to fill the form below.</p>
+{% if docker_reason %}<div class="px-4 pb-4 md:px-5">{{ note("Docker was not used: " ~ docker_reason ~ " Only the allowed paths were searched.", tone="warn") }}</div>{% endif %}
+{%- if rows -%}
+<div class="hidden md:block">
+{% call table("Detected stacks", ["Stack", "Folder", "Compose files", "Containers", "Found by", "Action"], right_columns=[5], min_width_class="min-w-[860px]") %}
+{%- for row in rows %}
+<tr data-fragment="stack-row" data-folder="{{ row.stack.folder }}"><th scope="row" class="border-t border-line px-4 py-3.5 text-left font-semibold">{{ row.stack.name }}</th>
+<td class="border-t border-line px-4 py-3.5"><span class="break-all font-mono text-[13px] text-ink2">{{ row.stack.folder }}</span></td>
+<td class="border-t border-line px-4 py-3.5">{% if row.stack.compose_files %}<span class="break-all font-mono text-[13px] text-ink2">{{ row.stack.compose_files | join(", ") }}</span>{% else %}<span class="text-ink3">None</span>{% endif %}</td>
+<td class="border-t border-line px-4 py-3.5 whitespace-nowrap">{{ containers(row.stack) }}</td>
+<td class="border-t border-line px-4 py-3.5 whitespace-nowrap text-[13px] text-ink2">{{ found_by[row.stack.source.value] }}</td>
+<td class="border-t border-line px-4 py-3.5 whitespace-nowrap text-right">{{ action(row, "stack-" ~ loop.index) }}</td></tr>
+{%- endfor %}
+{% endcall %}
+</div>
+<ul class="m-0 list-none divide-y divide-line border-t border-line p-0 md:hidden">
+{%- for row in rows %}
+<li data-fragment="stack-item" data-folder="{{ row.stack.folder }}" class="flex flex-col gap-2 px-4 py-3.5"><div class="flex flex-wrap items-center gap-2"><span class="font-semibold">{{ row.stack.name }}</span>{{ containers(row.stack) }}</div>
+<span class="break-all font-mono text-[13px] text-ink2">{{ row.stack.folder }}</span>
+{% if row.stack.compose_files %}<span class="break-all font-mono text-xs text-ink3">{{ row.stack.compose_files | join(", ") }}</span>{% endif %}
+<span class="text-xs text-ink2">Found by {{ found_by[row.stack.source.value] | lower }}</span>
+<div>{{ action(row, "stack-m-" ~ loop.index) }}</div></li>
+{%- endfor %}
+</ul>
+{%- else -%}
+{% call empty_state("No stacks found", "No Compose files were found in Docker or in the allowed paths. Enter the folder of the deployment instead.") %}{{ button("Enter the folder", href=folder_href) }}{% endcall %}
+{%- endif -%}
+{% endcall %}

@@ -114,6 +114,8 @@ PAGE_LIMITS = (
     ("deployment settings tab", "/deployments/{deployment}/settings", 18),
     ("deployment access tab", "/deployments/{deployment}/access", 24),
     ("deployment edit form", "/deployments/{deployment}/edit", 20),
+    ("new deployment page", "/projects/{project}/deployments/new", 20),
+    ("new deployment folder form", "/projects/{project}/deployments/new?source=folder", 20),
     ("project page", "/projects/{project}", 20),
     ("project activity", "/projects/{project}/activity", 21),
     ("project settings", "/projects/{project}/settings", 20),
@@ -402,3 +404,26 @@ async def test_the_overview_checks_every_file_and_writes_one_entry_each_in_order
     assert len(entries) == len(checks)
     assert {entry.target_name for entry in entries} == {name for _service, name in names}
     assert all(entry.id is not None and entry.actor_name == "root" for entry in entries)
+
+
+async def test_the_stacks_list_and_the_stack_form_run_a_fixed_number_of_statements(
+    web_app: FastAPI, web_client: httpx.AsyncClient, ids: Ids, tmp_path: Path
+) -> None:
+    """Finding the stacks reads the allowed paths and the deployments once each, whatever the
+    number of stacks, and the form a pick fills needs the settings only."""
+    for number in range(6):
+        folder = tmp_path / "host" / f"stack-{number}"
+        folder.mkdir()
+        (folder / "compose.yaml").write_text("services: {}\n", encoding="utf-8")
+    await sign_in(web_client, "root")
+    base = f"/projects/{ids.project}/deployments/new"
+    assert (await web_client.get(f"{base}/stacks")).text.count("stack-row") >= 6
+    status, listing = await measure(web_app, web_client.get(f"{base}/stacks"))
+    assert status == 200
+    assert len(listing) <= 22, f"the stacks list: {len(listing)} statements"
+    assert structure_loads(listing) <= 1 and settings_reads(listing) == 1
+    picked = {"folder": str(tmp_path / "host" / "stack-0")}
+    status, filled = await measure(web_app, web_client.get(f"{base}/use", params=picked))
+    assert status == 200
+    assert len(filled) <= 21, f"the stack form: {len(filled)} statements"
+    assert structure_loads(filled) <= 1 and settings_reads(filled) == 1

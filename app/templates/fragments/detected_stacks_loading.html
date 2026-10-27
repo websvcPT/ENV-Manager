@@ -1,0 +1,9 @@
+{#- The Detected stacks panel while the stacks are looked up (Docker and the allowed paths can
+    take seconds). It asks for the list as soon as it is shown and is replaced by it. Context:
+    stacks_href. -#}
+{% from "macros/feedback.html" import skeleton %}
+{% from "macros/panels.html" import panel %}
+{% call panel("Detected stacks", "detected-stacks-title", fragment="detected-stacks", id="detected-stacks", aria_busy="true", hx_get=stacks_href, hx_trigger="load", hx_swap="outerHTML") %}
+<p class="px-4 pb-3 text-[13px] text-ink2 md:px-5">Looking for Compose stacks in Docker and in the allowed paths.</p>
+{{ skeleton(3, "Looking for stacks") }}
+{% endcall %}

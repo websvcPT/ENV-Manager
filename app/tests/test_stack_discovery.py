@@ -35,12 +35,7 @@ from app.services.stack_discovery import (
     parse_working_dirs,
 )
 from app.tests.fake_docker import FakeDocker
-
-BEHAVIOR = """case "$*" in
-  "compose ls"*) cat "$dir/ls.out"; cat "$dir/ls.err" >&2; exit "$(cat "$dir/ls.code")" ;;
-  "ps --all"*) cat "$dir/labels.out"; exit "$(cat "$dir/labels.code")" ;;
-esac
-"""
+from app.tests.stack_helpers import answer, make_stack, project
 
 
 @pytest.fixture
@@ -57,46 +52,6 @@ def fake(tmp_path: Path) -> FakeDocker:
     docker = FakeDocker(tmp_path / "fake")
     answer(docker, [])
     return docker
-
-
-def answer(
-    docker: FakeDocker,
-    projects: list[object] | str,
-    labels: dict[str, str] | None = None,
-    *,
-    ls_code: int = 0,
-    ls_error: str = "",
-    labels_code: int = 0,
-) -> None:
-    """Make the fake print a ``compose ls`` document and the label lines, or fail."""
-    text = projects if isinstance(projects, str) else json.dumps(projects)
-    lines = "".join(
-        json.dumps({"project": name, "folder": folder}) + "\n"
-        for name, folder in (labels or {}).items()
-    )
-    files = {
-        "ls.out": text,
-        "ls.err": ls_error,
-        "ls.code": str(ls_code),
-        "labels.out": lines,
-        "labels.code": str(labels_code),
-    }
-    for name, content in files.items():
-        (docker.folder / name).write_text(content, encoding="utf-8")
-    docker.behavior(BEHAVIOR)
-
-
-def project(name: str, files: list[Path], status: str = "running(2)") -> dict[str, str]:
-    """One entry of ``docker compose ls``."""
-    return {"Name": name, "Status": status, "ConfigFiles": ",".join(str(path) for path in files)}
-
-
-def make_stack(folder: Path, *names: str) -> Path:
-    """A folder holding the named Compose files, the base one when none is named."""
-    folder.mkdir(parents=True, exist_ok=True)
-    for name in names or ("compose.yaml",):
-        (folder / name).write_text("services: {}\n", encoding="utf-8")
-    return folder
 
 
 async def add_deployment(
@@ -483,3 +438,52 @@ def test_the_label_lines_keep_the_first_folder_of_each_project_and_skip_bad_line
         ]
     )
     assert parse_working_dirs(text) == {"a": "/x/one", "c": "/x/three"}
+
+
+async def at_root(cli: DockerCli, allowed: AllowedPaths, root: Path) -> tuple[str, ...]:
+    """The projects whose folder is a root, with the given allowed paths."""
+    return await stack_discovery.projects_at_root(cli, allowed, str(root))
+
+
+async def test_the_projects_at_a_root_are_those_whose_folder_it_is(
+    host: Path, fake: FakeDocker
+) -> None:
+    mine, other = make_stack(host / "mine"), make_stack(host / "other")
+    answer(
+        fake,
+        [
+            project("mine-live", [mine / "compose.yaml"]),
+            project("mine-stopped", [mine / "compose.yaml"], "exited(1)"),
+            project("elsewhere", [other / "compose.yaml"]),
+        ],
+        {"mine-live": str(mine), "mine-stopped": str(mine), "elsewhere": str(other)},
+    )
+    allowed = AllowedPaths([host])
+    assert await at_root(fake.cli(), allowed, mine) == ("mine-live", "mine-stopped")
+    assert await at_root(fake.cli(), allowed, other) == ("elsewhere",)
+    assert await at_root(fake.cli(), allowed, host / "none") == ()
+
+
+async def test_the_folder_of_a_project_without_a_label_is_the_one_of_its_first_file(
+    host: Path, fake: FakeDocker
+) -> None:
+    folder = make_stack(host / "plain")
+    answer(fake, [project("plain", [folder / "compose.yaml"])])
+    assert await at_root(fake.cli(), AllowedPaths([host]), folder) == ("plain",)
+
+
+async def test_nothing_is_offered_for_a_root_outside_the_allowed_paths_or_without_docker(
+    host: Path, fake: FakeDocker, tmp_path: Path
+) -> None:
+    outside = make_stack(tmp_path / "elsewhere")
+    answer(fake, [project("away", [outside / "compose.yaml"])], {"away": str(outside)})
+    assert await at_root(fake.cli(), AllowedPaths([host]), outside) == ()
+    inside = make_stack(host / "inside")
+    answer(fake, [project("here", [inside / "compose.yaml"])], {"here": str(inside)})
+    fake.switch("no-daemon")
+    assert await at_root(fake.cli(), AllowedPaths([host]), inside) == ()
+    fake.switch("no-daemon", on=False)
+    answer(fake, "not json")
+    assert await at_root(fake.cli(), AllowedPaths([host]), inside) == ()
+    answer(fake, [], ls_code=1, ls_error="boom")
+    assert await at_root(fake.cli(), AllowedPaths([host]), inside) == ()

@@ -110,7 +110,8 @@ class DeploymentDetail:
     already limits to runs in scope. ``deployment_files`` is the row of the deployment's own files
     when they exist and are in scope; they are never one of ``services``. ``compose_files`` are the
     Compose files linked to the deployment (empty for a caller who reaches it only as a parent),
-    and ``can_view_compose`` whether the caller may open their text.
+    and ``can_view_compose`` whether the caller may open their text. ``compose_project`` is the
+    Compose project name (None when not set, and for a caller who reaches it only as a parent).
     """
 
     id: int
@@ -132,6 +133,7 @@ class DeploymentDetail:
     deployment_files: ServiceRow | None = None
     compose_files: tuple[str, ...] = ()
     can_view_compose: bool = False
+    compose_project: str | None = None
 
 
 # From the outcome that holds a deploy back the most to the one that holds it back the least.
@@ -291,6 +293,7 @@ async def load_deployment_detail(
         drift_state=check_drift,
         deployment_files=deployment_files,
         compose_files=tuple(deployment.compose_files or ()) if full else (),
+        compose_project=deployment.compose_project if full else None,
         can_view_compose=(
             full
             and scope.active

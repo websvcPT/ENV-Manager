@@ -1,6 +1,6 @@
 # Using ENV Manager
 
-Choosing a deployment path, adding files, deployment files, Compose files, importing from Docker
+Creating a deployment, choosing a deployment path, adding files, deployment files, Compose files, importing from Docker
 Compose, file types, command line deploys, the drift view, users, accounts and post-deploy commands. API tokens
 and the API are in [api.md](api.md).
 
@@ -56,6 +56,54 @@ file that the deployment files held as a managed file is removed from them, with
 the file on the host is not touched. A file an API token is restricted to is kept until the token
 is revoked. Upgrading to this version removes such managed copies once, at startup, as the
 `upgrade` actor.
+
+## Creating a deployment
+
+The superadmin creates a deployment from **New deployment** on a project, in one of two ways that
+the tabs at the top of the page switch between.
+
+**Detected stacks** (the default) lists the Compose stacks of the host. The list loads after the
+page, because asking Docker and walking the allowed paths can take a few seconds, and **Scan
+again** looks once more. A stack is found in two ways, which are merged by its folder:
+
+- Docker, when it is usable: every Compose project the daemon knows, running or stopped, with its
+  containers counted (for example "2 running"), the folder it was started from and the Compose
+  files it was started with.
+- The allowed paths: every folder up to two levels below an allowed path that holds a Compose file
+  (`compose.yaml`, `compose.yml`, `docker-compose.yaml` or `docker-compose.yml`) is a stack, with
+  the base file and the override file that goes with it. Hidden folders and symbolic links are not
+  entered.
+
+When Docker is not usable the page says why and the folders found in the allowed paths are still
+listed. Nothing here changes anything on the host.
+
+Each row ends in one of three things. **Use** fills the form below the list. A stack that a
+deployment already uses (the same root folder, or the same Compose project name) links to that
+deployment instead. A stack that cannot be used says why: its folder is outside the allowed paths,
+its Compose files are not inside its folder, or it uses more than 8 Compose files.
+
+**Use** fills the form with a name made from the project (or the folder) name, which can be
+edited, the root folder, the Compose files as chips, and the Compose project, which is read only
+when Docker named it and empty for a stack found only in a folder. **Import services and
+environment files next** is ticked when there are Compose files. **Create deployment** checks
+every value again (the root inside the allowed paths, the Compose files inside the root, the
+project name rule), stores the deployment, links the Compose files (the audit log holds
+`deployment.create` and `deployment.compose_link`) and then opens the Compose import with those
+files ticked. Without the tick it opens the deployment's Files tab instead. A deployment created
+from **Enter the folder**, the form of a typed folder, also lands on the Files tab.
+
+### The Compose project
+
+The Compose project is the name Docker Compose gives the containers of a stack (the `name:` of the
+Compose file, `COMPOSE_PROJECT_NAME`, or the folder name). It is stored on the deployment so that ENV Manager can find the stack's containers in Docker
+by that name, which the features that read a stack from Docker need (the state of its containers,
+its networks), and it is never made from the deployment's display name. It is optional: it follows Compose's rule, 1 to 63 lowercase letters, numbers, dashes and
+underscores, starting with a letter or number, and the Settings tab of the deployment shows it, or
+"Not set". A deployment created from a detected stack gets the name Docker reported; for any other
+the superadmin sets it in **Edit deployment**. While the field is empty and exactly one Docker
+project has its folder at the deployment's root, the form offers **Fill from the running
+containers** with that name. The name is in the audit entries of the create and the edit
+(`compose_project`).
 
 ## Choosing a deployment path
 

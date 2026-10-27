@@ -69,7 +69,7 @@ async def test_new_page_has_the_form_and_the_picker(
     web_client: httpx.AsyncClient, layout: Layout
 ) -> None:
     await sign_in(web_client, "root")
-    response = await web_client.get(f"/projects/{layout.fancy}/deployments/new")
+    response = await web_client.get(f"/projects/{layout.fancy}/deployments/new?source=folder")
     page = response.text
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"
@@ -78,7 +78,7 @@ async def test_new_page_has_the_form_and_the_picker(
     assert f'hx-post="/projects/{layout.fancy}/deployments"' in page
     assert 'id="deployment-form"' in page and 'data-fragment="deployment-form"' in page
     assert page.count('data-fragment="form-section"') == 3
-    for field_id in ("name", "root", "mode", "owner", "group"):
+    for field_id in ("name", "root", "compose_project", "mode", "owner", "group"):
         assert f'id="{field_id}"' in page
     assert 'hx-get="/paths/validate"' in page
     assert 'hx-trigger="input changed delay:400ms from:#root"' in page
@@ -199,7 +199,7 @@ async def test_create_redirects_and_audits(
         entry = (
             await db.execute(select(AuditEntry).where(AuditEntry.action == "deployment.create"))
         ).scalar_one()
-    assert response.headers["hx-redirect"] == f"/deployments/{created.id}/settings"
+    assert response.headers["hx-redirect"] == f"/deployments/{created.id}/files?saved=true"
     assert created.project_id == layout.fancy and created.root_path == str(layout.host / "alpha")
     assert (created.file_mode, created.file_owner, created.drift_policy.value) == (
         "0640",
@@ -207,6 +207,7 @@ async def test_create_redirects_and_audits(
         "overwrite",
     )
     assert entry.deployment_id == created.id and entry.actor_name == "root"
+    assert entry.details["compose_project"] is None
     page = await web_client.get(f"/deployments/{created.id}/settings")
     assert page.status_code == 200 and "0640, www-data:" in page.text
 

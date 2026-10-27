@@ -1,10 +1,12 @@
 import type { Browser, Page } from '@playwright/test';
 
-import { deploymentId } from '../deployments-api';
+import { createDeployment as createDeploymentByApi, deploymentId } from '../deployments-api';
 import { stateFile, SUPERADMIN_STATE } from '../global-setup';
+import { createHostFolder, type HostFolder } from '../host-files';
 import { expectBreadcrumb, expectItemHeader, expectLocation } from '../item-header';
 import { listProjects } from '../projects-api';
 import { horizontalOverflow, isWide } from '../viewport';
+import { actionControls, rowAction } from './row-actions';
 import { expect, test } from './scratch-project';
 
 const ALLOWED_ROOT = '/srv/deployments';
@@ -22,6 +24,10 @@ async function seededProjectId(browser: Browser, name: string): Promise<number> 
   } finally {
     await context.close();
   }
+}
+
+function folderForm(projectId: number): string {
+  return `/projects/${projectId}/deployments/new?source=folder`;
 }
 
 function form(page: Page) {
@@ -42,11 +48,11 @@ async function fillCreateForm(page: Page, name: string, root: string): Promise<v
 }
 
 async function createDeployment(page: Page, projectId: number, name: string, root: string) {
-  await page.goto(`/projects/${projectId}/deployments/new`);
+  await page.goto(folderForm(projectId));
   await fillCreateForm(page, name, root);
   await form(page).getByRole('button', { name: 'Create deployment' }).click();
-  await expect(page).toHaveURL(/\/deployments\/\d+\/settings$/);
-  return Number(/\/deployments\/(\d+)\/settings$/.exec(page.url())?.[1]);
+  await expect(page).toHaveURL(/\/deployments\/\d+\/files\?saved=true$/);
+  return Number(/\/deployments\/(\d+)\/files\?saved=true$/.exec(page.url())?.[1]);
 }
 
 function fillOf(page: Page, radioName: string, value: string) {
@@ -61,7 +67,7 @@ test.describe('superadmin create', () => {
     page,
     scratch,
   }) => {
-    await page.goto(`/projects/${scratch.id}/deployments/new`);
+    await page.goto(folderForm(scratch.id));
     await expect(page.locator('[data-fragment="page-header"] h1')).toHaveText('New deployment');
     await expect(page.locator('[data-fragment="page-header"] p')).toHaveText(
       'Post-deploy commands are configured per service, not here.',
@@ -75,6 +81,8 @@ test.describe('superadmin create', () => {
     ]);
     await expect(page.locator('#name')).toHaveValue('');
     await expect(page.locator('#root')).toHaveValue('');
+    await expect(page.locator('#compose_project')).toHaveValue('');
+    await expect(page.locator('#compose_project')).not.toHaveAttribute('readonly', '');
     await expect(page.locator('#mode')).toHaveValue('0600');
     await expect(page.locator('input[name="dist_missing_policy"]:checked')).toHaveValue('block');
     await expect(page.locator('input[name="drift_policy"]:checked')).toHaveValue('halt');
@@ -92,7 +100,7 @@ test.describe('superadmin create', () => {
   });
 
   test('validates the root path as the person types', async ({ page, scratch }) => {
-    await page.goto(`/projects/${scratch.id}/deployments/new`);
+    await page.goto(folderForm(scratch.id));
     const root = page.locator('#root');
 
     await root.fill('/etc');
@@ -134,7 +142,7 @@ test.describe('superadmin create', () => {
     page,
     scratch,
   }) => {
-    await page.goto(`/projects/${scratch.id}/deployments/new`);
+    await page.goto(folderForm(scratch.id));
     await page.getByRole('button', { name: 'Browse…' }).click();
     const filter = picker(page).locator('[data-js="path-filter"]');
     await expect(filter).toBeVisible();
@@ -160,7 +168,7 @@ test.describe('superadmin create', () => {
   });
 
   test('browses inside the allowed paths only and fills the field', async ({ page, scratch }) => {
-    await page.goto(`/projects/${scratch.id}/deployments/new`);
+    await page.goto(folderForm(scratch.id));
     await page.getByRole('button', { name: 'Browse…' }).click();
     await expect(picker(page)).toBeVisible();
     await expect(picker(page).locator('h2')).toHaveText('Choose root path');
@@ -201,7 +209,7 @@ test.describe('superadmin create', () => {
   });
 
   test('policy choice moves the highlighted option', async ({ page, scratch }) => {
-    await page.goto(`/projects/${scratch.id}/deployments/new`);
+    await page.goto(folderForm(scratch.id));
     const selected = await fillOf(page, 'drift_policy', 'halt');
     const plain = await fillOf(page, 'drift_policy', 'overwrite');
     expect(selected).not.toBe(plain);
@@ -211,7 +219,7 @@ test.describe('superadmin create', () => {
   });
 
   test('creates a deployment and lands on its page', async ({ page, scratch }) => {
-    await page.goto(`/projects/${scratch.id}/deployments/new`);
+    await page.goto(folderForm(scratch.id));
     await fillCreateForm(page, 'created-one', SAMPLE_A);
     await page.locator('input[name="drift_policy"][value="overwrite"]').check();
     await page.getByLabel('Warn and continue').check();
@@ -220,11 +228,15 @@ test.describe('superadmin create', () => {
     await page.locator('#group').fill('www-data');
     await form(page).getByRole('button', { name: 'Create deployment' }).click();
 
-    await expect(page).toHaveURL(/\/deployments\/\d+\/settings$/);
+    await expect(page).toHaveURL(/\/deployments\/\d+\/files\?saved=true$/);
+    await expect(page.locator('[data-fragment="toast"]')).toContainText('Deployment saved');
     await expectItemHeader(page, 'deployment', 'created-one');
     await expectLocation(page, 'deployment', {
       root: `Deployment path: ${SAMPLE_A}`,
     });
+    const id = /\/deployments\/(\d+)\//.exec(page.url())?.[1];
+    await page.goto(`/deployments/${id}/settings`);
+    await expect(page.locator('[data-compose-project]')).toHaveText('Not set');
     const policies = page.locator('[data-fragment="policies-panel"]');
     await expect(policies).toContainText('Warn and continue');
     await expect(policies).toContainText('Overwrite');
@@ -240,13 +252,13 @@ test.describe('superadmin create', () => {
     scratch,
   }) => {
     await createDeployment(page, scratch.id, 'taken-name', SAMPLE_A);
-    await page.goto(`/projects/${scratch.id}/deployments/new`);
+    await page.goto(folderForm(scratch.id));
     await fillCreateForm(page, 'taken-name', '/etc');
     await page.locator('#mode').fill('12');
     await page.locator('input[name="drift_policy"][value="overwrite"]').check();
     await form(page).getByRole('button', { name: 'Create deployment' }).click();
 
-    await expect(page).toHaveURL(`/projects/${scratch.id}/deployments/new`);
+    await expect(page).toHaveURL(folderForm(scratch.id));
     await expect(page.locator('#name-e')).toHaveText(
       'A deployment named taken-name already exists in this project.',
     );
@@ -295,12 +307,18 @@ test.describe('superadmin edit', () => {
     await page.locator('#root').fill(SAMPLE_B);
     await page.getByLabel('Back up, then overwrite').check();
     await page.locator('#group').fill('deploy');
+    await expect(page.locator('#compose_project')).toHaveValue('');
+    await page.locator('#compose_project').fill('Bad Name');
+    await form(page).getByRole('button', { name: 'Save deployment' }).click();
+    await expect(page.locator('#compose_project-e')).toContainText('lowercase letters');
+    await page.locator('#compose_project').fill('edited-stack');
     await form(page).getByRole('button', { name: 'Save deployment' }).click();
 
     await expect(page).toHaveURL(`/deployments/${id}/settings?saved=true`);
     await expect(page.locator('[data-fragment="toast"]')).toContainText('Deployment saved');
     await expectItemHeader(page, 'deployment', 'Edited Name EU');
     await expect(page.locator('[data-location="root"]')).toHaveText(`Deployment path: ${SAMPLE_B}`);
+    await expect(page.locator('[data-compose-project]')).toHaveText('edited-stack');
     await expect(page.locator('[data-fragment="policies-panel"]')).toContainText(
       'Back up, then overwrite',
     );
@@ -352,8 +370,205 @@ for (const user of ['admin', 'viewer'] as const) {
       }
       expect((await request.get('/paths/validate?root=/etc')).status()).toBe(403);
       expect((await request.get('/paths/browse')).status()).toBe(403);
+      for (const tail of ['stacks', 'stacks/loading', 'use?folder=/srv/deployments']) {
+        const response = await request.get(`/projects/${fancy}/deployments/new/${tail}`);
+        expect(response.status(), tail).toBe(403);
+      }
       await page.goto(`/projects/${fancy}`);
       await expect(page.getByRole('link', { name: 'New deployment' })).toHaveCount(0);
     });
   });
 }
+
+const stacksTest = test.extend<{ host: HostFolder }>({
+  host: async ({}, use) => {
+    const host = createHostFolder();
+    try {
+      host.write('compose.yaml', 'services:\n  web:\n    image: nginx:1.27\n');
+      await use(host);
+    } finally {
+      host.remove();
+    }
+  },
+});
+
+function stacksPage(projectId: number): string {
+  return `/projects/${projectId}/deployments/new`;
+}
+
+/** The table row or list item of the stack in a folder, whichever the layout shows. */
+function stackEntry(page: Page, folder: string) {
+  return page.locator(`[data-folder="${folder}"]:visible`);
+}
+
+async function stacksLoaded(page: Page): Promise<void> {
+  await expect(page.locator('#detected-stacks')).toHaveAttribute('aria-busy', 'false');
+}
+
+async function useStack(page: Page, folder: string): Promise<void> {
+  await (await rowAction(stackEntry(page, folder), 'use')).click();
+  await expect(page.locator('#stack-form #deployment-form')).toBeVisible();
+}
+
+function baseName(folder: string): string {
+  return folder.slice(folder.lastIndexOf('/') + 1);
+}
+
+test.describe('new deployment from a detected stack', () => {
+  stacksTest('shows the loading state, then the stacks found in the allowed paths', async ({
+    page,
+    scratch,
+    host,
+  }) => {
+    await page.route('**/deployments/new/stacks', async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      await route.continue();
+    });
+    await page.goto(stacksPage(scratch.id));
+    await expect(page.locator('nav[aria-label="Sections"] [aria-current="page"]')).toHaveText(
+      'Detected stacks',
+    );
+    await expect(page.locator('#detected-stacks')).toHaveAttribute('aria-busy', 'true');
+    await expect(page.locator('#detected-stacks [role="status"]')).toHaveText(
+      'Looking for stacks',
+    );
+    await expect(page.locator('#deployment-form')).toHaveCount(0);
+    await stacksLoaded(page);
+
+    const entry = stackEntry(page, host.root);
+    await expect(entry).toContainText(baseName(host.root));
+    await expect(entry).toContainText('compose.yaml');
+    await expect(entry).toContainText(isWide(page) ? 'Folder' : 'Found by folder');
+    await expect(entry).toContainText('Not in Docker');
+    await expect(page.locator('#detected-stacks')).toContainText('Docker was not used');
+    await expect(page.locator('#detected-stacks-scan')).toBeVisible();
+    // The e2e stack has no Docker socket, so every stack comes from the folders.
+    if (isWide(page)) {
+      await expect(page.locator('[data-fragment="stack-row"]').first()).toBeVisible();
+      await expect(page.locator('[data-fragment="stack-item"]').first()).toBeHidden();
+    } else {
+      await expect(page.locator('[data-fragment="stack-item"]').first()).toBeVisible();
+      await expect(page.locator('[data-fragment="stack-row"]').first()).toBeHidden();
+      expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+    }
+  });
+
+  stacksTest('Use fills the form and Create lands on the import with the file ticked', async ({
+    page,
+    scratch,
+    host,
+  }) => {
+    await page.goto(stacksPage(scratch.id));
+    await stacksLoaded(page);
+    await useStack(page, host.root);
+
+    await expect(page.locator('#name')).toHaveValue(baseName(host.root));
+    await expect(page.locator('#root')).toHaveValue(host.root);
+    await expect(rootLines(page)).toHaveText([
+      `Inside allowed path ${ALLOWED_ROOT}`,
+      'Exists, mounted and writable',
+    ]);
+    await expect(page.locator('[data-fragment="stack-files"] li')).toHaveText(['compose.yaml']);
+    await expect(page.locator('#compose_project')).toHaveValue('');
+    await expect(page.locator('#compose_project')).not.toHaveAttribute('readonly', '');
+    await expect(page.locator('input[name="import_next"]')).toBeChecked();
+    await expect(page.getByRole('button', { name: 'Browse…' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Cancel' })).toHaveAttribute(
+      'href',
+      `/projects/${scratch.id}`,
+    );
+    if (!isWide(page)) {
+      expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+    }
+
+    await page.locator('#compose_project').fill('picked-stack');
+    await form(page).getByRole('button', { name: 'Create deployment' }).click();
+    await expect(page).toHaveURL(/\/deployments\/\d+\/import-compose\?compose_file=compose\.yaml$/);
+    await expect(page.locator('input[name="compose_file"][value="compose.yaml"]')).toBeChecked();
+  });
+
+  stacksTest('without the import it lands on Files with the Compose file linked', async ({
+    page,
+    scratch,
+    host,
+  }) => {
+    await page.goto(stacksPage(scratch.id));
+    await stacksLoaded(page);
+    await useStack(page, host.root);
+    await page.locator('input[name="import_next"]').uncheck();
+    await page.locator('#compose_project').fill('picked-stack');
+    await form(page).getByRole('button', { name: 'Create deployment' }).click();
+
+    await expect(page).toHaveURL(/\/deployments\/\d+\/files\?saved=true$/);
+    await expect(page.locator('[data-fragment="toast"]')).toContainText('Deployment saved');
+    const id = /\/deployments\/(\d+)\//.exec(page.url())?.[1];
+    await page.goto(`/deployments/${id}/settings`);
+    await expect(page.locator('[data-compose-project]')).toHaveText('picked-stack');
+    await expect(page.locator('[data-fragment="compose-file-row"]')).toHaveAttribute(
+      'data-file',
+      'compose.yaml',
+    );
+  });
+
+  stacksTest('a refused submit keeps the picked files and says what is wrong', async ({
+    page,
+    scratch,
+    host,
+  }) => {
+    await page.goto(stacksPage(scratch.id));
+    await stacksLoaded(page);
+    await useStack(page, host.root);
+    await page.locator('#compose_project').fill('Not Valid');
+    await form(page).getByRole('button', { name: 'Create deployment' }).click();
+    await expect(page.locator('#compose_project-e')).toContainText('lowercase letters');
+    await expect(page.locator('[data-fragment="stack-files"] li')).toHaveText(['compose.yaml']);
+    await expect(page.locator('input[name="import_next"]')).toBeChecked();
+
+    await page.locator('#compose_project').fill('');
+    await page.locator('#root').fill(SAMPLE_A);
+    await form(page).getByRole('button', { name: 'Create deployment' }).click();
+    await expect(page.locator('#compose-files-e')).toContainText('does not exist');
+    await expect(page.locator('#deployment-form')).toHaveCount(1);
+  });
+
+  stacksTest('a stack that a deployment uses links to it and has no Use', async ({
+    page,
+    request,
+    scratch,
+    host,
+  }) => {
+    const id = await createDeploymentByApi(request, scratch.id, 'already-here', host.root);
+    await page.goto(stacksPage(scratch.id));
+    await stacksLoaded(page);
+    const entry = stackEntry(page, host.root);
+    await expect(entry.locator('[data-stack-used]')).toHaveAttribute('href', `/deployments/${id}`);
+    await expect(entry.locator('[data-stack-used]')).toHaveText('Used by already-here');
+    await expect(actionControls(entry, 'use')).toHaveCount(0);
+  });
+
+  stacksTest('Scan again looks for the stacks once more', async ({ page, scratch, host }) => {
+    await page.goto(stacksPage(scratch.id));
+    await stacksLoaded(page);
+    const later = createHostFolder();
+    try {
+      later.write('compose.yaml', 'services: {}\n');
+      await expect(stackEntry(page, later.root)).toHaveCount(0);
+      await page.locator('#detected-stacks-scan').click();
+      await expect(stackEntry(page, later.root)).toBeVisible();
+      await expect(stackEntry(page, host.root)).toBeVisible();
+    } finally {
+      later.remove();
+    }
+  });
+
+  stacksTest('the switch opens the folder form and back', async ({ page, scratch }) => {
+    await page.goto(stacksPage(scratch.id));
+    await page.locator('nav[aria-label="Sections"] a', { hasText: 'Enter the folder' }).click();
+    await expect(page).toHaveURL(folderForm(scratch.id));
+    await expect(form(page)).toBeVisible();
+    await expect(page.locator('#detected-stacks')).toHaveCount(0);
+    await page.locator('nav[aria-label="Sections"] a', { hasText: 'Detected stacks' }).click();
+    await expect(page.locator('#detected-stacks')).toBeVisible();
+    await expect(page.locator('#deployment-form')).toHaveCount(0);
+  });
+});

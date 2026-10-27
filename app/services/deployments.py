@@ -25,7 +25,9 @@ from app.models import (
 )
 from app.services.app_settings import GeneralSettings
 from app.services.audit import AuditActor, record_actor_audit
+from app.services.compose_project import COMPOSE_PROJECT_MESSAGE, is_compose_project_name
 from app.services.display_names import (
+    MAX_DISPLAY_NAME_LENGTH,
     display_name_message,
     display_name_rule,
     is_display_name,
@@ -48,6 +50,7 @@ DEFAULT_FILE_MODE = "0600"
 MIN_DEPLOYMENT_NAME_LENGTH = 1
 DEPLOYMENT_NAME_RULE = display_name_rule(MIN_DEPLOYMENT_NAME_LENGTH)
 DEPLOYMENT_NAME_MESSAGE = display_name_message(MIN_DEPLOYMENT_NAME_LENGTH)
+_NOT_NAME_CHARACTERS = re.compile(r"[^A-Za-z0-9 ._-]+")
 
 
 @dataclass(frozen=True)
@@ -149,6 +152,7 @@ class DeploymentForm:
     file_mode: str = DEFAULT_FILE_MODE
     file_owner: str = ""
     file_group: str = ""
+    compose_project: str = ""
 
     @classmethod
     def from_defaults(cls, defaults: GeneralSettings) -> DeploymentForm:
@@ -174,7 +178,19 @@ class DeploymentForm:
             file_mode=deployment.file_mode,
             file_owner=deployment.file_owner or "",
             file_group=deployment.file_group or "",
+            compose_project=deployment.compose_project or "",
         )
+
+
+def suggest_deployment_name(raw: str) -> str:
+    """A display name made from a project or folder name.
+
+    Characters the name rule refuses become spaces, runs of spaces become one and the length is
+    cut to the limit. Empty when nothing of the text is usable.
+    """
+    name = normalize_display_name(_NOT_NAME_CHARACTERS.sub(" ", raw))[:MAX_DISPLAY_NAME_LENGTH]
+    name = name.strip()
+    return name if is_display_name(name, MIN_DEPLOYMENT_NAME_LENGTH) else ""
 
 
 class DeploymentFormError(Exception):
@@ -199,6 +215,7 @@ class CleanDeployment:
     file_mode: str
     file_owner: str | None
     file_group: str | None
+    compose_project: str | None
     root_check: RootCheck = field(compare=False)
 
 
@@ -270,6 +287,10 @@ async def validate_deployment(
     owner = parse_account(form.file_owner, "Owner", errors, "file_owner")
     group = parse_account(form.file_group, "Group", errors, "file_group")
 
+    compose_project = form.compose_project.strip()
+    if compose_project and not is_compose_project_name(compose_project):
+        errors["compose_project"] = COMPOSE_PROJECT_MESSAGE
+
     real_path = root_check.real_path
     if errors or real_path is None or policies is None:
         raise DeploymentFormError(errors, root_check if form.root.strip() else None)
@@ -282,6 +303,7 @@ async def validate_deployment(
         file_mode=mode,
         file_owner=owner,
         file_group=group,
+        compose_project=compose_project or None,
         root_check=root_check,
     )
 
@@ -296,6 +318,7 @@ def _policy_details(clean: CleanDeployment) -> dict[str, object]:
         "file_mode": clean.file_mode,
         "file_owner": clean.file_owner,
         "file_group": clean.file_group,
+        "compose_project": clean.compose_project,
     }
 
 
@@ -318,6 +341,7 @@ async def create_deployment(
         file_mode=clean.file_mode,
         file_owner=clean.file_owner,
         file_group=clean.file_group,
+        compose_project=clean.compose_project,
     )
     db.add(deployment)
     await db.flush()
@@ -355,13 +379,16 @@ async def update_deployment(
         "file_mode": clean.file_mode,
         "file_owner": clean.file_owner,
         "file_group": clean.file_group,
+        "compose_project": clean.compose_project,
     }
     changed = [key for key, value in new_values.items() if getattr(deployment, key) != value]
-    details: dict[str, object] = {"changed": changed}
+    details: dict[str, object] = {"changed": changed, "compose_project": clean.compose_project}
     if "name" in changed:
         details["previous_name"] = deployment.name
     if "root_path" in changed:
         details["previous_root_path"] = deployment.root_path
+    if "compose_project" in changed:
+        details["previous_compose_project"] = deployment.compose_project
     for key in changed:
         setattr(deployment, key, new_values[key])
     await record_actor_audit(

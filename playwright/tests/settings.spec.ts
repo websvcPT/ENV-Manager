@@ -569,7 +569,7 @@ test.describe('general', () => {
       await expect(toast(page.locator('#general'))).toContainText('General settings saved');
       await expect(page.locator('#d5')).toHaveValue(owner);
 
-      await page.goto(`/projects/${fancy}/deployments/new`);
+      await page.goto(`/projects/${fancy}/deployments/new?source=folder`);
       await expect(page.locator('#owner')).toHaveValue(owner);
       await expect(page.locator('#group')).toHaveValue('e2e-group');
       await expect(page.locator('#mode')).toHaveValue('0600');
@@ -586,7 +586,7 @@ test.describe('general', () => {
       await expect(toast(page.locator('#general'))).toBeVisible();
       await expect(page.locator('#d5')).toHaveValue('');
     }
-    await page.goto(`/projects/${fancy}/deployments/new`);
+    await page.goto(`/projects/${fancy}/deployments/new?source=folder`);
     await expect(page.locator('#owner')).toHaveValue('');
     await expect(page.locator('#group')).toHaveValue('');
   });

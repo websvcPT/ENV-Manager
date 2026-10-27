@@ -1,13 +1,25 @@
-{#- Deployment create and edit page: heading, the form and the root path picker dialog.
-    Context: title, project_id, project_name, the form fragment context and picker. -#}
+{#- Deployment create and edit page: heading, the form and the root path picker dialog. A new
+    deployment starts from a stack found on the host (the list loads after the page and Use
+    fills the form into #stack-form) or from a typed folder, switched with the tabs. Context:
+    title, project_id, project_name, the form fragment context and picker, and for a new
+    deployment new_source (stacks or folder), new_href and stacks_href. -#}
 {% extends "layouts/app.html" %}
-{% from "macros/panels.html" import page_header %}
+{% from "macros/panels.html" import page_header, tabs %}
 {% set active_nav = "projects" %}
 {% set breadcrumbs = [("Projects", "/projects"), (project_name, "/projects/" ~ project_id, "Project"), (title, none)] %}
 {% block title %}{{ title }}{% endblock %}
 {% block content %}
 {% set superadmin_tag %}<span class="rounded-md bg-mute-bg px-1.5 py-px text-[11px] font-semibold text-mute-fg">Superadmin</span>{% endset %}
 {{ page_header(title, "Post-deploy commands are configured per service, not here.", badges=superadmin_tag) }}
+{% if new_source | default(none) %}
+{% set folder_href = new_href ~ "?source=folder" %}
+{{ tabs([{"label": "Detected stacks", "href": new_href}, {"label": "Enter the folder", "href": folder_href}], folder_href if new_source == "folder" else new_href) }}
+{% endif %}
+{% if new_source | default(none) == "stacks" %}
+{% include "fragments/detected_stacks_loading.html" %}
+<div id="stack-form" data-fragment="stack-form" class="flex flex-col"></div>
+{% else %}
 {% include "fragments/deployment_form.html" %}
+{% endif %}
 <dialog id="path-picker" aria-labelledby="path-picker-t" class="m-auto max-h-[92vh] w-[640px] max-w-[calc(100%_-_1.5rem)] overflow-auto rounded-dialog bg-surface p-0 text-ink shadow-dialog backdrop:bg-scrim">{% include "fragments/path_picker.html" %}</dialog>
 {% endblock %}

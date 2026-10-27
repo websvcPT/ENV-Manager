@@ -322,6 +322,14 @@
       if (dialog) { dialog.close(); }
       input.focus();
     },
+    'fill-field': function (control) {
+      var input = document.getElementById(control.getAttribute('data-target'));
+      var value = control.getAttribute('data-value');
+      if (!input || !value) { return; }
+      input.value = value;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.focus();
+    },
     'dismiss': function (button) {
       var toast = button.closest('[data-fragment=toast]');
       if (toast) { toast.remove(); }

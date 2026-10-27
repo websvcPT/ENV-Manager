@@ -1,6 +1,6 @@
-{#- The Settings tab of a deployment, for callers who see all of it: the policies, the linked
-    Compose files, Edit for the superadmin and the delete zone. Context: deployment (a
-    DeploymentDetail), can_manage_structure, can_manage_grants, the Compose files panel context
+{#- The Settings tab of a deployment, for callers who see all of it: the policies, the Compose
+    project, the linked Compose files, Edit for the superadmin and the delete zone. Context:
+    deployment (a DeploymentDetail), can_manage_structure, can_manage_grants, the Compose files panel context
     (compose_deployment_id, compose_files, can_view_compose, can_link_compose) and saved and
     compose_linked (the toast texts, optional). -#}
 {% extends "layouts/deployment.html" %}
@@ -21,6 +21,11 @@
 <div><dt class="text-xs font-bold uppercase tracking-wide text-ink3">Target missing</dt><dd class="mt-0.5 break-all">{{ target_labels[deployment.policies.missing_target.value] }}</dd></div>
 <div><dt class="text-xs font-bold uppercase tracking-wide text-ink3">Default file mode, owner</dt><dd class="mt-0.5 break-all font-mono">{{ deployment.policies.file_mode }}, {% if deployment.policies.file_owner or deployment.policies.file_group %}{{ deployment.policies.file_owner or "" }}:{{ deployment.policies.file_group or "" }}{% else %}app user{% endif %}</dd></div>
 </dl></div>
+{% endcall %}
+{% set project_actions %}{% if can_manage_structure %}{{ text_link("Edit", "/deployments/" ~ deployment.id ~ "/edit") }}{% endif %}{% endset %}
+{% call panel("Compose project", "compose-project-title", fragment="compose-project", actions=project_actions) %}
+<div class="px-4 pb-5 md:px-5"><p data-compose-project class="text-sm">{% if deployment.compose_project %}<span class="break-all font-mono font-semibold">{{ deployment.compose_project }}</span>{% else %}<span class="text-ink3">Not set</span>{% endif %}</p>
+<p class="mt-1.5 text-[13px] text-ink2">The name the containers of this deployment carry in Docker. It is how ENV Manager finds them.</p></div>
 {% endcall %}
 {% include "fragments/compose_files_panel.html" %}
 {% if can_manage_structure %}

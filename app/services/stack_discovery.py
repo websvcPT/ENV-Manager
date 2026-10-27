@@ -298,6 +298,18 @@ def _used_by(users: list[_UsedBy], project: str | None, folder: str) -> Existing
     return None
 
 
+def _project_folder(
+    allowed: AllowedPaths, project: DockerProject, labels: dict[str, str]
+) -> tuple[Path, bool] | None:
+    """The folder of a Docker project and whether it is inside the allowed paths: the working
+    directory label, else the folder of the first Compose file. None when neither is a path."""
+    for raw in (labels.get(project.name), str(PurePosixPath(project.config_files[0]).parent)):
+        located = _locate(allowed, raw) if raw else None
+        if located is not None:
+            return located
+    return None
+
+
 def _docker_stack(
     allowed: AllowedPaths,
     project: DockerProject,
@@ -305,11 +317,7 @@ def _docker_stack(
     folder_files: dict[Path, tuple[str, ...]],
 ) -> DetectedStack | None:
     """The stack of a Docker project, None when no folder can be made of it."""
-    located = None
-    for raw in (labels.get(project.name), str(PurePosixPath(project.config_files[0]).parent)):
-        located = _locate(allowed, raw) if raw else None
-        if located is not None:
-            break
+    located = _project_folder(allowed, project, labels)
     if located is None:
         return None
     folder, inside = located
@@ -399,3 +407,38 @@ async def discover_stacks(
     rows = [(row.id, row.name, row.root_path, row.compose_project) for row in result]
     stacks = await asyncio.to_thread(assemble_stacks, allowed, projects, labels, rows)
     return StackDiscovery(stacks, docker_reason)
+
+
+def _names_at(
+    allowed: AllowedPaths,
+    root: Path,
+    projects: list[DockerProject],
+    labels: dict[str, str],
+) -> tuple[str, ...]:
+    """The names of the projects whose folder is the real root, inside the allowed paths.
+    Blocking: every folder is resolved on disk."""
+    names: list[str] = []
+    for project in projects:
+        found = _project_folder(allowed, project, labels)
+        if found is not None and found[1] and found[0] == root:
+            names.append(project.name)
+    return tuple(names)
+
+
+async def projects_at_root(
+    cli: DockerCli, allowed: AllowedPaths, root_path: str
+) -> tuple[str, ...]:
+    """The names of the Docker Compose projects whose folder is the real root of a deployment.
+
+    Empty when Docker is not usable, does not answer or has no such project, and when the root
+    is outside the allowed paths. Only Docker is asked (the status may come from the short
+    cache), no folder is walked.
+    """
+    located = await asyncio.to_thread(_locate, allowed, root_path)
+    if located is None or not located[1] or not (await cli.status()).available:
+        return ()
+    try:
+        projects, labels = await _docker_projects(cli)
+    except DockerQueryError, _UnreadableAnswer:
+        return ()
+    return await asyncio.to_thread(_names_at, allowed, located[0], projects, labels)

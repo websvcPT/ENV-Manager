@@ -438,7 +438,7 @@ async def test_saving_the_general_tab_stores_audits_and_fills_the_deployment_for
         project = (
             await db.execute(select(Project).where(Project.name == "Fancy Proj. Name"))
         ).scalar_one()
-    new_form = (await root.get(f"/projects/{project.id}/deployments/new")).text
+    new_form = (await root.get(f"/projects/{project.id}/deployments/new?source=folder")).text
     assert re.search(r'name="dist_missing_policy" value="warn" checked', new_form)
     assert re.search(r'name="drift_policy" value="backup_overwrite" checked', new_form)
     assert re.search(r'name="missing_target_policy" value="halt" checked', new_form)

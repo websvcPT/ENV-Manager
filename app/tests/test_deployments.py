@@ -18,12 +18,14 @@ from app.models import (
 )
 from app.seeds import SeedData
 from app.services import deployments as deployment_service
+from app.services.compose_project import COMPOSE_PROJECT_MESSAGE
 from app.services.deployments import (
     DEPLOYMENT_NAME_MESSAGE,
     DeploymentForm,
     DeploymentFormError,
     check_root_path,
     create_deployment,
+    suggest_deployment_name,
     update_deployment,
     validate_deployment,
 )
@@ -311,6 +313,7 @@ async def test_update_changes_values_and_audits_only_what_changed(
         ).scalar_one()
     assert entry.details == {
         "changed": ["name", "root_path", "dist_missing_policy", "file_mode"],
+        "compose_project": None,
         "previous_name": "staging",
         "previous_root_path": previous_root,
     }
@@ -384,3 +387,88 @@ async def test_a_deployment_name_is_unique_in_the_project_ignoring_case(
         db.add(Deployment(project_id=fancy.id, name="Prod", root_path=str(host / "alpha")))
         with pytest.raises(IntegrityError):
             await db.commit()
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("env-manager-demo", "env-manager-demo"),
+        ("My App!!", "My App"),
+        ("  spaced   out  ", "spaced out"),
+        ("shop+blog", "shop blog"),
+        ("café", "caf"),
+        ("+++", ""),
+        ("---", ""),
+        ("", ""),
+        ("a" * 120, "a" * 100),
+    ],
+)
+def test_a_suggested_name_follows_the_display_name_rule(raw: str, expected: str) -> None:
+    assert suggest_deployment_name(raw) == expected
+
+
+@pytest.mark.parametrize("name", ["a", "stack", "my-stack_2", "0day", "a" * 63])
+async def test_a_compose_project_that_follows_the_rule_is_stored_trimmed(
+    seeded_database: AsyncEngine, seed_data: SeedData, host: Path, name: str
+) -> None:
+    async with create_session_factory(seeded_database)() as db:
+        project = await db.get(Project, seed_data.projects.fancy.id)
+        assert project is not None
+        form = DeploymentForm(
+            name="projected", root=str(host / "alpha"), compose_project=f"  {name} "
+        )
+        allowed = AllowedPaths([host])
+        clean = await validate_deployment(db, allowed, project, form, mount_points=[host])
+    assert clean.compose_project == name
+
+
+@pytest.mark.parametrize(
+    "name", ["Upper", "-start", "_start", "has space", "dot.name", "a" * 64, "é"]
+)
+async def test_a_compose_project_that_breaks_the_rule_is_refused_with_the_message(
+    seeded_database: AsyncEngine, seed_data: SeedData, host: Path, name: str
+) -> None:
+    async with create_session_factory(seeded_database)() as db:
+        project = await db.get(Project, seed_data.projects.fancy.id)
+        assert project is not None
+        form = DeploymentForm(name="projected", root=str(host / "alpha"), compose_project=name)
+        with pytest.raises(DeploymentFormError) as refused:
+            await validate_deployment(db, AllowedPaths([host]), project, form, mount_points=[host])
+    assert refused.value.errors == {"compose_project": COMPOSE_PROJECT_MESSAGE}
+
+
+async def test_an_empty_compose_project_is_stored_as_none_and_audited_on_create_and_update(
+    seeded_database: AsyncEngine, seed_data: SeedData, allowed: AllowedPaths, host: Path
+) -> None:
+    async with create_session_factory(seeded_database)() as db:
+        project = await db.get(Project, seed_data.projects.fancy.id)
+        assert project is not None
+        actor = seed_data.users.superadmin
+        form = DeploymentForm(name="named", root=str(host / "alpha"), compose_project=" ")
+        clean = await validate_deployment(db, allowed, project, form, mount_points=[host])
+        assert clean.compose_project is None
+        created = await create_deployment(db, project, clean, actor=actor)
+        assert created.compose_project is None
+        edited = DeploymentForm(
+            name="named", root=str(host / "alpha"), compose_project="named-live"
+        )
+        clean = await validate_deployment(
+            db, allowed, project, edited, ignore_id=created.id, mount_points=[host]
+        )
+        await update_deployment(db, created, clean, actor=actor)
+        entries = (
+            (
+                await db.execute(
+                    select(AuditEntry)
+                    .where(AuditEntry.deployment_id == created.id)
+                    .order_by(AuditEntry.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+    create_entry, update_entry = entries
+    assert create_entry.details["compose_project"] is None
+    assert update_entry.details["compose_project"] == "named-live"
+    assert update_entry.details["changed"] == ["compose_project"]
+    assert update_entry.details["previous_compose_project"] is None
