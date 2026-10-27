@@ -117,9 +117,10 @@ async def test_an_imported_file_edited_to_version_two_deploys_without_a_halt(
 
     address = await import_demo(web, scratch)
 
-    assert address.startswith(f"/deployments/{scratch}?imported=2,3,3,0,")
+    assert address.startswith(f"/deployments/{scratch}/files?imported=2,3,3,0,")
     assert snapshot(demo.targets) == before
-    page = (await web.get(f"/deployments/{scratch}")).text
+    page = (await web.get(f"/deployments/{scratch}/files")).text
+    page += (await web.get(f"/deployments/{scratch}/activity")).text
     assert page.count(COMPOSE_IMPORT_LABEL) >= 3
     async with world.session() as db:
         imported = await db.get(Deployment, scratch)
@@ -248,7 +249,7 @@ async def test_an_import_with_commands_brings_the_stack_up_and_recreates_one_ser
     assert done.status_code == 200 and done.headers["hx-redirect"].endswith(",2")
     assert (demo.root / "compose.yaml").read_bytes() == compose_before
     assert workloads.container_ids() == []
-    page = (await web.get(f"/deployments/{scratch}")).text
+    page = (await web.get(f"/deployments/{scratch}/settings")).text
     assert 'data-fragment="compose-file-row" data-file="compose.yaml"' in page
     async with world.session() as db:
         files = await find_deployment_files(db, scratch)

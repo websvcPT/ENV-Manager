@@ -45,8 +45,8 @@ async function createDeployment(page: Page, projectId: number, name: string, roo
   await page.goto(`/projects/${projectId}/deployments/new`);
   await fillCreateForm(page, name, root);
   await form(page).getByRole('button', { name: 'Create deployment' }).click();
-  await expect(page).toHaveURL(/\/deployments\/\d+$/);
-  return Number(page.url().split('/').pop());
+  await expect(page).toHaveURL(/\/deployments\/\d+\/settings$/);
+  return Number(/\/deployments\/(\d+)\/settings$/.exec(page.url())?.[1]);
 }
 
 function fillOf(page: Page, radioName: string, value: string) {
@@ -220,12 +220,11 @@ test.describe('superadmin create', () => {
     await page.locator('#group').fill('www-data');
     await form(page).getByRole('button', { name: 'Create deployment' }).click();
 
-    await expect(page).toHaveURL(/\/deployments\/\d+$/);
+    await expect(page).toHaveURL(/\/deployments\/\d+\/settings$/);
     await expectItemHeader(page, 'deployment', 'created-one');
     await expectLocation(page, 'deployment', {
       root: `Deployment path: ${SAMPLE_A}`,
     });
-    await page.goto(`${page.url()}/settings`);
     const policies = page.locator('[data-fragment="policies-panel"]');
     await expect(policies).toContainText('Warn and continue');
     await expect(policies).toContainText('Overwrite');

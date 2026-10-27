@@ -199,7 +199,7 @@ async def create_deployment_route(
     deployment = await create_deployment(
         db, project, clean, actor=access.auth.user, ip_address=client_address(request)
     )
-    return hx_redirect(f"/deployments/{deployment.id}")
+    return hx_redirect(f"/deployments/{deployment.id}/settings")
 
 
 @router.get("/deployments/{deployment_id:int}/edit", include_in_schema=False)

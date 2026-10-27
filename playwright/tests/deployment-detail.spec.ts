@@ -547,6 +547,7 @@ test.describe('layout on small screens', () => {
       for (const tab of await sections(page).all()) {
         const box = await tab.boundingBox();
         expect(box?.height ?? 0).toBeGreaterThanOrEqual(TOUCH_TARGET);
+        expect(box?.width ?? 0).toBeGreaterThanOrEqual(TOUCH_TARGET);
       }
       await sections(page).filter({ hasText: 'Access' }).scrollIntoViewIfNeeded();
       expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);

@@ -199,7 +199,7 @@ async def test_create_redirects_and_audits(
         entry = (
             await db.execute(select(AuditEntry).where(AuditEntry.action == "deployment.create"))
         ).scalar_one()
-    assert response.headers["hx-redirect"] == f"/deployments/{created.id}"
+    assert response.headers["hx-redirect"] == f"/deployments/{created.id}/settings"
     assert created.project_id == layout.fancy and created.root_path == str(layout.host / "alpha")
     assert (created.file_mode, created.file_owner, created.drift_policy.value) == (
         "0640",
