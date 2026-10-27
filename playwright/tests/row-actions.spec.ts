@@ -140,6 +140,7 @@ test.describe('icon buttons from md up', { tag: '@wide' }, () => {
       `/projects/${fancy}`,
       `/projects/${fancy}/access`,
       `/deployments/${prod}`,
+      `/deployments/${prod}/files`,
       `/services/${await stagingWeb(browser)}`,
       '/settings/backup',
       '/settings/paths',

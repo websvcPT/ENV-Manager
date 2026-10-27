@@ -232,7 +232,7 @@ async def test_the_project_tab_lists_users_with_how_they_reach_the_project(
     assert "Members and access" in body and "Add access" in body
 
 
-async def test_the_deployment_tab_has_the_handoff_header_and_links_back_to_the_page(
+async def test_the_deployment_tab_has_the_handoff_header_and_the_other_tabs_as_links(
     web_client: httpx.AsyncClient, items: Items
 ) -> None:
     await sign_in(web_client, "root")
@@ -240,9 +240,10 @@ async def test_the_deployment_tab_has_the_handoff_header_and_links_back_to_the_p
     assert response.status_code == 200
     assert_never_cached(response)
     body = main_of(response.text)
-    assert section_labels(response.text) == ["Services", "Deploy history", "Access"]
+    assert section_labels(response.text) == ["Overview", "Files", "History", "Settings", "Access"]
     assert f'href="/deployments/{items.prod}" ' in body
-    assert f'href="/deployments/{items.prod}#hist"' in body
+    for tab in ("files", "activity", "settings"):
+        assert f'href="/deployments/{items.prod}/{tab}"' in body
     assert f'href="/deployments/{items.prod}/access" aria-current="page"' in body
     assert dict(item_header_of(body).location) == {"root": "Deployment path: /opt/fancy/prod"}
     assert [(crumb.label, crumb.type) for crumb in breadcrumb_of(response.text)] == [

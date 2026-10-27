@@ -1,0 +1,6 @@
+{#- The History tab of a deployment: the deploy history across its services. Context:
+    deployment (a DeploymentDetail), can_view_output, can_manage_grants. -#}
+{% extends "layouts/deployment.html" %}
+{% block tab %}
+{% include "fragments/deploy_history.html" %}
+{% endblock %}

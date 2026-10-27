@@ -93,6 +93,7 @@ def pages_of(targets: Targets, user: str) -> list[str]:
         f"/services/{service}/postdeploy",
         f"/services/{service}/history",
         f"/deployments/{deployment}/history",
+        f"/deployments/{deployment}/activity",
     ]
     return urls if scoped else [*urls, f"/deployments/{deployment}"]
 
@@ -146,7 +147,7 @@ async def test_the_superadmin_alone_reads_the_command_next_to_the_output(
     service_page = bodies[f"/services/{marked.staging_web}"]
     assert COMMAND_MARKER in service_page and OUTPUT_MARKER in service_page
     assert REASON_MARKER in service_page and "exit code 41" in service_page
-    deployment_page = bodies[f"/deployments/{marked.staging}"]
+    deployment_page = bodies[f"/deployments/{marked.staging}/activity"]
     assert COMMAND_MARKER not in deployment_page and "Post-deploy exit code 41" in deployment_page
     assert OUTPUT_MARKER not in deployment_page
 

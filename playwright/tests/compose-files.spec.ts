@@ -54,7 +54,7 @@ test.describe('Compose files of a deployment', () => {
     host,
   }) => {
     const id = await createDeployment(request, scratch.id, 'compose-view-dep', host.root);
-    await page.goto(`/deployments/${id}`);
+    await page.goto(`/deployments/${id}/settings`);
     await expect(panel(page)).toContainText('No Compose files linked');
     await expect(page.locator('#compose-link-open')).toHaveText(/Link Compose files/);
 
@@ -65,7 +65,7 @@ test.describe('Compose files of a deployment', () => {
     await form.locator('input[name="compose_file"][value="compose.yaml"]').check();
     await form.locator('input[name="compose_file"][value="compose.override.yaml"]').check();
     await form.locator('#compose-link-submit').click();
-    await expect(page).toHaveURL(new RegExp(`/deployments/${id}\\?compose_linked=2,0$`));
+    await expect(page).toHaveURL(new RegExp(`/deployments/${id}/settings\\?compose_linked=2,0$`));
     await expect(toast(page)).toContainText('2 Compose files linked.');
     await expect(rows(page)).toHaveCount(2);
     await expect(rows(page).nth(0)).toHaveAttribute('data-file', 'compose.yaml');
@@ -110,7 +110,7 @@ test.describe('Compose files of a deployment', () => {
       await box.uncheck();
     }
     await dialog.locator('#compose-link-submit').click();
-    await expect(page).toHaveURL(new RegExp(`/deployments/${id}\\?compose_linked=0,0$`));
+    await expect(page).toHaveURL(new RegExp(`/deployments/${id}/settings\\?compose_linked=0,0$`));
     await expect(toast(page)).toContainText('Compose files unlinked.');
     await expect(rows(page)).toHaveCount(0);
     await expect(panel(page)).toContainText('No Compose files linked');
@@ -124,13 +124,14 @@ test.describe('Compose files of a deployment', () => {
     host,
   }) => {
     const id = await createDeployment(request, scratch.id, 'compose-files-dep', host.root);
-    await page.goto(`/deployments/${id}`);
+    await page.goto(`/deployments/${id}/settings`);
     const form = await openLink(page);
     await form.locator('input[name="compose_file"][value="compose.yaml"]').check();
     await form.locator('#compose-link-submit').click();
     await expect(toast(page)).toContainText('1 Compose file linked.');
     await expect(rows(page)).toHaveCount(1);
 
+    await page.goto(`/deployments/${id}/files`);
     const files = page.locator('[data-fragment="deployment-files"]');
     await files.locator('#deployment-files-add').click();
     await expect(page).toHaveURL(/\/services\/\d+\/environments\/new$/);
@@ -142,7 +143,7 @@ test.describe('Compose files of a deployment', () => {
       'Deployment files',
     );
 
-    await page.goto(`/deployments/${id}`);
+    await page.goto(`/deployments/${id}/files`);
     await page.locator('[data-fragment="deployment-files-row"] a').first().click();
     await expect(page).toHaveURL(/\/services\/\d+$/);
     await expect(panel(page)).toBeVisible();

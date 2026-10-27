@@ -167,12 +167,12 @@ async def test_the_action_is_offered_to_the_superadmin_while_there_are_no_servic
     web_client: httpx.AsyncClient, layout: Layout
 ) -> None:
     await sign_in(web_client, "root")
-    empty = (await web_client.get(f"/deployments/{layout.empty}")).text
+    empty = (await web_client.get(f"/deployments/{layout.empty}/files")).text
     assert f'href="{base(layout)}"' in empty and 'id="import-compose-open"' in empty
     assert f'href="/deployments/{layout.empty}/services/new"' in empty
-    seeded = (await web_client.get(f"/deployments/{layout.seeded}")).text
+    seeded = (await web_client.get(f"/deployments/{layout.seeded}/files")).text
     assert "import-compose" not in seeded
-    outside = (await web_client.get(f"/deployments/{layout.outside}")).text
+    outside = (await web_client.get(f"/deployments/{layout.outside}/files")).text
     assert "import-compose" not in outside
 
 
@@ -182,7 +182,7 @@ async def test_other_groups_are_refused_everywhere_and_nothing_is_created(
 ) -> None:
     before = await counts(web_app)
     await sign_in(web_client, user)
-    page = (await web_client.get(f"/deployments/{layout.seeded}")).text
+    page = (await web_client.get(f"/deployments/{layout.seeded}/files")).text
     assert "import-compose" not in page
     refused = {403, 404}
     assert (await web_client.get(base(layout))).status_code in refused
@@ -501,7 +501,8 @@ async def test_the_import_creates_everything_and_leaves_for_the_deployment_page(
     fields: dict[str, object] = dict(hidden_fields(confirm))
     response = await post(web_client, base(layout), fields)
     assert response.status_code == 200
-    assert response.headers["hx-redirect"] == f"/deployments/{layout.empty}?imported=3,7,6,1,6,0"
+    redirect = response.headers["hx-redirect"]
+    assert redirect == f"/deployments/{layout.empty}/files?imported=3,7,6,1,6,0"
     after = await counts(web_app)
     assert tuple(now - was for now, was in zip(after, before, strict=True)) == (3, 7, 1)
     async with web_app.state.session_factory() as db:
@@ -532,8 +533,10 @@ async def test_the_runs_of_the_import_are_listed_as_imported_from_compose(
                 )
             )
         ).scalar_one()
-    page = (await web_client.get(f"/deployments/{layout.empty}")).text
-    assert page.count("Imported from Compose") >= 4
+    files = (await web_client.get(f"/deployments/{layout.empty}/files")).text
+    assert files.count("Imported from Compose") == 2
+    overview = (await web_client.get(f"/deployments/{layout.empty}")).text
+    assert overview.count("Imported from Compose") >= 4
     history = (await web_client.get(f"/deployments/{layout.empty}/history")).text
     assert history.count("data-history-trigger") == 2
     assert "found identical to the host file, nothing written." in history
@@ -602,7 +605,8 @@ async def test_the_toast_echoes_six_plain_numbers_and_nothing_else(
     web_client: httpx.AsyncClient, layout: Layout, query: str, toast: str | None
 ) -> None:
     await sign_in(web_client, "root")
-    page = (await web_client.get(f"/deployments/{layout.seeded}", params={"imported": query})).text
+    shown = await web_client.get(f"/deployments/{layout.seeded}/files", params={"imported": query})
+    page = shown.text
     if toast is None:
         assert "Import finished" not in page
     else:
@@ -661,7 +665,8 @@ async def test_files_not_on_disk_start_from_their_dist_file_by_default(
     carried = hidden_fields(confirm)
     assert carried["start:environments/.env.frontend"] == ["1"]
     response = await post(web_client, address, dict(carried))
-    assert response.headers["hx-redirect"] == f"/deployments/{deployment_id}?imported=3,3,3,0,4,0"
+    redirect = response.headers["hx-redirect"]
+    assert redirect == f"/deployments/{deployment_id}/files?imported=3,3,3,0,4,0"
     assert not (root / "environments/.env.frontend").exists()
 
 
@@ -785,7 +790,7 @@ async def test_deployment_files_made_before_the_import_leave_it_offered(
     assert made.status_code == 200
     page = (await web_client.get(base(layout))).text
     assert HAS_SERVICES_MESSAGE not in page
-    detail = main_of((await web_client.get(f"/deployments/{layout.empty}")).text)
+    detail = main_of((await web_client.get(f"/deployments/{layout.empty}/files")).text)
     assert f'href="/deployments/{layout.empty}/import-compose"' in detail
 
 
@@ -843,6 +848,6 @@ async def test_the_import_links_the_compose_files_instead_of_importing_them(
             .where(Service.deployment_id == layout.empty)
         )
         assert not {"compose.yaml", "compose.override.yaml"} & set(targets)
-    page = main_of((await web_client.get(f"/deployments/{layout.empty}")).text)
+    page = main_of((await web_client.get(f"/deployments/{layout.empty}/settings")).text)
     rows = re.findall(r'data-fragment="compose-file-row" data-file="([^"]+)"', page)
     assert rows == ["compose.yaml", "compose.override.yaml"]

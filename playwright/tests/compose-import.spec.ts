@@ -118,14 +118,14 @@ async function scan(page: Page): Promise<void> {
 }
 
 test.describe('import from Docker Compose', () => {
-  test('imports the services and files of a Compose project from the deployment page', async ({
+  test('imports the services and files of a Compose project from the Files tab', async ({
     page,
     request,
     scratch,
     host,
   }) => {
     const id = await prepare(request, scratch.id, host);
-    await page.goto(`/deployments/${id}`);
+    await page.goto(`/deployments/${id}/files`);
     await expect(page.locator('#services [data-fragment="empty-state"]')).toBeVisible();
     const open = page.locator('#import-compose-open');
     await expect(open).toHaveAttribute('href', `/deployments/${id}/import-compose`);
@@ -205,7 +205,7 @@ test.describe('import from Docker Compose', () => {
     await expect(dialog.locator('[data-import-count="linked"]')).toHaveText('1');
     await dialog.getByRole('button', { name: 'Import', exact: true }).click();
 
-    await expect(page).toHaveURL(new RegExp(`/deployments/${id}\\?imported=2,4,4,0,1,0$`));
+    await expect(page).toHaveURL(new RegExp(`/deployments/${id}/files\\?imported=2,4,4,0,1,0$`));
     await expect(toast(page)).toContainText(
       'Imported 2 services and 4 files (4 with content, 0 created empty). 1 item not imported.',
     );
@@ -213,11 +213,13 @@ test.describe('import from Docker Compose', () => {
     await expect(rows.locator('th a')).toHaveText(['api', 'web']);
     await expect(rows.filter({ hasText: 'web' }).locator('td').first()).toHaveText('3');
     await expect(page.locator('#import-compose-open')).toHaveCount(0);
+    await expect(page.locator('[data-fragment="deployment-files-row"]')).toHaveCount(0);
     // Each service with files found on the host has one run in the history, labelled as an
     // import, and the files stay as they were.
+    await page.goto(`/deployments/${id}/activity`);
     await expect(page.locator('#hist [data-fragment="history-row"]')).toHaveCount(2);
     await expect(page.locator('#hist [data-history-trigger]')).toHaveCount(2);
-    await expect(page.locator('[data-fragment="deployment-files-row"]')).toHaveCount(0);
+    await page.goto(`/deployments/${id}/settings`);
     await expect(
       page.locator('[data-fragment="compose-file-row"][data-file="compose.yaml"]'),
     ).toBeVisible();
@@ -267,7 +269,7 @@ test.describe('import from Docker Compose', () => {
 
   test('is not offered on a deployment that has services', async ({ page, browser }) => {
     const id = await deploymentId(browser, 'Fancy Proj. Name', 'prod');
-    await page.goto(`/deployments/${id}`);
+    await page.goto(`/deployments/${id}/files`);
     await expect(page.locator('#services')).toBeVisible();
     await expect(page.locator('#import-compose-open')).toHaveCount(0);
     await page.goto(`/deployments/${id}/import-compose`);
@@ -325,8 +327,9 @@ test.describe('import from Docker Compose', () => {
         '2 saved as version 1 as they are on disk, 2 started from their dist file, 0 created empty',
       );
       await dialog.getByRole('button', { name: 'Import', exact: true }).click();
-      await expect(page).toHaveURL(new RegExp(`/deployments/${id}\\?imported=3,4,4,0,3,0$`));
+      await expect(page).toHaveURL(new RegExp(`/deployments/${id}/files\\?imported=3,4,4,0,3,0$`));
       await expect(page.locator('[data-fragment="deployment-files-row"]')).toContainText('1 file');
+      await page.goto(`/deployments/${id}/settings`);
       await expect(
         page.locator('[data-fragment="compose-file-row"][data-file="docker-compose.yml"]'),
       ).toBeVisible();

@@ -1,0 +1,33 @@
+{#- The Settings tab of a deployment, for callers who see all of it: the policies, the linked
+    Compose files, Edit for the superadmin and the delete zone. Context: deployment (a
+    DeploymentDetail), can_manage_structure, can_manage_grants, the Compose files panel context
+    (compose_deployment_id, compose_files, can_view_compose, can_link_compose) and saved and
+    compose_linked (the toast texts, optional). -#}
+{% extends "layouts/deployment.html" %}
+{% from "macros/buttons.html" import button %}
+{% from "macros/dialogs.html" import loaded_dialog %}
+{% from "macros/feedback.html" import toast %}
+{% from "macros/panels.html" import panel, text_link %}
+{% set drift_labels = {"halt": "Halt", "overwrite": "Overwrite", "backup_overwrite": "Back up, then overwrite"} %}
+{% set dist_labels = {"block": "Block", "warn": "Warn and continue"} %}
+{% set target_labels = {"create": "Create", "halt": "Halt"} %}
+{% block tab %}
+{% if can_manage_structure %}<div data-fragment="settings-actions" class="flex flex-wrap justify-end gap-2.5">{{ button("Edit deployment", href="/deployments/" ~ deployment.id ~ "/edit", icon_name="pencil", icon_stroke="2") }}</div>{% endif %}
+{% set policy_note %}{% if can_manage_structure %}{{ text_link("Edit policies", "/deployments/" ~ deployment.id ~ "/edit") }}{% else %}<span class="text-[13px] text-ink2">Read-only</span>{% endif %}{% endset %}
+{% call panel("Policies", "policies-title", fragment="policies-panel", actions=policy_note) %}
+<div class="px-4 pb-5 md:px-5"><dl class="grid gap-x-8 gap-y-3.5 text-[13px] sm:grid-cols-2 lg:grid-cols-4">
+<div><dt class="text-xs font-bold uppercase tracking-wide text-ink3">Dist keys missing</dt><dd class="mt-0.5 break-all">{{ dist_labels[deployment.policies.dist_missing.value] }}</dd></div>
+<div><dt class="text-xs font-bold uppercase tracking-wide text-ink3">Drift</dt><dd class="mt-0.5 break-all">{{ drift_labels[deployment.policies.drift.value] }}</dd></div>
+<div><dt class="text-xs font-bold uppercase tracking-wide text-ink3">Target missing</dt><dd class="mt-0.5 break-all">{{ target_labels[deployment.policies.missing_target.value] }}</dd></div>
+<div><dt class="text-xs font-bold uppercase tracking-wide text-ink3">Default file mode, owner</dt><dd class="mt-0.5 break-all font-mono">{{ deployment.policies.file_mode }}, {% if deployment.policies.file_owner or deployment.policies.file_group %}{{ deployment.policies.file_owner or "" }}:{{ deployment.policies.file_group or "" }}{% else %}app user{% endif %}</dd></div>
+</dl></div>
+{% endcall %}
+{% include "fragments/compose_files_panel.html" %}
+{% if can_manage_structure %}
+<section aria-labelledby="delete-zone-title" class="rounded-panel border-2 border-danger bg-danger-soft p-5"><h2 id="delete-zone-title" class="mb-1 text-lg font-bold text-danger">Delete deployment</h2>
+<p class="mb-3.5 max-w-2xl text-ink">Deletes the deployment with all its services, environments and versions. Deployed files stay on the host.</p>
+{{ button("Delete…", kind="danger", icon_name="trash", icon_stroke="2", id="deployment-delete-open", data_js="dialog-open", data_target="deployment-delete", aria_haspopup="dialog", hx_get="/deployments/" ~ deployment.id ~ "/delete", hx_target="#deployment-delete", hx_swap="innerHTML") }}</section>
+{{ loaded_dialog("deployment-delete", "Delete deployment", width="560") }}
+{% endif %}
+{% if saved | default(false) %}{{ toast("success", "The changes to " ~ deployment.name ~ " are saved.", "Deployment saved", floating=true) }}{% elif compose_linked | default("") %}{{ toast("success", compose_linked, "Compose files saved", floating=true) }}{% endif %}
+{% endblock %}

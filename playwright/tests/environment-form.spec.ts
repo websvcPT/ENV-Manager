@@ -85,7 +85,7 @@ test.describe('superadmin add service', () => {
     await expect(page.locator('#svc-name-h')).toHaveText('Use the Compose service name.');
     await expect(page.getByRole('link', { name: 'Cancel' })).toHaveAttribute(
       'href',
-      `/deployments/${deployment}`,
+      `/deployments/${deployment}/files`,
     );
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
   });
@@ -140,12 +140,12 @@ test.describe('superadmin add service', () => {
     const { deployment } = await prepare(request, scratch.id);
     await page.goto(`/deployments/${deployment}/services/new`);
     await page.getByRole('link', { name: 'Cancel' }).click();
-    await expect(page).toHaveURL(new RegExp(`/deployments/${deployment}$`));
+    await expect(page).toHaveURL(new RegExp(`/deployments/${deployment}/files$`));
   });
 
   test('the deployment page links to the form', async ({ page, request, scratch }) => {
     const { deployment } = await prepare(request, scratch.id);
-    await page.goto(`/deployments/${deployment}`);
+    await page.goto(`/deployments/${deployment}/files`);
     await page.getByRole('link', { name: 'Add service' }).first().click();
     await expect(page).toHaveURL(new RegExp(`/deployments/${deployment}/services/new$`));
   });
@@ -630,7 +630,7 @@ for (const user of ['admin', 'viewer'] as const) {
       const prod = await deploymentId(browser, 'Fancy Proj. Name', 'prod');
       await page.goto(`/services/${mysql}`);
       await expect(page.getByRole('link', { name: 'Add environment' })).toHaveCount(0);
-      await page.goto(`/deployments/${prod}`);
+      await page.goto(`/deployments/${prod}/files`);
       await expect(page.getByRole('link', { name: 'Add service' })).toHaveCount(0);
     });
   });

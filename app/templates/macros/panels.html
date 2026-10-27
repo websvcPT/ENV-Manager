@@ -114,8 +114,11 @@
 {%- endmacro %}
 
 {#- The breadcrumb below `md`, at the top of the page: the parent as a back link and the current
-    item, both with their types; a page with one item shows just that. -#}
+    item, both with their types. A page with one item shows none, since it would only repeat
+    the title. -#}
 {% macro breadcrumb_compact(items) -%}
-{%- set parent = items[-2] if items | length > 1 else none -%}
-<nav aria-label="Breadcrumb, compact" data-breadcrumb="compact" class="-mb-2 min-w-0 md:hidden"><ol class="flex list-none items-center gap-2 text-sm text-ink3">{% if parent %}<li class="flex min-w-0 max-w-[50%]"><a href="{{ parent[1] }}" class="inline-flex min-h-11 min-w-11 items-center gap-1 text-ink2 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ icon("chevron-left", "size-4 shrink-0", "2.2") }}<span class="min-w-0">{{ crumb_text(parent) }}</span></a></li><li aria-hidden="true">/</li>{% endif %}<li aria-current="page" class="min-w-0 flex-1 font-semibold text-ink">{{ crumb_text(items[-1]) }}</li></ol></nav>
+{%- if items | length > 1 -%}
+{%- set parent = items[-2] -%}
+<nav aria-label="Breadcrumb, compact" data-breadcrumb="compact" class="-mb-2 min-w-0 md:hidden"><ol class="flex list-none items-center gap-2 text-sm text-ink3"><li class="flex min-w-0 max-w-[50%]"><a href="{{ parent[1] }}" class="inline-flex min-h-11 min-w-11 items-center gap-1 text-ink2 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ icon("chevron-left", "size-4 shrink-0", "2.2") }}<span class="min-w-0">{{ crumb_text(parent) }}</span></a></li><li aria-hidden="true">/</li><li aria-current="page" class="min-w-0 flex-1 font-semibold text-ink">{{ crumb_text(items[-1]) }}</li></ol></nav>
+{%- endif -%}
 {%- endmacro %}

@@ -332,4 +332,4 @@ async def import_services(
             result.commands,
         )
     )
-    return hx_redirect(f"/deployments/{target.deployment.id}?imported={counts}")
+    return hx_redirect(f"/deployments/{target.deployment.id}/files?imported={counts}")

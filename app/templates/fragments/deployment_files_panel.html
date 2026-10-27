@@ -2,10 +2,9 @@
     beside the Compose file), deployed on their own with their own post-deploy
     command. They are managed on their own page; this panel shows their state, deploys them and
     adds a file. Context: deployment (a DeploymentDetail), can_manage_structure. -#}
-{% from "macros/badges.html" import badge, deploy_status_badge, post_deploy_badge %}
 {% from "macros/buttons.html" import button %}
+{% from "macros/deploy.html" import deploy_state_cells %}
 {% from "macros/feedback.html" import empty_state %}
-{% from "macros/icons.html" import icon %}
 {% from "macros/panels.html" import panel, table %}
 {% from "macros/row_actions.html" import row_actions %}
 {% set files = deployment.deployment_files %}
@@ -16,9 +15,7 @@
 {%- if files -%}
 {% call table("Deployment files", ["Files", "Last deploy", "Post-deploy", "State flags", "Actions"], right_columns=[4], min_width_class="min-w-[760px]") %}
 <tr data-fragment="deployment-files-row"><th scope="row" class="border-t border-line px-4 py-3.5 text-left font-semibold"><a href="/services/{{ files.id }}" class="font-semibold text-link hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ files.environments }} {{ "file" if files.environments == 1 else "files" }}</a></th>
-<td class="border-t border-line px-4 py-3.5">{% if files.last_deploy %}{{ deploy_status_badge(files.last_deploy.status.value) }}<span class="mt-1 block text-xs text-ink2">{{ files.last_deploy.started_at.strftime("%Y-%m-%d %H:%M") }}{% if files.last_deploy.actor %} · {{ files.last_deploy.actor }}{% endif %}{% if files.last_deploy.trigger_label %} · {{ files.last_deploy.trigger_label }}{% endif %}</span>{% else %}{{ badge("never", "No deploys yet") }}{% endif %}</td>
-<td class="border-t border-line px-4 py-3.5">{% if files.post_deploy %}{{ post_deploy_badge(files.post_deploy.value) }}{% else %}<span class="text-ink3">None</span>{% endif %}</td>
-<td class="border-t border-line px-4 py-3.5">{% if files.flags %}<span class="flex flex-wrap gap-1.5">{% for flag in files.flags %}{{ deploy_status_badge(flag.value) }}{% endfor %}</span>{% else %}<span class="inline-flex items-center gap-1.5 text-[13px] text-ink2">{{ icon("check", "size-3.5", "2.4") }}No flags</span>{% endif %}</td>
+{{ deploy_state_cells(files) }}
 <td class="border-t border-line px-4 py-3.5 whitespace-nowrap text-right">{{ row_actions("deployment-files-" ~ files.id, "Deployment files", [{"key": "open", "label": "Open", "icon": "open", "href": "/services/" ~ files.id, "primary": true}] + ([{"key": "deploy", "label": "Deploy deployment files", "icon": "arrow-up", "attrs": {"data_js": "dialog-open", "data_target": "deploy-dialog", "aria_haspopup": "dialog", "hx_post": "/services/" ~ files.id ~ "/deploy/preflight", "hx_target": "#deploy-dialog", "hx_swap": "innerHTML"}}] if files.can_deploy and not deployment.outside_allowed else [])) }}</td></tr>
 {% endcall %}
 {%- else -%}

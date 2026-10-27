@@ -587,19 +587,21 @@ async def test_a_service_outside_the_allowed_paths_offers_no_deploy(
     assert "This deployment is outside the allowed paths." in main_of(page)
 
 
-async def test_the_deployment_page_opens_the_dialog_from_each_service_row(
+async def test_the_files_tab_opens_the_dialog_from_each_service_row(
     web_client: httpx.AsyncClient, web_app: FastAPI, staged: Staged
 ) -> None:
     async with web_app.state.session_factory() as db:
         deployment = await db.scalar(select(Deployment.id).where(Deployment.name == "staging"))
     await sign_in(web_client, "admin")
-    page = (await web_client.get(f"/deployments/{deployment}")).text
+    page = (await web_client.get(f"/deployments/{deployment}/files")).text
     service = staged.services["staging/web"]
     assert f'hx-post="/services/{service}/deploy/preflight"' in page
     assert 'id="deploy-dialog"' in page
+    overview = (await web_client.get(f"/deployments/{deployment}")).text
+    assert "/deploy/preflight" not in overview and "deploy-dialog" not in overview
     assert f'href="/services/{service}#deploy"' not in page
     await sign_in(web_client, "viewer")
-    page = (await web_client.get(f"/deployments/{deployment}")).text
+    page = (await web_client.get(f"/deployments/{deployment}/files")).text
     assert "/deploy/preflight" not in page and "deploy-dialog" not in page
 
 

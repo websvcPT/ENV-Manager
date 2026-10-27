@@ -88,13 +88,15 @@ async def test_the_superadmin_gets_the_structure_actions_and_nobody_else(
     web_app: FastAPI, ids: Ids
 ) -> None:
     async with browser_as(web_app, "root") as http:
-        deployment = (await http.get(f"/deployments/{ids.prod}")).text
+        files = (await http.get(f"/deployments/{ids.prod}/files")).text
+        settings = (await http.get(f"/deployments/{ids.prod}/settings")).text
         project = (await http.get(f"/projects/{ids.fancy}")).text
         service = (await http.get(f"/services/{ids.web}")).text
-    assert row_keys(deployment, "service-row", "web")[-2:] == ["rename", "delete"]
+    assert row_keys(files, "service-row", "web")[-2:] == ["rename", "delete"]
     assert row_keys(project, "deployment-row", "prod")[-1] == "delete"
-    assert 'id="deployment-delete-open"' in deployment
-    assert 'id="service-delete"' in deployment and 'id="deployment-delete"' in deployment
+    assert 'id="service-delete"' in files and 'id="deployment-delete"' not in files
+    assert 'id="deployment-delete-open"' in settings and 'id="deployment-delete"' in settings
+    assert 'id="service-delete"' not in settings
     assert 'id="deployment-delete"' in project
     assert 'id="service-rename-open"' in service and 'id="service-delete-open"' in service
     assert 'id="service-delete"' in service
@@ -104,6 +106,8 @@ async def test_the_superadmin_gets_the_structure_actions_and_nobody_else(
                 await http.get(path)
                 for path in (
                     f"/deployments/{ids.prod}",
+                    f"/deployments/{ids.prod}/files",
+                    f"/deployments/{ids.prod}/settings",
                     f"/projects/{ids.fancy}",
                     f"/services/{ids.web}",
                 )
@@ -205,7 +209,7 @@ async def test_a_confirmed_service_delete_leaves_for_the_deployment_with_a_toast
     await sign_in(web_client, "root")
     response = await post(web_client, f"/services/{ids.cron}/delete", {"confirm_name": " cron "})
     assert response.status_code == 200
-    target = f"/deployments/{ids.billing_legacy}?deleted=service"
+    target = f"/deployments/{ids.billing_legacy}/files?deleted=service"
     assert response.headers["hx-redirect"] == target
     assert await stored(web_app, Service, ids.cron) is None
     page = (await web_client.get(target)).text

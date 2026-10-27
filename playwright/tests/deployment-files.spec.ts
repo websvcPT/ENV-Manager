@@ -20,14 +20,14 @@ const test = scratchTest.extend<{ host: HostFolder }>({
 });
 
 test.describe('deployment files', () => {
-  test('are added from the deployment page, kept apart from the services and deployed', async ({
+  test('are added from the Files tab, kept apart from the services and deployed', async ({
     page,
     request,
     scratch,
     host,
   }) => {
     const id = await createDeployment(request, scratch.id, 'files-dep', host.root);
-    await page.goto(`/deployments/${id}`);
+    await page.goto(`/deployments/${id}/files`);
     const panel = page.locator('[data-fragment="deployment-files"]');
     await expect(panel).toContainText('No deployment files yet');
     await panel.locator('#deployment-files-add').click();
@@ -43,7 +43,7 @@ test.describe('deployment files', () => {
     await expect(page.locator('[data-fragment="page-header"] h1')).not.toContainText('Service:');
     await expect(page.locator('#service-rename-open, #service-delete-open')).toHaveCount(0);
 
-    await page.goto(`/deployments/${id}`);
+    await page.goto(`/deployments/${id}/files`);
     await expect(panel.locator('[data-fragment="deployment-files-row"]')).toContainText('1 file');
     await expect(page.locator('[data-fragment="services-table"]')).not.toContainText(
       'Deployment files',

@@ -303,10 +303,24 @@ test.describe('superadmin: deployment Access tab', () => {
       root: 'Deployment path: /srv/deployments/sample-a',
     });
     await expect(page.locator('[data-fragment="page-header"] button')).toHaveCount(0);
-    await expect(sections(page)).toHaveText(['Services', 'Deploy history', 'AccessSuperadmin']);
+    await expect(sections(page)).toHaveText([
+      'Overview',
+      'Files',
+      'History',
+      'Settings',
+      'AccessSuperadmin',
+    ]);
     await expect(sections(page).nth(0)).toHaveAttribute('href', `/deployments/${scratch.depA}`);
-    await expect(sections(page).nth(1)).toHaveAttribute('href', `/deployments/${scratch.depA}#hist`);
-    await expect(sections(page).nth(2)).toHaveAttribute('aria-current', 'page');
+    await expect(sections(page).nth(1)).toHaveAttribute('href', `/deployments/${scratch.depA}/files`);
+    await expect(sections(page).nth(2)).toHaveAttribute(
+      'href',
+      `/deployments/${scratch.depA}/activity`,
+    );
+    await expect(sections(page).nth(3)).toHaveAttribute(
+      'href',
+      `/deployments/${scratch.depA}/settings`,
+    );
+    await expect(sections(page).nth(4)).toHaveAttribute('aria-current', 'page');
     await expectBreadcrumb(page, [
       'Projects',
       [scratch.projectName, 'Project'],
@@ -341,8 +355,14 @@ test.describe('superadmin: deployment Access tab', () => {
     await sections(page).nth(0).click();
     await expect(page).toHaveURL(new RegExp(`/deployments/${scratch.depA}$`));
     await expectItemHeader(page, 'deployment', 'dep-a');
-    await expect(sections(page)).toHaveText(['Services', 'Deploy history', 'AccessSuperadmin']);
-    await sections(page).nth(2).click();
+    await expect(sections(page)).toHaveText([
+      'Overview',
+      'Files',
+      'History',
+      'Settings',
+      'AccessSuperadmin',
+    ]);
+    await sections(page).nth(4).click();
     await expect(page).toHaveURL(new RegExp(`/deployments/${scratch.depA}/access$`));
   });
 

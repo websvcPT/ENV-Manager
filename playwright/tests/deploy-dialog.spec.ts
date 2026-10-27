@@ -272,7 +272,7 @@ test.describe('pre-flight', () => {
   }) => {
     const { service, deployment } = await world(request, scratch.id, host);
     await createEnvironment(request, service, '.env.one', 'ONE=1\n');
-    await page.goto(`/deployments/${deployment}`);
+    await page.goto(`/deployments/${deployment}/files`);
     await (await rowAction(page.locator('#services [data-fragment="service-row"]'), 'deploy')).click();
     await expect(dialog(page).locator('[data-fragment="preflight-table"]')).toBeVisible();
     await expect(dialog(page).locator('#dd-title')).toHaveText('Deploy web');

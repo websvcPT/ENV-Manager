@@ -387,7 +387,7 @@ test.describe('deployment overview', () => {
     await expectNoValueInPage(page, DIST_DEFAULT_VALUE, ENV_VALUE, 'E2EDISTBODY', SAMPLE_A);
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
 
-    await page.goto(`/deployments/${deployment}`);
+    await page.goto(`/deployments/${deployment}/files`);
     await page.getByRole('link', { name: 'Check dist' }).click();
     await expect(page).toHaveURL(new RegExp(`/deployments/${deployment}/dist$`));
     await rows.nth(1).getByRole('link', { name: 'Open report' }).click();
@@ -413,7 +413,7 @@ test.describe('deployment overview', () => {
 
   test('refuses to check a deployment outside the allowed paths', async ({ page, browser }) => {
     const legacy = await deploymentId(browser, 'billing', 'legacy');
-    await page.goto(`/deployments/${legacy}`);
+    await page.goto(`/deployments/${legacy}/files`);
     await expect(page.getByRole('button', { name: 'Check dist' })).toBeDisabled();
     await page.goto(`/deployments/${legacy}/dist`);
     await expect(page.locator('main')).toContainText('This deployment is outside the allowed paths.');
@@ -450,7 +450,7 @@ test.describe('viewer', () => {
     expect(
       (await page.request.post(`/environments/${id}/add-missing?base=2`, { headers })).status(),
     ).toBe(403);
-    await page.goto(`/deployments/${prod}`);
+    await page.goto(`/deployments/${prod}/files`);
     await expect(page.getByRole('link', { name: 'Check dist' })).toHaveCount(0);
   });
 });

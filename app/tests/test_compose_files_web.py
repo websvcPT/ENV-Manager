@@ -72,7 +72,7 @@ async def test_the_superadmin_links_the_compose_files_from_the_panel(
     web_client: httpx.AsyncClient, web_app: FastAPI, geo: Geo
 ) -> None:
     await sign_in(web_client, "root")
-    panel = panel_of(main_of((await web_client.get(f"/deployments/{geo.id}")).text))
+    panel = panel_of(main_of((await web_client.get(f"/deployments/{geo.id}/settings")).text))
     assert "No Compose files linked" in panel
     assert f'hx-get="/deployments/{geo.id}/compose-files/link"' in panel
     dialog = (await web_client.get(f"/deployments/{geo.id}/compose-files/link", headers=HTMX)).text
@@ -82,7 +82,7 @@ async def test_the_superadmin_links_the_compose_files_from_the_panel(
 
     done = await link(web_client, geo, "docker-compose.override.yml", COMPOSE)
     assert done.status_code == 200
-    assert done.headers["hx-redirect"] == f"/deployments/{geo.id}?compose_linked=2,0"
+    assert done.headers["hx-redirect"] == f"/deployments/{geo.id}/settings?compose_linked=2,0"
     page = (await web_client.get(done.headers["hx-redirect"])).text
     assert "2 Compose files linked." in page
     rows = re.findall(r'data-fragment="compose-file-row" data-file="([^"]+)"', page)
@@ -92,7 +92,7 @@ async def test_the_superadmin_links_the_compose_files_from_the_panel(
     assert re.search(rf'value="{re.escape(COMPOSE)}"[^>]*checked', again)
 
     unlinked = await link(web_client, geo)
-    assert unlinked.headers["hx-redirect"] == f"/deployments/{geo.id}?compose_linked=0,0"
+    assert unlinked.headers["hx-redirect"] == f"/deployments/{geo.id}/settings?compose_linked=0,0"
     page = (await web_client.get(unlinked.headers["hx-redirect"])).text
     assert "Compose files unlinked." in page and "No Compose files linked" in page
 
@@ -121,7 +121,7 @@ async def test_an_admin_over_the_deployment_reads_a_compose_file_as_escaped_text
     await sign_in(web_client, "root")
     await link(web_client, geo, COMPOSE, "docker-compose.override.yml")
     await sign_in(web_client, "admin")
-    panel = panel_of(main_of((await web_client.get(f"/deployments/{geo.id}")).text))
+    panel = panel_of(main_of((await web_client.get(f"/deployments/{geo.id}/settings")).text))
     assert f'hx-get="/deployments/{geo.id}/compose-files/1"' in panel
     assert "compose-link-open" not in panel
     shown = await web_client.get(f"/deployments/{geo.id}/compose-files/1", headers=HTMX)
@@ -141,7 +141,7 @@ async def test_who_cannot_read_them_does_not_see_the_panel_or_the_text(
     await sign_in(web_client, "root")
     await link(web_client, geo, COMPOSE)
     await sign_in(web_client, user)
-    page = await web_client.get(f"/deployments/{geo.id}")
+    page = await web_client.get(f"/deployments/{geo.id}/settings")
     if page.status_code == 200:
         assert panel_of(main_of(page.text)) == ""
     shown = await web_client.get(f"/deployments/{geo.id}/compose-files/0", headers=HTMX)
@@ -186,7 +186,7 @@ async def test_linking_a_file_the_deployment_files_hold_removes_it_and_says_so(
     )
     assert added.status_code == 200, added.text
     done = await link(web_client, geo, COMPOSE)
-    assert done.headers["hx-redirect"] == f"/deployments/{geo.id}?compose_linked=1,1"
+    assert done.headers["hx-redirect"] == f"/deployments/{geo.id}/settings?compose_linked=1,1"
     page = (await web_client.get(done.headers["hx-redirect"])).text
     assert "1 Compose file linked. 1 file removed from the deployment files." in page
     assert (geo.root / COMPOSE).read_text() == GEOTRAVEL[COMPOSE]

@@ -286,8 +286,7 @@ def test_the_compact_breadcrumb_is_the_parent_as_a_back_link_and_the_current_ite
         "{% from 'macros/panels.html' import breadcrumb_compact %}"
         "{{ breadcrumb_compact([('Users', none)]) }}"
     )
-    assert "<a " not in single and "<svg" not in single and ">Users</span>" in single
-    assert "data-crumb-type" not in single
+    assert single.strip() == ""
 
 
 def test_the_load_more_row_replaces_itself_with_the_next_rows() -> None:

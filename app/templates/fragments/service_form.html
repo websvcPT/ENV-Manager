@@ -11,5 +11,5 @@
 {{ field("svc-name", "Service name", name="name", value=name, placeholder="e.g. redis", hint="Use the Compose service name.", error=error, extra_class="max-w-md", autocomplete="off", maxlength="100") }}
 </div>
 {% endcall %}
-<div class="flex flex-wrap gap-3">{{ button("Add service", kind="primary", type="submit") }}{{ button("Cancel", href="/deployments/" ~ deployment.id) }}</div>
+<div class="flex flex-wrap gap-3">{{ button("Add service", kind="primary", type="submit") }}{{ button("Cancel", href="/deployments/" ~ deployment.id ~ "/files") }}</div>
 </form>

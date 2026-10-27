@@ -22,7 +22,7 @@ inside the deployment root and the allowed paths.
 ## Deployment files
 
 The files the whole stack reads, such as the `.env` beside the Compose file (which Compose reads
-for `${VAR}` values), belong to the deployment rather than to one service. They are listed in the **Deployment files** panel of the deployment page, below the
+for `${VAR}` values), belong to the deployment rather than to one service. They are listed in the **Deployment files** panel of the deployment's Files tab, below the
 services. The superadmin adds the first one with **Add file** there; the Compose import adds them
 too.
 
@@ -41,7 +41,7 @@ by the id in the address of their page, like a service.
 
 The Compose files a deployment runs from are linked to it, read only: they usually live in the
 project's repository, so the app never versions, edits or writes them. The **Compose files** panel
-of the deployment page lists them, the base file first, and **View** opens the current text of
+of the deployment's Settings tab lists them, the base file first, and **View** opens the current text of
 one, read from the host at that moment. It is also on the Deployment files page. Opening a file
 is audited (`deployment.compose_view`) and is open to the superadmin and to the admins whose
 grants cover the whole deployment, because a Compose file can hold values under `environment:`;
@@ -67,7 +67,7 @@ left. Opening a folder clears the filter.
 ## Importing from Docker Compose
 
 A deployment that has no services yet can get its services and files from its Compose files. The
-superadmin starts it with **Import from Docker Compose** on the deployment page, which is offered
+superadmin starts it with **Import from Docker Compose** on the deployment's Files tab, which is offered
 only while the deployment has no services and lies inside the allowed paths. It is a one time
 action: it is refused as soon as the deployment has a service.
 
@@ -80,7 +80,7 @@ action: it is refused as soon as the deployment has a service.
    with the owner service, the file type and an optional dist file per file. Nothing is changed
    yet.
 3. **Confirm.** The confirmation scans the files again and says what will be created. After the
-   import the deployment page shows a toast with the counts.
+   import the Files tab shows a toast with the counts.
 
 What is found:
 
@@ -128,7 +128,7 @@ What the import creates, in one transaction (all or nothing):
   empty version 1 (comment "Created empty from Docker Compose"). Neither is written to the host by
   the import: the first deploy writes it. A certificate cannot be created empty.
 - The deployment files are created when one of their files is ticked, or keep the ones made
-  earlier from the deployment page.
+  earlier from the Files tab.
 - For each imported service that had files on the host, one run in Deploy history with the
   trigger shown as **Imported from Compose** and an unchanged result per file. It records version
   1 as the content the file held, which is the starting point of the drift check: a version 2

@@ -127,6 +127,15 @@ def section_links(page: str) -> list[str]:
     return [re.sub(r"<[^>]+>", "", anchor).strip() for anchor in anchors]
 
 
+def current_section(page: str) -> str | None:
+    """The address of the open section link under the header, None when none is marked."""
+    nav = re.search(r'<nav aria-label="Sections".*?</nav>', page, re.DOTALL)
+    assert nav is not None
+    current = re.findall(r'<a href="([^"]+)" aria-current="page"', nav.group(0))
+    assert len(current) <= 1
+    return current[0] if current else None
+
+
 @dataclass(frozen=True)
 class ItemHeader:
     """The visible text of the header of a project, deployment, service or environment page.

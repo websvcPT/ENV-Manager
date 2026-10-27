@@ -115,12 +115,9 @@ test.describe('compact breadcrumb', () => {
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
   });
 
-  test('shows just the one item of a page without a parent @narrow', async ({ page }) => {
+  test('shows none on a page without a parent @narrow', async ({ page }) => {
     await page.goto('/projects');
-    const compact = compactBreadcrumb(page);
-    await expect(compact.locator('li')).toHaveText(['Projects']);
-    await expect(compact.getByRole('link')).toHaveCount(0);
-    await expect(compact.locator('[data-crumb-type]')).toHaveCount(0);
+    await expect(compactBreadcrumb(page)).toHaveCount(0);
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
   });
 });

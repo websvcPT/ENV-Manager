@@ -1,0 +1,16 @@
+{#- Shared frame of the deployment tabs: page header with the title and the path, the scope or
+    outside-allowed note and the tabs. Pages extend this and fill the `tab` block. Context:
+    deployment (a DeploymentDetail), tab (the open tab key), can_manage_grants. -#}
+{% extends "layouts/app.html" %}
+{% from "macros/access.html" import deployment_tabs %}
+{% from "macros/feedback.html" import note %}
+{% from "macros/panels.html" import deployment_location, item_header %}
+{% set active_nav = "projects" %}
+{% set breadcrumbs = [("Projects", "/projects"), (deployment.project_name, "/projects/" ~ deployment.project_id, "Project"), (deployment.name, none, "Deployment")] %}
+{% block title %}{{ deployment.name }}{% endblock %}
+{% block content %}
+{{ item_header("deployment", deployment.name, location=deployment_location(deployment)) }}
+{% if deployment.outside_allowed %}{{ note("This deployment is outside the allowed paths. It cannot be deployed or checked until the path is allowed again or the deployment is moved.", tone="warn") }}{% elif not deployment.full %}{{ note("You have access to " ~ ("one environment" if deployment.services | map(attribute="environments") | sum == 1 else "selected environments") ~ " of this deployment. Only " ~ ("its service is" if deployment.services | length == 1 else "their services are") ~ " shown.") }}{% endif %}
+{{ deployment_tabs(deployment, can_manage_grants, tab) }}
+{% block tab %}{% endblock %}
+{% endblock %}

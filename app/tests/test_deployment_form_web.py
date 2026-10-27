@@ -106,7 +106,7 @@ async def test_edit_page_is_prefilled_and_shows_the_root_checks(
     assert "outside the allowed paths" in edit_page.text
     assert f'hx-post="/deployments/{layout.legacy}/edit"' in edit_page.text
     assert ">Save deployment</button>" in edit_page.text
-    assert f'href="/deployments/{layout.legacy}"' in edit_page.text
+    assert f'href="/deployments/{layout.legacy}/settings"' in edit_page.text
 
 
 @pytest.mark.parametrize("user", ["admin", "viewer"])
@@ -207,7 +207,7 @@ async def test_create_redirects_and_audits(
         "overwrite",
     )
     assert entry.deployment_id == created.id and entry.actor_name == "root"
-    page = await web_client.get(f"/deployments/{created.id}")
+    page = await web_client.get(f"/deployments/{created.id}/settings")
     assert page.status_code == 200 and "0640, www-data:" in page.text
 
 
@@ -256,7 +256,7 @@ async def test_edit_saves_and_audits_then_shows_the_toast(
         form_data(layout, name="prod", root=str(layout.host / "beta"), file_group="deploy"),
     )
     assert response.status_code == 200
-    assert response.headers["hx-redirect"] == f"/deployments/{layout.prod}?saved=true"
+    assert response.headers["hx-redirect"] == f"/deployments/{layout.prod}/settings?saved=true"
     async with web_app.state.session_factory() as db:
         stored = await db.get(Deployment, layout.prod)
         entry = (
@@ -265,9 +265,10 @@ async def test_edit_saves_and_audits_then_shows_the_toast(
     assert stored is not None
     assert (stored.root_path, stored.file_group) == (str(layout.host / "beta"), "deploy")
     assert entry.details["changed"] == ["root_path", "file_owner", "file_group"]
-    page = await web_client.get(f"/deployments/{layout.prod}?saved=true")
+    page = await web_client.get(f"/deployments/{layout.prod}/settings?saved=true")
     assert "Deployment saved" in page.text
-    assert "Deployment saved" not in (await web_client.get(f"/deployments/{layout.prod}")).text
+    settled = await web_client.get(f"/deployments/{layout.prod}/settings")
+    assert "Deployment saved" not in settled.text
 
 
 async def test_legacy_deployment_must_be_moved_inside_the_list_to_save(

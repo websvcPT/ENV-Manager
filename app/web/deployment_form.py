@@ -71,7 +71,7 @@ def _edit_target(deployment_id: int) -> FormTarget:
     return FormTarget(
         action=f"/deployments/{deployment_id}/edit",
         submit_label="Save deployment",
-        cancel_href=f"/deployments/{deployment_id}",
+        cancel_href=f"/deployments/{deployment_id}/settings",
     )
 
 
@@ -252,7 +252,7 @@ async def edit_deployment_route(
     await update_deployment(
         db, deployment, clean, actor=access.auth.user, ip_address=client_address(request)
     )
-    return hx_redirect(f"/deployments/{deployment.id}?saved=true")
+    return hx_redirect(f"/deployments/{deployment.id}/settings?saved=true")
 
 
 @router.get("/paths/validate", include_in_schema=False)

@@ -91,18 +91,19 @@ test.describe('import from Docker Compose with a usable Docker', () => {
     await expect(dialog.locator(`[data-import-command="${FILES_NAME}"] code`)).toHaveCount(6);
     await dialog.getByRole('button', { name: 'Import', exact: true }).click();
 
-    await expect(page).toHaveURL(new RegExp(`/deployments/${id}\\?imported=2,4,4,0,0,2$`));
+    await expect(page).toHaveURL(new RegExp(`/deployments/${id}/files\\?imported=2,4,4,0,0,2$`));
     await expect(page.locator('[data-fragment="toast"]')).toContainText(
       '2 post-deploy commands set.',
     );
-    await expect(
-      page.locator('[data-fragment="compose-file-row"][data-file="compose.yaml"]'),
-    ).toBeVisible();
     const filesRow = page.locator('[data-fragment="deployment-files-row"]');
     await expect(filesRow).toContainText('1 file');
     await filesRow.locator('a').first().click();
     await expect(page.locator('#postdeploy-settings #cmds')).toHaveValue(UP);
-    await page.goto(`/deployments/${id}`);
+    await page.goto(`/deployments/${id}/settings`);
+    await expect(
+      page.locator('[data-fragment="compose-file-row"][data-file="compose.yaml"]'),
+    ).toBeVisible();
+    await page.goto(`/deployments/${id}/files`);
     await page.locator('#services [data-fragment="service-row"] th a', { hasText: 'api' }).click();
     await expect(page.locator('#postdeploy-settings #cmds')).toHaveValue(
       `${UP} --no-deps --force-recreate api`,

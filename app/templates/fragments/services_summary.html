@@ -1,0 +1,21 @@
+{#- The services of a deployment in brief, read only: how many environments each has and how its
+    last deploy went, with a link to the service. The structure actions live on the Files tab.
+    Context: deployment (a DeploymentDetail). -#}
+{% from "macros/deploy.html" import deploy_state_cells %}
+{% from "macros/feedback.html" import empty_state %}
+{% from "macros/panels.html" import panel, table %}
+{% from "macros/row_actions.html" import row_actions %}
+{% call panel("Services", "services-summary-title", fragment="services-summary") %}
+{%- if deployment.services -%}
+{% call table("Services", ["Service", "Environments in your scope" if not deployment.full else "Environments", "Last deploy", "Post-deploy", "State flags", "Actions"], right_columns=[5], min_width_class="min-w-[860px]") %}
+{%- for row in deployment.services %}
+<tr data-fragment="service-summary-row"><th scope="row" class="border-t border-line px-4 py-3.5 text-left font-semibold"><a href="/services/{{ row.id }}" class="font-semibold text-link hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus font-mono text-ink">{{ row.name }}</a></th>
+<td class="border-t border-line px-4 py-3.5">{{ row.environments }}</td>
+{{ deploy_state_cells(row) }}
+<td class="border-t border-line px-4 py-3.5 whitespace-nowrap text-right">{{ row_actions("service-summary-" ~ row.id, row.name, [{"key": "open", "label": "Open", "icon": "open", "href": "/services/" ~ row.id, "primary": true}]) }}</td></tr>
+{%- endfor %}
+{% endcall %}
+{%- else -%}
+{{ empty_state("No services yet", "A service groups the environments that feed one workload. Deploys run per service.") }}
+{%- endif -%}
+{% endcall %}

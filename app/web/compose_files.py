@@ -140,5 +140,5 @@ async def link_files(
         return render(request, LINK_FRAGMENT, context, status_code=422)
     linked = len(deployment.compose_files or ())
     return hx_redirect(
-        f"/deployments/{deployment.id}?compose_linked={linked},{len(dropped.removed)}"
+        f"/deployments/{deployment.id}/settings?compose_linked={linked},{len(dropped.removed)}"
     )

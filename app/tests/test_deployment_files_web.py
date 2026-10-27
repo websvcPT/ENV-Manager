@@ -61,7 +61,7 @@ async def test_the_panel_offers_to_add_the_first_file_and_creates_the_files_once
     web_client: httpx.AsyncClient, web_app: FastAPI, prod: int
 ) -> None:
     await sign_in(web_client, "root")
-    page = main_of((await web_client.get(f"/deployments/{prod}")).text)
+    page = main_of((await web_client.get(f"/deployments/{prod}/files")).text)
     panel = re.search(r'<section[^>]*data-fragment="deployment-files".*?</section>', page, re.S)
     assert panel is not None and "No deployment files yet" in panel.group(0)
     assert f'hx-post="/deployments/{prod}/deployment-files"' in panel.group(0)
@@ -86,7 +86,7 @@ async def test_the_files_are_never_listed_as_a_service(
     await sign_in(web_client, "root")
     files_id = await open_files(web_client, prod)
     await add_file(web_client, web_app, files_id, ".env")
-    page = main_of((await web_client.get(f"/deployments/{prod}")).text)
+    page = main_of((await web_client.get(f"/deployments/{prod}/files")).text)
     services = re.search(r'<section[^>]*data-fragment="services-table".*?</section>', page, re.S)
     assert services is not None and DEPLOYMENT_FILES_NAME not in services.group(0)
     files = re.search(r'<section[^>]*data-fragment="deployment-files".*?</section>', page, re.S)
@@ -140,7 +140,7 @@ async def test_only_the_superadmin_creates_the_files(
     await sign_in(web_client, user)
     response = await post(web_client, f"/deployments/{prod}/deployment-files", {})
     assert response.status_code in (403, 404)
-    page = (await web_client.get(f"/deployments/{prod}")).text
+    page = (await web_client.get(f"/deployments/{prod}/files")).text
     assert 'data-fragment="deployment-files"' not in page
 
 

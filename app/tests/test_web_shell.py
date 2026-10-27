@@ -394,15 +394,14 @@ async def test_logout_form_ends_the_session(web_client: httpx.AsyncClient) -> No
     assert (await web_client.get("/projects")).status_code == 303
 
 
-async def test_a_page_with_one_item_has_only_that_in_the_compact_breadcrumb(
+async def test_a_page_with_one_item_has_no_compact_breadcrumb(
     web_client: httpx.AsyncClient,
 ) -> None:
-    """No back link when there is no parent; with a parent the trail is parent and current."""
+    """With no parent there is no compact trail; with a parent it is parent and current."""
     await sign_in(web_client, "root")
     projects = (await web_client.get("/projects")).text
-    assert breadcrumb_of(projects, compact=True) == [Crumb("Projects", None, None)]
-    compact = re.search(r'<nav [^>]*data-breadcrumb="compact".*?</nav>', projects, re.DOTALL)
-    assert compact is not None and "<svg" not in compact.group(0)
+    assert breadcrumb_of(projects) == [Crumb("Projects", None, None)]
+    assert 'data-breadcrumb="compact"' not in projects
 
     section = (await web_client.get("/settings/smtp")).text
     full = breadcrumb_of(section)

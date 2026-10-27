@@ -1,9 +1,8 @@
 {#- The services panel of a deployment and its empty state. Context: deployment,
     can_manage_structure. -#}
-{% from "macros/badges.html" import badge, deploy_status_badge, post_deploy_badge %}
 {% from "macros/buttons.html" import button %}
+{% from "macros/deploy.html" import deploy_state_cells %}
 {% from "macros/feedback.html" import empty_state %}
-{% from "macros/icons.html" import icon %}
 {% from "macros/panels.html" import panel, table %}
 {% from "macros/row_actions.html" import row_actions %}
 {% set can_import = can_manage_structure and not deployment.services and not deployment.outside_allowed %}
@@ -14,9 +13,7 @@
 {%- for row in deployment.services %}
 <tr data-fragment="service-row"><th scope="row" class="border-t border-line px-4 py-3.5 text-left font-semibold"><a href="/services/{{ row.id }}" class="font-semibold text-link hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus font-mono text-ink">{{ row.name }}</a></th>
 <td class="border-t border-line px-4 py-3.5">{{ row.environments }}</td>
-<td class="border-t border-line px-4 py-3.5">{% if row.last_deploy %}{{ deploy_status_badge(row.last_deploy.status.value) }}<span class="mt-1 block text-xs text-ink2">{{ row.last_deploy.started_at.strftime("%Y-%m-%d %H:%M") }}{% if row.last_deploy.actor %} · {{ row.last_deploy.actor }}{% endif %}{% if row.last_deploy.trigger_label %} · {{ row.last_deploy.trigger_label }}{% endif %}</span>{% else %}{{ badge("never", "No deploys yet") }}{% endif %}</td>
-<td class="border-t border-line px-4 py-3.5">{% if row.post_deploy %}{{ post_deploy_badge(row.post_deploy.value) }}{% else %}<span class="text-ink3">None</span>{% endif %}</td>
-<td class="border-t border-line px-4 py-3.5">{% if row.flags %}<span class="flex flex-wrap gap-1.5">{% for flag in row.flags %}{{ deploy_status_badge(flag.value) }}{% endfor %}</span>{% else %}<span class="inline-flex items-center gap-1.5 text-[13px] text-ink2">{{ icon("check", "size-3.5", "2.4") }}No flags</span>{% endif %}</td>
+{{ deploy_state_cells(row) }}
 <td class="border-t border-line px-4 py-3.5 whitespace-nowrap text-right">{{ row_actions("service-" ~ row.id, row.name, [{"key": "open", "label": "Open", "icon": "open", "href": "/services/" ~ row.id, "primary": true}] + ([{"key": "deploy", "label": "Deploy", "icon": "arrow-up", "attrs": {"data_js": "dialog-open", "data_target": "deploy-dialog", "aria_haspopup": "dialog", "hx_post": "/services/" ~ row.id ~ "/deploy/preflight", "hx_target": "#deploy-dialog", "hx_swap": "innerHTML"}}] if row.can_deploy and not deployment.outside_allowed else []) + ([
   {"key": "rename", "label": "Rename", "icon": "pencil", "href": "/services/" ~ row.id ~ "/rename"},
   {"key": "delete", "label": "Delete", "icon": "trash", "danger": true, "attrs": {"data_js": "dialog-open", "data_target": "service-delete", "aria_haspopup": "dialog", "hx_get": "/services/" ~ row.id ~ "/delete", "hx_target": "#service-delete", "hx_swap": "innerHTML"}}

@@ -46,7 +46,7 @@ https://www.buymeacoffee.com/websvc
 - **Deployment files.** The files the whole stack reads, such as the `.env` beside the Compose
   file, belong to the deployment, with their own deploy and post-deploy command.
 - **Compose files, read only.** Link a deployment's Compose files, by the import or later, and read
-  their current text from the deployment page; they stay in your repository and are never managed
+  their current text from the Settings tab of the deployment; they stay in your repository and are never managed
   or written.
 - **Drift protection.** If the file on disk changed outside the app, the deploy halts. A drift
   view compares the file on disk, the last deployed version and the managed version key by key

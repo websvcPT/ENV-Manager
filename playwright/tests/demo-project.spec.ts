@@ -32,7 +32,7 @@ test.describe('superadmin', () => {
 
   test('shows the stack deployment with its api and db services', async ({ page, browser }) => {
     const id = await deploymentId(browser, 'demo', 'stack');
-    await page.goto(`/deployments/${id}`);
+    await page.goto(`/deployments/${id}/files`);
     await expect(page.locator('[data-fragment="page-header"] h1')).toHaveText('Deployment: stack');
     await expect(page.locator('nav[data-breadcrumb="full"] [data-crumb-label]')).toHaveText([
       'Projects',

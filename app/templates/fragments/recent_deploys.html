@@ -1,0 +1,22 @@
+{#- The newest deploys of a deployment across its services, with a link to the whole history.
+    Context: deployment (a DeploymentDetail). -#}
+{% from "macros/badges.html" import deploy_status_badge, post_deploy_badge %}
+{% from "macros/buttons.html" import button %}
+{% from "macros/feedback.html" import empty_state %}
+{% from "macros/panels.html" import panel, table %}
+{% set all_history %}{{ button("View all history", href="/deployments/" ~ deployment.id ~ "/activity") }}{% endset %}
+{% call panel("Latest deploys", "recent-deploys-title", fragment="recent-deploys", actions=all_history) %}
+{%- if deployment.history -%}
+{% call table("Latest deploys across services", ["Time", "Service", "Who", "Result", "Post-deploy"], min_width_class="min-w-[640px]") %}
+{%- for row in deployment.history[:5] %}
+<tr data-fragment="recent-deploy-row"><td class="border-t border-line px-4 py-3.5 whitespace-nowrap">{{ row.started_at.strftime("%Y-%m-%d %H:%M") }}</td>
+<td class="border-t border-line px-4 py-3.5"><span class="font-mono text-[13px]">{{ row.service }}</span></td>
+<td class="border-t border-line px-4 py-3.5 text-ink2">{{ row.who }}{% if row.trigger_label %}<span class="mt-1 block text-xs text-ink3">{{ row.trigger_label }}</span>{% endif %}</td>
+<td class="border-t border-line px-4 py-3.5">{{ deploy_status_badge(row.status.value) }}</td>
+<td class="border-t border-line px-4 py-3.5">{{ post_deploy_badge(row.post_deploy.value) }}</td></tr>
+{%- endfor %}
+{% endcall %}
+{%- else -%}
+{{ empty_state("No deploys yet", "Deploys of the services of this deployment will be listed here.", "clock") }}
+{%- endif -%}
+{% endcall %}

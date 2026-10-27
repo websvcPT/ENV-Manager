@@ -225,6 +225,7 @@ test.describe('superadmin create', () => {
     await expectLocation(page, 'deployment', {
       root: `Deployment path: ${SAMPLE_A}`,
     });
+    await page.goto(`${page.url()}/settings`);
     const policies = page.locator('[data-fragment="policies-panel"]');
     await expect(policies).toContainText('Warn and continue');
     await expect(policies).toContainText('Overwrite');
@@ -287,7 +288,7 @@ test.describe('superadmin edit', () => {
     await expect(form(page).getByRole('button', { name: 'Save deployment' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Cancel' })).toHaveAttribute(
       'href',
-      `/deployments/${id}`,
+      `/deployments/${id}/settings`,
     );
 
     await expect(page.locator('#name-h')).toContainText('Letters, numbers, spaces');
@@ -297,7 +298,7 @@ test.describe('superadmin edit', () => {
     await page.locator('#group').fill('deploy');
     await form(page).getByRole('button', { name: 'Save deployment' }).click();
 
-    await expect(page).toHaveURL(`/deployments/${id}?saved=true`);
+    await expect(page).toHaveURL(`/deployments/${id}/settings?saved=true`);
     await expect(page.locator('[data-fragment="toast"]')).toContainText('Deployment saved');
     await expectItemHeader(page, 'deployment', 'Edited Name EU');
     await expect(page.locator('[data-location="root"]')).toHaveText(`Deployment path: ${SAMPLE_B}`);

@@ -189,9 +189,9 @@ test.describe('superadmin', () => {
     expect(explainerTop + (await box(explainer)).height).toBeGreaterThan(pageHeight - 120);
   });
 
-  test('is reached from the deployment page and lists a failed run', async ({ page, browser }) => {
+  test('is reached from the Files tab and lists a failed run', async ({ page, browser }) => {
     const deployment = await deploymentId(browser, 'Fancy Proj. Name', 'prod');
-    await page.goto(`/deployments/${deployment}`);
+    await page.goto(`/deployments/${deployment}/files`);
     const firstService = page.locator('#services [data-fragment="service-row"]').first();
     await (await rowAction(firstService, 'open')).click();
     await expect(page).toHaveURL(/\/services\/\d+$/);

@@ -2,8 +2,10 @@
     native <dialog id="deploy-dialog"> per page, outside every swappable fragment; each
     response replaces its inner content (the `deploy-dialog` fragment) so the step header can
     change. `app.js` puts the loading content back whenever a control opens the dialog. -#}
+{% from "macros/badges.html" import badge, deploy_status_badge, post_deploy_badge %}
 {% from "macros/buttons.html" import icon_button %}
 {% from "macros/feedback.html" import skeleton %}
+{% from "macros/icons.html" import icon %}
 
 {#- Header of every step: title, where it runs and the two steps. `step` is 1 or 2. -#}
 {% macro deploy_head(service, step) -%}
@@ -26,4 +28,13 @@
 {% macro deploy_shell() -%}
 <dialog id="deploy-dialog" aria-labelledby="dd-title" data-loading="deploy-dialog-loading" class="m-auto max-h-[92vh] w-[820px] max-w-[calc(100%_-_1.5rem)] overflow-auto rounded-dialog bg-surface p-0 text-ink shadow-dialog backdrop:bg-scrim">{{ deploy_loading() }}</dialog>
 <template id="deploy-dialog-loading">{{ deploy_loading() }}</template>
+{%- endmacro %}
+
+{#- The three cells of a service row that tell how its deploys went: the last deploy, the
+    post-deploy outcome of that run and the state flags. `row` is a service row of a deployment
+    detail (or its deployment files row). -#}
+{% macro deploy_state_cells(row) -%}
+<td class="border-t border-line px-4 py-3.5">{% if row.last_deploy %}{{ deploy_status_badge(row.last_deploy.status.value) }}<span class="mt-1 block text-xs text-ink2">{{ row.last_deploy.started_at.strftime("%Y-%m-%d %H:%M") }}{% if row.last_deploy.actor %} · {{ row.last_deploy.actor }}{% endif %}{% if row.last_deploy.trigger_label %} · {{ row.last_deploy.trigger_label }}{% endif %}</span>{% else %}{{ badge("never", "No deploys yet") }}{% endif %}</td>
+<td class="border-t border-line px-4 py-3.5">{% if row.post_deploy %}{{ post_deploy_badge(row.post_deploy.value) }}{% else %}<span class="text-ink3">None</span>{% endif %}</td>
+<td class="border-t border-line px-4 py-3.5">{% if row.flags %}<span class="flex flex-wrap gap-1.5">{% for flag in row.flags %}{{ deploy_status_badge(flag.value) }}{% endfor %}</span>{% else %}<span class="inline-flex items-center gap-1.5 text-[13px] text-ink2">{{ icon("check", "size-3.5", "2.4") }}No flags</span>{% endif %}</td>
 {%- endmacro %}

@@ -1,4 +1,5 @@
-"""Deployment detail routes: the page and its refreshable services and history panels."""
+"""Deployment detail routes: the Overview, Files, History and Settings tabs and the refreshable
+services and history panels."""
 
 from dataclasses import dataclass
 from typing import Annotated, Any
@@ -101,10 +102,12 @@ def compose_linked_message(counts: str) -> str:
     return text
 
 
-def _page_context(access: DeploymentContext, **extra: Any) -> dict[str, Any]:
-    """What the detail page and its panels need: the deployment and what the caller may do."""
+def _page_context(access: DeploymentContext, tab: str, **extra: Any) -> dict[str, Any]:
+    """What a tab page and its panels need: the deployment, the open tab and what the caller may
+    do."""
     return {
         "deployment": access.deployment,
+        "tab": tab,
         "can_manage_structure": access.scope.can(Capability.MANAGE_STRUCTURE),
         "compose_deployment_id": access.deployment.id,
         "compose_files": access.deployment.compose_files,
@@ -130,37 +133,82 @@ async def _access_subject(
         access.deployment.project_id,
         access.auth,
         "pages/deployment_access.html",
-        _page_context(access),
+        _page_context(access, "access"),
     )
 
 
 mount_access_routes(router, NodeKind.DEPLOYMENT, _access_subject)
 
 
+async def _whole_deployment(
+    access: Annotated[DeploymentContext, Depends(deployment_access())],
+) -> DeploymentContext:
+    """The deployment for a caller who sees all of it; a caller who reaches it only through a
+    granted environment is refused (403), since the settings are not theirs to read."""
+    if not access.deployment.full:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "not permitted")
+    return access
+
+
 @router.get("/deployments/{deployment_id:int}", include_in_schema=False)
 async def deployment_page(
+    request: Request, access: Annotated[DeploymentContext, Depends(deployment_access())]
+) -> Response:
+    """The Overview tab: the status strip, the services in brief and the newest deploys."""
+    return render(request, "pages/deployment.html", _page_context(access, "overview"))
+
+
+@router.get("/deployments/{deployment_id:int}/files", include_in_schema=False)
+async def files_tab(
     request: Request,
     access: Annotated[DeploymentContext, Depends(deployment_access())],
-    saved: bool = False,
     deleted: str = "",
     imported: str = "",
-    compose_linked: str = "",
 ) -> Response:
-    """The deployment detail page.
+    """The Files tab: the services with their actions and the deployment files.
 
-    ``saved`` shows the toast after the edit form saved, ``deleted`` (service) the one after a
-    service of the deployment was deleted, ``imported`` (the counts) the one after a Docker
-    Compose import and ``compose_linked`` (the counts) the one after its Compose files were
-    linked.
+    ``deleted`` (service) shows the toast after a service of the deployment was deleted and
+    ``imported`` (the counts) the one after a Docker Compose import.
     """
     return render(
         request,
-        "pages/deployment.html",
+        "pages/deployment_files.html",
         _page_context(
             access,
-            saved=saved,
+            "files",
             deleted="service" if deleted == "service" else "",
             imported=imported_message(imported),
+        ),
+    )
+
+
+@router.get("/deployments/{deployment_id:int}/activity", include_in_schema=False)
+async def activity_tab(
+    request: Request, access: Annotated[DeploymentContext, Depends(deployment_access())]
+) -> Response:
+    """The History tab: the deploy history across the services in the caller's scope."""
+    return render(request, "pages/deployment_activity.html", _page_context(access, "activity"))
+
+
+@router.get("/deployments/{deployment_id:int}/settings", include_in_schema=False)
+async def settings_tab(
+    request: Request,
+    access: Annotated[DeploymentContext, Depends(_whole_deployment)],
+    saved: bool = False,
+    compose_linked: str = "",
+) -> Response:
+    """The Settings tab: the policies, the Compose files, Edit and Delete.
+
+    ``saved`` shows the toast after the edit form saved and ``compose_linked`` (the counts) the
+    one after the Compose files were linked.
+    """
+    return render(
+        request,
+        "pages/deployment_settings.html",
+        _page_context(
+            access,
+            "settings",
+            saved=saved,
             compose_linked=compose_linked_message(compose_linked),
         ),
     )
@@ -215,7 +263,7 @@ async def services_table(
     request: Request, access: Annotated[DeploymentContext, Depends(deployment_access())]
 ) -> Response:
     """The services panel, refreshed when a deploy finishes."""
-    return render(request, "fragments/services_table.html", _page_context(access))
+    return render(request, "fragments/services_table.html", _page_context(access, "files"))
 
 
 @router.get("/deployments/{deployment_id:int}/history", include_in_schema=False)
@@ -223,4 +271,4 @@ async def deploy_history(
     request: Request, access: Annotated[DeploymentContext, Depends(deployment_access())]
 ) -> Response:
     """The deploy history panel, refreshed when a deploy finishes."""
-    return render(request, "fragments/deploy_history.html", _page_context(access))
+    return render(request, "fragments/deploy_history.html", _page_context(access, "activity"))

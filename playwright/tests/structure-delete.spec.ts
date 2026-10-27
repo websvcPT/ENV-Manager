@@ -89,7 +89,7 @@ test.describe('rename a service', () => {
   }) => {
     const deployment = await createDeployment(request, scratch.id, 'rn', host.root);
     const service = await createService(request, deployment, 'listed');
-    await page.goto(`/deployments/${deployment}`);
+    await page.goto(`/deployments/${deployment}/files`);
     const rename = await rowAction(serviceRow(page, 'listed'), 'rename');
     await expect(rename).toHaveAttribute('href', `/services/${service}/rename`);
   });
@@ -106,7 +106,7 @@ test.describe('delete a service', () => {
     const service = await createService(request, deployment, 'doomed');
     await createService(request, deployment, 'kept');
     await createEnvironment(request, service, '.env.doomed', 'A=1\n');
-    await page.goto(`/deployments/${deployment}`);
+    await page.goto(`/deployments/${deployment}/files`);
 
     const remove = await rowAction(serviceRow(page, 'doomed'), 'delete');
     await remove.click();
@@ -123,7 +123,7 @@ test.describe('delete a service', () => {
 
     await dialog.locator('#dsn').fill('doomed');
     await dialog.locator('button[type="submit"]').click();
-    await expect(page).toHaveURL(new RegExp(`/deployments/${deployment}\\?deleted=service$`));
+    await expect(page).toHaveURL(new RegExp(`/deployments/${deployment}/files\\?deleted=service$`));
     await expect(page.locator('[data-fragment="toast"]')).toContainText('Service deleted');
     await expect(serviceRow(page, 'doomed')).toHaveCount(0);
     await expect(serviceRow(page, 'kept')).toHaveCount(1);
@@ -159,7 +159,7 @@ test.describe('delete a service', () => {
     await page.locator('#service-delete-open').click();
     await page.locator('#dsn').fill('gone');
     await page.locator('#delete-service-form button[type="submit"]').click();
-    await expect(page).toHaveURL(new RegExp(`/deployments/${deployment}\\?deleted=service$`));
+    await expect(page).toHaveURL(new RegExp(`/deployments/${deployment}/files\\?deleted=service$`));
     await expect(serviceRow(page, 'gone')).toHaveCount(0);
   });
 });
@@ -205,14 +205,14 @@ test.describe('delete a deployment', () => {
     }
   });
 
-  test('can be cancelled from the deployment page and nothing is deleted', async ({
+  test('can be cancelled from the Settings tab and nothing is deleted', async ({
     page,
     request,
     scratch,
     host,
   }) => {
     const deployment = await createDeployment(request, scratch.id, 'stays', host.root);
-    await page.goto(`/deployments/${deployment}`);
+    await page.goto(`/deployments/${deployment}/settings`);
     await page.locator('#deployment-delete-open').click();
     const dialog = page.locator('#deployment-delete');
     await expect(dialog.locator('#ddn')).toBeVisible();
@@ -238,9 +238,10 @@ for (const user of ['admin', 'viewer'] as const) {
       browser,
     }) => {
       const { deployment, service } = await seededPages(browser);
-      await page.goto(`/deployments/${deployment}`);
+      await page.goto(`/deployments/${deployment}/files`);
       await expect(actionControls(page.locator('#services'), 'delete')).toHaveCount(0);
       await expect(actionControls(page.locator('#services'), 'rename')).toHaveCount(0);
+      await page.goto(`/deployments/${deployment}/settings`);
       await expect(page.locator('#deployment-delete-open')).toHaveCount(0);
       await page.goto(`/services/${service}`);
       await expect(page.locator('#service-rename-open')).toHaveCount(0);

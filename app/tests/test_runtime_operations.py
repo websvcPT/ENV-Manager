@@ -108,7 +108,11 @@ async def ids(web_app: FastAPI, tmp_path: Path) -> Ids:
 # Every limit counts the one statement that asks whether the allowed path list is empty, for the
 # first-run banner of a superadmin page.
 PAGE_LIMITS = (
-    ("deployment page", "/deployments/{deployment}", 18),
+    ("deployment overview", "/deployments/{deployment}", 18),
+    ("deployment files tab", "/deployments/{deployment}/files", 18),
+    ("deployment history tab", "/deployments/{deployment}/activity", 18),
+    ("deployment settings tab", "/deployments/{deployment}/settings", 18),
+    ("deployment access tab", "/deployments/{deployment}/access", 24),
     ("deployment edit form", "/deployments/{deployment}/edit", 20),
     ("project page", "/projects/{project}", 20),
     ("project activity", "/projects/{project}/activity", 21),

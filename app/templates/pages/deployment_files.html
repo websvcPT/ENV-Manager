@@ -1,0 +1,16 @@
+{#- The Files tab of a deployment: Check dist, the services with their structure actions, the
+    deployment files and the dialogs they open. Context: deployment (a DeploymentDetail),
+    can_manage_structure, can_manage_grants, deleted and imported (the toast texts, optional). -#}
+{% extends "layouts/deployment.html" %}
+{% from "macros/buttons.html" import button %}
+{% from "macros/deploy.html" import deploy_shell %}
+{% from "macros/dialogs.html" import loaded_dialog %}
+{% from "macros/feedback.html" import toast %}
+{% block tab %}
+{% if deployment.can_check_dist %}<div data-fragment="files-actions" class="flex flex-wrap justify-end gap-2.5">{{ button("Check dist", href=none if deployment.outside_allowed else "/deployments/" ~ deployment.id ~ "/dist", icon_name="check", icon_stroke="2.4", disabled=deployment.outside_allowed) }}</div>{% endif %}
+{% include "fragments/services_table.html" %}
+{% include "fragments/deployment_files_panel.html" %}
+{% if deployment.can_check_dist and not deployment.outside_allowed %}{{ deploy_shell() }}{% endif %}
+{% if can_manage_structure %}{{ loaded_dialog("service-delete", "Delete service", width="560") }}{% endif %}
+{% if imported | default("") %}{{ toast("success", imported, "Import finished", floating=true) }}{% elif deleted | default("") == "service" %}{{ toast("success", "The service and its environments were deleted.", "Service deleted", floating=true) }}{% endif %}
+{% endblock %}

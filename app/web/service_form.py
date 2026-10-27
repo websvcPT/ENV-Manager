@@ -167,4 +167,4 @@ async def delete_service_route(
             {"service": access.service, "form_value": confirm_name, "form_error": error},
             status_code=422,
         )
-    return hx_redirect(f"/deployments/{access.service.deployment_id}?deleted=service")
+    return hx_redirect(f"/deployments/{access.service.deployment_id}/files?deleted=service")
