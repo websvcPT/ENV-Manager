@@ -5,6 +5,7 @@ import type { Locator, Page } from '@playwright/test';
 
 import { createDeployment } from '../deployments-api';
 import { createEnvironment } from '../environments-api';
+import { createHostFolder } from '../host-files';
 import { csrfHeaders } from '../http';
 import { createService } from '../services-api';
 import { rowAction } from '../tests/row-actions';
@@ -222,6 +223,37 @@ test.describe('Container actions with a usable Docker', () => {
       await request.post(`/deployments/${id}/containers/api/start`, {
         headers: await csrfHeaders(request),
       });
+    }
+  });
+});
+
+test.describe('A refused action', () => {
+  test('closes the dialog and says why in a toast when the linked Compose file is gone', async ({
+    page,
+    request,
+    scratch,
+  }) => {
+    const host = createHostFolder();
+    host.write('compose.yaml', 'services:\n  api:\n    image: alpine:3.24.2\n');
+    const id = await createDeployment(request, scratch.id, 'stack', host.root, 'block', DEMO_PROJECT);
+    try {
+      const linked = await request.post(`/deployments/${id}/compose-files/link`, {
+        form: { compose_file: 'compose.yaml' },
+        headers: await csrfHeaders(request),
+      });
+      expect(linked.headers()['hx-redirect']).toContain('compose_linked=1');
+      await page.goto(`/deployments/${id}`);
+      await expect(runtime(page)).toHaveAttribute('aria-busy', 'false');
+      await choose(page, 'api', 'restart');
+      host.removeBelow('compose.yaml');
+      await dialog(page).locator('button[type="submit"]').click();
+      await expect(dialog(page)).toBeHidden({ timeout: SETTLE_MS });
+      await expect(toast(page)).toHaveAttribute('role', 'alert');
+      await expect(toast(page)).toContainText('Restart of api not run');
+      await expect(toast(page)).toContainText('The linked Compose files cannot be used');
+      await expect(rowOf(page, 'api').locator('[data-status="up"]')).toBeVisible();
+    } finally {
+      host.remove();
     }
   });
 });

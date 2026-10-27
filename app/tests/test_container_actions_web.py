@@ -394,9 +394,9 @@ async def test_a_request_with_no_session_is_refused(
     await web_client.get("/healthz")
     headers = {**HTMX, "X-CSRFToken": web_client.cookies[CSRF_COOKIE_NAME]}
     opened = await web_client.get(stack.path("mysql", "restart"), headers=HTMX)
-    assert opened.status_code in (303, 401)
+    assert opened.status_code == 401
     answered = await web_client.post(stack.path("mysql", "restart"), headers=headers)
-    assert answered.status_code in (303, 401, 403) and stack.action_calls() == []
+    assert answered.status_code == 401 and stack.action_calls() == []
 
 
 async def test_the_dialog_tells_the_effect_the_command_and_the_audit_of_each_action(
@@ -634,9 +634,9 @@ async def test_those_who_may_not_control_the_containers_get_no_controls(
     await link_files(stack)
     await sign_in(web_client, user)
     response = await web_client.get(f"/deployments/{stack.prod}/runtime", headers=HTMX)
-    if response.status_code == 200:
-        assert 'data-target="container-action"' not in response.text
-        assert not set(controls_of(response.text)) & {"start", "stop", "restart", "recreate"}
+    assert response.status_code == 200
+    assert 'data-target="container-action"' not in response.text
+    assert not set(controls_of(response.text)) & {"start", "stop", "restart", "recreate"}
 
 
 async def test_no_controls_without_a_usable_docker(
