@@ -272,6 +272,7 @@ CAPABILITY_MATRIX = [
     (Capability.VIEW_AUDIT, True, True, False),
     (Capability.MANAGE_OWN_TOKENS, True, True, False),
     (Capability.VIEW_COMPOSE_FILES, True, True, False),
+    (Capability.CONTROL_CONTAINERS, True, True, False),
 ]
 
 
@@ -377,6 +378,39 @@ async def test_environment_capabilities_refuse_other_levels(db: AsyncSession, tr
     for key in ("project:fancy", "deployment:prod", "service:mysql"):
         with pytest.raises(ValueError, match="environments"):
             scope.can(Capability.DEPLOY, await _item(db, tree, key))
+
+
+@pytest.mark.parametrize(
+    ("deployment", "by_project", "by_deployment", "by_environment"),
+    [
+        ("deployment:prod", True, True, False),
+        ("deployment:staging", True, False, False),
+        ("deployment:main", False, False, False),
+    ],
+)
+async def test_controlling_containers_needs_a_grant_over_the_whole_deployment(
+    db: AsyncSession,
+    tree: Tree,
+    deployment: str,
+    by_project: bool,
+    by_deployment: bool,
+    by_environment: bool,
+) -> None:
+    """Containers belong to the deployment: a project or a deployment grant covers it, a grant
+    on one file of it does not, and a viewer never controls them."""
+    item = await _item(db, tree, deployment)
+    for grant_key, expected in (
+        ("project:fancy", by_project),
+        ("deployment:prod", by_deployment),
+        ("environment:db", by_environment),
+    ):
+        admin = await _make_user(db, f"admin-{grant_key.replace(':', '-')}", UserGroup.ADMIN)
+        await _grant(db, tree, admin, grant_key)
+        scope = await load_user_scope(db, admin)
+        assert scope.can(Capability.CONTROL_CONTAINERS, item) is expected, grant_key
+    viewer = await _make_user(db, "viewer-all", UserGroup.VIEWER)
+    await _grant(db, tree, viewer, "project:fancy")
+    assert (await load_user_scope(db, viewer)).can(Capability.CONTROL_CONTAINERS, item) is False
 
 
 async def test_item_capabilities_need_an_item(db: AsyncSession, tree: Tree) -> None:

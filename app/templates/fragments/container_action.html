@@ -1,0 +1,42 @@
+{#- The confirmation of an action on a service's container, inside its dialog on the Overview: what
+    the action does, what it does not do, the exact command and that it is audited. When the action
+    cannot run now the dialog says why and offers Close only. The form posts with a timeout above
+    the one of the command, since the request waits for it. Context: deployment (a
+    DeploymentDetail), action (a ContainerAction), service, plan (an ActionPlan, none when
+    refused), refusal (the reason, none when it can run), control_timeout_ms. -#}
+{% from "macros/buttons.html" import button %}
+{% from "macros/dialogs.html" import confirm_footer, confirm_message, dialog_body, dialog_footer, dialog_head %}
+{% from "macros/feedback.html" import argument_chips, note %}
+{% from "macros/time.html" import moment with context %}
+{% set verb = action.value | capitalize %}
+<div data-fragment="container-action" data-action="{{ action.value }}" data-service="{{ service }}">
+{{ dialog_head("container-action", verb ~ " " ~ service ~ "?") }}
+{%- if refusal %}
+{% call dialog_body() %}<div data-container-refusal>{{ note(refusal, tone="warn") }}</div>{% endcall %}
+{% call dialog_footer() %}{{ button("Close", data_js="dialog-close") }}{% endcall %}
+{%- else %}
+{%- set stack = plan.stack -%}
+{%- set exited = stack.containers | selectattr("state", "in", ["exited", "dead"]) | selectattr("exit_code", "ne", none) | list -%}
+<form id="container-action-form" hx-post="/deployments/{{ deployment.id }}/containers/{{ service }}/{{ action.value }}" hx-target="#container-toast" hx-swap="innerHTML" hx-sync="this:drop" hx-config='{{ {"timeout": control_timeout_ms}|tojson }}' class="group">
+{% call dialog_body() %}
+{% call confirm_message() %}
+{%- if action.value == "restart" -%}The {{ service }} container of {{ plan.project }} stops and starts again with the configuration it already has.
+{%- elif action.value == "stop" -%}The {{ service }} container of {{ plan.project }} stops and stays stopped until someone starts it or a deploy recreates it.
+{%- elif action.value == "start" -%}The {{ service }} container of {{ plan.project }} starts with the configuration it already has.{% if exited %} It exited with code {{ exited[0].exit_code }}.{% endif %}
+{%- else -%}Compose replaces the {{ service }} container of {{ plan.project }} using the linked Compose files, so it loads the deployed files. Volumes are kept.
+{%- endif -%}
+{% endcall %}
+{%- if action.value in ["start", "restart"] and stack.recreate_to_apply and stack.last_written_at %}
+<div data-container-warning="recreate">{{ note("It does not load the files deployed " ~ moment(stack.last_written_at) ~ ". " ~ ("Recreate loads them." if deployment.compose_files else "Recreating it needs the Compose files linked to the deployment."), tone="warn") }}</div>
+{%- endif %}
+{%- if action.value == "stop" %}
+<div data-container-warning="stop">{{ note("Services that call it get errors while it is stopped.", tone="warn") }}</div>
+{%- elif action.value == "recreate" %}
+<div data-container-warning="recreate-gap">{{ note("The service is unavailable for a few seconds while the new container starts.", tone="warn") }}</div>
+{%- endif %}
+<div data-fragment="container-command" class="flex flex-col gap-2 rounded-btn border border-line bg-surface2 p-3.5"><p class="text-[13px] font-bold">Runs</p>{{ argument_chips(plan.words) }}<p class="text-[13px] text-ink2">It is recorded in the audit log.</p></div>
+{% endcall %}
+{{ confirm_footer(verb ~ " " ~ service, type="submit", kind="danger" if action.value == "stop" else "primary", working=true, working_message="Working. This can take a while.") }}
+</form>
+{%- endif %}
+</div>

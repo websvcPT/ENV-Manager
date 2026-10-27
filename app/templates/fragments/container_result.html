@@ -1,0 +1,4 @@
+{#- The toast that tells how an action on a container ended: done, failed (with the scrubbed tail
+    of the command's output) or not run (with the reason). Context: outcome (an ActionOutcome). -#}
+{% from "macros/feedback.html" import toast %}
+{{ toast("success" if outcome.status.value == "done" else "error", outcome.message, outcome.title, floating=true, detail=outcome.output) }}

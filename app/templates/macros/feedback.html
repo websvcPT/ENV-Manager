@@ -11,10 +11,12 @@
   "info": ("bg-info-bg text-info-fg", "info", "Notice", "status")
 } %}
 
-{#- A dismissible result message. `floating` pins it to the bottom right of the viewport. -#}
-{% macro toast(tone, message, title=none, floating=false) -%}
+{#- A dismissible result message. `floating` pins it to the bottom right of the viewport and
+    `detail` is text shown under the message as it is (the tail of a command's output), escaped
+    and never processed by htmx. -#}
+{% macro toast(tone, message, title=none, floating=false, detail=none) -%}
 {%- set tone_classes, icon_name, default_title, live_role = TONES[tone] -%}
-<div role="{{ live_role }}" data-fragment="toast" class="{% if floating %}fixed bottom-4 right-4 z-50 {% endif %}flex w-[380px] max-w-[calc(100%_-_2rem)] items-start gap-3 rounded-panel border border-line bg-surface p-3.5 shadow-dialog"><span class="flex size-8 shrink-0 items-center justify-center rounded-full {{ tone_classes }}">{{ icon(icon_name, "size-4", "2.4") }}</span><div class="min-w-0 flex-1"><p class="text-[13px] font-bold">{{ title if title else default_title }}</p><p class="text-[13px] text-ink2">{{ message }}</p></div>{{ icon_button("Dismiss", "close", shape="plain", data_js="dismiss") }}</div>
+<div role="{{ live_role }}" data-fragment="toast" class="{% if floating %}fixed bottom-4 right-4 z-50 {% endif %}flex w-[380px] max-w-[calc(100%_-_2rem)] items-start gap-3 rounded-panel border border-line bg-surface p-3.5 shadow-dialog"><span class="flex size-8 shrink-0 items-center justify-center rounded-full {{ tone_classes }}">{{ icon(icon_name, "size-4", "2.4") }}</span><div class="min-w-0 flex-1"><p class="text-[13px] font-bold">{{ title if title else default_title }}</p><p class="text-[13px] text-ink2">{{ message }}</p>{% if detail %}<div hx-ignore class="mt-2 max-h-48 overflow-auto rounded-ctl">{{ code_block(detail, wrap=true) }}</div>{% endif %}</div>{{ icon_button("Dismiss", "close", shape="plain", data_js="dismiss") }}</div>
 {%- endmacro %}
 
 {#- One superadmin banner: warn tone, one line, one action link. -#}
@@ -59,13 +61,18 @@
 <pre tabindex="0" class="overflow-auto{% if wrap %} whitespace-pre-wrap wrap-anywhere{% endif %} rounded-ctl bg-code p-3.5 font-mono text-[13px] leading-relaxed text-code-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ text }}</pre>
 {%- endmacro %}
 
+{#- The arguments of one command, one chip each, so quoting and splitting are visible. -#}
+{% macro argument_chips(words) -%}
+<span class="flex min-w-0 flex-wrap gap-1.5">{% for word in words %}<code class="max-w-full break-all rounded-ctl border border-line-strong bg-surface px-1.5 py-0.5 font-mono text-[13px] text-ink">{% if word %}{{ word }}{% else %}<span aria-label="empty argument">""</span>{% endif %}</code>{% endfor %}</span>
+{%- endmacro %}
+
 {#- The parsed arguments of changed post-deploy commands, shown before they are stored. Each
     command is a numbered line of arguments, one chip per argument, so quoting and splitting are
     visible. `review` has `commands` (a list of argument lists) and `digest` (sent back to
     confirm exactly these commands). -#}
 {% macro command_review(review) -%}
 <section id="postdeploy-review" data-fragment="postdeploy-review" aria-labelledby="pr-title" class="flex flex-col gap-3 rounded-btn border border-line bg-surface2 p-3.5"><div class="flex items-start gap-2.5">{{ icon("info", "size-[18px] mt-px shrink-0 text-info-fg", "2.2") }}<div class="min-w-0"><h4 id="pr-title" class="text-[13px] font-bold">Review the commands</h4><p class="text-[13px] text-ink2">Each command is split into the arguments below and run exactly like this, with no shell. Nothing is stored until you confirm.</p></div></div>
-<ol class="flex flex-col gap-2">{% for words in review.commands %}<li class="flex min-w-0 items-start gap-2.5"><span class="mt-0.5 w-5 shrink-0 text-right font-mono text-xs text-ink3">{{ loop.index }}</span><span class="flex min-w-0 flex-wrap gap-1.5">{% for word in words %}<code class="max-w-full break-all rounded-ctl border border-line-strong bg-surface px-1.5 py-0.5 font-mono text-[13px] text-ink">{% if word %}{{ word }}{% else %}<span aria-label="empty argument">""</span>{% endif %}</code>{% endfor %}</span></li>{% endfor %}</ol>
+<ol class="flex flex-col gap-2">{% for words in review.commands %}<li class="flex min-w-0 items-start gap-2.5"><span class="mt-0.5 w-5 shrink-0 text-right font-mono text-xs text-ink3">{{ loop.index }}</span>{{ argument_chips(words) }}</li>{% endfor %}</ol>
 <input type="hidden" name="reviewed" value="{{ review.digest }}">
 </section>
 {%- endmacro %}

@@ -1,10 +1,14 @@
 {#- The Overview tab of a deployment: the status strip, the runtime section (the services with
     their containers and the Network panel, loaded as a fragment so the page never waits on
     Docker) and the newest deploys. Context: deployment (a DeploymentDetail), can_manage_grants,
-    can_manage_structure. -#}
+    can_manage_structure, can_control_containers. -#}
 {% extends "layouts/deployment.html" %}
+{% from "macros/dialogs.html" import loaded_dialog %}
 {% block tab %}
 {% with runtime_view = none %}{% include "fragments/status_strip.html" %}{% endwith %}
 {% with loading = true %}{% include "fragments/runtime.html" %}{% endwith %}
 {% include "fragments/recent_deploys.html" %}
+{#- The dialog of the container actions and the place of their toast sit outside the runtime
+    section, which replaces itself, so neither is lost to a refresh. -#}
+{% if can_control_containers %}{{ loaded_dialog("container-action", "Container action", width="560") }}<div id="container-toast" data-fragment="container-toast"></div>{% endif %}
 {% endblock %}

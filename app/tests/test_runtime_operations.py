@@ -17,6 +17,7 @@ from fastapi import FastAPI
 from sqlalchemy import delete, func, select
 
 from app.core.crypto import CryptoService
+from app.core.csrf import CSRF_COOKIE_NAME
 from app.models import (
     AccessGrant,
     AuditEntry,
@@ -44,7 +45,7 @@ from app.tests.deploy_helpers import CountingCrypto, Harness
 from app.tests.dist_helpers import link_dist
 from app.tests.fake_docker import FakeDocker
 from app.tests.grant_helpers import count_statements
-from app.tests.runtime_helpers import inspect_entry, ps_entry, serve
+from app.tests.runtime_helpers import BEHAVIOR, inspect_entry, ps_entry, serve
 from app.tests.web_helpers import HTMX, post, stage_deployments
 
 STRUCTURE_LOAD = "SELECT projects.id, NULL AS anon_1"
@@ -53,6 +54,9 @@ COMMAND = "docker compose up -d --no-deps mysql"
 # Statements of the runtime fragment: what the page runs plus the matching of the stored services
 # with the containers and the last deploy writes.
 RUNTIME_LIMIT = 24
+CONTAINER_DIALOG_LIMIT = 17
+CONTAINER_POST_LIMIT = 18
+CONTAINER_POST_FAILED_LIMIT = 19
 
 
 @dataclass(frozen=True)
@@ -468,3 +472,47 @@ async def test_the_overview_page_never_asks_docker_and_its_fragment_reads_it_onc
     status, second = await measure(web_app, web_client.get(f"{url}/runtime", headers=HTMX))
     assert status == 200 and len(second) <= RUNTIME_LIMIT
     assert len(fake.calls()) == reads and fake.probes() == 1
+
+
+async def test_the_container_dialog_and_post_run_few_statements_and_open_values_to_scrub_only(
+    web_app: FastAPI, web_client: httpx.AsyncClient, ids: Ids, tmp_path: Path
+) -> None:
+    """The confirmation reads the deployment, the settings and the containers once and runs no
+    command. A post that works decrypts no file; one whose command fails opens each version once,
+    to scrub the output, and lists the containers anew."""
+    fake = FakeDocker(tmp_path / "fake-containers")
+    serve(
+        fake,
+        ps=[ps_entry("mysql", 1)],
+        inspect=[inspect_entry(1)],
+        network_ls=[],
+        network_inspect=[],
+    )
+    web_app.state.docker_cli = fake.cli()
+    counting = CountingCrypto(web_app.state.crypto)
+    web_app.state.crypto = counting
+    async with web_app.state.session_factory() as db:
+        deployment = await db.get(Deployment, ids.deployment)
+        assert deployment is not None
+        deployment.compose_project = "fancy"
+        await db.commit()
+    await sign_in(web_client, "root")
+    url = f"/deployments/{ids.deployment}/containers/mysql/restart"
+
+    status, dialog = await measure(web_app, web_client.get(url, headers=HTMX))
+    assert status == 200 and len(dialog) <= CONTAINER_DIALOG_LIMIT, len(dialog)
+    assert settings_reads(dialog) == 1 and structure_loads(dialog) <= 1
+    assert all(" restart " not in " ".join(call.arguments) for call in fake.calls())
+    assert counting.opened == []
+
+    await web_client.get("/healthz")
+    token = {**HTMX, "X-CSRFToken": web_client.cookies[CSRF_COOKIE_NAME]}
+    status, done = await measure(web_app, web_client.post(url, headers=token))
+    assert status == 200 and len(done) <= CONTAINER_POST_LIMIT, len(done)
+    assert settings_reads(done) <= 1 and structure_loads(done) <= 1
+    assert counting.opened == []
+
+    fake.behavior(BEHAVIOR + 'case "$*" in\n  *" restart "*) echo failed; exit 1 ;;\nesac\n')
+    status, failed = await measure(web_app, web_client.post(url, headers=token))
+    assert status == 200 and len(failed) <= CONTAINER_POST_FAILED_LIMIT, len(failed)
+    assert counting.opened and counting.most_often_opened() == 1

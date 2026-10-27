@@ -155,6 +155,52 @@ with no Compose project name (the superadmin gets a link to the Settings tab, wh
 is), Docker not usable (with the reason, the same as the Post-deploy settings show), and a
 project that has no containers on this host.
 
+### Starting, stopping, restarting and recreating a container
+
+Each service row with a container has actions, each behind a confirmation that says what it does,
+shows the exact command (one chip per argument, run without a shell) and says that it is
+recorded in the audit log:
+
+| Action | Shown for | What it does |
+| --- | --- | --- |
+| **Restart** | a container that is not stopped | Stops the container and starts it again with the configuration it already has. It does **not** load files deployed since the container was created; the dialog warns about that when the service is marked Recreate to apply. |
+| **Stop** | a container that is not stopped | Stops it and leaves it stopped until someone starts it or a deploy recreates it. The dialog warns that services calling it get errors, and its button is the red one. |
+| **Start** | an exited, dead or never started container | Starts it with the configuration it already has, and mentions the exit code when it exited. |
+| **Recreate** | every container, when Compose files are linked to the deployment | Compose replaces the container (`up -d --no-deps --force-recreate`), so it loads the deployed files. Volumes are kept, and the service is unavailable for a few seconds. It is the main action of a service marked Recreate to apply. |
+
+Recreate forces the replacement. Without that Compose keeps a container whose definition did not
+change, and a deploy usually changes only what the definition does not name: the text of a file
+the service reads through a mount or an `env_file` it already had in the same state.
+
+Who can use them: the superadmin, and an admin who has a **project or deployment grant** over
+the deployment (the grant that covers all of it). An admin whose grants only reach some of its
+services or files, and every viewer, see no action and are refused the routes. The actions are
+also absent while Docker is not usable or the deployment has no Compose project name.
+
+How they run:
+
+- With Compose files linked to the deployment every action runs on them
+  (`docker compose --project-directory <folder of the first file> -p <project> -f <file> ...`),
+  so Compose sees the same configuration as your own commands, and Recreate needs them. Without
+  linked files Start, Stop and Restart run on the project alone (`docker compose -p <project>
+  <action> <service>`), which Compose resolves from the labels of the containers. If the linked
+  files no longer resolve (moved, deleted, outside the allowed paths) the actions are refused
+  with that reason until they are linked again.
+- The service must be a service of the project that has a container, as Docker reports it now.
+- An action takes the same lock as a deploy on the deployment folder, so it never overlaps one:
+  while a deploy is running it is refused with "Another deploy is running for this deployment
+  folder. Try again when it ends." and the other way round.
+- Start, Stop and Restart wait at most 60 seconds, Recreate 180 (it may pull an image, with the
+  registry logins of Settings, Registries). A command that exceeds that is stopped and reported
+  as failed.
+- The dialog closes when the answer comes. A toast says what was done, or that it failed with the
+  last lines of the output (with the values of the deployment's files and the registry logins
+  replaced by `****`), or why it did not run. The Overview then reads the containers again
+  at once.
+- Every attempt is an audit entry (`container.start`, `container.stop`, `container.restart`,
+  `container.recreate`) on the deployment with the service and the exit code, and with the
+  reason when it did not run (the result is blocked). The output is never stored or logged.
+
 ## Choosing a deployment path
 
 The deployment form picks the deployment path from a folder browser of the allowed paths. Folders

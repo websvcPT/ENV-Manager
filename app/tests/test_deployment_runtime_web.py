@@ -38,7 +38,10 @@ PROJECT = "fancy"
 FUTURE = "2999-01-01T00:00:00Z"
 LONG_AGO = "2000-01-01T00:00:00Z"
 EVERY_INTERFACE = "0.0.0.0"  # noqa: S104 - the address of a published port, nothing binds
-REFRESH = "every 10s, visibilitychange from:document, deploy-finished from:body"
+REFRESH = (
+    "every 10s, visibilitychange from:document, deploy-finished from:body, "
+    "containers-changed from:body"
+)
 
 
 class Stack:

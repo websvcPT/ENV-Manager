@@ -122,6 +122,14 @@ def _page_context(access: DeploymentContext, tab: str, **extra: Any) -> dict[str
             and not access.deployment.outside_allowed
         ),
         "can_manage_grants": access.scope.can(Capability.MANAGE_GRANTS),
+        "can_control_containers": access.scope.can(
+            Capability.CONTROL_CONTAINERS,
+            ItemRef(
+                level=ItemLevel.DEPLOYMENT,
+                project_id=access.deployment.project_id,
+                deployment_id=access.deployment.id,
+            ),
+        ),
         "can_view_output": access.deployment.can_view_output,
         **extra,
     }

@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Annotated, Protocol
 
 from fastapi import Depends, HTTPException, Request, status
@@ -79,6 +80,12 @@ def get_deploy_engine(request: Request) -> DeployEngine:
         hook_runner=DockerHookRunner(state.docker_cli),
         notifier=state.notifier,
     )
+
+
+def get_lock_dir(request: Request) -> Path:
+    """The folder that holds the deploy lock files."""
+    lock_dir: Path = request.app.state.lock_dir
+    return lock_dir
 
 
 def get_notifier(request: Request) -> FullNotifier:

@@ -152,6 +152,7 @@ class RuntimeCache:
         self._ttl = ttl
         self._readings: dict[tuple[int, str], tuple[float, _Reading]] = {}
         self._locks: dict[tuple[int, str], asyncio.Lock] = {}
+        self._forgotten: dict[int, int] = {}
 
     async def get(self, key: tuple[int, str], read: Callable[[], Awaitable[_Reading]]) -> _Reading:
         """The reading of ``key``, made by ``read`` when there is none or it is too old."""
@@ -160,9 +161,21 @@ class RuntimeCache:
             known = self._readings.get(key)
             if known is not None and self._clock() - known[0] < self._ttl:
                 return known[1]
+            forgotten = self._forgotten.get(key[0], 0)
             reading = await read()
-            self._readings[key] = (self._clock(), reading)
+            if self._forgotten.get(key[0], 0) == forgotten:
+                self._readings[key] = (self._clock(), reading)
             return reading
+
+    def forget(self, deployment_id: int) -> None:
+        """Drop the readings of a deployment, so the next call asks Docker again.
+
+        A read that was already running is not kept either: it may have started before the
+        change that made the caller forget.
+        """
+        self._forgotten[deployment_id] = self._forgotten.get(deployment_id, 0) + 1
+        for key in [key for key in self._readings if key[0] == deployment_id]:
+            del self._readings[key]
 
 
 _caches: weakref.WeakKeyDictionary[DockerCli, RuntimeCache] = weakref.WeakKeyDictionary()
@@ -174,6 +187,11 @@ def _cache_of(cli: DockerCli) -> RuntimeCache:
     if cache is None:
         cache = _caches[cli] = RuntimeCache()
     return cache
+
+
+def forget_stack_runtime(cli: DockerCli, deployment_id: int) -> None:
+    """Drop what was kept of a deployment's containers, after something changed them."""
+    _cache_of(cli).forget(deployment_id)
 
 
 async def _read(cli: DockerCli, project: str) -> _Reading:

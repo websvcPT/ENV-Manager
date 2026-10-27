@@ -65,12 +65,14 @@
     makes the button send its form; request attributes for the button (hx_post, hx_target) come
     in as keyword arguments. `cancel` replaces the attributes of Cancel, which closes the dialog
     by default. `working` adds the running line before the buttons and dims the danger button
-    while the request of the surrounding form runs. -#}
-{% macro confirm_footer(confirm_label, type="button", cancel=none, working=false) -%}
+    while the request of the surrounding form runs; `working_message` replaces the text of that
+    line. `kind` is the button kind of the confirm button, danger unless the action does not
+    destroy or override anything. -#}
+{% macro confirm_footer(confirm_label, type="button", cancel=none, working=false, working_message=none, kind="danger") -%}
 {%- set confirm_attrs = kwargs -%}
 {%- set cancel_attrs = cancel if cancel else {"data_js": "dialog-close"} -%}
 {%- set confirm_class = "text-[15px] group-[.htmx-request]:opacity-60" if working else "text-[15px]" -%}
-{% call dialog_footer() %}{% if working %}{{ working_status() }}<span class="flex-1"></span>{% endif %}{{ button("Cancel", **cancel_attrs) }}{{ button(confirm_label, kind="danger", type=type, extra_class=confirm_class, **confirm_attrs) }}{% endcall %}
+{% call dialog_footer() %}{% if working %}{{ working_status(working_message) if working_message else working_status() }}<span class="flex-1"></span>{% endif %}{{ button("Cancel", **cancel_attrs) }}{{ button(confirm_label, kind=kind, type=type, extra_class=confirm_class, **confirm_attrs) }}{% endcall %}
 {%- endmacro %}
 
 {#- Confirmation for a destructive or overriding action: states the effect, Cancel first and

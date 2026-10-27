@@ -2,8 +2,12 @@
     files stored for the service with the Recreate to apply warning, and the last deploy. A table
     from `md`, a row list below. Without a readable runtime (no Compose project, Docker not
     usable, no containers) the note or empty state comes first and the rows carry the files and
-    deploy columns only. The structure actions live on the Files tab. Context: deployment (a
-    DeploymentDetail), view (a RuntimeView), now, can_manage_structure. -#}
+    deploy columns only. The structure actions live on the Files tab. A caller who may control
+    the containers also gets Start (a stopped container), Restart and Stop (any other state) and,
+    when Compose files are linked, Recreate, which becomes the primary action of a service marked
+    Recreate to apply; each opens the confirmation in the dialog of the page. Context:
+    deployment (a DeploymentDetail), view (a RuntimeView), now, can_manage_structure,
+    can_control_containers. -#}
 {% from "macros/badges.html" import badge, container_state_badge, health_badge %}
 {% from "macros/deploy.html" import last_deploy_summary %}
 {% from "macros/feedback.html" import empty_state, note %}
@@ -58,6 +62,35 @@
 <span class="text-ink2" data-no-files>No files in ENV Manager</span>{% if can_manage_structure %}<span class="mt-1 block">{{ text_link("Add service", add_href ~ "?name=" ~ (row.name | urlencode), data_add_service=row.name) }}</span>{% endif %}
 {%- endif -%}
 {%- endmacro %}
+{% set CONTROLS = {
+  "start": ("Start", "play"),
+  "stop": ("Stop", "stop"),
+  "restart": ("Restart", "refresh"),
+  "recreate": ("Recreate", "layers")
+} %}
+{#- The controls of a service's containers, in order: Start when none is running or about to, else
+    Restart and Stop, then Recreate when Compose files are linked. -#}
+{% macro control_keys(row) -%}
+{%- if can_control_containers and ready and row.containers -%}
+{%- set idle = row.containers | rejectattr("state", "in", ["exited", "dead", "created"]) | list | length == 0 -%}
+{{ ("start" if idle else "restart,stop") ~ (",recreate" if deployment.compose_files else "") }}
+{%- endif -%}
+{%- endmacro %}
+{#- The actions of a service row: Open (a stored service) and its container controls. `prefix`
+    is unique in the page. -#}
+{% macro actions_cell(prefix, row, with_open=true) -%}
+{%- set keys = control_keys(row).split(",") if control_keys(row) else [] -%}
+{%- set recreate_first = row.recreate_to_apply and "recreate" in keys -%}
+{%- set ns = namespace(items=[]) -%}
+{%- if row.stored and with_open -%}
+{%- set ns.items = [{"key": "open", "label": "Open", "icon": "open", "href": "/services/" ~ row.stored.id, "primary": not recreate_first}] -%}
+{%- endif -%}
+{%- for key in keys -%}
+{%- set label, icon_name = CONTROLS[key] -%}
+{%- set ns.items = ns.items + [{"key": key, "label": label, "icon": icon_name, "danger": key == "stop", "primary": recreate_first and key == "recreate", "attrs": {"data_js": "dialog-open", "data_target": "container-action", "aria_haspopup": "dialog", "hx_get": "/deployments/" ~ deployment.id ~ "/containers/" ~ row.name ~ "/" ~ key, "hx_target": "#container-action", "hx_swap": "innerHTML"}}] -%}
+{%- endfor -%}
+{%- if ns.items -%}{{ row_actions(prefix, row.name, ns.items) }}{%- endif -%}
+{%- endmacro %}
 {% call panel("Services", "runtime-services-title", fragment="runtime-services") %}
 {%- if view.state.value == "no_project" -%}
 <div class="flex flex-col gap-2 px-4 pb-4 md:px-5" data-runtime-state="no_project">{{ note("This deployment has no Docker Compose project name, so its containers are not shown.") }}{% if can_manage_structure and deployment.full %}<p class="text-[13px]">{{ text_link("Set the project name in Settings", "/deployments/" ~ deployment.id ~ "/settings") }}</p>{% endif %}</div>
@@ -77,7 +110,7 @@
 {%- endif %}
 <td class="border-t border-line px-4 py-3.5 align-top">{{ files_of(row) }}</td>
 <td class="border-t border-line px-4 py-3.5 align-top">{% if row.stored %}{{ last_deploy_summary(row.stored) }}{% else %}<span class="text-ink3">None</span>{% endif %}</td>
-<td class="border-t border-line px-4 py-3.5 whitespace-nowrap text-right align-top">{% if row.stored %}{{ row_actions("service-summary-" ~ row.stored.id, row.name, [{"key": "open", "label": "Open", "icon": "open", "href": "/services/" ~ row.stored.id, "primary": true}]) }}{% endif %}</td></tr>
+<td class="border-t border-line px-4 py-3.5 whitespace-nowrap text-right align-top">{{ actions_cell("service-summary-" ~ (row.stored.id if row.stored else "name-" ~ loop.index), row) }}</td></tr>
 {%- endfor %}
 {% endcall %}
 </div>
@@ -89,7 +122,10 @@
 <div class="text-[13px] text-ink2">{{ uptimes(row) }}</div>
 {%- endif %}
 <div class="text-[13px]"><span class="text-xs font-bold uppercase tracking-wide text-ink3">{{ "Files" if deployment.full else "Files in your scope" }}</span> <span class="ml-1">{{ files_of(row) }}</span></div>
-<div class="text-[13px]">{% if row.stored %}{{ last_deploy_summary(row.stored) }}{% else %}<span class="text-ink3">No deploys</span>{% endif %}</div></li>
+<div class="text-[13px]">{% if row.stored %}{{ last_deploy_summary(row.stored) }}{% else %}<span class="text-ink3">No deploys</span>{% endif %}</div>
+{%- if control_keys(row) %}
+<div class="flex justify-end">{{ actions_cell("service-summary-item-" ~ (row.stored.id if row.stored else "name-" ~ loop.index), row) }}</div>
+{%- endif %}</li>
 {%- endfor %}
 </ul>
 {%- elif view.state.value != "empty" -%}

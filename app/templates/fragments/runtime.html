@@ -1,6 +1,7 @@
 {#- The runtime section of the Overview: the services with their containers and the Network panel.
     The page holds the loading state (`loading`), which asks for this fragment as soon as it is
-    shown; the fragment refreshes itself every 10 seconds and when a deploy finishes. A refresh
+    shown; the fragment refreshes itself every 10 seconds, when a deploy finishes and when an
+    action on a container ended (`containers-changed`). A refresh
     that fails keeps what is shown: errors are not swapped, and the quiet marker keeps the page
     from toasting every failed refresh and from asking while the browser tab is hidden. The
     answer also replaces the status strip, which carries the container counts. Context:
@@ -8,7 +9,7 @@
     can_manage_structure. -#}
 {% from "macros/feedback.html" import skeleton %}
 {% from "macros/panels.html" import panel %}
-{% set refresh = ("load, " if loading else "") ~ "every 10s, visibilitychange from:document, deploy-finished from:body" %}
+{% set refresh = ("load, " if loading else "") ~ "every 10s, visibilitychange from:document, deploy-finished from:body, containers-changed from:body" %}
 <div id="runtime" data-fragment="runtime" aria-busy="{{ "true" if loading else "false" }}" hx-get="/deployments/{{ deployment.id }}/runtime" hx-trigger="{{ refresh }}" hx-swap="outerHTML" hx-sync="this:drop" hx-status:4xx="swap:none" hx-status:5xx="swap:none" data-background-refresh class="flex flex-col gap-5 md:gap-6">
 {%- if loading -%}
 {% call panel("Services", "runtime-services-title", fragment="runtime-services") %}
