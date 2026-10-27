@@ -53,6 +53,7 @@ class Capability(StrEnum):
     MANAGE_OWN_TOKENS = "manage_own_tokens"
     VIEW_COMPOSE_FILES = "view_compose_files"
     CONTROL_CONTAINERS = "control_containers"
+    VIEW_CONTAINER_LOGS = "view_container_logs"
 
 
 class Target(StrEnum):
@@ -83,6 +84,7 @@ CAPABILITY_GROUPS: dict[Capability, frozenset[UserGroup]] = {
     Capability.MANAGE_OWN_TOKENS: _ADMINS,
     Capability.VIEW_COMPOSE_FILES: _ADMINS,
     Capability.CONTROL_CONTAINERS: _ADMINS,
+    Capability.VIEW_CONTAINER_LOGS: _ADMINS,
 }
 
 CAPABILITY_TARGETS: dict[Capability, Target] = {
@@ -101,6 +103,7 @@ CAPABILITY_TARGETS: dict[Capability, Target] = {
     Capability.MANAGE_OWN_TOKENS: Target.NONE,
     Capability.VIEW_COMPOSE_FILES: Target.ITEM,
     Capability.CONTROL_CONTAINERS: Target.ITEM,
+    Capability.VIEW_CONTAINER_LOGS: Target.ITEM,
 }
 
 

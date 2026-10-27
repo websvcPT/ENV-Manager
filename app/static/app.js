@@ -567,6 +567,55 @@
     armReveals();
   });
 
+  /* The log box of the Logs tab: an answer that appends lines keeps a following box at the
+     bottom (unless the reader scrolled up, and always after the box was refilled), the lines
+     kept are bounded so a box left open for hours stays light, and the footer counts them. */
+  var LOG_LINES_KEPT = 2000;
+  var LOG_BOTTOM_MARGIN = 24;
+  var logAtBottom = true;
+  document.addEventListener('htmx:before:swap', function () {
+    var box = document.getElementById('log-box');
+    if (box) {
+      logAtBottom = box.scrollHeight - box.scrollTop - box.clientHeight < LOG_BOTTOM_MARGIN;
+    }
+  });
+  document.addEventListener('htmx:after:swap', function () {
+    var box = document.getElementById('log-box');
+    var lines = document.getElementById('log-lines');
+    if (!box || !lines) { return; }
+    while (lines.children.length > LOG_LINES_KEPT && lines.firstElementChild) {
+      lines.removeChild(lines.firstElementChild);
+    }
+    var poller = document.getElementById('log-poller');
+    var count = poller && poller.querySelector('[data-log-count]');
+    if (count) { count.textContent = String(lines.children.length); }
+    if (poller && poller.hasAttribute('data-following')
+      && (logAtBottom || poller.hasAttribute('data-reset'))) {
+      box.scrollTop = box.scrollHeight;
+    }
+  });
+
+  /* An update of the log box that failed (the connection, a session that ended, a server error)
+     keeps the box and says so in the footer; the next update that works replaces the footer
+     and the notice with it. */
+  function noteFailedLogUpdate(event) {
+    var ctx = event.detail && event.detail.ctx;
+    var source = (ctx && ctx.sourceElement) || event.target;
+    if (!(source instanceof Element) || source.id !== 'log-poller'
+      || source.querySelector('[data-log-notice]')) {
+      return;
+    }
+    var notice = document.createElement('span');
+    notice.setAttribute('role', 'status');
+    notice.setAttribute('data-log-notice', '');
+    notice.className = 'font-semibold text-err-fg';
+    notice.textContent = 'The last update failed. Trying again.';
+    var status = source.querySelector('[data-log-status]');
+    if (status) { status.after(notice); }
+  }
+  document.addEventListener('htmx:response:error', noteFailedLogUpdate);
+  document.addEventListener('htmx:error', noteFailedLogUpdate);
+
   /* The root path picker's filter: narrow the listed folders to those whose name holds the typed
      text, ignoring case, say how many are shown, show "No folder matches" when none is, and let
      Enter open the only match. The way up and the empty-list rows are never filtered. */

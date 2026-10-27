@@ -45,7 +45,7 @@ from app.tests.deploy_helpers import CountingCrypto, Harness
 from app.tests.dist_helpers import link_dist
 from app.tests.fake_docker import FakeDocker
 from app.tests.grant_helpers import count_statements
-from app.tests.runtime_helpers import BEHAVIOR, inspect_entry, ps_entry, serve
+from app.tests.runtime_helpers import BEHAVIOR, inspect_entry, log_row, ps_entry, serve, serve_logs
 from app.tests.web_helpers import HTMX, post, stage_deployments
 
 STRUCTURE_LOAD = "SELECT projects.id, NULL AS anon_1"
@@ -57,6 +57,13 @@ RUNTIME_LIMIT = 24
 CONTAINER_DIALOG_LIMIT = 17
 CONTAINER_POST_LIMIT = 18
 CONTAINER_POST_FAILED_LIMIT = 19
+# The Logs tab loads the deployment row for its Compose project (one more than the other tabs); with
+# a project it also reads the containers and the deploys that mark them (the runtime of the page).
+LOGS_PAGE_LIMIT = 21
+# A read of lines loads the deployment row and the newest version of every environment (opened
+# once each, pinned below) and a first read writes its audit entry; a poll writes none.
+LOGS_LINES_LIMIT = 17
+LOGS_POLL_LIMIT = 17
 
 
 @dataclass(frozen=True)
@@ -120,6 +127,8 @@ PAGE_LIMITS = (
     ("deployment overview", "/deployments/{deployment}", 18),
     ("deployment files tab", "/deployments/{deployment}/files", 18),
     ("deployment history tab", "/deployments/{deployment}/activity", 18),
+    # One more than the other tabs: the row of the deployment is read for its Compose project.
+    ("deployment logs tab", "/deployments/{deployment}/logs", 19),
     ("deployment settings tab", "/deployments/{deployment}/settings", 18),
     ("deployment runtime fragment", "/deployments/{deployment}/runtime", RUNTIME_LIMIT),
     ("deployment access tab", "/deployments/{deployment}/access", 24),
@@ -516,3 +525,48 @@ async def test_the_container_dialog_and_post_run_few_statements_and_open_values_
     status, failed = await measure(web_app, web_client.post(url, headers=token))
     assert status == 200 and len(failed) <= CONTAINER_POST_FAILED_LIMIT, len(failed)
     assert counting.opened and counting.most_often_opened() == 1
+
+
+async def test_the_logs_tab_and_its_lines_run_few_statements_and_open_each_value_once_a_read(
+    web_app: FastAPI, web_client: httpx.AsyncClient, ids: Ids, tmp_path: Path
+) -> None:
+    """The page reads the containers once and decrypts nothing. A read of lines opens the newest
+    version of every file of the deployment once, to mask them, and a read that finds no line
+    opens none; polls never write the audit log."""
+    fake = FakeDocker(tmp_path / "fake-logs")
+    serve_logs(fake, log_row("mysql-1", "2026-10-27T10:00:01.000000100Z", "hello"))
+    web_app.state.docker_cli = fake.cli()
+    counting = CountingCrypto(web_app.state.crypto)
+    web_app.state.crypto = counting
+    async with web_app.state.session_factory() as db:
+        deployment = await db.get(Deployment, ids.deployment)
+        assert deployment is not None
+        deployment.compose_project = "fancy"
+        await db.commit()
+    await sign_in(web_client, "root")
+    url = f"/deployments/{ids.deployment}/logs"
+
+    status, page = await measure(web_app, web_client.get(url))
+    assert status == 200 and len(page) <= LOGS_PAGE_LIMIT, len(page)
+    assert settings_reads(page) == 1 and structure_loads(page) <= 1
+    assert counting.opened == []
+
+    status, first = await measure(web_app, web_client.get(f"{url}/lines", headers=HTMX))
+    assert status == 200 and len(first) <= LOGS_LINES_LIMIT, len(first)
+    assert settings_reads(first) <= 1 and structure_loads(first) <= 1
+    assert counting.opened and counting.most_often_opened() == 1
+    opened = len(counting.opened)
+
+    status, poll = await measure(
+        web_app, web_client.get(f"{url}/lines?cursor=2026-10-27T10:00:00Z", headers=HTMX)
+    )
+    assert status == 200 and len(poll) <= LOGS_POLL_LIMIT, len(poll)
+    assert len(counting.opened) == 2 * opened and counting.most_often_opened() == 2
+    assert not any("INSERT INTO audit_entries" in statement for statement in poll)
+
+    status, quiet = await measure(
+        web_app,
+        web_client.get(f"{url}/lines?cursor=2026-10-27T10:00:01.000000100Z", headers=HTMX),
+    )
+    assert status == 200 and len(quiet) <= LOGS_POLL_LIMIT, len(quiet)
+    assert len(counting.opened) == 2 * opened

@@ -58,6 +58,7 @@ from app.web.auth import router as auth_router
 from app.web.compose_files import router as compose_files_router
 from app.web.compose_import import router as compose_import_router
 from app.web.container_actions import router as container_actions_router
+from app.web.container_logs import router as container_logs_router
 from app.web.deploy_dialog import router as deploy_dialog_router
 from app.web.deployment_form import router as deployment_form_router
 from app.web.deployment_stacks import router as deployment_stacks_router
@@ -247,6 +248,7 @@ def create_app() -> FastAPI:
     application.include_router(project_detail_router)
     application.include_router(deployments_router)
     application.include_router(container_actions_router)
+    application.include_router(container_logs_router)
     application.include_router(deployment_form_router)
     application.include_router(deployment_stacks_router)
     application.include_router(compose_import_router)

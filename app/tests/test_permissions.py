@@ -273,6 +273,7 @@ CAPABILITY_MATRIX = [
     (Capability.MANAGE_OWN_TOKENS, True, True, False),
     (Capability.VIEW_COMPOSE_FILES, True, True, False),
     (Capability.CONTROL_CONTAINERS, True, True, False),
+    (Capability.VIEW_CONTAINER_LOGS, True, True, False),
 ]
 
 
@@ -380,6 +381,10 @@ async def test_environment_capabilities_refuse_other_levels(db: AsyncSession, tr
             scope.can(Capability.DEPLOY, await _item(db, tree, key))
 
 
+CONTAINER_CAPABILITIES = [Capability.CONTROL_CONTAINERS, Capability.VIEW_CONTAINER_LOGS]
+
+
+@pytest.mark.parametrize("capability", CONTAINER_CAPABILITIES)
 @pytest.mark.parametrize(
     ("deployment", "by_project", "by_deployment", "by_environment"),
     [
@@ -388,16 +393,18 @@ async def test_environment_capabilities_refuse_other_levels(db: AsyncSession, tr
         ("deployment:main", False, False, False),
     ],
 )
-async def test_controlling_containers_needs_a_grant_over_the_whole_deployment(
+async def test_containers_and_their_logs_need_a_grant_over_the_whole_deployment(
     db: AsyncSession,
     tree: Tree,
+    capability: Capability,
     deployment: str,
     by_project: bool,
     by_deployment: bool,
     by_environment: bool,
 ) -> None:
-    """Containers belong to the deployment: a project or a deployment grant covers it, a grant
-    on one file of it does not, and a viewer never controls them."""
+    """Containers and their logs belong to the deployment: a project or a deployment grant covers
+    it, a grant
+    on one file of it does not, and a viewer never has them."""
     item = await _item(db, tree, deployment)
     for grant_key, expected in (
         ("project:fancy", by_project),
@@ -407,10 +414,10 @@ async def test_controlling_containers_needs_a_grant_over_the_whole_deployment(
         admin = await _make_user(db, f"admin-{grant_key.replace(':', '-')}", UserGroup.ADMIN)
         await _grant(db, tree, admin, grant_key)
         scope = await load_user_scope(db, admin)
-        assert scope.can(Capability.CONTROL_CONTAINERS, item) is expected, grant_key
+        assert scope.can(capability, item) is expected, grant_key
     viewer = await _make_user(db, "viewer-all", UserGroup.VIEWER)
     await _grant(db, tree, viewer, "project:fancy")
-    assert (await load_user_scope(db, viewer)).can(Capability.CONTROL_CONTAINERS, item) is False
+    assert (await load_user_scope(db, viewer)).can(capability, item) is False
 
 
 async def test_item_capabilities_need_an_item(db: AsyncSession, tree: Tree) -> None:

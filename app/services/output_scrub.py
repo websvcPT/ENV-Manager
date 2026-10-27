@@ -78,12 +78,15 @@ class OutputScrubber:
             return data
         return self._pattern.sub(_REPLACEMENT_BYTES, data)
 
-    def scrub_text(self, text: str) -> str:
-        """The text with every occurrence of a known value replaced."""
+    def scrub_text(self, text: str, replacement: str = REPLACEMENT) -> str:
+        """The text with every occurrence of a known value replaced, by ``****`` unless the
+        caller names its own replacement (a marker it draws itself, such as a chip)."""
         if self._pattern is None:
             return text
         data = text.encode("utf-8", errors="replace")
-        return self.scrub_bytes(data).decode("utf-8", errors="replace")
+        marker = replacement.encode("utf-8")
+        replaced = self._pattern.sub(lambda _found: marker, data)
+        return replaced.decode("utf-8", errors="replace")
 
     def scrub_head(self, data: bytes) -> bytes:
         """Scrub the kept start of a longer stream: a value cut off by its end is replaced too."""

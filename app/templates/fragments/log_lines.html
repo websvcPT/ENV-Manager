@@ -1,0 +1,19 @@
+{#- The answer to a request for lines: the poller (the footer, which replaces the one in the
+    page) and, out of band, the lines appended to the box (the first read replaces what the box
+    holds), the field that tells the filter form whether the box follows and, after a first read
+    or a click on Following and Paused, that button and the download link. Context: deployment,
+    params (the applied filter), lines, cursor (the stamp to ask from next, empty for none),
+    omitted, following, first (no cursor was given), toggle (the button asked) and notice (why the
+    read failed, none when it worked). -#}
+{% from "macros/logs.html" import download_link, follow_state, follow_toggle, log_line, poller %}
+{{ poller(deployment, params, cursor, following, reset=first, notice=notice, omitted=omitted) }}
+{%- if lines or first %}
+<div hx-swap-oob="{{ "innerHTML" if first else "beforeend" }}:#log-lines">{% for line in lines %}{{ log_line(line) }}{% endfor %}</div>
+{%- endif %}
+{{ follow_state(following, oob=true) }}
+{%- if first or toggle %}
+{{ follow_toggle(deployment, following, oob=true) }}
+{%- endif %}
+{%- if first %}
+{{ download_link(deployment, params, oob=true) }}
+{%- endif %}

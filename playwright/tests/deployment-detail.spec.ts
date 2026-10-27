@@ -67,15 +67,17 @@ test.describe('superadmin', () => {
     await expect(sections(page)).toHaveText([
       'Overview',
       'Files',
+      'Logs',
       'History',
       'Settings',
       'AccessSuperadmin',
     ]);
     await expect(sections(page).nth(0)).toHaveAttribute('href', `/deployments/${id}`);
     await expect(sections(page).nth(1)).toHaveAttribute('href', `/deployments/${id}/files`);
-    await expect(sections(page).nth(2)).toHaveAttribute('href', `/deployments/${id}/activity`);
-    await expect(sections(page).nth(3)).toHaveAttribute('href', `/deployments/${id}/settings`);
-    await expect(sections(page).nth(4)).toHaveAttribute('href', `/deployments/${id}/access`);
+    await expect(sections(page).nth(2)).toHaveAttribute('href', `/deployments/${id}/logs`);
+    await expect(sections(page).nth(3)).toHaveAttribute('href', `/deployments/${id}/activity`);
+    await expect(sections(page).nth(4)).toHaveAttribute('href', `/deployments/${id}/settings`);
+    await expect(sections(page).nth(5)).toHaveAttribute('href', `/deployments/${id}/access`);
     await expect(sections(page).first()).toHaveAttribute('aria-current', 'page');
     await expect(page.locator('nav[aria-label="Sections"] [aria-current="page"]')).toHaveCount(1);
 
@@ -207,6 +209,7 @@ test.describe('superadmin', () => {
     await page.goto(`/deployments/${id}`);
     for (const [label, path] of [
       ['Files', '/files'],
+      ['Logs', '/logs'],
       ['History', '/activity'],
       ['Settings', '/settings'],
       ['Access', '/access'],
@@ -443,7 +446,7 @@ test.describe('admin', () => {
     await expect(page.getByRole('link', { name: 'Check dist' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Edit', exact: true })).toHaveCount(0);
     await expect(page.getByRole('link', { name: 'Add service' })).toHaveCount(0);
-    await expect(sections(page)).toHaveText(['Overview', 'Files', 'History', 'Settings']);
+    await expect(sections(page)).toHaveText(['Overview', 'Files', 'Logs', 'History', 'Settings']);
     await expect(serviceRows(page).locator('[data-row-action="deploy"]')).toHaveCount(2);
     await expect(actionControls(serviceRows(page), 'delete')).toHaveCount(0);
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
@@ -517,7 +520,7 @@ test.describe('scoped users', () => {
         root: 'Deployment path: /opt/fancy/prod',
       });
       await expect(page.locator('main > [role="note"]')).toHaveCount(0);
-      await expect(sections(page)).toHaveText(['Overview', 'Files', 'History', 'Settings']);
+      await expect(sections(page)).toHaveText(['Overview', 'Files', 'Logs', 'History', 'Settings']);
       await page.goto(`/deployments/${id}/settings`);
       await expect(page.locator('[data-fragment="policies-panel"]')).toBeVisible();
     });

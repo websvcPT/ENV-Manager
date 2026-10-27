@@ -201,6 +201,67 @@ How they run:
   `container.recreate`) on the deployment with the service and the exit code, and with the
   reason when it did not run (the result is blocked). The output is never stored or logged.
 
+## The Logs tab of a deployment
+
+The Logs tab follows the output of the containers of the deployment's [Compose
+project](#the-compose-project) in the page. It needs Docker, and like the Overview it says so
+when the deployment has no project name, when Docker is not usable and when the project has no
+container.
+
+Who can open it: the superadmin, and an admin who has a **project or deployment grant** over the
+deployment (the grant that covers all of it), the same people as the container actions. An admin
+whose grants only reach some of its services or files, and every viewer, see no tab and are
+refused the routes. A service row of the Overview that has a container carries a **Logs** action
+for those who may open it, which opens the tab filtered to that service.
+
+What the tab shows:
+
+- A dark box with one line per log line: the time (UTC, to the second, with the full stamp as its
+  title), the service in a colour of its own, and the message. Lines that say `error`, `fatal`
+  or `panic` are tinted red and those that say `warn` or `warning` amber.
+- A chip for **All services** and one for each service that has a container; the text filter
+  (**Filter lines**, case-insensitive, applied to the lines read after the masking); **Show**,
+  the lines of the first read, the last 200 or 1000 of each container; the **Following** and
+  **Paused** button; and a download button.
+- A footer that says whether the box follows and how many lines it holds. The box keeps its last
+  2000 lines; when it follows and you have not scrolled up it stays at the bottom.
+
+How it reads:
+
+- The first read runs `docker compose -p <project> logs --timestamps --no-color --tail <n>`
+  (with the service when a chip is chosen) on the project alone, so no linked Compose file is
+  needed. Following, the page asks every 2 seconds for the lines after the last one it has, with
+  `--since` that moment (the lines stamped with that very moment, which Docker returns again, are
+  dropped). Lines from several containers are sorted by their time.
+- **Paused** stops the requests altogether: the box keeps what it shows and the button asks for
+  the lines since the last one, then follows again. Changing a chip, the filter or **Show**
+  reads again from the start. The tab pauses its requests while the browser tab is hidden.
+- Hard limits: 1000 lines in one update (when more arrived, the newest are shown and the footer
+  says how many older ones were left out), 2000 characters in one line (a cut line ends with
+  `[line cut]`) and 4 MiB read from Docker at once (more is a notice, nothing is cut mid read).
+- A read that fails (Docker does not answer, the project is gone) is a short notice in the footer
+  and the box keeps its lines; the next request tries again.
+
+Masking: every value of every file of the deployment (the newest version of each environment, of
+all its services, including files you may not see) is replaced by a **[masked]** chip in the box
+and in the download, before the text filter looks at the line and before it is shortened, so
+typing a value into the filter finds nothing and a cut never leaves half of one. Values shorter
+than 4 characters are not masked (they would match inside ordinary words), and a value that a
+container re-encodes (quoted, escaped, hashed, split over lines) is not recognized. A value that
+only an older saved version held is not masked either, so a container that was not recreated
+after a change can still print its old value in clear. The values
+are opened once per request and kept in memory for it.
+
+Download saves the lines of the current chip, filter and **Show** as `deployment-<id>-logs.txt`
+(`-<service>` when a chip is chosen), one `stamp service text` per line, with the same masking.
+It reads Docker again, so it is the latest lines, not a copy of the box.
+
+What is recorded: opening the logs (the first read of the tab and every download) is an audit
+entry `deployment.logs_view` on the deployment with the service filter, the number of lines
+asked for and whether it was a download, never the lines or the text filter. Changing a chip, the
+filter or **Show** reads again from the start, which is another first read and another entry. The polls that
+follow are not recorded. Nothing is stored and no line is written to the application's own log.
+
 ## Choosing a deployment path
 
 The deployment form picks the deployment path from a folder browser of the allowed paths. Folders

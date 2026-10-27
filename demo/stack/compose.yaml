@@ -27,7 +27,10 @@ services:
     env_file:
       - environments/.env.db
       - environments/.env.db.secrets
+    # Prints a line that holds the value of its engine setting (the Logs tab masks it), then the
+    # names, never the values, of the demo variables it received, then idles. The doubled dollar
+    # sign keeps Compose from reading the variable while the file is parsed.
     command:
       - sh
       - -c
-      - "env | cut -d= -f1 | grep '^DEMO_' | sort; exec sleep infinity"
+      - "echo \"starting with engine $$DEMO_DB_ENGINE\"; env | cut -d= -f1 | grep '^DEMO_' | sort; exec sleep infinity"

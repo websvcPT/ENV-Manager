@@ -165,3 +165,30 @@ def make_fake(folder: Path) -> FakeDocker:
     docker = FakeDocker(folder)
     serve(docker)
     return docker
+
+
+LOGS_CASE = 'case "$*" in\n  *" logs "*) {} ;;\nesac\n'
+
+
+def log_row(prefix: str, stamp: str, message: str) -> str:
+    """One line as ``docker compose logs --timestamps --no-color`` prints it."""
+    return f"{prefix}  | {stamp} {message}\n"
+
+
+def serve_logs(docker: FakeDocker, output: str = "") -> None:
+    """Answer the reads of a stack with the services ``mysql`` and ``web`` and make
+    ``docker compose logs`` print ``output`` (which can be changed with ``say_logs``)."""
+    serve(
+        docker,
+        ps=[ps_entry("mysql", 1), ps_entry("web", 2)],
+        inspect=[inspect_entry(1), inspect_entry(2)],
+        network_ls=[],
+        network_inspect=[],
+    )
+    docker.behavior(BEHAVIOR + LOGS_CASE.format('cat "$dir/logs.out"'))
+    say_logs(docker, output)
+
+
+def say_logs(docker: FakeDocker, output: str) -> None:
+    """Change what ``docker compose logs`` prints."""
+    (docker.folder / "logs.out").write_text(output, encoding="utf-8")

@@ -240,7 +240,14 @@ async def test_the_deployment_tab_has_the_handoff_header_and_the_other_tabs_as_l
     assert response.status_code == 200
     assert_never_cached(response)
     body = main_of(response.text)
-    assert section_labels(response.text) == ["Overview", "Files", "History", "Settings", "Access"]
+    assert section_labels(response.text) == [
+        "Overview",
+        "Files",
+        "Logs",
+        "History",
+        "Settings",
+        "Access",
+    ]
     assert f'href="/deployments/{items.prod}" ' in body
     for tab in ("files", "activity", "settings"):
         assert f'href="/deployments/{items.prod}/{tab}"' in body

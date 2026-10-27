@@ -17,6 +17,13 @@ def test_every_occurrence_of_a_value_is_replaced() -> None:
     assert scrubber.scrub_bytes(b"x hunter2-secret") == b"x ****"
 
 
+def test_a_caller_can_name_the_replacement_and_it_is_taken_literally() -> None:
+    scrubber = OutputScrubber(["hunter2-secret"])
+    assert scrubber.scrub_text("a hunter2-secret b", "") == "a  b"
+    assert scrubber.scrub_text("hunter2-secret", "\\1 [x]") == "\\1 [x]"
+    assert OutputScrubber().scrub_text("plain", "") == "plain"
+
+
 def test_the_longest_value_wins_when_one_value_contains_another() -> None:
     scrubber = OutputScrubber(["pass", "password-1234", "word-1234"])
     assert scrubber.scrub_text("password-1234") == "****"

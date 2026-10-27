@@ -7,12 +7,15 @@
 {% from "macros/panels.html" import tabs %}
 {% from "macros/row_actions.html" import row_actions %}
 
-{#- The tabs of the deployment pages. `tab` is the open one: overview, files, activity, settings
-    or access. Settings is for callers who see the whole deployment. -#}
-{% macro deployment_tabs(deployment, can_manage_grants, tab) -%}
+{#- The tabs of the deployment pages. `tab` is the open one: overview, files, logs, activity, settings
+    or access. Logs is for callers who may read the container logs and Settings for callers who
+    see the whole deployment. -#}
+{% macro deployment_tabs(deployment, can_manage_grants, tab, can_view_logs=false) -%}
 {%- set base = "/deployments/" ~ deployment.id -%}
 {{ tabs(
-  [{"label": "Overview", "href": base}, {"label": "Files", "href": base ~ "/files"}, {"label": "History", "href": base ~ "/activity"}]
+  [{"label": "Overview", "href": base}, {"label": "Files", "href": base ~ "/files"}]
+  + ([{"label": "Logs", "href": base ~ "/logs"}] if can_view_logs else [])
+  + [{"label": "History", "href": base ~ "/activity"}]
   + ([{"label": "Settings", "href": base ~ "/settings"}] if deployment.full else [])
   + ([{"label": "Access", "href": base ~ "/access", "superadmin": true}] if can_manage_grants else []),
   base ~ ("" if tab == "overview" else "/" ~ tab)

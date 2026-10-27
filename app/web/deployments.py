@@ -106,9 +106,14 @@ def compose_linked_message(counts: str) -> str:
     return text
 
 
-def _page_context(access: DeploymentContext, tab: str, **extra: Any) -> dict[str, Any]:
+def page_context(access: DeploymentContext, tab: str, **extra: Any) -> dict[str, Any]:
     """What a tab page and its panels need: the deployment, the open tab and what the caller may
     do."""
+    item = ItemRef(
+        level=ItemLevel.DEPLOYMENT,
+        project_id=access.deployment.project_id,
+        deployment_id=access.deployment.id,
+    )
     return {
         "deployment": access.deployment,
         "tab": tab,
@@ -122,14 +127,8 @@ def _page_context(access: DeploymentContext, tab: str, **extra: Any) -> dict[str
             and not access.deployment.outside_allowed
         ),
         "can_manage_grants": access.scope.can(Capability.MANAGE_GRANTS),
-        "can_control_containers": access.scope.can(
-            Capability.CONTROL_CONTAINERS,
-            ItemRef(
-                level=ItemLevel.DEPLOYMENT,
-                project_id=access.deployment.project_id,
-                deployment_id=access.deployment.id,
-            ),
-        ),
+        "can_control_containers": access.scope.can(Capability.CONTROL_CONTAINERS, item),
+        "can_view_logs": access.scope.can(Capability.VIEW_CONTAINER_LOGS, item),
         "can_view_output": access.deployment.can_view_output,
         **extra,
     }
@@ -145,7 +144,7 @@ async def _access_subject(
         access.deployment.project_id,
         access.auth,
         "pages/deployment_access.html",
-        _page_context(access, "access"),
+        page_context(access, "access"),
     )
 
 
@@ -168,7 +167,7 @@ async def deployment_page(
 ) -> Response:
     """The Overview tab: the status strip, the runtime section (loaded after the page, so Docker
     is not asked here) and the newest deploys."""
-    return render(request, "pages/deployment.html", _page_context(access, "overview"))
+    return render(request, "pages/deployment.html", page_context(access, "overview"))
 
 
 @router.get("/deployments/{deployment_id:int}/runtime", include_in_schema=False)
@@ -193,7 +192,7 @@ async def runtime_section(
     return render(
         request,
         "fragments/runtime.html",
-        _page_context(access, "overview", loading=False, view=view, runtime_view=view, now=now),
+        page_context(access, "overview", loading=False, view=view, runtime_view=view, now=now),
     )
 
 
@@ -214,7 +213,7 @@ async def files_tab(
     return render(
         request,
         "pages/deployment_files.html",
-        _page_context(
+        page_context(
             access,
             "files",
             deleted="service" if deleted == "service" else "",
@@ -229,7 +228,7 @@ async def activity_tab(
     request: Request, access: Annotated[DeploymentContext, Depends(deployment_access())]
 ) -> Response:
     """The History tab: the deploy history across the services in the caller's scope."""
-    return render(request, "pages/deployment_activity.html", _page_context(access, "activity"))
+    return render(request, "pages/deployment_activity.html", page_context(access, "activity"))
 
 
 @router.get("/deployments/{deployment_id:int}/settings", include_in_schema=False)
@@ -247,7 +246,7 @@ async def settings_tab(
     return render(
         request,
         "pages/deployment_settings.html",
-        _page_context(
+        page_context(
             access,
             "settings",
             saved=saved,
@@ -305,7 +304,7 @@ async def services_table(
     request: Request, access: Annotated[DeploymentContext, Depends(deployment_access())]
 ) -> Response:
     """The services panel, refreshed when a deploy finishes."""
-    return render(request, "fragments/services_table.html", _page_context(access, "files"))
+    return render(request, "fragments/services_table.html", page_context(access, "files"))
 
 
 @router.get("/deployments/{deployment_id:int}/history", include_in_schema=False)
@@ -313,4 +312,4 @@ async def deploy_history(
     request: Request, access: Annotated[DeploymentContext, Depends(deployment_access())]
 ) -> Response:
     """The deploy history panel, refreshed when a deploy finishes."""
-    return render(request, "fragments/deploy_history.html", _page_context(access, "activity"))
+    return render(request, "fragments/deploy_history.html", page_context(access, "activity"))

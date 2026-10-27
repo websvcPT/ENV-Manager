@@ -589,14 +589,15 @@ def controls_of(markup: str) -> list[str]:
 async def test_the_overview_rows_offer_the_controls_that_fit_each_container(
     web_client: httpx.AsyncClient, stack: Stack
 ) -> None:
-    """Restart and Stop for a running container, Start for an exited one, Recreate only when
-    Compose files are linked and then the primary action of the row marked to be recreated."""
+    """Logs for every container, Restart and Stop for a running one, Start for an exited one,
+    Recreate only when Compose files are linked and then the primary action of the row marked to
+    be recreated."""
     await sign_in(web_client, "root")
     fragment = (await web_client.get(f"/deployments/{stack.prod}/runtime", headers=HTMX)).text
     rows = rows_of(fragment)
-    assert controls_of(rows["mysql"]) == ["open", "restart", "stop"]
-    assert controls_of(rows["redis"]) == ["restart", "stop"]
-    assert controls_of(rows["web"]) == ["open", "start"]
+    assert controls_of(rows["mysql"]) == ["open", "logs", "restart", "stop"]
+    assert controls_of(rows["redis"]) == ["logs", "restart", "stop"]
+    assert controls_of(rows["web"]) == ["open", "logs", "start"]
     assert f'hx-get="{stack.path("mysql", "restart")}"' in rows["mysql"]
     assert 'data-target="container-action"' in rows["mysql"]
     assert 'data-tone="danger"' in rows["mysql"].split('data-row-action="stop"')[1][:80]
@@ -605,8 +606,8 @@ async def test_the_overview_rows_offer_the_controls_that_fit_each_container(
     await link_files(stack)
     fragment = (await web_client.get(f"/deployments/{stack.prod}/runtime", headers=HTMX)).text
     rows = rows_of(fragment)
-    assert controls_of(rows["mysql"]) == ["open", "restart", "stop", "recreate"]
-    assert controls_of(rows["web"]) == ["open", "start", "recreate"]
+    assert controls_of(rows["mysql"]) == ["open", "logs", "restart", "stop", "recreate"]
+    assert controls_of(rows["web"]) == ["open", "logs", "start", "recreate"]
     web = rows["web"]
     assert re.search(r'<button[^>]*data-row-action="recreate"[^>]*class="[^"]*text-link', web)
     assert re.search(r'<a [^>]*data-row-action="open"[^>]*class="[^"]*size-ctl-md', web)
@@ -663,8 +664,8 @@ async def test_the_phone_list_carries_the_controls_in_the_row_menu(
         )
     )
     assert "data-row-menu-button" in items["web"]
-    assert controls_of(items["web"]) == ["open", "start", "recreate"]
-    assert controls_of(items["redis"]) == ["restart", "stop", "recreate"]
+    assert controls_of(items["web"]) == ["open", "logs", "start", "recreate"]
+    assert controls_of(items["redis"]) == ["logs", "restart", "stop", "recreate"]
     ids = re.findall(r' id="(service-summary[^"]*)"', response.text)
     assert len(ids) == len(set(ids))
 

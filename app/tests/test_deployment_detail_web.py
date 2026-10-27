@@ -19,7 +19,7 @@ from app.tests.web_helpers import (
     section_links,
 )
 
-ALL_TABS = ["Overview", "Files", "History", "Settings", "AccessSuperadmin"]
+ALL_TABS = ["Overview", "Files", "Logs", "History", "Settings", "AccessSuperadmin"]
 TAB_PATHS = ("", "/files", "/activity", "/settings")
 
 
@@ -112,8 +112,8 @@ async def test_the_tabs_follow_what_the_caller_sees(
 ) -> None:
     """Access is the superadmin's; Settings needs the whole deployment."""
     for user, tabs in (
-        ("admin", ["Overview", "Files", "History", "Settings"]),
-        ("deployment_admin", ["Overview", "Files", "History", "Settings"]),
+        ("admin", ["Overview", "Files", "Logs", "History", "Settings"]),
+        ("deployment_admin", ["Overview", "Files", "Logs", "History", "Settings"]),
         ("viewer", ["Overview", "Files", "History", "Settings"]),
         ("env_scoped_admin", ["Overview", "Files", "History"]),
     ):

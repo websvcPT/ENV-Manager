@@ -5,9 +5,10 @@
     deploy columns only. The structure actions live on the Files tab. A caller who may control
     the containers also gets Start (a stopped container), Restart and Stop (any other state) and,
     when Compose files are linked, Recreate, which becomes the primary action of a service marked
-    Recreate to apply; each opens the confirmation in the dialog of the page. Context:
+    Recreate to apply; each opens the confirmation in the dialog of the page. A caller who may
+    read the logs gets a Logs link to the Logs tab filtered to the service. Context:
     deployment (a DeploymentDetail), view (a RuntimeView), now, can_manage_structure,
-    can_control_containers. -#}
+    can_control_containers, can_view_logs. -#}
 {% from "macros/badges.html" import badge, container_state_badge, health_badge %}
 {% from "macros/deploy.html" import last_deploy_summary %}
 {% from "macros/feedback.html" import empty_state, note %}
@@ -76,7 +77,11 @@
 {{ ("start" if idle else "restart,stop") ~ (",recreate" if deployment.compose_files else "") }}
 {%- endif -%}
 {%- endmacro %}
-{#- The actions of a service row: Open (a stored service) and its container controls. `prefix`
+{#- Whether a service row links to its logs: the caller may read them and a container exists. -#}
+{% macro has_logs(row) -%}
+{%- if can_view_logs and ready and row.containers %}1{% endif -%}
+{%- endmacro %}
+{#- The actions of a service row: Open (a stored service), its logs and its container controls. `prefix`
     is unique in the page. -#}
 {% macro actions_cell(prefix, row, with_open=true) -%}
 {%- set keys = control_keys(row).split(",") if control_keys(row) else [] -%}
@@ -84,6 +89,9 @@
 {%- set ns = namespace(items=[]) -%}
 {%- if row.stored and with_open -%}
 {%- set ns.items = [{"key": "open", "label": "Open", "icon": "open", "href": "/services/" ~ row.stored.id, "primary": not recreate_first}] -%}
+{%- endif -%}
+{%- if has_logs(row) -%}
+{%- set ns.items = ns.items + [{"key": "logs", "label": "Logs", "icon": "logs", "href": "/deployments/" ~ deployment.id ~ "/logs?service=" ~ (row.name | urlencode)}] -%}
 {%- endif -%}
 {%- for key in keys -%}
 {%- set label, icon_name = CONTROLS[key] -%}
@@ -123,7 +131,7 @@
 {%- endif %}
 <div class="text-[13px]"><span class="text-xs font-bold uppercase tracking-wide text-ink3">{{ "Files" if deployment.full else "Files in your scope" }}</span> <span class="ml-1">{{ files_of(row) }}</span></div>
 <div class="text-[13px]">{% if row.stored %}{{ last_deploy_summary(row.stored) }}{% else %}<span class="text-ink3">No deploys</span>{% endif %}</div>
-{%- if control_keys(row) %}
+{%- if control_keys(row) or has_logs(row) %}
 <div class="flex justify-end">{{ actions_cell("service-summary-item-" ~ (row.stored.id if row.stored else "name-" ~ loop.index), row) }}</div>
 {%- endif %}</li>
 {%- endfor %}

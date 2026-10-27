@@ -1,0 +1,41 @@
+{#- The Logs tab of a deployment: a note on masking and the audit, the filters (a service chip
+    for each service with a container, the text filter, how many lines the first read shows,
+    Following and Paused, Download) and the log box, which asks for its lines when the page is
+    shown. Without a project, a usable Docker or a container the tab says so instead. Context:
+    deployment (a DeploymentDetail), state, ready, reason, project, services, params (the applied
+    filter), tail_choices, can_manage_structure. -#}
+{% extends "layouts/deployment.html" %}
+{% from "macros/feedback.html" import empty_state, note %}
+{% from "macros/icons.html" import icon %}
+{% from "macros/logs.html" import download_link, follow_state, follow_toggle, poller %}
+{% from "macros/panels.html" import text_link %}
+{% block tab %}
+<div class="flex flex-col gap-4 md:gap-5" data-fragment="logs">
+{%- if state == "no_project" %}
+<div class="flex flex-col gap-2" data-logs-state="no_project">{{ note("This deployment has no Docker Compose project name, so its logs cannot be read.") }}{% if can_manage_structure and deployment.full %}<p class="text-[13px]">{{ text_link("Set the project name in Settings", "/deployments/" ~ deployment.id ~ "/settings") }}</p>{% endif %}</div>
+{%- elif state == "unavailable" %}
+<div data-logs-state="unavailable">{{ note("The logs could not be read: " ~ reason, tone="warn") }}</div>
+{%- elif state == "empty" %}
+<div class="overflow-hidden rounded-panel border border-line bg-surface shadow-panel" data-logs-state="empty">{{ empty_state("No containers yet" if not project else "No containers in " ~ project, "Docker has no container for this stack on this host. Their logs appear here once the stack is started.", "layers") }}</div>
+{%- else %}
+{{ note("Values stored in this deployment's files are masked in the output. Opening logs is recorded in the audit log.") }}
+{% set control_classes = "h-11 md:h-ctl rounded-ctl border border-line-strong bg-surface px-3 text-sm text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus" %}
+<form id="log-form" action="/deployments/{{ deployment.id }}/logs" method="get" role="search" hx-get="/deployments/{{ deployment.id }}/logs/lines" hx-target="#log-poller" hx-swap="outerHTML" hx-trigger="input changed delay:400ms from:#log-q, change from:#log-chips, change from:#log-tail, submit" hx-sync="#log-poller:replace" class="flex flex-col gap-3">
+<fieldset id="log-chips" class="flex flex-wrap gap-2"><legend class="sr-only">Service</legend>
+{%- for name in [""] + services %}
+<label data-log-service="{{ name }}" class="inline-flex h-11 md:h-ctl cursor-pointer items-center rounded-full border border-line-strong bg-surface px-4 text-sm font-semibold text-ink hover:bg-surface2 has-checked:border-accent has-checked:bg-accent-soft has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-focus"><input type="radio" name="service" value="{{ name }}"{% if (params.service or "") == name %} checked{% endif %} class="sr-only"><span{% if name %} class="font-mono"{% endif %}>{{ name or "All services" }}</span></label>
+{%- endfor %}
+</fieldset>
+<div class="flex flex-wrap items-center gap-3">
+<div class="relative min-w-0 flex-1 basis-56"><label class="sr-only" for="log-q">Filter lines</label>{{ icon("search", "pointer-events-none absolute left-3 top-3.5 md:top-2.5 size-4 text-ink3", "2") }}<input id="log-q" name="q" type="search" value="{{ params.query }}" maxlength="200" autocomplete="off" placeholder="Filter lines" class="w-full rounded-full pl-9 {{ control_classes }}"></div>
+<div class="flex items-center gap-2"><label for="log-tail" class="text-[13px] font-semibold text-ink2">Show</label><select id="log-tail" name="tail" class="{{ control_classes }}">{% for count in tail_choices %}<option value="{{ count }}"{% if count == params.tail %} selected{% endif %}>Last {{ count }} lines</option>{% endfor %}</select></div>
+{{ follow_state(true) }}{{ follow_toggle(deployment, true) }}{{ download_link(deployment, params) }}
+</div>
+</form>
+<section aria-label="Log" data-fragment="log-view" class="overflow-hidden rounded-panel border border-line bg-surface shadow-panel">
+<div id="log-box" role="log" aria-label="Container log lines" tabindex="0" data-log-box class="h-[26rem] max-h-[70vh] overflow-auto bg-code py-2 font-mono text-[13px] leading-relaxed text-code-ink focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-focus md:h-[34rem]"><div id="log-lines" hx-ignore></div></div>
+{{ poller(deployment, params, "", true, loading=true) }}
+</section>
+{%- endif %}
+</div>
+{% endblock %}

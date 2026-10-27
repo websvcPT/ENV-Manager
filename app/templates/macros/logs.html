@@ -1,0 +1,56 @@
+{#- Pieces of the Logs tab, shared by the page and by the answers of the lines request, which
+    replace some of them out of band: a log line, the Following and Paused button, the download
+    link and the poller that carries the cursor of the next request. `params` is the applied
+    filter (service, query, tail), `following` whether the box follows. -#}
+{% from "macros/icons.html" import icon %}
+
+{% set TONES = [
+  "bg-info-bg text-info-fg",
+  "bg-ok-bg text-ok-fg",
+  "bg-warn-bg text-warn-fg",
+  "bg-mute-bg text-mute-fg",
+  "bg-accent-soft text-ink"
+] %}
+{% set LEVELS = {
+  "error": "bg-err-bg/30",
+  "warn": "bg-warn-bg/25",
+  "": ""
+} %}
+
+{#- One line: the time, the service in its own colour and the message, where a masked value is a
+    chip. The text is escaped; nothing in it is ever processed. -#}
+{% macro log_line(line) -%}
+<div data-log-line data-service="{{ line.service }}"{% if line.level %} data-level="{{ line.level }}"{% endif %} class="flex items-baseline gap-2 px-3 py-0.5 {{ LEVELS[line.level] }}"><time datetime="{{ line.stamp }}" title="{{ line.stamp }}" class="shrink-0 text-code-ink/60">{{ line.clock }}</time><span class="shrink-0 rounded-ctl px-1.5 text-xs font-bold {{ TONES[line.tone] }}">{{ line.service }}</span><span class="min-w-0 flex-1 whitespace-pre-wrap break-words">{% for part in line.parts %}{% if not loop.first %}<span data-log-mask class="rounded-ctl bg-accent px-1 font-bold text-accent-ink">[masked]</span>{% endif %}{{ part }}{% endfor %}</span></div>
+{%- endmacro %}
+
+{#- The Following and Paused button. It asks for the lines since the cursor of the poller and
+    turns the polling on or off in the answer. -#}
+{% macro follow_toggle(deployment, following, oob=false) -%}
+<button type="button" id="log-follow" aria-pressed="{{ "true" if following else "false" }}" hx-get="/deployments/{{ deployment.id }}/logs/lines" hx-include="#log-poller" hx-vals='{"follow": "{{ "0" if following else "1" }}", "toggle": "1"}' hx-target="#log-poller" hx-swap="outerHTML" hx-sync="#log-poller:replace"{% if oob %} hx-swap-oob="true"{% endif %} class="inline-flex h-11 md:h-ctl items-center justify-center gap-2 rounded-btn border px-4 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus {{ "border-ok-fg bg-ok-bg text-ok-fg" if following else "border-line-strong bg-surface text-ink hover:bg-surface2" }}">{{ icon("refresh" if following else "pause", "size-4", "2") }}<span>{{ "Following" if following else "Paused" }}</span></button>
+{%- endmacro %}
+
+{#- The hidden field that tells the filter form whether the box follows, so changing the filter
+    keeps the state. -#}
+{% macro follow_state(following, oob=false) -%}
+<input type="hidden" id="log-follow-state" name="follow" value="{{ "1" if following else "0" }}"{% if oob %} hx-swap-oob="true"{% endif %}>
+{%- endmacro %}
+
+{#- Download of the lines of the applied filter, as a text file. -#}
+{% macro download_link(deployment, params, oob=false) -%}
+<a id="log-download" href="/deployments/{{ deployment.id }}/logs/download?{{ params.query_string }}" download aria-label="Download the lines" data-log-download{% if oob %} hx-swap-oob="true"{% endif %} class="inline-flex size-11 md:size-ctl shrink-0 items-center justify-center rounded-full border border-line-strong text-ink hover:bg-surface2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ icon("download", "size-4", "2") }}</a>
+{%- endmacro %}
+
+{#- The footer of the box and the poller in one element: it carries the applied filter and the
+    cursor as hidden fields and, while following, asks for the lines since the cursor every two
+    seconds and replaces itself with the answer. Paused, it has no request of its own. `loading`
+    is the first request (asks on load), `reset` marks the answer that refilled the box and
+    `notice` is a failed read. -#}
+{% macro poller(deployment, params, cursor, following, loading=false, reset=false, notice=none, omitted=0) -%}
+<div id="log-poller" data-fragment="log-poller" data-log-poller{% if following %} data-following{% endif %}{% if reset %} data-reset{% endif %}
+{%- if loading or following %} hx-get="/deployments/{{ deployment.id }}/logs/lines" hx-trigger="{{ "load" if loading else "every 2s" }}" hx-include="this" hx-vals='{"follow": "{{ "1" if following else "0" }}"}' hx-swap="outerHTML" hx-sync="this:drop" hx-status:4xx="swap:none" hx-status:5xx="swap:none" data-background-refresh{% endif %} class="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-line px-4 py-3 text-xs text-ink2">
+<input type="hidden" name="service" value="{{ params.service or "" }}"><input type="hidden" name="q" value="{{ params.query }}"><input type="hidden" name="tail" value="{{ params.tail }}"><input type="hidden" name="cursor" value="{{ cursor }}">
+<span data-log-status>{% if loading %}Reading the logs{% elif following %}Following, new lines every 2 s{% else %}Paused{% endif %} · <span data-log-count>0</span> lines shown</span>
+{%- if notice %}<span role="status" data-log-notice class="font-semibold text-err-fg">{{ notice }}</span>{% endif %}
+{%- if omitted %}<span role="status" data-log-omitted class="font-semibold text-warn-fg">{{ omitted }} older {{ "line was" if omitted == 1 else "lines were" }} left out of this update.</span>{% endif %}
+<span class="ml-auto">Read with docker compose logs, nothing is stored</span></div>
+{%- endmacro %}
