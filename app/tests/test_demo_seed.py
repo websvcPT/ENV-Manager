@@ -35,6 +35,7 @@ from app.models import (
     User,
 )
 from app.seeds import (
+    DEMO_COMPOSE_PROJECT,
     DEMO_DEPLOYMENT_NAME,
     DEMO_FILES,
     DEMO_HOOK_COMMANDS,
@@ -127,6 +128,8 @@ async def test_seed_without_a_demo_root_has_no_demo_project(
     assert seed_data.demo is None
     async with create_session_factory(seeded_database)() as db:
         assert await db.scalar(select(Project).where(Project.name == DEMO_PROJECT_NAME)) is None
+        projects = (await db.execute(select(Deployment.compose_project))).scalars().all()
+        assert projects and set(projects) == {None}
 
 
 async def test_demo_structure_follows_the_committed_stack(
@@ -137,6 +140,7 @@ async def test_demo_structure_follows_the_committed_stack(
     assert demo.project.name == DEMO_PROJECT_NAME
     assert demo.deployment.name == DEMO_DEPLOYMENT_NAME
     assert demo.deployment.root_path == str(STACK_DIR)
+    assert demo.deployment.compose_project == DEMO_COMPOSE_PROJECT
     assert demo.allowed_path.path == str(STACK_DIR)
     assert (STACK_DIR / "compose.yaml").is_file()
     async with create_session_factory(engine)() as db:
@@ -258,6 +262,7 @@ def test_compose_file_loads_the_managed_env_files_with_pinned_images() -> None:
     assert all(re.fullmatch(r"(alpine|busybox):\d+\.\d+\.\d+", image) for image in images)
     assert not re.search(r"^\s*volumes:", text, re.MULTILINE)
     assert "cut -d= -f1" in text
+    assert re.search(rf"^name:\s*{DEMO_COMPOSE_PROJECT}\s*$", text, re.MULTILINE)
 
 
 def test_demo_values_are_marked_as_fake() -> None:
@@ -345,6 +350,7 @@ async def test_ensure_demo_project_is_repeatable_and_follows_a_moved_root(
         again = await ensure_demo_project(db, crypto, DEMO_DIR)
         await db.commit()
         assert again is not None and again.deployment.id == first.deployment.id
+        assert again.deployment.compose_project == DEMO_COMPOSE_PROJECT
         assert await _counts(db) == created
 
         moved = await ensure_demo_project(db, crypto, tmp_path / "moved")

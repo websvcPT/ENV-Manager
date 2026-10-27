@@ -2,7 +2,8 @@
 
 Development and testing only, added when a demo root is given (``ENVMANAGER_DEMO_ROOT`` for the
 ``envmanager dev seed`` command). The project ``demo`` has one deployment, ``stack``, rooted at
-``<demo root>/stack`` (which is also added to the allowed paths), with two services:
+``<demo root>/stack`` (which is also added to the allowed paths) and pointing at the Compose
+project ``env-manager-demo`` of its workloads, with two services:
 
     api: .env.api, demo-ca.pem
     db:  .env.db, .env.db.secrets
@@ -47,6 +48,8 @@ DEMO_PROJECT_NAME = "demo"
 DEMO_DEPLOYMENT_NAME = "stack"
 # Folder of the Compose stack inside the demo root.
 DEMO_STACK_FOLDER = "stack"
+# The Compose project of the committed stack, which the deployment points at.
+DEMO_COMPOSE_PROJECT = "env-manager-demo"
 DEMO_SERVICE_NAMES = ("api", "db")
 # The stored command of each demo service names that service, as stored commands run literally.
 DEMO_HOOK_COMMANDS = {
@@ -235,11 +238,15 @@ async def ensure_demo_project(
     )
     if deployment is None:
         deployment = Deployment(
-            project_id=project.id, name=DEMO_DEPLOYMENT_NAME, root_path=stack_root
+            project_id=project.id,
+            name=DEMO_DEPLOYMENT_NAME,
+            root_path=stack_root,
+            compose_project=DEMO_COMPOSE_PROJECT,
         )
         db.add(deployment)
     else:
         deployment.root_path = stack_root
+        deployment.compose_project = deployment.compose_project or DEMO_COMPOSE_PROJECT
     allowed_path = await db.scalar(select(AllowedPath).where(AllowedPath.path == stack_root))
     if allowed_path is None:
         allowed_path = AllowedPath(path=stack_root, created_by_id=superadmin.id)

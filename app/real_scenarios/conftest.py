@@ -23,7 +23,7 @@ from app.core.migrations import migrate_database
 from app.main import create_app
 from app.models import HookType, ServiceHook, User
 from app.real_scenarios.registry import LocalRegistry, remove_local_image, start_registry
-from app.seeds import SeedData, SeedDemo, seed
+from app.seeds import DEMO_COMPOSE_PROJECT, SeedData, SeedDemo, seed
 from app.services.versions import create_version
 
 SOURCE_IMAGE = "alpine:3.24.2"
@@ -31,7 +31,7 @@ PRIVATE_REPOSITORY = "private/alpine"
 PRIVATE_TAG = "1"
 DEMO_ROOT_VARIABLE = "ENVMANAGER_DEMO_ROOT"
 DIST_SUFFIX = "-dist"
-COMPOSE_PROJECT = "env-manager-demo"
+COMPOSE_PROJECT = DEMO_COMPOSE_PROJECT
 PROJECT_LABEL = f"label=com.docker.compose.project={COMPOSE_PROJECT}"
 LOG_WAIT_SECONDS = 30.0
 

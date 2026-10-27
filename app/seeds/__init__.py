@@ -34,6 +34,7 @@ from app.seeds.dataset import (
     seed_email,
 )
 from app.seeds.demo import (
+    DEMO_COMPOSE_PROJECT,
     DEMO_DEPLOYMENT_NAME,
     DEMO_FILES,
     DEMO_HOOK_COMMANDS,
@@ -51,6 +52,7 @@ __all__ = [
     "BULK_COUNT",
     "DELETED_PROJECT_ID",
     "DELETED_PROJECT_NAME",
+    "DEMO_COMPOSE_PROJECT",
     "DEMO_DEPLOYMENT_NAME",
     "DEMO_FILES",
     "DEMO_HOOK_COMMANDS",
