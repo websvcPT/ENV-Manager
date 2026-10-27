@@ -1,7 +1,7 @@
 """The runtime of the demo deployment read from the real daemon.
 
 The demo Compose project is started with the real docker command. The runtime then lists its two
-services with their state, uptime, restart count, addresses and the default network of the
+services with their state, health, uptime, restart count, addresses and the default network of the
 project with its subnet and gateway; after the containers are stopped it reads the exited state;
 and a container created before a deploy wrote its files is marked to be recreated until it is.
 """
@@ -53,7 +53,7 @@ async def read(world: World) -> StackRuntime:
 async def test_the_running_demo_services_their_state_and_their_network(
     world: World, demo: DemoStack, workloads: Workloads
 ) -> None:
-    compose(workloads, demo, "up", "-d")
+    compose(workloads, demo, "up", "-d", "--wait")
     runtime = await read(world)
     assert runtime.state is RuntimeState.READY and runtime.reason is None
     assert [(item.name, item.has_files, item.no_container) for item in runtime.services] == [
@@ -64,12 +64,16 @@ async def test_the_running_demo_services_their_state_and_their_network(
     for container in runtime.containers:
         assert container.state == "running" and container.exit_code == 0
         assert container.image == "alpine:3.24.2" and container.ports == ()
-        assert container.restart_count == 0 and container.health is None
+        assert container.restart_count == 0
         assert container.uptime is not None and container.uptime >= timedelta()
         assert container.created_at is not None and container.started_at is not None
         (attached,) = container.networks
         assert attached.name == NETWORK and attached.ip_address
         assert container.service in attached.aliases
+    assert {item.name: item.containers[0].health for item in runtime.services} == {
+        "api": "healthy",
+        "db": None,
+    }
     (network,) = runtime.networks
     assert (network.name, network.driver, network.internal, network.external) == (
         NETWORK,

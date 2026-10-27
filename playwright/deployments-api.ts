@@ -38,7 +38,8 @@ export async function deploymentId(
 
 /**
  * Create a deployment in a project through the same form post the page sends, as the caller of
- * `request` (the superadmin), and return its id. `distMissingPolicy` is block or warn.
+ * `request` (the superadmin), and return its id. `distMissingPolicy` is block or warn and
+ * `composeProject` the Docker Compose project name (empty for none).
  */
 export async function createDeployment(
   request: APIRequestContext,
@@ -46,6 +47,7 @@ export async function createDeployment(
   name: string,
   root: string,
   distMissingPolicy: 'block' | 'warn' = 'block',
+  composeProject = '',
 ): Promise<number> {
   const response = await request.post(`/projects/${projectId}/deployments`, {
     form: {
@@ -57,6 +59,7 @@ export async function createDeployment(
       file_mode: '0600',
       file_owner: '',
       file_group: '',
+      compose_project: composeProject,
     },
     headers: await csrfHeaders(request),
   });

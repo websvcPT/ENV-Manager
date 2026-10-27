@@ -1,0 +1,98 @@
+{#- The services of a deployment with their containers, read only: state and health, uptime, the
+    files stored for the service with the Recreate to apply warning, and the last deploy. A table
+    from `md`, a row list below. Without a readable runtime (no Compose project, Docker not
+    usable, no containers) the note or empty state comes first and the rows carry the files and
+    deploy columns only. The structure actions live on the Files tab. Context: deployment (a
+    DeploymentDetail), view (a RuntimeView), now, can_manage_structure. -#}
+{% from "macros/badges.html" import badge, container_state_badge, health_badge %}
+{% from "macros/deploy.html" import last_deploy_summary %}
+{% from "macros/feedback.html" import empty_state, note %}
+{% from "macros/panels.html" import panel, table, text_link %}
+{% from "macros/row_actions.html" import row_actions %}
+{% from "macros/time.html" import moment with context %}
+{% set ready = view.state.value == "ready" %}
+{% set add_href = "/deployments/" ~ deployment.id ~ "/services/new" %}
+{% macro name_link(row, extra="") -%}
+{%- if row.stored -%}
+<a href="/services/{{ row.stored.id }}" class="font-mono text-sm font-semibold text-ink hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus {{ extra }}">{{ row.name }}</a>
+{%- else -%}
+<span class="font-mono text-sm font-semibold">{{ row.name }}</span>
+{%- endif -%}
+{%- endmacro %}
+{% macro images(row) -%}
+{%- for image in row.images %}<span class="mt-0.5 block break-all font-mono text-xs font-normal text-ink2" data-image>{{ image }}</span>{% endfor -%}
+{%- endmacro %}
+{% macro states(row) -%}
+{%- if row.containers -%}
+<div class="flex flex-col gap-2">{% for container in row.containers %}<div class="flex flex-wrap items-center gap-1.5" data-container="{{ container.name }}">{{ container_state_badge(container.state) }}{{ health_badge(container.health) }}</div>{% endfor %}</div>
+{%- else -%}
+<span class="text-ink3" data-no-container>No container</span>
+{%- endif -%}
+{%- endmacro %}
+{% macro uptime_of(container) -%}
+{%- if container.state == "running" and container.uptime is not none -%}
+<span class="block">Up {{ container.uptime | duration }}</span>{% if container.started_at %}<span class="block text-xs text-ink2">since {{ moment(container.started_at) }}</span>{% endif %}
+{%- elif container.state in ["exited", "dead"] -%}
+<span class="block">Exited{% if container.finished_at %} {{ (now - container.finished_at) | duration }} ago{% endif %}</span>{% if container.exit_code is not none %}<span class="block text-xs text-ink2">exit code {{ container.exit_code }}</span>{% endif %}
+{%- elif container.state == "created" -%}
+<span class="block">Never started</span>
+{%- else -%}
+<span class="block">{{ container.state | capitalize }}</span>
+{%- endif -%}
+{%- if container.restart_count %}<span class="block text-xs text-ink2">restarted {{ container.restart_count }} {{ "time" if container.restart_count == 1 else "times" }}</span>{% endif -%}
+{%- endmacro %}
+{% macro uptimes(row) -%}
+{%- if row.containers -%}
+<div class="flex flex-col gap-2">{% for container in row.containers %}<div data-uptime>{{ uptime_of(container) }}</div>{% endfor %}</div>
+{%- else -%}
+<span class="text-ink3">None</span>
+{%- endif -%}
+{%- endmacro %}
+{% macro recreate_notice(row) -%}
+<span class="mt-1.5 flex flex-col items-start gap-1" data-recreate>{{ badge("recreate") }}<span class="text-xs text-ink2">Files written {{ moment(row.stack.last_written_at) }}{% if row.stale_created_at %}, container created {{ moment(row.stale_created_at) }}{% endif %}</span></span>
+{%- endmacro %}
+{% macro files_of(row) -%}
+{%- if row.stored -%}
+<span data-files-count>{{ row.stored.environments }}</span>{% if row.recreate_to_apply %}{{ recreate_notice(row) }}{% endif %}
+{%- else -%}
+<span class="text-ink2" data-no-files>No files in ENV Manager</span>{% if can_manage_structure %}<span class="mt-1 block">{{ text_link("Add service", add_href ~ "?name=" ~ (row.name | urlencode), data_add_service=row.name) }}</span>{% endif %}
+{%- endif -%}
+{%- endmacro %}
+{% call panel("Services", "runtime-services-title", fragment="runtime-services") %}
+{%- if view.state.value == "no_project" -%}
+<div class="flex flex-col gap-2 px-4 pb-4 md:px-5" data-runtime-state="no_project">{{ note("This deployment has no Docker Compose project name, so its containers are not shown.") }}{% if can_manage_structure and deployment.full %}<p class="text-[13px]">{{ text_link("Set the project name in Settings", "/deployments/" ~ deployment.id ~ "/settings") }}</p>{% endif %}</div>
+{%- elif view.state.value == "unavailable" -%}
+<div class="px-4 pb-4 md:px-5" data-runtime-state="unavailable">{{ note("The containers could not be read: " ~ view.reason, tone="warn") }}</div>
+{%- elif view.state.value == "empty" -%}
+<div data-runtime-state="empty">{{ empty_state("No containers yet" if not view.project else "No containers in " ~ view.project, "Docker has no container for this stack on this host. They appear here once the stack is started.", "layers") }}</div>
+{%- endif -%}
+{%- if view.rows -%}
+<div class="hidden md:block">
+{% call table("Services", ["Service", "Container", "Uptime", "Files" if deployment.full else "Files in your scope", "Last deploy", "Actions"] if ready else ["Service", "Files" if deployment.full else "Files in your scope", "Last deploy", "Actions"], right_columns=[5 if ready else 3], min_width_class="min-w-[980px]" if ready else "min-w-[640px]") %}
+{%- for row in view.rows %}
+<tr data-fragment="service-summary-row" data-service="{{ row.name }}"><th scope="row" class="border-t border-line px-4 py-3.5 text-left align-top">{{ name_link(row) }}{{ images(row) }}</th>
+{%- if ready %}
+<td class="border-t border-line px-4 py-3.5 align-top">{{ states(row) }}</td>
+<td class="border-t border-line px-4 py-3.5 align-top">{{ uptimes(row) }}</td>
+{%- endif %}
+<td class="border-t border-line px-4 py-3.5 align-top">{{ files_of(row) }}</td>
+<td class="border-t border-line px-4 py-3.5 align-top">{% if row.stored %}{{ last_deploy_summary(row.stored) }}{% else %}<span class="text-ink3">None</span>{% endif %}</td>
+<td class="border-t border-line px-4 py-3.5 whitespace-nowrap text-right align-top">{% if row.stored %}{{ row_actions("service-summary-" ~ row.stored.id, row.name, [{"key": "open", "label": "Open", "icon": "open", "href": "/services/" ~ row.stored.id, "primary": true}]) }}{% endif %}</td></tr>
+{%- endfor %}
+{% endcall %}
+</div>
+<ul class="m-0 list-none md:hidden" aria-label="Services">
+{%- for row in view.rows %}
+<li data-fragment="service-summary-item" data-service="{{ row.name }}" class="flex flex-col gap-2 border-t border-line p-4"><div class="min-w-0">{{ name_link(row, "inline-flex min-h-11 items-center") }}{{ images(row) }}</div>
+{%- if ready %}
+{{ states(row) }}
+<div class="text-[13px] text-ink2">{{ uptimes(row) }}</div>
+{%- endif %}
+<div class="text-[13px]"><span class="text-xs font-bold uppercase tracking-wide text-ink3">{{ "Files" if deployment.full else "Files in your scope" }}</span> <span class="ml-1">{{ files_of(row) }}</span></div>
+<div class="text-[13px]">{% if row.stored %}{{ last_deploy_summary(row.stored) }}{% else %}<span class="text-ink3">No deploys</span>{% endif %}</div></li>
+{%- endfor %}
+</ul>
+{%- elif view.state.value != "empty" -%}
+{{ empty_state("No services yet", "A service groups the environments that feed one workload. Deploys run per service.") }}
+{%- endif -%}
+{% endcall %}

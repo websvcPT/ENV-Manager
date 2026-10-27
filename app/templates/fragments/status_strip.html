@@ -1,0 +1,22 @@
+{#- The status strip of the Overview: the state flags, the containers and what is applied (once the
+    runtime is read), the last deploy, the drift state, the dist check and the post-deploy
+    outcome. Context: deployment (a DeploymentDetail), runtime_view (a RuntimeView, none while it
+    loads) and oob (optional, set when a fragment answer replaces the strip in the page). -#}
+{% from "macros/badges.html" import badge, deploy_status_badge, dist_badge, post_deploy_badge %}
+{% from "macros/icons.html" import icon %}
+{% set run = deployment.last_run %}
+{% set drift_badges = {"in_sync": ("deployed", "In sync"), "drift": ("drift", none), "missing": ("never", "Target missing")} %}
+{% macro cell(label) -%}
+<div class="flex min-w-48 flex-1 basis-48 flex-col gap-1.5 bg-surface p-4"><p class="text-xs font-bold uppercase tracking-wide text-ink3">{{ label }}</p><div class="flex flex-wrap items-center gap-2">{{ caller() }}</div></div>
+{%- endmacro %}
+<section aria-label="Status" id="status-strip" data-fragment="status-strip"{% if oob | default(false) %} hx-swap-oob="true"{% endif %} class="flex flex-wrap gap-px overflow-hidden rounded-panel border border-line bg-line shadow-panel">
+{% call cell("State") %}{% if deployment.flags %}{% for flag in deployment.flags %}{{ deploy_status_badge(flag.value) }}{% endfor %}{% else %}<span class="inline-flex items-center gap-1.5 text-[13px] text-ink2">{{ icon("check", "size-3.5", "2.4") }}No flags</span>{% endif %}{% endcall %}
+{% if runtime_view and runtime_view.show_counts %}
+{% call cell("Containers") %}{{ badge("up" if runtime_view.running == runtime_view.total else "attention", runtime_view.running ~ " of " ~ runtime_view.total ~ " running") }}{% endcall %}
+{% call cell("Applied") %}{% if runtime_view.to_recreate %}{{ badge("recreate", runtime_view.to_recreate ~ " to recreate") }}{% else %}{{ badge("deployed", "All applied") }}{% endif %}{% endcall %}
+{% endif %}
+{% call cell("Last deploy") %}{% if run %}{{ deploy_status_badge(run.status.value) }}<span class="text-[13px] text-ink2">{{ run.started_at.strftime("%Y-%m-%d %H:%M") }} · {{ run.who }}{% if run.trigger_label %} · {{ run.trigger_label }}{% endif %}</span>{% else %}{{ badge("never") }}{% endif %}{% endcall %}
+{% call cell("Drift state") %}{% if deployment.drift_state %}{% set drift_key, drift_label = drift_badges[deployment.drift_state.value] %}{{ badge(drift_key, drift_label) }}{% else %}{{ badge("unchanged", "Not checked yet") }}{% endif %}{% endcall %}
+{% call cell("Dist check") %}{% if deployment.dist_outcome %}{{ dist_badge(deployment.dist_outcome.value) }}{% else %}{{ badge("unchanged", "Not checked yet") }}{% endif %}{% endcall %}
+{% call cell("Post-deploy") %}{% if run %}{{ post_deploy_badge(run.post_deploy.value) }}<span class="text-[13px] text-ink2">{{ run.service }}</span>{% else %}<span class="text-[13px] text-ink2">No deploys yet</span>{% endif %}{% endcall %}
+</section>

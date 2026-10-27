@@ -42,12 +42,17 @@ from app.services.versions import create_version
 from app.tests.conftest import sign_in
 from app.tests.deploy_helpers import CountingCrypto, Harness
 from app.tests.dist_helpers import link_dist
+from app.tests.fake_docker import FakeDocker
 from app.tests.grant_helpers import count_statements
+from app.tests.runtime_helpers import inspect_entry, ps_entry, serve
 from app.tests.web_helpers import HTMX, post, stage_deployments
 
 STRUCTURE_LOAD = "SELECT projects.id, NULL AS anon_1"
 SETTINGS_READ = re.compile(r"FROM app_settings$")
 COMMAND = "docker compose up -d --no-deps mysql"
+# Statements of the runtime fragment: what the page runs plus the matching of the stored services
+# with the containers and the last deploy writes.
+RUNTIME_LIMIT = 24
 
 
 @dataclass(frozen=True)
@@ -112,6 +117,7 @@ PAGE_LIMITS = (
     ("deployment files tab", "/deployments/{deployment}/files", 18),
     ("deployment history tab", "/deployments/{deployment}/activity", 18),
     ("deployment settings tab", "/deployments/{deployment}/settings", 18),
+    ("deployment runtime fragment", "/deployments/{deployment}/runtime", RUNTIME_LIMIT),
     ("deployment access tab", "/deployments/{deployment}/access", 24),
     ("deployment edit form", "/deployments/{deployment}/edit", 20),
     ("new deployment page", "/projects/{project}/deployments/new", 20),
@@ -427,3 +433,38 @@ async def test_the_stacks_list_and_the_stack_form_run_a_fixed_number_of_statemen
     assert status == 200
     assert len(filled) <= 21, f"the stack form: {len(filled)} statements"
     assert structure_loads(filled) <= 1 and settings_reads(filled) == 1
+
+
+async def test_the_overview_page_never_asks_docker_and_its_fragment_reads_it_once_in_five_seconds(
+    web_app: FastAPI, web_client: httpx.AsyncClient, ids: Ids, tmp_path: Path
+) -> None:
+    fake = FakeDocker(tmp_path / "fake")
+    serve(
+        fake,
+        ps=[ps_entry("mysql", 1)],
+        inspect=[inspect_entry(1)],
+        network_ls=[],
+        network_inspect=[],
+    )
+    web_app.state.docker_cli = fake.cli()
+    async with web_app.state.session_factory() as db:
+        deployment = await db.get(Deployment, ids.deployment)
+        assert deployment is not None
+        deployment.compose_project = "fancy"
+        await db.commit()
+    await sign_in(web_client, "root")
+    url = f"/deployments/{ids.deployment}"
+
+    status, page = await measure(web_app, web_client.get(url))
+    assert status == 200 and len(page) <= 18
+    assert fake.probes() == 0 and fake.calls() == []
+
+    status, first = await measure(web_app, web_client.get(f"{url}/runtime", headers=HTMX))
+    assert status == 200 and settings_reads(first) == 1 and structure_loads(first) <= 1
+    assert len(first) <= RUNTIME_LIMIT
+    reads = len(fake.calls())
+    assert fake.probes() == 1 and reads > 0
+
+    status, second = await measure(web_app, web_client.get(f"{url}/runtime", headers=HTMX))
+    assert status == 200 and len(second) <= RUNTIME_LIMIT
+    assert len(fake.calls()) == reads and fake.probes() == 1

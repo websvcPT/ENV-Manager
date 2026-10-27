@@ -6,7 +6,7 @@
    row, row toggle, tree toggle, copy, dismiss, history back, picking a path into a field,
    limiting the version comparison to two versions, closing dialogs when the server asks,
    the deploy dialog (loading content, chosen environments, closing when the load fails), the
-   files of the Docker Compose import following their services, the dist file fields and the type suggestion of the file forms, and a toast when an htmx request fails (an access grid checkbox goes back to the stored state). */
+   files of the Docker Compose import following their services, the dist file fields and the type suggestion of the file forms, a toast when an htmx request fails (an access grid checkbox goes back to the stored state), and the quiet refresh of sections that reload themselves. */
 (function () {
   'use strict';
 
@@ -524,12 +524,25 @@
     }
   }
 
+  /* A section that refreshes by itself (data-background-refresh) is quiet: its requests do not
+     start while the browser tab is hidden, and a failed one keeps what is shown without a toast,
+     since the next refresh tries again. */
+  function isBackgroundRefresh(event) {
+    var ctx = event.detail && event.detail.ctx;
+    var source = (ctx && ctx.sourceElement) || event.target;
+    return source instanceof Element && source.hasAttribute('data-background-refresh');
+  }
+  document.addEventListener('htmx:before:request', function (event) {
+    if (document.hidden && isBackgroundRefresh(event)) { event.preventDefault(); }
+  });
+
   /* A failed request keeps the previous content (the server answer is not swapped) and the
      person is told with a toast. Validation answers (422) are swapped as form content instead. */
   document.addEventListener('htmx:response:error', function (event) {
     var ctx = event.detail && event.detail.ctx;
     var status = ctx && ctx.response ? ctx.response.status : 0;
     restoreGridToggle(event);
+    if (isBackgroundRefresh(event)) { return; }
     if (status >= 500 || status === 403 || status === 404) {
       closeLoadingDialogs();
       showErrorToast();
@@ -544,6 +557,7 @@
   });
   document.addEventListener('htmx:error', function (event) {
     restoreGridToggle(event);
+    if (isBackgroundRefresh(event)) { return; }
     closeLoadingDialogs();
     showErrorToast();
   });

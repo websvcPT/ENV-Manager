@@ -1,6 +1,6 @@
 # Using ENV Manager
 
-Creating a deployment, choosing a deployment path, adding files, deployment files, Compose files, importing from Docker
+Creating a deployment, the Overview of a running stack, choosing a deployment path, adding files, deployment files, Compose files, importing from Docker
 Compose, file types, command line deploys, the drift view, users, accounts and post-deploy commands. API tokens
 and the API are in [api.md](api.md).
 
@@ -104,6 +104,56 @@ the superadmin sets it in **Edit deployment**. While the field is empty and exac
 project has its folder at the deployment's root, the form offers **Fill from the running
 containers** with that name. The name is in the audit entries of the create and the edit
 (`compose_project`).
+
+## The Overview of a deployment
+
+The Overview tab of a deployment is a read only view of the running stack. It needs Docker, and
+the deployment needs its [Compose project](#the-compose-project); the page itself is shown at
+once and the container section loads after it, so a slow Docker never holds the page. The section
+refreshes by itself every 10 seconds while the browser tab is in front, and when a deploy
+finishes. A refresh that fails leaves what is shown and tries again at the next one. ENV Manager
+asks Docker for the state, health, times, restart count, published ports and addresses of the
+containers and for the networks, never for their environment variables, and keeps the answer for
+5 seconds, so several viewers cost one set of Docker commands.
+
+The status strip at the top has the state flags, the last deploy, the drift state, the dist
+check and the post-deploy outcome, and, once the containers are read, two more cells:
+
+- **Containers** is how many containers run out of all of them ("3 of 4 running").
+- **Applied** is how many containers must be recreated to use the files deployed to them ("1 to
+  recreate"), or "All applied".
+
+The **Services** table has one row per Compose service and per service stored in ENV Manager,
+matched by name (on a phone it is a list with the same facts):
+
+| Column | Meaning |
+| --- | --- |
+| Service | The name, a link to the service page when ENV Manager stores files for it, with the image of its container under it. |
+| Container | The state of the container (running, exited, restarting, paused, created, dead) and, when the image has a healthcheck, healthy, unhealthy or starting. A service with files but no container says "No container". |
+| Uptime | A running container shows "Up 3 days" and when it started. A stopped one shows "Exited 2 hours ago" and its exit code. "restarted 4 times" appears when Docker restarted it. |
+| Files | The number of files stored for the service. A Compose service with no stored service says "No files in ENV Manager", and the superadmin gets an **Add service** link that opens the form with that name filled in. |
+| Last deploy | The outcome of the last deploy of the service, when and by whom. |
+
+**Recreate to apply** is a warning on the Files column. A container reads its `env_file` files
+only when it is created, so restarting it never loads a deploy. A deploy that wrote a file (not a
+dry run, not an import from Compose, and not a file found identical on disk) marks every
+container of the service that was created before the write, whatever the deploy ended as, since
+the files are written one by one. The warning shows when the files were written and when the
+container was created. A post-deploy command that recreates the container (such as
+`docker compose up -d --no-deps --force-recreate <service>`) runs after the write and clears it.
+
+The **Network** panel, for callers who see the whole deployment, lists the networks of the stack
+with their driver, subnet and gateway and a note for an internal network ("Internal, no outside
+access") or an external one shared with other stacks, then the addresses of each service on those
+networks and its published ports. A port badge says which interfaces listen: **All interfaces**
+(shown as a warning, since the port is reachable from the network), **This host only** (loopback)
+or one address. The panel is left out when there is nothing to show.
+
+A caller with access to some services only sees the rows, the counts and the status of those
+services, and no Network panel. The section also says when there is nothing to list: a deployment
+with no Compose project name (the superadmin gets a link to the Settings tab, where the field
+is), Docker not usable (with the reason, the same as the Post-deploy settings show), and a
+project that has no containers on this host.
 
 ## Choosing a deployment path
 

@@ -12,6 +12,7 @@ from app.core.display_time import (
     DATE_FORMATS,
     DEFAULT_DATE_FORMAT,
     DisplayTime,
+    duration_text,
     load_zone,
     zone_names,
 )
@@ -184,3 +185,24 @@ async def test_the_csv_export_keeps_utc_whatever_the_display_zone(
     rows = list(csv.reader(io.StringIO("".join(chunks))))
     assert rows[0][1] == "time_utc"
     assert rows[1][1] == "2026-07-01T23:30:00Z"
+
+
+@pytest.mark.parametrize(
+    ("span", "text"),
+    [
+        (timedelta(seconds=0), "0 seconds"),
+        (timedelta(seconds=1), "1 second"),
+        (timedelta(seconds=59, milliseconds=900), "59 seconds"),
+        (timedelta(seconds=60), "1 minute"),
+        (timedelta(minutes=5, seconds=59), "5 minutes"),
+        (timedelta(minutes=60), "1 hour"),
+        (timedelta(hours=2, minutes=59), "2 hours"),
+        (timedelta(hours=24), "1 day"),
+        (timedelta(hours=47, minutes=59), "1 day"),
+        (timedelta(days=3, hours=5), "3 days"),
+        (timedelta(days=400), "400 days"),
+        (timedelta(seconds=-5), "0 seconds"),
+    ],
+)
+def test_a_duration_is_written_in_its_largest_whole_unit(span: timedelta, text: str) -> None:
+    assert duration_text(span) == text

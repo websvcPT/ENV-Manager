@@ -29,7 +29,28 @@
   "inherited": ("bg-info-bg text-info-fg", "arrow-right", "Inherited"),
   "changed": ("bg-warn-bg text-warn-fg", "minus", "Changed"),
   "added": ("bg-ok-bg text-ok-fg", "plus", "Added"),
-  "removed": ("bg-err-bg text-err-fg", "close", "Removed")
+  "removed": ("bg-err-bg text-err-fg", "close", "Removed"),
+  "up": ("bg-ok-bg text-ok-fg", "check", "Running"),
+  "exited": ("bg-mute-bg text-mute-fg", "circle-minus", "Exited"),
+  "restarting": ("bg-warn-bg text-warn-fg", "restore", "Restarting"),
+  "paused": ("bg-warn-bg text-warn-fg", "pause", "Paused"),
+  "created": ("bg-info-bg text-info-fg", "clock", "Created"),
+  "dead": ("bg-err-bg text-err-fg", "close", "Dead"),
+  "healthy": ("bg-ok-bg text-ok-fg", "check", "Healthy"),
+  "unhealthy": ("bg-err-bg text-err-fg", "close", "Unhealthy"),
+  "starting": ("bg-info-bg text-info-fg", "clock", "Starting"),
+  "recreate": ("bg-warn-bg text-warn-fg", "restore", "Recreate to apply"),
+  "attention": ("bg-warn-bg text-warn-fg", "warning", "Needs attention"),
+  "all-interfaces": ("bg-warn-bg text-warn-fg", "warning", "All interfaces"),
+  "this-host": ("bg-mute-bg text-mute-fg", "lock", "This host only"),
+  "one-address": ("bg-mute-bg text-mute-fg", "info", "One address")
+} %}
+
+{#- Container state values of Docker mapped to badge keys; a state that is not listed reads as
+    exited with its own name as the label. -#}
+{% set CONTAINER_BADGES = {
+  "running": "up", "exited": "exited", "restarting": "restarting", "paused": "paused",
+  "created": "created", "dead": "dead"
 } %}
 
 {#- Deploy run outcomes (the `DeployStatus` values) mapped to badge keys. -#}
@@ -74,4 +95,27 @@
 } -%}
 {%- set key, label = badges[outcome] -%}
 {{ badge(key, label) }}
+{%- endmacro %}
+
+{#- Badge for the state of a container (running, exited, restarting, ...). -#}
+{% macro container_state_badge(state) -%}
+{%- if state in CONTAINER_BADGES -%}
+{{ badge(CONTAINER_BADGES[state]) }}
+{%- else -%}
+{{ badge("exited", state | capitalize) }}
+{%- endif -%}
+{%- endmacro %}
+
+{#- Badge for the health of a container (healthy, unhealthy or starting); nothing for a
+    container without a healthcheck. -#}
+{% macro health_badge(health) -%}
+{%- if health in ["healthy", "unhealthy", "starting"] -%}
+{{ badge(health) }}
+{%- endif -%}
+{%- endmacro %}
+
+{#- Badge for which interfaces a published port listens on: a `PortBind` value. -#}
+{% macro bind_badge(bind) -%}
+{%- set keys = {"all_interfaces": "all-interfaces", "this_host": "this-host", "address": "one-address"} -%}
+{{ badge(keys[bind]) }}
 {%- endmacro %}

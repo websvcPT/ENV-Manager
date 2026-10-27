@@ -30,11 +30,17 @@
 <template id="deploy-dialog-loading">{{ deploy_loading() }}</template>
 {%- endmacro %}
 
+{#- The outcome of the last deploy of a service row with when and by whom, or "No deploys yet".
+    `row` is a service row of a deployment detail (or its deployment files row). -#}
+{% macro last_deploy_summary(row) -%}
+{% if row.last_deploy %}{{ deploy_status_badge(row.last_deploy.status.value) }}<span class="mt-1 block text-xs text-ink2">{{ row.last_deploy.started_at.strftime("%Y-%m-%d %H:%M") }}{% if row.last_deploy.actor %} · {{ row.last_deploy.actor }}{% endif %}{% if row.last_deploy.trigger_label %} · {{ row.last_deploy.trigger_label }}{% endif %}</span>{% else %}{{ badge("never", "No deploys yet") }}{% endif %}
+{%- endmacro %}
+
 {#- The three cells of a service row that tell how its deploys went: the last deploy, the
     post-deploy outcome of that run and the state flags. `row` is a service row of a deployment
     detail (or its deployment files row). -#}
 {% macro deploy_state_cells(row) -%}
-<td class="border-t border-line px-4 py-3.5">{% if row.last_deploy %}{{ deploy_status_badge(row.last_deploy.status.value) }}<span class="mt-1 block text-xs text-ink2">{{ row.last_deploy.started_at.strftime("%Y-%m-%d %H:%M") }}{% if row.last_deploy.actor %} · {{ row.last_deploy.actor }}{% endif %}{% if row.last_deploy.trigger_label %} · {{ row.last_deploy.trigger_label }}{% endif %}</span>{% else %}{{ badge("never", "No deploys yet") }}{% endif %}</td>
+<td class="border-t border-line px-4 py-3.5">{{ last_deploy_summary(row) }}</td>
 <td class="border-t border-line px-4 py-3.5">{% if row.post_deploy %}{{ post_deploy_badge(row.post_deploy.value) }}{% else %}<span class="text-ink3">None</span>{% endif %}</td>
 <td class="border-t border-line px-4 py-3.5">{% if row.flags %}<span class="flex flex-wrap gap-1.5">{% for flag in row.flags %}{{ deploy_status_badge(flag.value) }}{% endfor %}</span>{% else %}<span class="inline-flex items-center gap-1.5 text-[13px] text-ink2">{{ icon("check", "size-3.5", "2.4") }}No flags</span>{% endif %}</td>
 {%- endmacro %}

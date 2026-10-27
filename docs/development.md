@@ -25,7 +25,7 @@ for development and testing only.
 | `make migrate`, `make revision` | Run migrations up, or print the command that creates a new revision. |
 | `make tailwind-build`, `make tailwind-watch`, `make frontend-build` | Build the CSS once (minified, in a container), watch it, or build the whole bundle. |
 | `make static-fetch`, `make check-pins` | Re-download the pinned vendor assets, or fail when a tool version written in more than one file differs. |
-| `make demo-up`, `make demo-reset`, `make demo-down`, `make e2e-demo` | The demo deployment, described below. |
+| `make demo-up`, `make demo-reset`, `make demo-workloads`, `make demo-down`, `make e2e-demo` | The demo deployment, described below. |
 
 ## Tests
 
@@ -67,9 +67,10 @@ mounts the Docker socket.
 | --- | --- |
 | `make demo-up` | Restores the baseline when no target file exists yet, restarts the app container with `docker-compose-demo.yml` (the Docker socket, the host docker group id in `group_add`, and `demo/` mounted at the same absolute path as on the host), waits for it and seeds the demo project. |
 | `make demo-reset` | Restores the demo target files to the baseline. Database state (versions, deploy results) is not touched. |
+| `make demo-workloads` | Restores the baseline and starts the demo workloads (Compose project `env-manager-demo`) from `demo/stack/compose.yaml`, waiting until they run and the one with a healthcheck is healthy. `make e2e-demo` runs it before the browser specs, so they do not depend on an earlier spec having started the containers. |
 | `make demo-down` | Stops the demo workloads (Compose project `env-manager-demo`) and recreates the app container from the default stack, without the socket. |
 | `make demo-registry-down` | Removes the containers (with their volumes) of the local test registry, described below, whichever run left them. |
-| `make e2e-demo` | Runs `make demo-up` and `make demo-reset`, then the real-scenario tests in `app/real_scenarios` inside the app container, then the browser specs in `playwright/docker-tests` (against the real daemon and a local registry), then `make demo-registry-down`, `make demo-reset` and `make demo-down`, whether or not they pass. |
+| `make e2e-demo` | Runs `make demo-up` and `make demo-reset`, then the real-scenario tests in `app/real_scenarios` inside the app container (they manage the containers themselves), `make demo-workloads`, then the browser specs in `playwright/docker-tests` (against the real daemon and a local registry), then `make demo-registry-down`, `make demo-reset` and `make demo-down`, whether or not they pass. |
 
 The real-scenario tests are outside the default test run. Each one seeds a throwaway database,
 runs the real `envmanager deploy` command against the demo stack on the mounted host folder and

@@ -11,13 +11,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.client_address import client_address
 from app.core.templating import render
 from app.models import Deployment
+from app.models.types import utc_now
 from app.services.access_grid import NodeKind
 from app.services.deployment_detail import DeploymentDetail, load_deployment_detail
 from app.services.deployments import DeploymentInUseError, delete_deployment
+from app.services.docker_cli import DockerCli
 from app.services.paths import AllowedPaths
 from app.services.permissions import AccessScope, Capability, ItemLevel, ItemRef, Visibility
+from app.services.stack_runtime import load_stack_runtime
+from app.services.stack_runtime_view import build_runtime_view
 from app.web.access_tabs import AccessSubject, mount_access_routes
-from app.web.dependencies import AuthContext, get_db, item_access
+from app.web.dependencies import AuthContext, get_db, get_docker_cli, item_access
 from app.web.htmx import hx_redirect
 from app.web.params import plain_number_text
 
@@ -154,8 +158,35 @@ async def _whole_deployment(
 async def deployment_page(
     request: Request, access: Annotated[DeploymentContext, Depends(deployment_access())]
 ) -> Response:
-    """The Overview tab: the status strip, the services in brief and the newest deploys."""
+    """The Overview tab: the status strip, the runtime section (loaded after the page, so Docker
+    is not asked here) and the newest deploys."""
     return render(request, "pages/deployment.html", _page_context(access, "overview"))
+
+
+@router.get("/deployments/{deployment_id:int}/runtime", include_in_schema=False)
+async def runtime_section(
+    request: Request,
+    access: Annotated[DeploymentContext, Depends(deployment_access())],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    cli: Annotated[DockerCli, Depends(get_docker_cli)],
+) -> Response:
+    """The runtime section of the Overview: the services with their containers, the Network
+    panel for a caller who sees the whole deployment, and the status strip that counts them.
+
+    The containers are read for the caller's own services only. Docker being unusable, a project
+    that is not set and a project without containers are states of the answer, not errors.
+    """
+    deployment = await db.get(Deployment, access.deployment.id)
+    if deployment is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "deployment not found")
+    now = utc_now()
+    runtime = await load_stack_runtime(db, cli, deployment, now=now)
+    view = build_runtime_view(runtime, access.deployment)
+    return render(
+        request,
+        "fragments/runtime.html",
+        _page_context(access, "overview", loading=False, view=view, runtime_view=view, now=now),
+    )
 
 
 @router.get("/deployments/{deployment_id:int}/files", include_in_schema=False)

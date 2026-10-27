@@ -6,7 +6,7 @@ export of the audit log keeps UTC, since a file is read by programs and by peopl
 """
 
 from dataclasses import dataclass
-from datetime import UTC, datetime, tzinfo
+from datetime import UTC, datetime, timedelta, tzinfo
 from functools import lru_cache
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
@@ -86,6 +86,22 @@ def _clock(moment: datetime, pattern: str) -> str:
     if "%I" in pattern:
         return text.lstrip("0")
     return text
+
+
+_DURATION_UNITS = (("day", 86400), ("hour", 3600), ("minute", 60))
+
+
+def duration_text(span: timedelta) -> str:
+    """The span in its largest whole unit, as Docker words it: "3 days", "1 hour", "40 seconds".
+
+    A negative span reads as zero seconds.
+    """
+    seconds = max(int(span.total_seconds()), 0)
+    for unit, size in _DURATION_UNITS:
+        if seconds >= size:
+            count = seconds // size
+            return f"{count} {unit}" if count == 1 else f"{count} {unit}s"
+    return f"{seconds} second" if seconds == 1 else f"{seconds} seconds"
 
 
 def display_of(connection: HTTPConnection) -> DisplayTime:

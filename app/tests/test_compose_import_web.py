@@ -536,7 +536,8 @@ async def test_the_runs_of_the_import_are_listed_as_imported_from_compose(
     files = (await web_client.get(f"/deployments/{layout.empty}/files")).text
     assert files.count("Imported from Compose") == 2
     overview = (await web_client.get(f"/deployments/{layout.empty}")).text
-    assert overview.count("Imported from Compose") >= 4
+    runtime = (await web_client.get(f"/deployments/{layout.empty}/runtime")).text
+    assert overview.count("Imported from Compose") + runtime.count("Imported from Compose") >= 4
     history = (await web_client.get(f"/deployments/{layout.empty}/history")).text
     assert history.count("data-history-trigger") == 2
     assert "found identical to the host file, nothing written." in history

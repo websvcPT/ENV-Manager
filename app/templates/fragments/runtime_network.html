@@ -1,0 +1,34 @@
+{#- The Network panel of the Overview: the networks of the stack, then each service's addresses on
+    them and its published ports, with a warning on the ports that listen on every interface. Only
+    for callers who see the whole deployment. The tables scroll inside the panel on a phone.
+    Context: view (a RuntimeView). -#}
+{% from "macros/badges.html" import bind_badge %}
+{% from "macros/panels.html" import panel, table %}
+{% macro host_of(port) -%}
+{%- set address = port.host_ip or "0.0.0.0" -%}
+{{ "[" ~ address ~ "]" if ":" in address else address }}:{{ port.host_port }}
+{%- endmacro %}
+{% call panel("Network", "runtime-network-title", fragment="runtime-network") %}
+{%- if view.networks -%}
+<h3 class="px-4 pb-2 text-xs font-bold uppercase tracking-wide text-ink3 md:px-5">Networks</h3>
+{% call table("Networks of the stack", ["Network", "Driver", "Subnet", "Gateway", "Notes"], min_width_class="min-w-[640px]") %}
+{%- for network in view.networks %}
+<tr data-fragment="network-row" data-network="{{ network.name }}"><th scope="row" class="border-t border-line px-4 py-3.5 text-left align-top font-mono text-sm font-semibold">{{ network.name }}</th>
+<td class="border-t border-line px-4 py-3.5 align-top">{{ network.driver }}</td>
+<td class="border-t border-line px-4 py-3.5 align-top font-mono text-[13px]">{% for item in network.subnets %}<span class="block">{{ item.subnet }}</span>{% else %}<span class="font-sans text-ink3">None</span>{% endfor %}</td>
+<td class="border-t border-line px-4 py-3.5 align-top font-mono text-[13px]">{% for item in network.subnets %}<span class="block">{{ item.gateway or "None" }}</span>{% else %}<span class="font-sans text-ink3">None</span>{% endfor %}</td>
+<td class="border-t border-line px-4 py-3.5 align-top text-[13px] text-ink2">{% if network.internal %}<span class="block">Internal, no outside access</span>{% endif %}{% if network.external %}<span class="block">External, shared with other stacks</span>{% endif %}{% if not network.internal and not network.external %}<span class="text-ink3">None</span>{% endif %}</td></tr>
+{%- endfor %}
+{% endcall %}
+{%- endif -%}
+{%- if view.connections -%}
+<h3 class="px-4 pb-2 pt-5 text-xs font-bold uppercase tracking-wide text-ink3 md:px-5">Addresses and published ports</h3>
+{% call table("Addresses and published ports of each service", ["Service", "Addresses", "Published ports"], min_width_class="min-w-[640px]") %}
+{%- for row, container in view.connections %}
+<tr data-fragment="network-service-row" data-service="{{ row.name }}"><th scope="row" class="border-t border-line px-4 py-3.5 text-left align-top font-mono text-sm font-semibold">{{ row.name }}{% if row.containers | length > 1 %}<span class="mt-0.5 block text-xs font-normal text-ink2">{{ container.name }}</span>{% endif %}</th>
+<td class="border-t border-line px-4 py-3.5 align-top">{% for attached in container.networks %}<span class="block text-[13px]" data-address><span class="text-ink2">{{ attached.name }}</span> <span class="font-mono">{{ attached.ip_address or "no address" }}</span>{% if attached.ipv6_address %} <span class="font-mono">{{ attached.ipv6_address }}</span>{% endif %}{% for alias in attached.aliases if not container.container_id.startswith(alias) %}{% if loop.first %} <span class="text-ink3">as</span> {% endif %}<span class="font-mono text-ink2">{{ alias }}</span>{% if not loop.last %}, {% endif %}{% endfor %}</span>{% else %}<span class="text-ink3">None</span>{% endfor %}</td>
+<td class="border-t border-line px-4 py-3.5 align-top">{% for port in container.ports %}<span class="flex flex-wrap items-center gap-2 py-0.5" data-port><span class="font-mono text-[13px]">{{ host_of(port) }} &rarr; {{ port.container_port }}/{{ port.protocol }}</span>{{ bind_badge(port.bind.value) }}</span>{% else %}<span class="text-ink3">None</span>{% endfor %}</td></tr>
+{%- endfor %}
+{% endcall %}
+{%- endif -%}
+{% endcall %}

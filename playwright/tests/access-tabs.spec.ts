@@ -678,7 +678,7 @@ async function seededIds(browser: Browser): Promise<Seeded> {
     const project = await get(`/projects/${fancy}`);
     const prod = idOf(project, '/deployments/', 'prod');
     const staging = idOf(project, '/deployments/', 'staging');
-    const mysql = idOf(await get(`/deployments/${prod}`), '/services/', 'mysql');
+    const mysql = idOf(await get(`/deployments/${prod}/services`), '/services/', 'mysql');
     const service = await get(`/services/${mysql}`);
     const db = idOf(service, '/environments/', '.env.db');
     const secrets = idOf(service, '/environments/', '.env.db.secrets');

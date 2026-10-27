@@ -1,6 +1,6 @@
 .PHONY: up up-app upforce up-bg wait-app stop destroy logs app app-logs lint format tests \
 	tests-docker migrate revision seed dev-cleanup dev-reset check-pins e2e e2e-lock e2e-demo demo-up \
-	demo-down demo-reset demo-registry-down demo-root-scenarios frontend-build tailwind-download tailwind-build tailwind-watch \
+	demo-down demo-reset demo-workloads demo-registry-down demo-root-scenarios frontend-build tailwind-download tailwind-build tailwind-watch \
 	static-fetch help
 
 # Extra arguments for `make tests` (pytest) and `make e2e` (playwright test); empty runs everything.
@@ -145,6 +145,13 @@ demo-registry-down: ## Remove the local test registry containers and their volum
 	@ids=$$(docker ps --all --quiet --filter label=$(REGISTRY_LABEL)); \
 	[ -z "$$ids" ] || docker rm --force --volumes $$ids > /dev/null
 
+# The Docker browser specs read the running demo workloads (the stack overview and the New
+# deployment page list them), so the target starts them from the restored target files instead of
+# relying on what an earlier spec deployed. The real scenarios manage the containers themselves.
+demo-workloads: ## Restore the demo target files and start the demo workloads, waiting until they run and are healthy
+	sh scripts/demo-reset.sh
+	docker compose -p $(DEMO_PROJECT) --project-directory $(DEMO_ROOT)/stack -f $(DEMO_ROOT)/stack/compose.yaml up -d --wait
+
 # Real-scenario tests (app/real_scenarios, outside the default test run) deploy the demo stack
 # through the real CLI onto the host folder mounted at its host path. The browser specs in
 # playwright/docker-tests run against the same stack, whose app reaches the host Docker daemon.
@@ -163,6 +170,7 @@ e2e-demo: ## Bring the demo override up, run the real-scenario tests and the Doc
 		&& docker compose exec -T app sh /app/scripts/test.sh -n 0 app/real_scenarios \
 			--ignore=app/real_scenarios/test_demo_owner_root.py \
 		&& $(MAKE) --no-print-directory demo-root-scenarios \
+		&& $(MAKE) --no-print-directory demo-workloads \
 		&& sh scripts/e2e-seed.sh \
 		&& registry=$$(docker compose exec -T app python -m app.real_scenarios.registry start) \
 		&& set -- $$registry \

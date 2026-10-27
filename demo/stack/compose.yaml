@@ -9,6 +9,12 @@ services:
     init: true
     env_file:
       - environments/.env.api
+    # A check that always passes, so the stack overview has a healthy workload to show.
+    healthcheck:
+      test: ["CMD", "true"]
+      interval: 2s
+      timeout: 2s
+      retries: 3
     # Prints the names, never the values, of the demo variables it received, then idles.
     command:
       - sh

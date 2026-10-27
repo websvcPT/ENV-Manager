@@ -49,8 +49,8 @@ def service_names(page: str) -> list[str]:
 
 
 def summary_names(page: str) -> list[str]:
-    """Service names in the rows of the services summary of the Overview."""
-    return re.findall(r'data-fragment="service-summary-row"><th[^>]*><a [^>]*>([^<]+)</a>', page)
+    """Service names in the rows of the services table of the runtime fragment."""
+    return re.findall(r'data-fragment="service-summary-row" data-service="([^"]+)"', page)
 
 
 def state_cell(page: str) -> str:
@@ -136,19 +136,21 @@ async def test_superadmin_overview_has_the_status_strip_services_and_latest_depl
     for status_cell in ("State", "Last deploy", "Drift state", "Dist check", "Post-deploy"):
         assert f">{status_cell}</p>" in page
     assert page.count("Not checked yet") == 2
-    assert summary_names(page) == ["mysql", "web"]
-    assert "Environments in your scope" not in page
+    assert summary_names(page) == []
+    assert 'id="runtime"' in page and 'aria-busy="true"' in page
     assert 'data-fragment="service-row"' not in page
     for absent in ("/services/new", "/edit", "/dist", "import-compose", "Add service"):
         assert absent not in page
-    assert 'href="/services/' in page
     assert f'href="/deployments/{ids.prod}/activity"' in page
     latest = re.findall(r'data-fragment="recent-deploy-row"', page)
     history = await get_tab(web_client, ids.prod, "/activity")
     assert 1 <= len(latest) == min(5, history.count('data-fragment="history-row"'))
     for moved in ("policies-panel", "compose-files", 'id="hist"', 'id="services"'):
         assert moved not in page
-    assert "deploy-finished" not in page
+    fragment = await get_tab(web_client, ids.prod, "/runtime")
+    assert summary_names(fragment) == ["mysql", "web"]
+    assert "Files in your scope" not in fragment and 'href="/services/' in fragment
+    assert 'data-fragment="service-row"' not in fragment
 
 
 async def test_viewer_and_admin_see_the_same_read_only_overview(
@@ -158,9 +160,10 @@ async def test_viewer_and_admin_see_the_same_read_only_overview(
     for user in ("admin", "viewer"):
         await sign_in(web_client, user)
         page = await get_tab(web_client, ids.prod, "")
-        assert summary_names(page) == ["mysql", "web"]
+        fragment = await get_tab(web_client, ids.prod, "/runtime")
+        assert summary_names(fragment) == ["mysql", "web"]
         for absent in ("/edit", "/services/new", "/dist", "Check dist", "#deploy"):
-            assert absent not in page, (user, absent)
+            assert absent not in page + fragment, (user, absent)
 
 
 async def test_environment_grant_gets_a_name_only_overview_with_a_note(
@@ -173,10 +176,11 @@ async def test_environment_grant_gets_a_name_only_overview_with_a_note(
     assert (
         "You have access to one environment of this deployment. Only its service is shown." in body
     )
-    assert "Environments in your scope" in body
-    assert summary_names(page) == ["mysql"]
+    fragment = await get_tab(web_client, ids.prod, "/runtime")
+    assert "Files in your scope" in fragment
+    assert summary_names(fragment) == ["mysql"]
     for hidden in ("web</a>", "/opt/fancy", "Policies", ".env.web"):
-        assert hidden not in body
+        assert hidden not in body + fragment
     assert not item_header_of(body).location
     assert breadcrumb_of(page)[1].label == "Fancy Proj. Name"
 
@@ -411,7 +415,9 @@ async def test_empty_deployment_shows_empty_states_on_each_tab(
         empty_id = empty.id
     await sign_in(web_client, "root")
     overview = await get_tab(web_client, empty_id, "")
-    assert overview.count("No services yet") == 1 and overview.count("No deploys yet") == 2
+    runtime = await get_tab(web_client, empty_id, "/runtime")
+    assert runtime.count("No services yet") == 1 and summary_names(runtime) == []
+    assert overview.count("No deploys yet") == 2
     assert "/services/new" not in overview
     assert "No flags" in state_cell(overview) and overview.count("Never deployed") == 1
     files = await get_tab(web_client, empty_id, "/files")

@@ -37,9 +37,11 @@ DELETE_CONFIRM_ERROR = "Type the service name exactly to confirm."
 async def new_service_page(
     request: Request,
     access: Annotated[DeploymentContext, Depends(deployment_access(Capability.MANAGE_STRUCTURE))],
+    name: str = "",
 ) -> Response:
-    """The empty add service form."""
-    return render(request, PAGE, {"deployment": access.deployment, "name": "", "error": None})
+    """The add service form, with the name when the address carries one (a service the Docker
+    Compose project has that the application does not)."""
+    return render(request, PAGE, {"deployment": access.deployment, "name": name, "error": None})
 
 
 @router.post("/deployments/{deployment_id:int}/services/new", include_in_schema=False)

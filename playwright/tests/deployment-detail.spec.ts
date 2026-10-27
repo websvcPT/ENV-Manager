@@ -1,6 +1,7 @@
 import type { Browser, Page } from '@playwright/test';
 
-import { deploymentId } from '../deployments-api';
+import { createDeployment, deploymentId } from '../deployments-api';
+import { createHostFolder } from '../host-files';
 import { stateFile } from '../global-setup';
 import {
   breadcrumbLinks,
@@ -94,14 +95,14 @@ test.describe('superadmin', () => {
     ]);
     await expect(strip.locator('[data-status="skipped"]')).toHaveText('Skipped');
 
-    await expect(page.locator('[data-fragment="services-summary"] th[scope="col"]')).toHaveText([
-      'Service',
-      'Environments',
-      'Last deploy',
-      'Post-deploy',
-      'State flags',
-      'Actions',
-    ]);
+    await expect(page.locator('#runtime')).toHaveAttribute('aria-busy', 'false');
+    const note = page.locator('[data-runtime-state="no_project"]');
+    await expect(note).toContainText('has no Docker Compose project name');
+    await expect(note.getByRole('link')).toHaveAttribute('href', `/deployments/${id}/settings`);
+    await expect(strip.locator('p')).toHaveCount(5);
+    await expect(
+      page.locator('[data-fragment="runtime-services"] th[scope="col"]'),
+    ).toHaveText(['Service', 'Files', 'Last deploy', 'Actions']);
     await expect(summaryRows(page).locator('th a')).toHaveText(['mysql', 'web']);
     await expect(summaryRows(page).locator('th a').first()).toHaveAttribute(
       'href',
@@ -109,12 +110,14 @@ test.describe('superadmin', () => {
     );
     const mysql = summaryRows(page).filter({ hasText: 'mysql' });
     await expect(mysql.locator('td').first()).toHaveText('3');
-    await expect(mysql.locator('[data-status="failed"]').first()).toBeVisible();
+    await expect(mysql.locator('[data-status="failed"]').first()).toBeAttached();
     await expect(actionControls(mysql, 'open').first()).toHaveAttribute(
       'href',
       /^\/services\/\d+$/,
     );
-    await expect(summaryRows(page).filter({ hasText: 'web' })).toContainText('No flags');
+    await expect(
+      summaryRows(page).filter({ hasText: 'web' }).locator('[data-status="success"]'),
+    ).toBeAttached();
     await expect(actionControls(summaryRows(page), 'deploy')).toHaveCount(0);
     await expect(actionControls(summaryRows(page), 'delete')).toHaveCount(0);
     await expect(page.getByRole('link', { name: 'Add service' })).toHaveCount(0);
@@ -128,6 +131,75 @@ test.describe('superadmin', () => {
     );
     await expect(page.locator('[data-fragment="policies-panel"]')).toHaveCount(0);
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+  });
+
+  test('loads the runtime after the page and keeps it when a refresh fails', async ({
+    page,
+    browser,
+  }) => {
+    const id = await prod(browser);
+    const runtime = `**/deployments/${id}/runtime`;
+    await page.route(runtime, async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      await route.continue();
+    });
+    await page.goto(`/deployments/${id}`);
+    await expect(page.locator('#runtime')).toHaveAttribute('aria-busy', 'true');
+    await expect(page.locator('#runtime')).toContainText('Reading the containers from Docker.');
+    await expect(page.locator('#runtime')).toHaveAttribute('aria-busy', 'false');
+    await expect(summaryRows(page)).toHaveCount(2);
+    await page.unroute(runtime);
+
+    for (const status of [500, 404]) {
+      await page.route(runtime, (route) =>
+        route.fulfill({ status, contentType: 'text/html', body: '<p>refresh failed</p>' }),
+      );
+      const failed = page.waitForResponse(
+        (response) => response.url().endsWith(`/deployments/${id}/runtime`),
+      );
+      await page.evaluate(() => document.body.dispatchEvent(new CustomEvent('deploy-finished')));
+      expect((await failed).status()).toBe(status);
+      await expect(summaryRows(page)).toHaveCount(2);
+      await expect(page.locator('#runtime')).not.toContainText('refresh failed');
+      await expect(page.locator('[data-fragment="toast"]')).toHaveCount(0);
+      await page.unroute(runtime);
+    }
+
+    const refreshed = page.waitForResponse(
+      (response) => response.url().endsWith(`/deployments/${id}/runtime`) && response.ok(),
+      { timeout: 15_000 },
+    );
+    await refreshed;
+    await expect(summaryRows(page)).toHaveCount(2);
+    await expect(page.locator('#runtime')).toHaveAttribute('aria-busy', 'false');
+  });
+
+  test('says why the containers cannot be read when Docker is not usable', async ({
+    page,
+    request,
+    scratch,
+  }) => {
+    const host = createHostFolder();
+    try {
+      const id = await createDeployment(request, scratch.id, 'runtime-dep', host.root, 'block', 'e2e-runtime');
+      await page.goto(`/deployments/${id}`);
+      await expect(page.locator('#runtime')).toHaveAttribute('aria-busy', 'false');
+      const state = page.locator('[data-runtime-state="unavailable"]');
+      await expect(state).toContainText('The containers could not be read:');
+      await expect(state.locator('[role="note"]')).toBeVisible();
+      await expect(page.locator('[data-fragment="status-strip"] p')).toHaveText([
+        'State',
+        'Last deploy',
+        'Drift state',
+        'Dist check',
+        'Post-deploy',
+      ]);
+      await expect(page.locator('[data-fragment="runtime-services"]')).toContainText('No services yet');
+      await expect(page.locator('[data-fragment="runtime-network"]')).toHaveCount(0);
+      expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+    } finally {
+      host.remove();
+    }
   });
 
   test('moves between the tabs and keeps the page top', async ({ page, browser }) => {
@@ -175,7 +247,7 @@ test.describe('superadmin', () => {
     await expect(serviceRows(page).locator('th a')).toHaveText(['mysql', 'web']);
     const mysql = serviceRows(page).filter({ hasText: 'mysql' });
     await expect(mysql.locator('td').first()).toHaveText('3');
-    await expect(mysql.locator('[data-status="failed"]').first()).toBeVisible();
+    await expect(mysql.locator('[data-status="failed"]').first()).toBeAttached();
     await expect(actionControls(mysql, 'open').first()).toHaveAttribute(
       'href',
       /^\/services\/\d+$/,
@@ -340,9 +412,9 @@ test.describe('superadmin', () => {
     );
     const note =
       'This deployment is outside the allowed paths. It cannot be deployed or checked until the path is allowed again or the deployment is moved.';
-    await expect(page.locator('[role="note"]')).toHaveText(note);
+    await expect(page.locator('main > [role="note"]')).toHaveText(note);
     await page.goto(`/deployments/${id}/files`);
-    await expect(page.locator('[role="note"]')).toHaveText(note);
+    await expect(page.locator('main > [role="note"]')).toHaveText(note);
     await expect(page.getByRole('button', { name: 'Check dist' })).toBeDisabled();
     await expect(page.getByRole('link', { name: 'Check dist' })).toHaveCount(0);
     await expect(serviceRows(page).locator('th a')).toHaveText(['cron']);
@@ -444,7 +516,7 @@ test.describe('scoped users', () => {
       await expectLocation(page, 'deployment', {
         root: 'Deployment path: /opt/fancy/prod',
       });
-      await expect(page.locator('[role="note"]')).toHaveCount(0);
+      await expect(page.locator('main > [role="note"]')).toHaveCount(0);
       await expect(sections(page)).toHaveText(['Overview', 'Files', 'History', 'Settings']);
       await page.goto(`/deployments/${id}/settings`);
       await expect(page.locator('[data-fragment="policies-panel"]')).toBeVisible();
@@ -462,13 +534,13 @@ test.describe('scoped users', () => {
       await page.goto(`/deployments/${id}`);
       await expectLocation(page, 'deployment', {});
       await expectBreadcrumb(page, ['Projects', ['Fancy Proj. Name', 'Project'], ['prod', 'Deployment']]);
-      await expect(page.locator('[role="note"]')).toHaveText(
+      await expect(page.locator('main > [role="note"]')).toHaveText(
         'You have access to one environment of this deployment. Only its service is shown.',
       );
       await expect(sections(page)).toHaveText(['Overview', 'Files', 'History']);
       await expect(
-        page.locator('[data-fragment="services-summary"] th[scope="col"]').nth(1),
-      ).toHaveText('Environments in your scope');
+        page.locator('[data-fragment="runtime-services"] th[scope="col"]').nth(1),
+      ).toHaveText('Files in your scope');
       await expect(summaryRows(page).locator('th a')).toHaveText(['mysql']);
       await expect(summaryRows(page).locator('td').first()).toHaveText('1');
       await expect(recentRows(page)).toHaveCount(1);
@@ -516,13 +588,21 @@ test.describe('layout on small screens', () => {
   }) => {
     const id = await prod(browser);
     for (const [path, panel] of [
-      ['', '[data-fragment="services-summary"]'],
+      ['', '[data-fragment="runtime-services"]'],
       ['/files', '#services'],
       ['/activity', '#hist'],
     ]) {
       await page.goto(`/deployments/${id}${path}`);
+      if (path === '') {
+        await expect(page.locator('#runtime')).toHaveAttribute('aria-busy', 'false');
+      }
       expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
       if (!isWide(page)) {
+        if (path === '') {
+          await expect(page.locator('[data-fragment="service-summary-item"]')).toHaveCount(2);
+          await expect(summaryRows(page).first()).toBeHidden();
+          continue;
+        }
         const scroller = page.locator(`${panel} .overflow-x-auto`);
         expect(await scroller.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(
           true,
