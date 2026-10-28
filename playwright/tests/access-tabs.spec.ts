@@ -148,9 +148,9 @@ test.describe('superadmin: project Access tab', () => {
     await expectItemHeader(page, 'project', scratch.projectName);
     await expect(sections(page)).toHaveText([
       'Deployments',
-      'Members and accessSuperadmin',
+      'Members and access',
       'Activity',
-      'SettingsSuperadmin',
+      'Settings',
     ]);
     await expect(sections(page).filter({ hasText: 'Members and access' })).toHaveAttribute(
       'aria-current',
@@ -309,7 +309,7 @@ test.describe('superadmin: deployment Access tab', () => {
       'Logs',
       'History',
       'Settings',
-      'AccessSuperadmin',
+      'Access',
     ]);
     await expect(sections(page).nth(0)).toHaveAttribute('href', `/deployments/${scratch.depA}`);
     await expect(sections(page).nth(1)).toHaveAttribute('href', `/deployments/${scratch.depA}/files`);
@@ -366,7 +366,7 @@ test.describe('superadmin: deployment Access tab', () => {
       'Logs',
       'History',
       'Settings',
-      'AccessSuperadmin',
+      'Access',
     ]);
     await sections(page).nth(5).click();
     await expect(page).toHaveURL(new RegExp(`/deployments/${scratch.depA}/access$`));
@@ -393,7 +393,7 @@ test.describe('superadmin: environment Access tab', () => {
     const inherited = await makeUser('viewer', [`deployment:${scratch.depA}`]);
     const added = await makeUser('viewer');
     await page.goto(`/environments/${scratch.envA1}`);
-    await expect(sections(page)).toHaveText(['Edit', 'History', 'Compare to dist', 'AccessSuperadmin']);
+    await expect(sections(page)).toHaveText(['Edit', 'History', 'Compare to dist', 'Access']);
     await sections(page).filter({ hasText: 'Access' }).click();
     await expect(page).toHaveURL(new RegExp(`/environments/${scratch.envA1}/access$`));
     await expect(sections(page).filter({ hasText: 'Access' })).toHaveAttribute('aria-current', 'page');
@@ -435,7 +435,7 @@ test.describe('superadmin: service Access tab', () => {
     await expectLocation(page, 'service', {
       root: 'Deployment path: /srv/deployments/sample-a',
     });
-    await expect(sections(page)).toHaveText(['Environments', 'Deploy history', 'AccessSuperadmin']);
+    await expect(sections(page)).toHaveText(['Environments', 'Deploy history', 'Access']);
     await expect(sections(page).nth(0)).toHaveAttribute('href', `/services/${scratch.serviceA}`);
     await expect(list(page)).toContainText('Services are not a grant level');
     await expect(list(page).getByRole('button', { name: 'Add access' })).toHaveCount(0);

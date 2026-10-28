@@ -9,9 +9,8 @@
 {% set breadcrumbs = [("Projects", "/projects"), (deployment.project_name, "/projects/" ~ deployment.project_id, "Project"), (deployment.name, "/deployments/" ~ deployment.id, "Deployment"), ("Import from Docker Compose", none)] %}
 {% block title %}Import from Docker Compose · {{ deployment.name }}{% endblock %}
 {% block content %}
-{% set superadmin_tag %}<span class="rounded-md bg-mute-bg px-1.5 py-px text-[11px] font-semibold text-mute-fg">Superadmin</span>{% endset %}
 {% set actions %}{{ button("Back to deployment", href="/deployments/" ~ deployment.id) }}{% endset %}
-{{ item_header("deployment", deployment.name, location=deployment_location(deployment), details="Import the services and files of the Docker Compose project in this folder.", badges=superadmin_tag, actions=actions) }}
+{{ item_header("deployment", deployment.name, location=deployment_location(deployment), details="Import the services and files of the Docker Compose project in this folder.", actions=actions) }}
 <div id="import-compose" data-fragment="import-compose" class="flex flex-col gap-5">
 {% include "fragments/compose_import_files.html" %}
 </div>

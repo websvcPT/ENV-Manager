@@ -260,7 +260,7 @@ test.describe('superadmin: the users list', () => {
     await page.goto('/users');
     const dialog = await openCreate(page);
     await expect(dialog.getByRole('heading', { name: 'Create user' })).toBeVisible();
-    await expect(dialog.getByText('Superadmin only')).toBeVisible();
+    await expect(dialog.getByText('Superadmin only')).toHaveCount(0);
     await expect(dialog.locator('#ug')).toHaveValue('viewer');
     await expect(dialog.locator('#ug option')).toHaveText(['Viewer', 'Admin', 'Superadmin']);
     const tree = dialog.locator('[data-fragment="grant-tree"]');

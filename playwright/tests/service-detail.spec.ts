@@ -79,7 +79,7 @@ test.describe('superadmin', () => {
     await expect(page.locator('nav[aria-label="Sections"] a')).toHaveText([
       'Environments 4',
       'Deploy history',
-      'AccessSuperadmin',
+      'Access',
     ]);
     await expectBreadcrumb(page, [
       'Projects',

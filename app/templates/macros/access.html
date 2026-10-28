@@ -17,7 +17,7 @@
   + ([{"label": "Logs", "href": base ~ "/logs"}] if can_view_logs else [])
   + [{"label": "History", "href": base ~ "/activity"}]
   + ([{"label": "Settings", "href": base ~ "/settings"}] if deployment.full else [])
-  + ([{"label": "Access", "href": base ~ "/access", "superadmin": true}] if can_manage_grants else []),
+  + ([{"label": "Access", "href": base ~ "/access"}] if can_manage_grants else []),
   base ~ ("" if tab == "overview" else "/" ~ tab)
 ) }}
 {%- endmacro %}
@@ -27,7 +27,7 @@
 {%- set base = "/services/" ~ service.id -%}
 {{ tabs(
   [{"label": "Environments", "href": base if on_access else "#environments", "count": count}, {"label": "Deploy history", "href": (base ~ "#hist") if on_access else "#hist"}]
-  + ([{"label": "Access", "href": base ~ "/access", "superadmin": true}] if can_manage_grants else []),
+  + ([{"label": "Access", "href": base ~ "/access"}] if can_manage_grants else []),
   (base ~ "/access") if on_access else "#environments"
 ) }}
 {%- endmacro %}

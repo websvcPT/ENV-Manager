@@ -102,7 +102,7 @@ def next_code(secret: str) -> str:
 
 
 @pytest.mark.parametrize(
-    ("name", "badge"),
+    ("name", "group"),
     [
         ("root", "superadmin"),
         ("admin", "admin"),
@@ -112,7 +112,7 @@ def next_code(secret: str) -> str:
     ],
 )
 async def test_every_group_opens_the_account_page(
-    web_client: httpx.AsyncClient, name: str, badge: str
+    web_client: httpx.AsyncClient, name: str, group: str
 ) -> None:
     await sign_in(web_client, name)
     response = await web_client.get("/account")
@@ -121,7 +121,7 @@ async def test_every_group_opens_the_account_page(
     body = main_of(response.text)
     assert "<h1" in body and "Account</h1>" in body
     assert f"{name} · {name}@example.test" in body
-    assert f'data-status="{badge}"' in body
+    assert f'data-status="{group}"' not in body
     for fragment in ("account-password", "account-totp", "account-sessions", "account-theme"):
         assert f'data-fragment="{fragment}"' in body
     for marker in (

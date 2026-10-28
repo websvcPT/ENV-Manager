@@ -116,7 +116,7 @@ async def test_blocked_report_shows_key_names_lines_and_counts_never_a_value(
     assert "Add missing keys to the editor" in body
     assert DIST_DEFAULT_VALUE not in page and "3306" not in without_csrf_token(page)
     assert str(roots["prod"]) not in without_location(page)
-    access_tab = ["AccessSuperadmin"] if role == "root" else []
+    access_tab = ["Access"] if role == "root" else []
     assert section_links(body) == ["Edit", "History", "Compare to dist", *access_tab]
     assert f'<a href="/environments/{ids.db}/dist" aria-current="page"' in body
 

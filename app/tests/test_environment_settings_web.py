@@ -25,7 +25,7 @@ from app.models import (
 from app.services.deploy_baseline import load_baselines
 from app.tests.conftest import sign_in
 from app.tests.settings_helpers import browser_as
-from app.tests.web_helpers import HTMX, EnvironmentIds, environment_ids, post
+from app.tests.web_helpers import HTMX, EnvironmentIds, environment_ids, main_of, post
 
 OTHERS = ("admin", "viewer", "project_admin", "deployment_admin", "env_scoped_admin")
 
@@ -129,7 +129,7 @@ async def test_the_form_shows_the_stored_values_and_the_deployment_policies(
     response = await web_client.get(f"/environments/{layout.ids.db}/settings")
     page = response.text
     assert response.status_code == 200 and response.headers["cache-control"] == "no-store"
-    assert ">File settings</h1>" in page and "Superadmin only." in page
+    assert ">File settings</h1>" in page and "Superadmin" not in main_of(page)
     assert 'id="env-settings"' in page and 'data-fragment="environment-settings"' in page
     assert f'hx-post="/environments/{layout.ids.db}/settings"' in page
     assert f'hx-get="/environments/{layout.ids.db}/settings/target-check"' in page

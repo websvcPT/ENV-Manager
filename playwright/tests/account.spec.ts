@@ -83,7 +83,7 @@ test.describe('the page for every group', () => {
     await page.locator('#account-menu a[href="/account"]').click();
     await expect(page).toHaveURL(/\/account$/);
     await expect(page.locator('[data-fragment="page-header"] h1')).toHaveText(/Account/);
-    await expect(page.locator('[data-fragment="page-header"] [data-status="superadmin"]')).toBeVisible();
+    await expect(page.locator('[data-fragment="page-header"] [data-status]')).toHaveCount(0);
     await expect(page.locator('#account-sessions [data-current="true"]')).toContainText('This session');
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
     if (!isWide(page)) {

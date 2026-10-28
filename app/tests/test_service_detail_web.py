@@ -99,7 +99,7 @@ async def test_superadmin_sees_everything_and_the_command_settings(
     assert re.fullmatch(r"/projects/\d+", crumbs[1].href or "")
     assert re.fullmatch(r"/deployments/\d+", crumbs[2].href or "")
     assert ">Service</span>" not in main_of(page) and ">1 pending</span>" in page
-    assert section_links(page) == ["Environments 4", "Deploy history", "AccessSuperadmin"]
+    assert section_links(page) == ["Environments 4", "Deploy history", "Access"]
     assert f'href="/services/{ids.staging_web}/access"' in page
     assert page.count('data-fragment="service-explainer"') == 2
     history_at = page.rindex('data-fragment="deploy-history"')
@@ -114,7 +114,7 @@ async def test_superadmin_sees_everything_and_the_command_settings(
     assert row_actions(page, ".env.web.tuning") == ["edit", "history", "dist", "settings", "delete"]
     assert f'href="/services/{ids.staging_web}/environments/new"' in page
     assert "Read-only view" not in page and "Deploy service" in page
-    assert "Command settings" in page and "Superadmin" in page
+    assert "Command settings" in page and page.count('data-status="superadmin"') == 1
     assert "docker compose up -d --no-deps web" in page
     assert 'placeholder="/opt/fancy/staging"' in page
     assert "web recreated" in page and "exit code 0" in page and "by admin" in page

@@ -71,8 +71,8 @@ test.describe('layout and tabs', () => {
     await expect(page).toHaveURL(/\/settings\/paths$/);
     const header = page.locator('[data-fragment="page-header"]');
     await expect(header.locator('h1')).toHaveText('Settings');
-    await expect(header).toContainText('Superadmin');
-    await expect(header).toContainText('Application settings. Superadmin only.');
+    await expect(header).not.toContainText('Superadmin');
+    await expect(header).toContainText('Application settings.');
     await expect(tabLinks(page)).toHaveText(TABS.map(([, label]) => label));
     for (const [index, [slug]] of TABS.entries()) {
       await expect(tabLinks(page).nth(index)).toHaveAttribute('href', `/settings/${slug}`);

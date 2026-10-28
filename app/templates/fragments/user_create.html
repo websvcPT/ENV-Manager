@@ -7,7 +7,7 @@
 {% from "macros/forms.html" import field, field_message, select_field %}
 {% from "macros/grants.html" import grant_tree %}
 <div data-fragment="user-create">
-{{ dialog_head("user-create", "Create user", "Superadmin only") }}
+{{ dialog_head("user-create", "Create user") }}
 <form id="user-create-form" hx-post="/users" hx-target="#user-create" hx-swap="innerHTML">
 {% call dialog_body() %}<div class="flex flex-col gap-4">
 <div class="grid gap-4 sm:grid-cols-2">{{ field("un", "Name", name="name", value=values.name, placeholder="e.g. John Doe", hint="Shown in lists and the audit log. It does not need to be unique.", error=errors.name, autocomplete="off", maxlength="100", required=true) }}{{ field("ue", "Email", name="email", type="email", value=values.email, placeholder="name@example.com", hint="The user signs in with it.", error=errors.email, autocomplete="off", maxlength="320", required=true) }}</div>

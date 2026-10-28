@@ -23,7 +23,7 @@ from app.models import (
 from app.services.notify_events import FileChange, FileChanged
 from app.tests.conftest import sign_in
 from app.tests.notify_helpers import RecordingEvents
-from app.tests.web_helpers import HTMX, breadcrumb_of, post
+from app.tests.web_helpers import HTMX, breadcrumb_of, main_of, post
 
 CERT_TEXT = "-----BEGIN CERTIFICATE-----\nc2VlZA==\n-----END CERTIFICATE-----\n"
 
@@ -98,8 +98,7 @@ async def test_new_environment_page_has_every_field(
     response = await web_client.get(f"/services/{layout.mysql}/environments/new")
     page = response.text
     assert response.status_code == 200 and response.headers["cache-control"] == "no-store"
-    assert ">Add environment</h1>" in page and ">Superadmin</span>" in page
-    assert "Superadmin only." in page
+    assert ">Add environment</h1>" in page and "Superadmin" not in main_of(page)
     assert f'hx-post="/services/{layout.mysql}/environments/new"' in page
     assert 'enctype="multipart/form-data"' in page
     assert 'id="env-form"' in page and 'data-fragment="environment-form"' in page
@@ -497,7 +496,7 @@ async def test_new_service_page_and_create(
     await sign_in(web_client, "root")
     page = await web_client.get(f"/deployments/{layout.deployment}/services/new")
     assert page.status_code == 200 and page.headers["cache-control"] == "no-store"
-    assert ">Add service</h1>" in page.text and "Superadmin only." in page.text
+    assert ">Add service</h1>" in page.text and "Superadmin" not in main_of(page.text)
     assert f'hx-post="/deployments/{layout.deployment}/services/new"' in page.text
     assert 'id="service-form"' in page.text and 'id="svc-name"' in page.text
     assert "Use the Compose service name." in page.text

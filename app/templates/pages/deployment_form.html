@@ -9,8 +9,7 @@
 {% set breadcrumbs = [("Projects", "/projects"), (project_name, "/projects/" ~ project_id, "Project"), (title, none)] %}
 {% block title %}{{ title }}{% endblock %}
 {% block content %}
-{% set superadmin_tag %}<span class="rounded-md bg-mute-bg px-1.5 py-px text-[11px] font-semibold text-mute-fg">Superadmin</span>{% endset %}
-{{ page_header(title, "Post-deploy commands are configured per service, not here.", badges=superadmin_tag) }}
+{{ page_header(title, "Post-deploy commands are configured per service, not here.") }}
 {% if new_source | default(none) %}
 {% set folder_href = new_href ~ "?source=folder" %}
 {{ tabs([{"label": "Detected stacks", "href": new_href}, {"label": "Enter the folder", "href": folder_href}], folder_href if new_source == "folder" else new_href) }}

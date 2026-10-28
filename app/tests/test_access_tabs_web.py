@@ -115,11 +115,11 @@ def base_of(kind: str, item_id: int) -> str:
 
 
 def section_labels(page: str) -> list[str]:
-    """The text of the section links under the header, without the Superadmin tag."""
+    """The text of the section links under the header."""
     nav = re.search(r'<nav aria-label="Sections".*?</nav>', page, re.DOTALL)
     assert nav is not None
     anchors = re.findall(r"<a [^>]*>(.*?)</a>", nav.group(0), re.DOTALL)
-    return [re.sub(r"<[^>]+>", "", anchor).replace("Superadmin", "").strip() for anchor in anchors]
+    return [re.sub(r"<[^>]+>", "", anchor).strip() for anchor in anchors]
 
 
 def plain(markup: str) -> str:

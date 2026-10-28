@@ -71,7 +71,7 @@ test.describe('superadmin add service', () => {
     const { deployment } = await prepare(request, scratch.id);
     await page.goto(`/deployments/${deployment}/services/new`);
     await expect(header(page).locator('h1')).toHaveText('Add service');
-    await expect(header(page)).toContainText('Superadmin');
+    await expect(header(page)).not.toContainText('Superadmin');
     await expectBreadcrumb(page, [
       'Projects',
       [scratch.name, 'Project'],
@@ -159,8 +159,7 @@ test.describe('superadmin add environment', () => {
     await page.locator('#environments').getByRole('link', { name: 'Add environment' }).last().click();
     await expect(page).toHaveURL(new RegExp(`/services/${service}/environments/new$`));
     await expect(header(page).locator('h1')).toHaveText('Add environment');
-    await expect(header(page)).toContainText('Superadmin');
-    await expect(header(page).locator('p')).toHaveText('Superadmin only.');
+    await expect(header(page)).not.toContainText('Superadmin');
     await expectBreadcrumb(page, [
       'Projects',
       [scratch.name, 'Project'],

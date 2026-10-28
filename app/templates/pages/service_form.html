@@ -5,7 +5,6 @@
 {% set breadcrumbs = [("Projects", "/projects"), (deployment.project_name, "/projects/" ~ deployment.project_id, "Project"), (deployment.name, "/deployments/" ~ deployment.id, "Deployment"), ("Add service", none)] %}
 {% block title %}Add service{% endblock %}
 {% block content %}
-{% set superadmin_tag %}<span class="rounded-md bg-mute-bg px-1.5 py-px text-[11px] font-semibold text-mute-fg">Superadmin</span>{% endset %}
-{{ page_header("Add service", "Superadmin only.", badges=superadmin_tag) }}
+{{ page_header("Add service") }}
 {% include "fragments/service_form.html" %}
 {% endblock %}

@@ -47,7 +47,7 @@ test.describe('superadmin: the access grid', () => {
     const tabs = page.locator('nav[aria-label="Sections"]');
     await expect(tabs.locator('a[aria-current="page"]')).toHaveText(/Access grid/);
     await expect(tabs.locator('a[href="/users"]')).not.toHaveAttribute('aria-current', 'page');
-    await expect(tabs.getByText('Superadmin')).toBeVisible();
+    await expect(tabs).not.toContainText('Superadmin');
     const legend = page.locator('ul[aria-label="Legend"]');
     await expect(legend.locator('li')).toHaveText([
       'Direct grant',
@@ -534,7 +534,7 @@ test.describe('superadmin: the access grid', () => {
     );
     const tabs = page.locator('nav[aria-label="Sections"]');
     await expect(tabs.locator('a[aria-current="page"]')).toHaveText('Users');
-    await expect(tabs.locator('a[href="/access/grid"]')).toContainText('Superadmin');
+    await expect(tabs.locator('a[href="/access/grid"]')).not.toContainText('Superadmin');
     await tabs.locator('a[href="/access/grid"]').click();
     await expect(page).toHaveURL(/\/access\/grid$/);
     await expect(page.locator('#access-grid')).toBeVisible();

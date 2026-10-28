@@ -190,7 +190,7 @@ async def test_the_superadmin_sees_the_status_line_and_the_enabled_form(
     assert ">Test command</button>" in form and ">Save settings</button>" in form
     assert "docker compose config --quiet checks the path and the Compose file." in form
     assert 'data-fragment="toast"' not in form and "Mount " not in form
-    assert "Command settings" in form and "Superadmin" in form
+    assert "Command settings" in form and "Superadmin" not in form
 
 
 async def test_a_service_without_a_command_shows_the_defaults(

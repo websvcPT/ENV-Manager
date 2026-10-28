@@ -36,11 +36,11 @@ async def ids(web_app: FastAPI) -> ProjectIds:
 
 
 def tab_labels(page: str) -> list[str]:
-    """Visible text of the section tabs, without the Superadmin tag."""
+    """Visible text of the section tabs."""
     nav = re.search(r'<nav aria-label="Sections".*?</nav>', page, re.DOTALL)
     assert nav is not None
     anchors = re.findall(r"<a [^>]*>(.*?)</a>", nav.group(0), re.DOTALL)
-    return [re.sub(r"<[^>]+>", "", anchor).replace("Superadmin", "").strip() for anchor in anchors]
+    return [re.sub(r"<[^>]+>", "", anchor).strip() for anchor in anchors]
 
 
 def row_names(page: str) -> list[str]:

@@ -13,7 +13,7 @@
 
 {#- Users and Access grid, the two sections of user administration. `current` is the open path. -#}
 {% macro section_tabs(current) -%}
-{{ tabs([{"label": "Users", "href": "/users"}, {"label": "Access grid", "href": "/access/grid", "superadmin": true}], current) }}
+{{ tabs([{"label": "Users", "href": "/users"}, {"label": "Access grid", "href": "/access/grid"}], current) }}
 {%- endmacro %}
 
 {#- The sticky first cell of a row: the expand control (when the row has rows below it), the

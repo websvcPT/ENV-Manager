@@ -47,9 +47,9 @@ test.describe('superadmin', () => {
     await expectBreadcrumb(page, ['Projects', ['Fancy Proj. Name', 'Project']]);
     await expect(tabs(page)).toHaveText([
       'Deployments',
-      'Members and accessSuperadmin',
+      'Members and access',
       'Activity',
-      'SettingsSuperadmin',
+      'Settings',
     ]);
     await expect(tabs(page).first()).toHaveAttribute('aria-current', 'page');
 

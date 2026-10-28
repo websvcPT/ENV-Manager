@@ -86,7 +86,7 @@ test.describe('superadmin without a Docker socket', () => {
 
     const form = settings(page);
     await expect(form.locator('h3')).toHaveText('Command settings');
-    await expect(form.locator('[data-status="superadmin"]')).toBeVisible();
+    await expect(form.locator('[data-status="superadmin"]')).toHaveCount(0);
     await expect(form.locator('[role="note"]')).toContainText(
       'The Docker socket is not mounted, so post-deploy commands are off. These fields are disabled and saving is refused. Mount /var/run/docker.sock and recreate the container to enable the feature.',
     );

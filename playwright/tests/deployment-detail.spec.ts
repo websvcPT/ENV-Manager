@@ -70,7 +70,7 @@ test.describe('superadmin', () => {
       'Logs',
       'History',
       'Settings',
-      'AccessSuperadmin',
+      'Access',
     ]);
     await expect(sections(page).nth(0)).toHaveAttribute('href', `/deployments/${id}`);
     await expect(sections(page).nth(1)).toHaveAttribute('href', `/deployments/${id}/files`);

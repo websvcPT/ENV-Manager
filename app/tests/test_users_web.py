@@ -321,8 +321,9 @@ async def test_the_create_dialog_offers_the_group_and_the_whole_grant_tree(
     response = await web_client.get("/users/new", headers=HTMX)
     assert_never_cached(response)
     page = response.text
-    for text in ("Create user", "Superadmin only", "Name", "Email", "Group", "Access grants"):
+    for text in ("Create user", "Name", "Email", "Group", "Access grants"):
         assert text in page
+    assert "Superadmin only" not in page
     async with web_app.state.session_factory() as db:
         grantable = sum(
             [

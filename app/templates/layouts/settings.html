@@ -1,14 +1,13 @@
-{#- Shared frame of the Settings tabs: the page header with the superadmin tag, then the section
-    tabs. Pages extend this and fill the `tab` block. Context: settings_tab (the open tab's
-    slug), tab_label and tab_items (label and href of every tab). -#}
+{#- Shared frame of the Settings tabs: the page header, then the section tabs. Pages extend
+    this and fill the `tab` block. Context: settings_tab (the open tab's slug), tab_label and
+    tab_items (label and href of every tab). -#}
 {% extends "layouts/app.html" %}
 {% from "macros/panels.html" import page_header, tabs %}
 {% set active_nav = "settings" %}
 {% set breadcrumbs = [("Settings", "/settings"), (tab_label, none)] %}
 {% block title %}Settings · {{ tab_label }}{% endblock %}
 {% block content %}
-{% set header_badges %}<span class="rounded-md bg-mute-bg px-1.5 py-px text-[11px] font-semibold text-mute-fg">Superadmin</span>{% endset %}
-{{ page_header("Settings", "Application settings. Superadmin only.", badges=header_badges) }}
+{{ page_header("Settings", "Application settings.") }}
 {{ tabs(tab_items, "/settings/" ~ settings_tab) }}
 {% block tab %}{% endblock %}
 {% endblock %}

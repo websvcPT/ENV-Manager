@@ -108,7 +108,8 @@ async def test_every_tab_has_the_header_and_the_ten_tabs(root: httpx.AsyncClient
     assert_never_cached(response)
     page = response.text
     assert ">Settings</h1>" in page
-    assert "Application settings. Superadmin only." in page
+    assert "Application settings." in page and "Superadmin only" not in page
+    assert page.count('data-status="superadmin"') == 1
     nav = re.search(r'<nav aria-label="Sections".*?</nav>', page, re.DOTALL)
     assert nav is not None
     links = re.findall(r'href="(/settings/[^"]+)"', nav.group(0))

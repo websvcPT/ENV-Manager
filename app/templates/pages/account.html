@@ -5,7 +5,7 @@
     link to the provider's account page (`sso_url`); one the provider manages (`sso_managed`)
     shows its profile read only and a password panel that says the password is not used. -#}
 {% extends "layouts/app.html" %}
-{% from "macros/badges.html" import badge, role_badge %}
+{% from "macros/badges.html" import badge %}
 {% from "macros/buttons.html" import button %}
 {% from "macros/dialogs.html" import loaded_dialog %}
 {% from "macros/feedback.html" import note %}
@@ -13,8 +13,7 @@
 {% set breadcrumbs = [("Account", none)] %}
 {% block title %}Account{% endblock %}
 {% block content %}
-{% set header_badges %}{{ role_badge(current_user.group) }}{% endset %}
-{{ page_header("Account", current_user.name ~ " · " ~ current_user.email, badges=header_badges) }}
+{{ page_header("Account", current_user.name ~ " · " ~ current_user.email) }}
 {%- if sso_linked %}
 <div data-fragment="sso-account" class="flex max-w-5xl flex-col gap-3 md:flex-row md:items-center">
 <div class="flex-1">{{ note("You sign in with SSO. Your name, email, password and second factor are managed in your SSO account and updated here at each sign in." if sso_managed else "You can also sign in with SSO. Your name and email follow your SSO account and are updated here at each sign in.") }}</div>

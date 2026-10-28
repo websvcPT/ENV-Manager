@@ -62,7 +62,7 @@ test.describe('superadmin', () => {
     await page.locator('[data-js="dialog-open"][data-target="project-new"]').first().click();
     const dialog = page.locator('#project-new[open]');
     await expect(dialog).toBeVisible();
-    await expect(dialog.getByText('Superadmin only')).toBeVisible();
+    await expect(dialog.getByText('Superadmin only')).toHaveCount(0);
     await expect(dialog.locator('#pn')).toBeFocused({ timeout: 2000 }).catch(() => undefined);
     await expect(
       dialog.getByText('3 to 100 characters with at least one letter or number'),

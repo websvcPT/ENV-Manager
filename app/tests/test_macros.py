@@ -310,8 +310,7 @@ def test_panel_table_tabs_and_breadcrumb() -> None:
         "{% call table('Environments', ['Name', 'Actions'], [1]) %}"
         "<tr>{{ row_header('.env') }}{% call cell('right') %}x{% endcall %}</tr>"
         "{% endcall %}{% endcall %}"
-        "{{ tabs([{'label': 'A', 'href': '/a', 'count': 2}, {'label': 'B', 'href': '/b',"
-        " 'superadmin': true}], '/a') }}"
+        "{{ tabs([{'label': 'A', 'href': '/a', 'count': 2}, {'label': 'B', 'href': '/b'}], '/a') }}"
         "{{ breadcrumb([('Projects', '/projects'), ('x', none)]) }}"
     )
     assert 'aria-labelledby="env-t"' in page and 'data-fragment="env-panel"' in page
@@ -319,7 +318,7 @@ def test_panel_table_tabs_and_breadcrumb() -> None:
     assert '<th scope="col"' in page and '<th scope="row"' in page
     assert "text-right" in page
     assert page.count('aria-current="page"') == 2
-    assert "Superadmin</span>" in page
+    assert "Superadmin" not in page
     assert '<li aria-hidden="true">/</li>' in page
 
 

@@ -12,7 +12,7 @@ from app.core.csrf import CSRF_COOKIE_NAME
 from app.models import ApiTokenRestriction, AuditEntry, Project, User
 from app.services.projects import delete_project
 from app.tests.conftest import sign_in
-from app.tests.web_helpers import HTMX
+from app.tests.web_helpers import HTMX, main_of
 from app.web import projects as projects_web
 
 TABLE = re.compile(r'<section data-fragment="projects-table".*?</section>', re.DOTALL)
@@ -47,7 +47,7 @@ async def test_superadmin_page_has_members_and_create(web_client: httpx.AsyncCli
     assert 'data-target="project-new"' in page
     assert 'id="project-new"' in page
     assert 'hx-post="/projects"' in page
-    assert "Superadmin only" in page
+    assert "Superadmin" not in main_of(page)
 
 
 @pytest.mark.parametrize("user", ["admin", "viewer"])

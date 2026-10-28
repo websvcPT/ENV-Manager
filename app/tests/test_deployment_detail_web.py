@@ -19,7 +19,7 @@ from app.tests.web_helpers import (
     section_links,
 )
 
-ALL_TABS = ["Overview", "Files", "Logs", "History", "Settings", "AccessSuperadmin"]
+ALL_TABS = ["Overview", "Files", "Logs", "History", "Settings", "Access"]
 TAB_PATHS = ("", "/files", "/activity", "/settings")
 
 

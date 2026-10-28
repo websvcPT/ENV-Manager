@@ -18,7 +18,7 @@
 {% endblock %}
 {% set section_links = [{"label": "View" if is_viewer else "Edit", "href": "/environments/" ~ env.id}, {"label": "History", "href": "/environments/" ~ env.id ~ "/history"}] %}
 {% if env.can_check_dist and env.file_type.value == "env" %}{% set section_links = section_links + [{"label": "Compare to dist", "href": "/environments/" ~ env.id ~ "/dist"}] %}{% endif %}
-{% if env.can_manage_grants %}{% set section_links = section_links + [{"label": "Access", "href": "/environments/" ~ env.id ~ "/access", "superadmin": true}] %}{% endif %}
+{% if env.can_manage_grants %}{% set section_links = section_links + [{"label": "Access", "href": "/environments/" ~ env.id ~ "/access"}] %}{% endif %}
 {{ tabs(section_links, "/environments/" ~ env.id ~ {"history": "/history", "dist": "/dist", "access": "/access"}.get(tab, "")) }}
 {% block tab %}{% endblock %}
 {% if env.can_manage_structure %}{{ loaded_dialog("environment-delete", "Delete file", width="560") }}{% endif %}
