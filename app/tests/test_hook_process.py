@@ -28,7 +28,7 @@ def process_is_gone(pid: int) -> bool:
     """
     try:
         fields = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8").rsplit(")", 1)[1].split()
-    except FileNotFoundError:
+    except FileNotFoundError, ProcessLookupError:
         return True
     return fields[0] == "Z"
 
