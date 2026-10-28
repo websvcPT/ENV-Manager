@@ -48,6 +48,21 @@ https://www.buymeacoffee.com/websvc
 - **Compose files, read only.** Link a deployment's Compose files, by the import or later, and read
   their current text from the Settings tab of the deployment; they stay in your repository and are never managed
   or written.
+- **Detected stacks.** Creating a deployment starts from the Compose stacks of the host, found
+  through Docker and by scanning the allowed paths (read only): pick one and the form is filled
+  with its folder, Compose files and Compose project, and the import of its services follows.
+- **Stack overview.** A deployment's Overview shows its containers with state, health, uptime and
+  restarts, which files still need the container recreated to apply, and a Network panel with the
+  stack's networks, each service's addresses and published ports (all-interface binds flagged).
+  It never reads a container's environment variables.
+- **Container actions.** Start, stop, restart or recreate a service from the page, behind a
+  confirmation that shows the command, under the deploy lock and audited.
+- **Logs.** A Logs tab follows the output of the stack's containers with a service and text
+  filter and a download, masking the values of the deployment's own files (the newest and the
+  previous version), and records opening it in the audit log once per filter in ten minutes.
+- **Single sign-on.** Sign in through an OpenID Connect provider such as Keycloak, configured in
+  Settings: roles in the ID token set the Admin or Viewer group, accounts are created or linked at
+  the first sign in, and the password form stays for superadmins.
 - **Drift protection.** If the file on disk changed outside the app, the deploy halts. A drift
   view compares the file on disk, the last deployed version and the managed version key by key
   (line by line for a certificate), and lets you import the file or overwrite it deliberately.
@@ -67,8 +82,8 @@ https://www.buymeacoffee.com/websvc
   copy.
 - **Notifications.** Email about sign-ins from new addresses, lockouts, failed deploys, backups
   and user changes, plus a signed webhook for every deploy result.
-- **Accounts.** Two-factor sign-in, active session management, lockouts and a master key rotation
-  command.
+- **Accounts.** Two-factor sign-in (for password sign in), active session management, lockouts and
+  a master key rotation command.
 
 ## Screenshots
 
@@ -120,7 +135,8 @@ You need Docker with the Compose plugin and a host folder that holds your deploy
          # optional: mount the host's vhosts and opt folders to be able to read/write files on the host
          - /var/www/vhosts:/var/www/vhosts
          - /opt:/opt
-         # optional: enables post-deploy commands (root-equivalent on the host)
+         # optional: enables post-deploy commands, the stack overview, container actions and logs
+         # (root-equivalent on the host)
          # - /var/run/docker.sock:/var/run/docker.sock
        ports:
          - 127.0.0.1:8080:8080
@@ -182,7 +198,7 @@ refused when `ENVMANAGER_ENVIRONMENT` is anything else. Lists are comma separate
 | `ENVMANAGER_LOG_LEVEL` | `INFO` | One of `CRITICAL`, `ERROR`, `WARNING`, `INFO` or `DEBUG`, in any case. Anything else is refused. |
 | `ENVMANAGER_PORT` | `8080` | Port the server listens on inside the container. The image health check reads it too. If you change it, change the published port in `docker-compose.yaml`. |
 | `ENVMANAGER_DATA_PATH` | `/data` (the image sets it) | Folder that holds the database, the backups, the lock files and the git sync clone. Mount the data volume there. |
-| `ENVMANAGER_DOCKER_SOCKET` | `/var/run/docker.sock` | Path, inside the container, of the Docker socket that post-deploy commands use. Change it only if the socket is mounted somewhere else. |
+| `ENVMANAGER_DOCKER_SOCKET` | `/var/run/docker.sock` | Path, inside the container, of the Docker socket that post-deploy commands, the stack overview, the container actions and the logs use. Change it only if the socket is mounted somewhere else. |
 | `ENVMANAGER_ENVIRONMENT` | `production` | Name of the deployment environment, also reported to Sentry and OpenTelemetry. The values `development` and `testing` switch on the development and testing only settings and skip the `https` warning; `testing` also skips the CSRF secret requirement. Keep `production` on a real server. |
 | `ENVMANAGER_TITLE` | `ENV Manager` | Title of the API documentation. Only visible where `ENVMANAGER_SERVE_DOCS` is on. |
 | `ENVMANAGER_DESCRIPTION` | `A self-hosted web application for keeping the .env files, certificates and other text configuration of your Docker Compose deployments in one place, versioned and encrypted, and for putting them on the server safely.` | Description of the API documentation. Only visible where `ENVMANAGER_SERVE_DOCS` is on. |
@@ -205,9 +221,11 @@ container reach, which builds the issuer of the development Keycloak and the dev
   the Docker socket, upgrades, trusted proxies and allowed sources.
 - [Configuration and observability](docs/configuration.md): the Settings tabs, setting up Keycloak
   for single sign-on, Sentry and OpenTelemetry.
-- [Operations](docs/operations.md): backup and restore, key rotation, the Docker scratch folder,
+- [Operations](docs/operations.md): backup and restore, key rotation, Docker access (what each feature
+  runs through the socket), the Docker scratch folder,
   git sync, email notifications and the deploy webhook.
-- [Using ENV Manager](docs/usage.md): deploying from the command line, the drift view, users,
+- [Using ENV Manager](docs/usage.md): creating a deployment from a detected stack, the Overview,
+  container actions and logs of a running stack, deploying from the command line, the drift view, users,
   accounts and post-deploy commands.
 - [API tokens and the API](docs/api.md): creating tokens and calling the deploy API.
 - [Development](docs/development.md): the development stack, make targets, tests, the demo

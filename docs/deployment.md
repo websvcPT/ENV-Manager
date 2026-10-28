@@ -45,7 +45,7 @@ setting is described in the
 
 **Why the container runs as root.** A deploy writes files into the deployment folders and gives
 them the mode, owner and group of their deployment. Changing the owner of a file, and replacing a
-file that belongs to another user, needs root, and the Docker socket (post-deploy commands) is
+file that belongs to another user, needs root, and the Docker socket (post-deploy commands, container actions) is
 root equivalent on the host anyway, so a non-root user would add little protection and break the
 owner and group fields. The image does not create another user. Root also reads the socket
 without any group, so `group_add` in the sample is needed only if you override the user of the
@@ -65,9 +65,11 @@ https base URL and list the proxy in `ENVMANAGER_TRUSTED_PROXIES` (see
 With an `http://` base URL outside development the application logs a warning at startup, because
 the cookie then has no `Secure` flag.
 
-**Docker socket.** Mounting `/var/run/docker.sock` turns post-deploy commands on; without it the
-feature is off. The socket gives root on the host to whoever can reach the application with a
-deploy right, so mount it only when you need the commands.
+**Docker socket.** Mounting `/var/run/docker.sock` turns on post-deploy commands, the stack overview
+and Network panel of a deployment, the container actions (start, stop, restart, recreate) and the
+Logs tab; without it those features are off and say so. The socket gives root on the host to whoever
+can reach the application with a deploy right, so mount it only when you need them. What each one
+runs is in [Docker access](operations.md#docker-access).
 
 **Upgrades and the automatic backup.** Pull or build the new image and run `docker compose up -d`.
 When the new version changes the database, the application takes a backup into `/data/backups`

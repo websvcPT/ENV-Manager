@@ -1,8 +1,9 @@
 # Using ENV Manager
 
-Creating a deployment, the Overview of a running stack, choosing a deployment path, adding files, deployment files, Compose files, importing from Docker
-Compose, file types, command line deploys, the drift view, users, accounts and post-deploy commands. API tokens
-and the API are in [api.md](api.md).
+Creating a deployment from a detected stack, the Overview of a running stack, container actions and
+logs, choosing a deployment path, adding files, deployment files, Compose files, importing from
+Docker Compose, file types, command line deploys, the drift view, signing in with SSO, users,
+accounts and post-deploy commands. API tokens and the API are in [api.md](api.md).
 
 ## Adding a file
 
@@ -105,6 +106,25 @@ project has its folder at the deployment's root, the form offers **Fill from the
 containers** with that name. The name is in the audit entries of the create and the edit
 (`compose_project`).
 
+## The deployment page and its tabs
+
+A deployment page has a title ("Deployment: name"), the deployment path and a row of tabs, each
+its own address, so a tab can be linked and reloaded:
+
+| Tab | What it holds |
+| --- | --- |
+| Overview | The status strip and the running stack: containers, uptime, Recreate to apply and the Network panel (below). |
+| Files | **Check dist**, the services table (Open, Deploy and, for the superadmin, Rename, Delete and Add service), the deployment files and **Import from Docker Compose**. |
+| Logs | The [logs](#the-logs-tab-of-a-deployment) of the containers. Only for those who may read them. |
+| History | The deploy history across the services of the deployment. |
+| Settings | The policies, the Compose project, the linked Compose files, **Edit deployment** and the delete zone. Not shown to a caller who reaches only some files of the deployment. |
+| Access | Who reaches the deployment. Superadmin only. |
+
+The breadcrumb above the page names each item with its type on a second line (Project,
+Deployment, Service, Environment), and below the `md` breakpoint it shrinks to a back link to the
+parent and the current item. The other item pages (project, service, environment) have the same
+top, with the type before the name and the path line, and no parent line.
+
 ## The Overview of a deployment
 
 The Overview tab of a deployment is a read only view of the running stack. It needs Docker, and
@@ -194,8 +214,8 @@ How they run:
   registry logins of Settings, Registries). A command that exceeds that is stopped and reported
   as failed.
 - The dialog closes when the answer comes. A toast says what was done, or that it failed with the
-  last lines of the output (with the values of the deployment's files and the registry logins
-  replaced by `****`), or why it did not run. The Overview then reads the containers again
+  last lines of the output (with the values of the deployment's files, the newest and the
+  previous version, and the registry logins replaced by `****`), or why it did not run. The Overview then reads the containers again
   at once.
 - Every attempt is an audit entry (`container.start`, `container.stop`, `container.restart`,
   `container.recreate`) on the deployment with the service and the exit code, and with the
@@ -242,25 +262,30 @@ How it reads:
 - A read that fails (Docker does not answer, the project is gone) is a short notice in the footer
   and the box keeps its lines; the next request tries again.
 
-Masking: every value of every file of the deployment (the newest version of each environment, of
-all its services, including files you may not see) is replaced by a **[masked]** chip in the box
-and in the download, before the text filter looks at the line and before it is shortened, so
-typing a value into the filter finds nothing and a cut never leaves half of one. Values shorter
-than 4 characters are not masked (they would match inside ordinary words), and a value that a
-container re-encodes (quoted, escaped, hashed, split over lines) is not recognized. A value that
-only an older saved version held is not masked either, so a container that was not recreated
-after a change can still print its old value in clear. The values
-are opened once per request and kept in memory for it.
+Masking: every value of every file of the deployment (the newest and the previous version of
+each environment, of all its services, including files you may not see) is replaced by a
+**[masked]** chip in the box and in the download, before the text filter looks at the line and
+before it is shortened, so typing a value into the filter finds nothing and a cut never leaves
+half of one. The previous version is masked too, so a container that was not recreated after a
+value changed does not show the old value in clear. Values shorter than 4 characters are not
+masked (they would match inside ordinary words), and a value that a container re-encodes (quoted,
+escaped, hashed, split over lines) is not recognized. A value that only a version older than the
+previous one held is not masked: that is the limit, so recreate the container after rotating a
+secret that must stay out of the logs. The values are opened once per request that brings new
+lines (two versions of each file at most) and kept in memory for it; a poll that finds nothing
+new opens none.
 
 Download saves the lines of the current chip, filter and **Show** as `deployment-<id>-logs.txt`
 (`-<service>` when a chip is chosen), one `stamp service text` per line, with the same masking.
 It reads Docker again, so it is the latest lines, not a copy of the box.
 
-What is recorded: opening the logs (the first read of the tab and every download) is an audit
-entry `deployment.logs_view` on the deployment with the service filter, the number of lines
-asked for and whether it was a download, never the lines or the text filter. Changing a chip, the
-filter or **Show** reads again from the start, which is another first read and another entry. The polls that
-follow are not recorded. Nothing is stored and no line is written to the application's own log.
+What is recorded: opening the logs is an audit entry `deployment.logs_view` on the deployment
+with the service filter, the number of lines asked for and whether it was a download, never the
+lines or the text filter. The first read of the tab writes one entry per user, deployment and
+service filter within 10 minutes: opening the same filter again inside that time, typing in the
+text filter, changing **Show** and the polls that follow write nothing, while a chip for another
+service is a new filter and writes an entry. Every download writes its own entry. Nothing is
+stored and no line is written to the application's own log.
 
 ## Choosing a deployment path
 

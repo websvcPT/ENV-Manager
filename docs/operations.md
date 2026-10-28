@@ -1,16 +1,16 @@
 # Operations
 
-Backup and restore, key rotation, the Docker scratch folder, git sync and notifications.
+Backup and restore, key rotation, Docker access, the Docker scratch folder, git sync and notifications.
 
 ## Backup and restore
 
 A backup is a consistent copy of the SQLite database taken with SQLite's online backup, so the
 application keeps running and writing while it is made. It holds the database as it is: environment
-values, SMTP and git credentials and Docker registry tokens are encrypted fields (so a backup
-holds the registry logins, sealed), and the master key is never in the database,
-so it is never in a backup. A backup is not secret-free, though: it also holds user names, email
-addresses, password hashes, structure and the audit log in the clear. Treat the file like the
-database.
+values, SMTP and git credentials, Docker registry tokens and the single sign-on client secret are
+encrypted fields (so a backup holds the registry logins, sealed), and the master key is never in
+the database, so it is never in a backup. A backup is not secret-free, though: it also holds user
+names, email addresses, password hashes, structure and the audit log in the clear. Treat the file
+like the database.
 
 **Store the master key separately from the backups.** A backup is useless without the key it was
 made with: every value in it is unreadable, and a restore refuses a backup that the key in use
@@ -55,7 +55,8 @@ rotation, keep each old key apart from the backups too, labelled with the backup
   one worker process (the start script and the deploy locks assume it); a second worker would run
   every job twice, which the backup lock (shared between processes) turns into a skipped run. A run
   that was due while the application was down is not made up. The same scheduler removes expired
-  pending sign-in steps every hour.
+  pending sign-in steps and the single sign-on attempts in progress (the `sso_logins` table, rows
+  that last 5 minutes) every hour.
 - **Download.** Superadmin only, streamed from the backup folder without following links, never
   cached, audited as `backup.download`.
 - **Run now** takes a manual backup at once. One backup or restore runs at a time (a lock file in
@@ -75,8 +76,8 @@ names the backup and says that current data is replaced) and from the command li
 2. A safety backup of the current data is taken (`pre-restore`); if that fails nothing is
    restored.
 3. The working copy is prepared: brought to the current schema when the backup is older, stripped
-   of every session and pending sign-in so everyone must sign in again, given the records of the
-   backups that exist in the folder now, and given the audit entry of the restore (the audit log of
+   of every session, pending sign-in and single sign-on attempt so everyone must sign in again,
+   given the records of the backups that exist in the folder now, and given the audit entry of the restore (the audit log of
    the replaced database is replaced with it, so entries made after the backup are kept only in the
    safety backup).
 4. It is switched in through SQLite's online backup into the live database: one write
@@ -119,8 +120,9 @@ start the container with the same key, copy a downloaded backup in and run `back
 ## Key rotation
 
 The master key seals every environment value, the second factor secrets, the secret settings
-(the SMTP password, the webhook address and secret, the git deploy key and token) and the Docker
-registry tokens (Settings, Registries), and it keys the hashes that drift detection compares. A rotation replaces it with a new key. It is offline: the application
+(the SMTP password, the webhook address and secret, the git deploy key and token and the single
+sign-on client secret) and the Docker registry tokens (Settings, Registries), and it keys the hashes
+that drift detection compares. A rotation replaces it with a new key. It is offline: the application
 is stopped, the command rewrites the database in one transaction, and the application is started
 with the new key.
 
@@ -175,8 +177,9 @@ What the command does, in order:
   database, and the rotation itself is refused when one of them holds the lock.
 - In one transaction it seals every value again with the new key and recomputes every keyed hash:
   the content of every environment version and its hash, the second factor secrets, every secret
-  setting, every registry token, the hashes of deploy results (the baselines of the drift checks) and the key check
-  record. Every value is opened with the new key before the transaction is committed, and the audit
+  setting (the single sign-on client secret included), every registry token, the hashes of deploy
+  results (the baselines of the drift checks) and the key check record. Every value is opened with
+  the new key before the transaction is committed, and the audit
   entry `key.rotate` (counts and the name of the backup, never key material) is part of it. Any
   failure rolls everything back and the database is as it was; the new key file stays and the next
   run uses it.
@@ -190,6 +193,9 @@ What a rotation leaves behind:
 - The hash of the file found before a deploy (`target_hash_before` of a deploy result, which
   nothing reads) is recomputed when that file held a stored version and dropped when it held
   anything else.
+- Single sign-on attempts in progress (the `sso_logins` rows, whose code verifier is sealed) are
+  removed: they last 5 minutes, so a person in the middle of one signs in again. The client secret
+  is resealed with the other secret settings, so single sign-on keeps working.
 - Sessions stay valid. A second factor setup that was in progress (its secret is in a cookie sealed
   with the old key) must be started again.
 - Git sync progress is reset: the next hourly run finds that the sealed manifest in its working
@@ -211,6 +217,36 @@ never leaves it held: a file that still holds the line of a holder that did not 
 stale lock, reported in the log and taken over. The lock works between containers that share the
 data folder on a local filesystem (a bind mount or a Docker volume); a network filesystem that does
 not honour locks cannot enforce it.
+
+## Docker access
+
+The `docker` command of the image talks to the daemon through the socket that
+`ENVMANAGER_DOCKER_SOCKET` names (default `/var/run/docker.sock`), which has to be mounted into the
+container (see [Deployment and network configuration](deployment.md)). The socket is root-equivalent
+on the host. Several features need it, and each one runs only the commands below, always as an
+argument list with no shell:
+
+| Feature | What it runs |
+| --- | --- |
+| Post-deploy commands | The commands the superadmin stored on a service, after the files of a deploy were written. Each starts with `docker`; the safety net refuses `compose down`, every `prune`, `-v` and `--volumes` on `rm` and `down`, `login`, `logout` and a global `--config`. |
+| Docker status (Settings, Post-deploy, and the screens below) | `docker version` and `docker compose version`, kept for a few seconds. |
+| Detected stacks (new deployment) | `docker compose ls --all --format json` and one `docker ps --all` filtered on the Compose project label with a template of two labels. Read only. |
+| Stack overview (Overview tab) | `docker compose -p <project> ps --all --format json`, one `docker inspect` of the project's containers, `docker network ls` filtered on the project label and one `docker network inspect`, with fixed templates that select state, health, times, exit code, restart count, published ports, addresses and network settings. A container's environment variables, labels and mounts are never requested. Read only. |
+| Container actions (Overview tab) | `docker compose [--project-directory <folder> -p <project> -f <file> ...] start`, `stop` or `restart <service>` and `up -d --no-deps --force-recreate <service>`, one service of one deployment at a time, under the deploy lock. |
+| Logs (Logs tab) | `docker compose -p <project> logs --timestamps --no-color --tail <n> [--since <time>] [<service>]`. Read only. |
+
+The reads have a 15 second deadline and 4 MiB of output at most, and every command runs with a
+fixed minimal environment, not the application's own, so the master key never reaches Docker; the
+overview keeps its answer for 5 seconds, so the number of viewers does not multiply the commands.
+Only Recreate and the post-deploy commands get the registry logins (in the private Docker config
+of the run, see below). A deployment's Compose
+project name (Settings tab of the deployment) is what ties these features to its containers, and
+they are unavailable, with the reason on the page, while the socket is not usable.
+
+The superadmin and admins whose grant covers the whole deployment may use the actions and the
+logs, every use is in the audit log (`container.*`, `deployment.logs_view`) and neither the output
+of an action nor a log line is ever stored. The values of a deployment's files, the newest and the
+previous version of each, are replaced in that output before it is shown.
 
 ## Docker scratch folder
 

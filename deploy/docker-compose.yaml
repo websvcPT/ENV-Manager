@@ -15,7 +15,8 @@ services:
       # optional: mount the host's vhosts and opt folders to be able to read/write files on the host
       - /var/www/vhosts:/var/www/vhosts
       - /opt:/opt
-      # optional: enables post-deploy commands (root-equivalent on the host)
+      # optional: enables post-deploy commands, the stack overview, container actions and logs
+      # (root-equivalent on the host)
       # - /var/run/docker.sock:/var/run/docker.sock
     # group_add: ["<docker group id>"]
     ports:
