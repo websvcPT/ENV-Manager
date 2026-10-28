@@ -86,6 +86,16 @@ test.describe('layout and tabs', () => {
       await expect(sidebarLink(page)).toHaveAttribute('aria-current', 'page');
     }
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+    const spans = await tabLinks(page).evaluateAll((links) =>
+      links.map((link) => {
+        const range = document.createRange();
+        range.selectNodeContents(link);
+        return [link.getBoundingClientRect().left, range.getBoundingClientRect().right];
+      }),
+    );
+    for (let index = 1; index < spans.length; index++) {
+      expect(spans[index][0], 'a tab starts after the text of the one before it').toBeGreaterThanOrEqual(spans[index - 1][1]);
+    }
   });
 
   for (const [slug, label] of TABS) {
