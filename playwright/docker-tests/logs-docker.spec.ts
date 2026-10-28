@@ -227,5 +227,11 @@ test.describe('Logs tab with a usable Docker', () => {
     const logBox = await page.locator('#log-box').boundingBox();
     const width = page.viewportSize()?.width ?? 0;
     expect(logBox?.width ?? 0).toBeLessThanOrEqual(width);
+    const centers: number[] = [];
+    for (const control of ['#log-tail', '#log-follow', '#log-download']) {
+      const box = await page.locator(control).boundingBox();
+      centers.push((box?.y ?? 0) + (box?.height ?? 0) / 2);
+    }
+    expect(Math.max(...centers) - Math.min(...centers), 'the line count, Following and the download share a row').toBeLessThan(1);
   });
 });

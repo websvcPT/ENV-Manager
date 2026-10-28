@@ -26,7 +26,7 @@
 <label data-log-service="{{ name }}" class="inline-flex h-11 md:h-ctl cursor-pointer items-center rounded-full border border-line-strong bg-surface px-4 text-sm font-semibold text-ink hover:bg-surface2 has-checked:border-accent has-checked:bg-accent-soft has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-focus"><input type="radio" name="service" value="{{ name }}"{% if (params.service or "") == name %} checked{% endif %} class="sr-only"><span{% if name %} class="font-mono"{% endif %}>{{ name or "All services" }}</span></label>
 {%- endfor %}
 </fieldset>
-<div class="flex flex-wrap items-center gap-3">
+<div class="flex flex-wrap items-center gap-x-2 gap-y-3">
 <div class="relative min-w-0 flex-1 basis-56"><label class="sr-only" for="log-q">Filter lines</label>{{ icon("search", "pointer-events-none absolute left-3 top-3.5 md:top-2.5 size-4 text-ink3", "2") }}<input id="log-q" name="q" type="search" value="{{ params.query }}" maxlength="200" autocomplete="off" placeholder="Filter lines" class="w-full rounded-full pl-9 {{ control_classes }}"></div>
 <div class="flex items-center gap-2"><label for="log-tail" class="text-[13px] font-semibold text-ink2">Show</label><select id="log-tail" name="tail" class="{{ control_classes }}">{% for count in tail_choices %}<option value="{{ count }}"{% if count == params.tail %} selected{% endif %}>Last {{ count }} lines</option>{% endfor %}</select></div>
 {{ follow_state(true) }}{{ follow_toggle(deployment, true) }}{{ download_link(deployment, params) }}
