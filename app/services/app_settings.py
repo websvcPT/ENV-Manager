@@ -235,6 +235,13 @@ class StoredSettings:
     sso: SsoSettings = field(default_factory=SsoSettings)
     secrets: frozenset[str] = frozenset()
 
+    @property
+    def sso_on(self) -> bool:
+        """Whether sign in through the provider is on and can work: switched on, with an issuer,
+        a client id and a stored client secret. The sign-in card, the password restriction and
+        the account screens all follow this one answer."""
+        return self.sso.configured and SSO_CLIENT_SECRET_KEY in self.secrets
+
 
 # Settings whose value is an address that can carry a token in its path or query.
 URL_SETTINGS: frozenset[str] = frozenset({"git.url"})

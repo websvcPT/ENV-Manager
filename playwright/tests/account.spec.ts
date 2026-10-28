@@ -93,6 +93,17 @@ test.describe('the page for every group', () => {
     }
   });
 
+  test('an account that is not linked to single sign-on has no note and every control', async ({
+    page,
+  }) => {
+    await openAccount(page);
+    await expect(page.locator('[data-fragment="sso-account"]')).toHaveCount(0);
+    await expect(page.locator('[data-sso-manage]')).toHaveCount(0);
+    await expect(page.locator('[data-fragment="account-profile"]')).toHaveCount(0);
+    await expect(page.locator('#account-password-form')).toBeVisible();
+    await expect(page.locator('#totp button[hx-post="/account/totp/setup"]')).toBeEnabled();
+  });
+
   test('a signed out visitor is sent to the sign in page', async ({ browser, baseURL }) => {
     const context = await browser.newContext({ baseURL, storageState: { cookies: [], origins: [] } });
     const page = await context.newPage();

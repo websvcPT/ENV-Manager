@@ -251,7 +251,9 @@ class World:
     async def begin(self, *, now: datetime | None = None) -> Begun:
         """Start an attempt the way the sign in link does."""
         async with create_session_factory(self.engine)() as db:
-            started = await start(db, self.crypto, self.provider, base_url=BASE_URL, now=now)
+            started = await start(
+                db, self.crypto, self.provider, POLICY, base_url=BASE_URL, now=now
+            )
         query = parse_qs(urlsplit(started.url).query)
         self.idp.challenge = query["code_challenge"][0]
         return Begun(started, query)

@@ -8,3 +8,8 @@ PENDING_LOGIN_COOKIE_NAME = "envmanager_pending_login"
 # Holds the sealed, not yet confirmed secret of a second factor setup, for the account screens.
 TOTP_SETUP_COOKIE_NAME = "envmanager_totp_setup"
 TOTP_SETUP_COOKIE_PATH = "/account/totp"
+
+# Ties a single sign-on attempt to the browser that started it, until the provider sends the
+# browser back to the callback.
+SSO_BINDING_COOKIE_NAME = "envmanager_sso_binding"
+SSO_BINDING_COOKIE_PATH = "/login/sso"

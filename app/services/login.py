@@ -14,6 +14,7 @@ from app.models import (
     LoginCounter,
     LoginCounterKind,
     User,
+    UserGroup,
 )
 from app.models.types import utc_now
 from app.services import totp
@@ -35,6 +36,8 @@ from app.services.notify_events import (
 from app.services.pending_logins import consume_pending_login, create_pending_login
 from app.services.seen_addresses import note_sign_in_address
 from app.services.sessions import create_session
+
+PASSWORD_SIGN_IN_OFF = "password_sign_in_off"  # noqa: S105
 
 
 class LoginStatus(StrEnum):
@@ -69,6 +72,11 @@ async def _find_user(db: AsyncSession, email: str) -> User | None:
     ).scalar_one_or_none()
 
 
+def _password_sign_in_off(user: User, superadmins_only: bool) -> bool:
+    """Whether the account may not sign in with a password now: only superadmins may."""
+    return superadmins_only and user.group is not UserGroup.SUPERADMIN
+
+
 async def _locked_out(
     db: AsyncSession,
     counters: list[LoginCounter | None],
@@ -101,6 +109,7 @@ async def authenticate(
     ip_address: str | None = None,
     user_agent: str | None = None,
     notifier: EventNotifier = NO_EVENT_NOTIFIER,
+    superadmins_only: bool = False,
     now: datetime | None = None,
 ) -> LoginResult:
     """Check the email and password and start a session on success.
@@ -109,6 +118,10 @@ async def authenticate(
     The submitted text is only recorded when it belongs to a user, because people sometimes type
     a password into the email field. A user with a second factor gets a pending login instead of
     a session, and finishes with `complete_totp_login`; that request is not a failure.
+
+    With ``superadmins_only`` (single sign-on is on) every account that is not a superadmin is
+    refused after the same password check, so the answer and the time it takes are those of a
+    wrong password and nothing tells who is a superadmin.
     """
     moment = now or utc_now()
     subject = identifier.strip().lower()
@@ -127,7 +140,9 @@ async def authenticate(
         matched, upgraded_hash = verify_password(password, user.password_hash)
 
     reason = "invalid_credentials"
-    if user is not None and matched and user.is_active:
+    if user is not None and _password_sign_in_off(user, superadmins_only):
+        reason = PASSWORD_SIGN_IN_OFF
+    elif user is not None and matched and user.is_active:
         if upgraded_hash:
             user.password_hash = upgraded_hash
         if user.totp_enabled:
@@ -137,7 +152,7 @@ async def authenticate(
         return await finish_login(
             db, crypto, policy, user, ip_address, user_agent, subject, moment, notifier
         )
-    if user is not None and matched:
+    elif user is not None and matched:
         reason = "user_disabled"
 
     return await _fail(db, policy, user, reason, subject, ip_address, moment, notifier)
@@ -153,6 +168,7 @@ async def complete_totp_login(
     ip_address: str | None = None,
     user_agent: str | None = None,
     notifier: EventNotifier = NO_EVENT_NOTIFIER,
+    superadmins_only: bool = False,
     now: datetime | None = None,
 ) -> LoginResult:
     """Finish a login with the authenticator code and the pending login from the password step.
@@ -161,6 +177,8 @@ async def complete_totp_login(
     answers with a fresh one so the person can try again without sending the password again.
     Wrong codes count toward the same lockout counters as wrong passwords. A time step that was
     already accepted for the user is refused, so a code observed in transit cannot be replayed.
+    With ``superadmins_only`` (single sign-on switched on after the password step) an account
+    that is not a superadmin is refused like a wrong code, whatever code it sends.
     """
     moment = now or utc_now()
     user_id = await consume_pending_login(db, pending_token, now=moment) if pending_token else None
@@ -182,7 +200,9 @@ async def complete_totp_login(
 
     reason = "invalid_totp_code"
     step = totp.matching_step(user, code, crypto, now=moment)
-    if step is not None:
+    if _password_sign_in_off(user, superadmins_only):
+        reason = PASSWORD_SIGN_IN_OFF
+    elif step is not None:
         if await totp.claim_step(db, user, step):
             return await finish_login(
                 db, crypto, policy, user, ip_address, user_agent, subject, moment, notifier

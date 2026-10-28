@@ -1,18 +1,44 @@
 {#- The signed-in user's own account: change password, two-factor authentication, active
     sessions and the theme preference. Open to every group. Context: password (the password
     panel state), totp (the two-factor panel state), sessions (the sessions panel state); see
-    the fragments. -#}
+    the fragments. An account linked to single sign-on (`sso_linked`) also shows a note and the
+    link to the provider's account page (`sso_url`); one the provider manages (`sso_managed`)
+    shows its profile read only and a password panel that says the password is not used. -#}
 {% extends "layouts/app.html" %}
-{% from "macros/badges.html" import role_badge %}
+{% from "macros/badges.html" import badge, role_badge %}
+{% from "macros/buttons.html" import button %}
 {% from "macros/dialogs.html" import loaded_dialog %}
-{% from "macros/panels.html" import page_header %}
+{% from "macros/feedback.html" import note %}
+{% from "macros/panels.html" import page_header, panel %}
 {% set breadcrumbs = [("Account", none)] %}
 {% block title %}Account{% endblock %}
 {% block content %}
 {% set header_badges %}{{ role_badge(current_user.group) }}{% endset %}
 {{ page_header("Account", current_user.name ~ " · " ~ current_user.email, badges=header_badges) }}
+{%- if sso_linked %}
+<div data-fragment="sso-account" class="flex max-w-5xl flex-col gap-3 md:flex-row md:items-center">
+<div class="flex-1">{{ note("You sign in with SSO. Your name, email, password and second factor are managed in your SSO account and updated here at each sign in." if sso_managed else "You can also sign in with SSO. Your name and email follow your SSO account and are updated here at each sign in.") }}</div>
+{%- if sso_url %}
+{{ button("Manage account in SSO", href=sso_url, icon_name="open", target="_blank", rel="noopener noreferrer", data_sso_manage=true) }}
+{%- endif %}
+</div>
+{%- endif %}
 <div class="grid max-w-5xl items-start gap-5 lg:grid-cols-2">
+{%- if sso_managed %}
+{% set from_sso %}{{ badge("sso", "From SSO") }}{% endset %}
+{% call panel("Profile", "account-profile-title", fragment="account-profile", id="account-profile", actions=from_sso) %}
+<dl class="flex flex-col gap-3 px-4 pb-5 md:px-5">
+<div><dt class="text-[13px] font-semibold text-ink2">Name</dt><dd data-profile="name">{{ current_user.name }}</dd></div>
+<div><dt class="text-[13px] font-semibold text-ink2">Email</dt><dd data-profile="email" class="break-all">{{ current_user.email }}</dd></div>
+</dl>
+{% endcall %}
+{% set not_used %}{{ badge("skipped", "Not used with SSO") }}{% endset %}
+{% call panel("Password", "account-password-title", fragment="account-password", id="account-password", actions=not_used) %}
+<p class="px-4 pb-5 text-ink2 md:px-5">Your password is managed in your SSO account. ENV Manager does not use one for you.</p>
+{% endcall %}
+{%- else %}
 {% include "fragments/account_password.html" %}
+{%- endif %}
 {% include "fragments/account_totp.html" %}
 {% include "fragments/account_sessions.html" %}
 {% include "fragments/account_theme.html" %}

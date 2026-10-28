@@ -36,7 +36,9 @@ from app.services.account_sessions import (
     revoke_other_session,
     to_row,
 )
+from app.services.app_settings import StoredSettings
 from app.services.auth_policy import AuthPolicy
+from app.services.sso_identity import SsoAccount, sso_account
 from app.services.totp_setup import SETUP_LIFETIME, PendingSetup, begin_setup, read_setup
 from app.web.cookies import set_private_cookie
 from app.web.dependencies import (
@@ -45,6 +47,7 @@ from app.web.dependencies import (
     get_crypto,
     get_db,
     get_notifier,
+    get_stored_settings,
     require_auth,
 )
 from app.web.htmx import events_response, hx_events
@@ -62,6 +65,7 @@ Signed = Annotated[AuthContext, Depends(require_auth)]
 Database = Annotated[AsyncSession, Depends(get_db)]
 Policy = Annotated[AuthPolicy, Depends(get_auth_policy)]
 Crypto = Annotated[CryptoService, Depends(get_crypto)]
+Stored = Annotated[StoredSettings, Depends(get_stored_settings)]
 
 
 def _wait_text(wait: timedelta) -> str:
@@ -96,6 +100,21 @@ def _password_context(
         "ended": ended,
         "wait": wait,
     }
+
+
+def _sso_context(account: SsoAccount) -> dict[str, Any]:
+    """What the account screens need of the single sign-on link: the note and button of a
+    linked account, and whether the provider owns the profile, password and second factor."""
+    return {"sso_linked": account.linked, "sso_managed": account.managed, "sso_url": account.url}
+
+
+async def _refuse_managed(db: AsyncSession, context: AuthContext, stored: StoredSettings) -> None:
+    """Answer 403 for an account whose password and second factor belong to the provider.
+
+    The panels show no way to change them, and this keeps a direct request from doing it.
+    """
+    if (await sso_account(db, context.user, stored)).managed:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "managed by single sign-on")
 
 
 def _setup_view(setup: PendingSetup) -> dict[str, str]:
@@ -174,12 +193,20 @@ def _pending_setup(
 
 
 @router.get("/account", include_in_schema=False)
-async def account_page(request: Request, db: Database, context: Signed, policy: Policy) -> Response:
-    """The account page: password, two-factor authentication, sessions and theme."""
+async def account_page(
+    request: Request, db: Database, context: Signed, policy: Policy, stored: Stored
+) -> Response:
+    """The account page: password, two-factor authentication, sessions and theme.
+
+    An account linked to single sign-on also shows the link to the provider's account page, and
+    one the provider manages shows its profile, password and second factor as read only.
+    """
+    sso = await sso_account(db, context.user, stored)
     page = {
         **_password_context(policy),
         **_totp_context(context.user),
         **await _sessions_context(db, context, policy),
+        **_sso_context(sso),
     }
     return render(request, "pages/account.html", page)
 
@@ -190,6 +217,7 @@ async def password_route(
     db: Database,
     context: Signed,
     policy: Policy,
+    stored: Stored,
     current_password: Annotated[str, Form()] = "",
     new_password: Annotated[str, Form()] = "",
     confirm_password: Annotated[str, Form()] = "",
@@ -198,8 +226,10 @@ async def password_route(
 
     The panel is answered again: with the reasons next to the fields when refused, with a
     lockout message while the name or address is locked, and with a confirmation (and an event
-    that refreshes the sessions panel) on success. Fields are never echoed back.
+    that refreshes the sessions panel) on success. Fields are never echoed back. An account
+    that single sign-on manages is refused with 403.
     """
+    await _refuse_managed(db, context, stored)
     try:
         ended = await change_password(
             db,
@@ -226,15 +256,19 @@ async def password_route(
 
 
 @router.get("/account/totp", include_in_schema=False)
-async def totp_panel(request: Request, context: Signed) -> Response:
+async def totp_panel(request: Request, db: Database, context: Signed, stored: Stored) -> Response:
     """The two-factor panel as it stands. Leaving a setup, by Cancel, drops its pending secret."""
-    response = render(request, TOTP_FRAGMENT, _totp_context(context.user))
-    return _clear_setup_cookie(response)
+    sso = await sso_account(db, context.user, stored)
+    page = {**_totp_context(context.user), **_sso_context(sso)}
+    return _clear_setup_cookie(render(request, TOTP_FRAGMENT, page))
 
 
 @router.post("/account/totp/setup", include_in_schema=False)
-async def totp_setup(request: Request, context: Signed, crypto: Crypto) -> Response:
+async def totp_setup(
+    request: Request, db: Database, context: Signed, crypto: Crypto, stored: Stored
+) -> Response:
     """Start a setup: a new secret, shown as a QR code and as text, held only in a cookie."""
+    await _refuse_managed(db, context, stored)
     if context.user.totp_enabled:
         return render(request, TOTP_FRAGMENT, _totp_context(context.user), status_code=409)
     setup, sealed = begin_setup(context.user, context.session, crypto)
@@ -269,6 +303,7 @@ async def totp_enable(
     context: Signed,
     policy: Policy,
     crypto: Crypto,
+    stored: Stored,
     current_password: Annotated[str, Form()] = "",
     code: Annotated[str, Form()] = "",
 ) -> Response:
@@ -277,8 +312,10 @@ async def totp_enable(
     A refusal answers the setup again with the same secret and the reason next to the field (a
     wrong password counts toward the lockout; a lockout answers 429 with the time left); a setup
     that ran out answers the idle panel with a note. Success drops the cookie and shows the
-    enabled state. Neither field is ever echoed back.
+    enabled state. Neither field is ever echoed back. An account that single sign-on manages is
+    refused with 403.
     """
+    await _refuse_managed(db, context, stored)
     setup = _pending_setup(request, context, crypto)
     if context.user.totp_enabled or setup is None:
         page = _totp_context(context.user, notice=None if context.user.totp_enabled else "expired")
@@ -308,8 +345,11 @@ async def totp_enable(
 
 
 @router.get("/account/totp/remove", include_in_schema=False)
-async def totp_remove_dialog(request: Request, context: Signed) -> Response:
+async def totp_remove_dialog(
+    request: Request, db: Database, context: Signed, stored: Stored
+) -> Response:
     """The confirm dialog for removing two-factor authentication."""
+    await _refuse_managed(db, context, stored)
     state = "ask" if context.user.totp_enabled else "off"
     return render(request, TOTP_REMOVE_FRAGMENT, _remove_context(state))
 
@@ -321,14 +361,17 @@ async def totp_remove(
     context: Signed,
     policy: Policy,
     crypto: Crypto,
+    stored: Stored,
     current_password: Annotated[str, Form()] = "",
     code: Annotated[str, Form()] = "",
 ) -> Response:
     """Remove two-factor authentication after the current password and a code.
 
     A refusal swaps the dialog with the reason next to the field; wrong passwords and codes
-    count toward the lockout. Success closes the dialog and refreshes the two-factor panel.
+    count toward the lockout. Success closes the dialog and refreshes the two-factor panel. An
+    account that single sign-on manages is refused with 403.
     """
+    await _refuse_managed(db, context, stored)
     try:
         await disable_totp(
             db,

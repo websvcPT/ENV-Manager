@@ -1,8 +1,11 @@
 {#- The sign-in card and the unit htmx swaps after each attempt. Context: `state` (none,
-    "invalid", "locked", "expired", "pending_invalid" or "totp"), `identifier` (kept after a
-    failed attempt), `remaining` (minutes and seconds left of a lockout) and `code_error`
-    (second factor step). The code step carries no credentials; its pending login lives in an
-    HttpOnly cookie. -#}
+    "invalid", "locked", "expired", "pending_invalid", "sso_refused" or "totp"), `identifier` (kept
+    after a failed attempt), `remaining` (minutes and seconds left of a lockout), `sso_message`
+    (the fixed sentence of a refused single sign-on attempt), `sso` (single sign-on is on: the
+    sign-in link comes first and the password form is a disclosure for superadmins),
+    `sso_creates` (accounts are created at the first single sign-on) and `code_error` (second
+    factor step). The code step carries no credentials; its pending login lives in an HttpOnly
+    cookie. -#}
 {% from "macros/buttons.html" import button %}
 {% from "macros/forms.html" import csrf_field, field %}
 {% from "macros/icons.html" import icon %}
@@ -12,7 +15,8 @@
   "invalid": ("alert", "bg-err-bg text-err-fg", "close", "Invalid credentials", "The email or password is incorrect. Try again."),
   "locked": ("alert", "bg-warn-bg text-warn-fg", "warning", "Account temporarily locked", "Too many failed attempts. Try again in " ~ (remaining | default("")) ~ "."),
   "expired": ("status", "bg-info-bg text-info-fg", "info", "Session expired", "Your session expired. Sign in again to continue."),
-  "pending_invalid": ("status", "bg-info-bg text-info-fg", "info", "Verification expired", "The verification step timed out. Sign in again to continue.")
+  "pending_invalid": ("status", "bg-info-bg text-info-fg", "info", "Verification expired", "The verification step timed out. Sign in again to continue."),
+  "sso_refused": ("alert", "bg-err-bg text-err-fg", "close", "Single sign-on failed", sso_message | default(""))
 } %}
 <div id="login-card" data-fragment="login-card" class="rounded-panel border border-line bg-surface shadow-panel flex w-[420px] max-w-full flex-col gap-5 p-6 md:p-8">
 <div class="flex flex-col items-center gap-3 text-center">{{ brand_lockup("h-24 w-auto") }}<h1 class="{{ h1_class() }}">ENV Manager</h1><p class="text-ink2">Sign in to continue</p></div>
@@ -24,6 +28,12 @@
 <div role="{{ live_role }}" data-fragment="login-message" class="flex items-start gap-3 rounded-btn px-4 py-3 {{ tone_classes }}">{{ icon(icon_name, "size-5 mt-0.5", "2.2") }}<div><p class="font-bold">{{ title }}</p><p class="text-ink">{{ detail }}</p></div></div>
 {%- endif %}
 {%- set locked = state == "locked" %}
-<form method="post" action="/login" hx-post="/login" hx-target="#login-card" hx-swap="outerHTML" class="flex flex-col gap-4">{{ csrf_field(csrf_token) }}{{ field("user", "Email", name="identifier", value=identifier | default(""), disabled=locked, autocomplete="username") }}{{ field("pw", "Password", name="password", type="password", disabled=locked, autocomplete="current-password") }}{{ button("Sign in", kind="primary", type="submit", extra_class="w-full", disabled=locked) }}</form>
+{%- set password_form %}<form method="post" action="/login" hx-post="/login" hx-target="#login-card" hx-swap="outerHTML" class="flex flex-col gap-4">{{ csrf_field(csrf_token) }}{{ field("user", "Email", name="identifier", value=identifier | default(""), disabled=locked, autocomplete="username") }}{{ field("pw", "Password", name="password", type="password", disabled=locked, autocomplete="current-password") }}{{ button("Sign in", kind="primary", type="submit", extra_class="w-full", disabled=locked) }}</form>{% endset %}
+{%- if sso %}
+{{ button("Sign in with SSO", kind="primary", href="/login/sso", icon_name="open", extra_class="w-full", data_sso_start=true) }}
+<details data-fragment="password-sign-in" class="group rounded-btn border border-line"{% if state in ["invalid", "locked"] %} open{% endif %}><summary class="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 rounded-btn px-4 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus [&::-webkit-details-marker]:hidden">Superadmin sign in with password<span class="inline-flex transition-transform group-open:rotate-180">{{ icon("chevron-down", "size-4", "2.2") }}</span></summary><div class="flex flex-col gap-4 border-t border-line p-4"><p class="text-[13px] text-ink2">For superadmin accounts only. Every other account signs in with SSO.</p>{{ password_form }}</div></details>
+{%- else %}
+{{ password_form }}
 {%- endif %}
-<p class="border-t border-line pt-4 text-center text-[13px] text-ink2">Accounts are created by a superadmin. There is no password recovery.</p></div>
+{%- endif %}
+<p class="border-t border-line pt-4 text-center text-[13px] text-ink2">{% if sso_creates %}Accounts are created at the first SSO sign in or by a superadmin.{% else %}Accounts are created by a superadmin.{% endif %} There is no password recovery.</p></div>

@@ -121,6 +121,12 @@ async function turnOnTwoFactor(page: Page, user: CreatedUser): Promise<void> {
 }
 
 test.describe('superadmin: the users list', () => {
+  test('marks no account as single sign-on while none is linked', async ({ page }) => {
+    await usersPage(page);
+    await expect(page.locator('[data-fragment="user-row"]').first()).toBeVisible();
+    await expect(page.locator('[data-fragment="user-row"] [data-status="sso"]')).toHaveCount(0);
+  });
+
   test('lists the accounts with their group, status, last login and reach', async ({ page }) => {
     await usersPage(page);
     await expect(page.locator('[data-fragment="page-header"] h1')).toHaveText('Users');

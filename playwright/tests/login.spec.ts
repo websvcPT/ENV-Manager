@@ -28,6 +28,25 @@ test.describe('sign in page', () => {
     await expect(page.locator('[data-js="theme-toggle"]')).toBeVisible();
   });
 
+  test('offers no single sign-on while it is off and the link goes back with a message', async ({
+    page,
+  }) => {
+    await page.goto('/login');
+    const card = page.locator('[data-fragment="login-card"]');
+    await expect(card.locator('a[href="/login/sso"]')).toHaveCount(0);
+    await expect(card.locator('details')).toHaveCount(0);
+    await expect(card.locator('#user')).toBeVisible();
+
+    await page.goto('/login/sso');
+    await expect(page).toHaveURL(/\/login\?sso=off$/);
+    await expect(page.locator('[data-fragment="login-message"]')).toHaveAttribute('role', 'alert');
+    await expect(page.locator('[data-fragment="login-message"]')).toContainText(
+      'Single sign-on is not set up.',
+    );
+    await expect(page.locator('#user')).toBeVisible();
+    expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+  });
+
   test('draws the brand lockup above the product name', async ({ page }) => {
     for (const path of ['/login', '/login?expired=1']) {
       await page.goto(path);

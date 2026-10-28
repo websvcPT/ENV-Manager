@@ -3,14 +3,18 @@
     attempts, setup state), totp_wait (the lockout time left, shown with "locked"), setup
     (secret_text, the secret in groups of four, and setup_id, which tells one setup's QR image from
     the next; setup state only), totp_errors (messages by field: current_password, code; setup
-    state only). The signed-in user supplies the date the factor was turned on. The panel refreshes
-    when the factor is removed. The form never echoes the password or the code. -#}
+    state only), sso_managed (single sign-on skips this second factor: the state is shown and
+    its controls are disabled). The signed-in user supplies the date the factor was turned on.
+    The panel refreshes when the factor is removed. The form never echoes the password or the
+    code. -#}
 {% from "macros/badges.html" import badge %}
 {% from "macros/buttons.html" import button %}
 {% from "macros/feedback.html" import note %}
 {% from "macros/forms.html" import field %}
 {% from "macros/panels.html" import panel %}
-{% call panel("Two-factor authentication", "account-totp-title", fragment="account-totp", id="totp", hx_get="/account/totp", hx_trigger="totp-changed from:body", hx_swap="outerHTML") %}
+{% set managed = sso_managed | default(false) %}
+{% set skipped %}{% if managed %}{{ badge("skipped", "Skipped with SSO") }}{% endif %}{% endset %}
+{% call panel("Two-factor authentication", "account-totp-title", fragment="account-totp", id="totp", actions=skipped, hx_get="/account/totp", hx_trigger="totp-changed from:body", hx_swap="outerHTML") %}
 {%- if state == "setup" %}
 <form id="account-totp-form" hx-post="/account/totp/enable" hx-target="closest [data-fragment=account-totp]" hx-swap="outerHTML" class="flex flex-col gap-4 px-4 pb-5 md:px-5">
 <ol class="m-0 flex list-decimal flex-col gap-3 pl-5 text-[13px]">
@@ -28,7 +32,7 @@
 {%- elif state == "on" %}
 <div class="flex flex-col gap-4 px-4 pb-5 md:px-5">
 <p class="flex items-center gap-2">{{ badge("deployed", "Enabled") }}<span class="text-ink2">Authenticator app configured{% if current_user.totp_enabled_at %} on <time datetime="{{ current_user.totp_enabled_at.strftime('%Y-%m-%dT%H:%M:%SZ') }}" title="UTC">{{ current_user.totp_enabled_at.strftime("%Y-%m-%d") }}</time>{% endif %}.</span></p>
-<div>{{ button("Remove two-factor", kind="danger", data_js="dialog-open", data_target="totp-remove", aria_haspopup="dialog", hx_get="/account/totp/remove", hx_target="#totp-remove", hx_swap="innerHTML") }}</div>
+<div>{{ button("Remove two-factor", kind="danger", disabled=managed, data_js="dialog-open", data_target="totp-remove", aria_haspopup="dialog", hx_get="/account/totp/remove", hx_target="#totp-remove", hx_swap="innerHTML") }}</div>
 </div>
 {%- else %}
 <div class="flex flex-col gap-4 px-4 pb-5 md:px-5">
@@ -36,7 +40,7 @@
 <div role="status">{{ note("The setup took too long and was dropped. Start again.", "warn") }}</div>
 {%- endif %}
 <p class="flex items-center gap-2">{{ badge("never", "Not enabled") }}<span class="text-ink2">Optional. Adds a code from an authenticator app at sign-in.</span></p>
-<div>{{ button("Set up two-factor", hx_post="/account/totp/setup", hx_target="closest [data-fragment=account-totp]", hx_swap="outerHTML") }}</div>
+<div>{{ button("Set up two-factor", disabled=managed, hx_post="/account/totp/setup", hx_target="closest [data-fragment=account-totp]", hx_swap="outerHTML") }}</div>
 </div>
 {%- endif %}
 {% endcall %}

@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.templating import render
 from app.models import User, UserGroup
 from app.services import users as user_service
+from app.services.app_settings import StoredSettings
 from app.services.grants import (
     GrantError,
     GrantTarget,
@@ -20,12 +21,14 @@ from app.services.grants import (
     set_user_grants,
 )
 from app.services.permissions import Capability
+from app.services.sso_identity import is_managed, sso_account
 from app.services.user_detail import UserFilters, UserPage, list_user_rows, load_user_detail
 from app.web.dependencies import (
     AuthContext,
     audit_actor,
     get_db,
     get_notifier,
+    get_stored_settings,
     require_capability,
 )
 from app.web.htmx import events_response, hx_events, hx_redirect
@@ -50,6 +53,7 @@ GROUP_LABELS = {group.value: group.value.capitalize() for group in UserGroup}
 ManageUsers = Annotated[AuthContext, Depends(require_capability(Capability.MANAGE_USERS))]
 ManageGrants = Annotated[AuthContext, Depends(require_capability(Capability.MANAGE_GRANTS))]
 Database = Annotated[AsyncSession, Depends(get_db)]
+Stored = Annotated[StoredSettings, Depends(get_stored_settings)]
 
 
 def _group_of(value: str) -> UserGroup | None:
@@ -71,6 +75,12 @@ async def _user_row(db: AsyncSession, user_id: int) -> User:
     if user is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "user not found")
     return user
+
+
+async def _refuse_managed_reset(db: AsyncSession, stored: StoredSettings, user: User) -> None:
+    """Answer 403 for the second factor reset of an account the provider manages."""
+    if (await sso_account(db, user, stored)).managed:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "managed by single sign-on")
 
 
 def _form_context(
@@ -232,11 +242,18 @@ async def user_page(
     user_id: int,
     db: Database,
     _context: ManageUsers,
+    stored: Stored,
     updated: str = "",
 ) -> Response:
-    """The user detail: group, status, editable grants, tokens and recent activity."""
+    """The user detail: group, status, editable grants, tokens and recent activity.
+
+    An account that single sign-on manages has no two-factor reset: the provider owns it.
+    """
     context = await _detail_context(db, user_id)
-    return render(request, "pages/user_detail.html", {**context, "updated": updated})
+    managed = is_managed(stored, linked=context["user"].sso, group=context["user"].group)
+    return render(
+        request, "pages/user_detail.html", {**context, "updated": updated, "sso_managed": managed}
+    )
 
 
 @router.get("/users/{user_id:int}/tokens", include_in_schema=False)
@@ -341,13 +358,19 @@ async def confirm_dialog(
     action: str,
     db: Database,
     context: ManageUsers,
+    stored: Stored,
     origin: Annotated[str, Query(alias="from")] = "list",
     group: str = "",
 ) -> Response:
-    """The confirm dialog of disabling, enabling or changing the group of a user."""
+    """The confirm dialog of disabling, enabling or changing the group of a user, or of a reset.
+
+    The reset of an account that single sign-on manages is refused with 403.
+    """
     if action not in ACTIONS:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "action not found")
     user = await _user_row(db, user_id)
+    if action == "reset-2fa":
+        await _refuse_managed_reset(db, stored, user)
     view = await _confirm_view(
         db, context.user, user, action, origin if origin in ORIGINS else "list", group
     )
@@ -461,7 +484,13 @@ async def reset_two_factor_route(
     user_id: int,
     db: Database,
     context: ManageUsers,
+    stored: Stored,
     origin: Annotated[str, Form(alias="from")] = "list",
 ) -> Response:
-    """Turn off a user's two-factor sign-in (a lost authenticator): sessions end now."""
+    """Turn off a user's two-factor sign-in (a lost authenticator): sessions end now.
+
+    An account that single sign-on manages is refused with 403: the provider owns its second
+    factor.
+    """
+    await _refuse_managed_reset(db, stored, await _user_row(db, user_id))
     return await _apply_action(request, db, context, user_id, "reset-2fa", origin, "")

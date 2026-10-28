@@ -4,6 +4,8 @@ The sentences never carry anything the provider or the person sent. The reason c
 audit entry records and what a test or a screen switches on.
 """
 
+from datetime import timedelta
+
 NOT_CONFIGURED = "not_configured"
 PROVIDER_UNAVAILABLE = "provider_unavailable"
 PROVIDER_INVALID = "provider_invalid"
@@ -56,3 +58,16 @@ class SsoRefusal(Exception):
         super().__init__(reason)
         self.reason = reason
         self.message = MESSAGES[reason]
+
+
+class SsoLocked(Exception):
+    """The client address is locked out by too many failed sign in attempts.
+
+    ``retry_after`` is how long the lock lasts. Single sign-on refusals count toward the same
+    address counter as wrong passwords, so a client cannot flood the sign in routes.
+    """
+
+    def __init__(self, retry_after: timedelta) -> None:
+        """Hold the time left of the lock."""
+        super().__init__("locked")
+        self.retry_after = retry_after

@@ -452,6 +452,42 @@ The development dataset (`envmanager dev seed`, `make seed`) gives every seeded 
 `<name>@example.test`, so the superadmin signs in as `root@example.test` (see
 [development.md](development.md)).
 
+## Signing in with SSO
+
+When a superadmin has switched single sign-on on and set it up in Settings, the sign-in card
+shows a primary **Sign in with SSO** link. It is a plain link to `/login/sso`, which sends the
+browser to the identity provider (the sign-in attempt is tied to that browser by a short-lived
+HttpOnly cookie, so a link started elsewhere is refused) and back to `/login/sso/callback`, where
+the session starts exactly as after a password sign in. Two-factor of ENV Manager is not asked on
+this path: the provider is the one that checks the person. Signing out ends the ENV Manager
+session only, not the one at the provider.
+
+An account is created at its first SSO sign in when the settings allow it, with no grants (a
+superadmin gives them afterwards); a person who has no role that maps to a group, or whose
+account is disabled here, is refused. The card then shows one fixed sentence for the reason, never
+text from the provider, and the audit log records the failed sign in with its reason. Refused SSO
+sign ins count on the same per client address lockout as wrong passwords: while the address is
+locked, the sign-in link and the callback both answer with the locked message.
+
+**Password sign in** stays behind **Superadmin sign in with password** on the card, for
+superadmin accounts only (with their ENV Manager two-factor, if on). Any other account that
+tries it gets exactly the answer of a wrong password, so the card does not say who is a
+superadmin; the audit entry records `password_sign_in_off`, and the attempt counts like a wrong
+password. With single sign-on off, nothing changes: every account signs in with email and
+password.
+
+**What an SSO account can change.** While single sign-on is on, an account linked to the provider
+that is not a superadmin gets its name and email from the provider at every sign in. Its Account
+page shows that profile read only with a **From SSO** badge, a **Manage account in SSO** button
+to the provider's account page (opens in a new tab), a Password panel that says the password is
+not used, and the Two-factor panel with its state, a **Skipped with SSO** badge and its controls
+disabled; the routes that change a password or the second factor answer 403 for it. A superadmin
+account linked to the provider keeps everything on the Account page and also gets the note and
+the button. In the Users list and on the user page a linked account carries an **SSO** badge
+(whether or not single sign-on is on), and while it is on the Reset two-factor action is absent
+for linked accounts that are not superadmins (its route answers 403). With single sign-on off,
+linked accounts have the Account page and the actions of any other account.
+
 ## Account
 
 Every signed-in user, in any group, has an Account page (`/account`, from the account menu) with

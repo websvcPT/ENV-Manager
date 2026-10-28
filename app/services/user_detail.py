@@ -8,11 +8,12 @@ from dataclasses import dataclass
 from datetime import datetime
 from urllib.parse import urlencode
 
-from sqlalchemy import ColumnElement, and_, func, or_, select
+from sqlalchemy import ColumnElement, and_, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import ApiToken, AuditEntry, AuditResult, User, UserGroup
+from app.models import ApiToken, AuditEntry, AuditResult, User, UserGroup, UserIdentity
 from app.services.grants import GrantTarget, list_grants, projects_reached
+from app.services.sso_identity import is_linked
 from app.services.tokens import TokenStatus, token_status
 
 ACTIVITY_LIMIT = 10
@@ -22,7 +23,10 @@ MAX_QUERY_LENGTH = 100
 
 @dataclass(frozen=True)
 class UserRow:
-    """One line of the users list. ``projects`` is None for a superadmin, who reaches all."""
+    """One line of the users list. ``projects`` is None for a superadmin, who reaches all.
+
+    ``sso`` marks an account linked to a single sign-on identity.
+    """
 
     id: int
     name: str
@@ -31,6 +35,7 @@ class UserRow:
     is_active: bool
     last_login_at: datetime | None
     projects: int | None
+    sso: bool = False
 
 
 @dataclass(frozen=True)
@@ -60,7 +65,10 @@ class ActivityRow:
 
 @dataclass(frozen=True)
 class UserDetail:
-    """A user with the direct grants, tokens and recent activity the detail page shows."""
+    """A user with the direct grants, tokens and recent activity the detail page shows.
+
+    ``sso`` marks an account linked to a single sign-on identity.
+    """
 
     id: int
     name: str
@@ -72,6 +80,7 @@ class UserDetail:
     grants: frozenset[GrantTarget]
     tokens: tuple[TokenRow, ...]
     activity: tuple[ActivityRow, ...]
+    sso: bool = False
 
 
 @dataclass(frozen=True)
@@ -159,15 +168,18 @@ async def list_user_rows(
     order, compared in the database so a name of any script sorts the way the list does. An id
     that no longer exists starts from the top again.
     """
-    query = select(User).where(*(filters or UserFilters()).conditions())
+    has_identity = exists().where(UserIdentity.user_id == User.id).label("linked")
+    query = select(User, has_identity).where(*(filters or UserFilters()).conditions())
     if after is not None:
         later = await _behind(db, after)
         if later is not None:
             query = query.where(later)
     query = query.order_by(User.is_active.desc(), func.lower(User.name), User.id).limit(limit + 1)
-    users = list((await db.execute(query)).scalars())
-    more = len(users) > limit
-    users = users[:limit]
+    found = list((await db.execute(query)).all())
+    more = len(found) > limit
+    found = found[:limit]
+    users = [user for user, _ in found]
+    linked = {user.id for user, has_link in found if has_link}
     reached = await projects_reached(db, [user.id for user in users])
     rows = tuple(
         UserRow(
@@ -178,6 +190,7 @@ async def list_user_rows(
             is_active=user.is_active,
             last_login_at=user.last_login_at,
             projects=None if user.group is UserGroup.SUPERADMIN else len(reached.get(user.id, ())),
+            sso=user.id in linked,
         )
         for user in users
     )
@@ -215,6 +228,7 @@ async def load_user_detail(db: AsyncSession, user_id: int) -> UserDetail | None:
         is_active=user.is_active,
         last_login_at=user.last_login_at,
         totp_enabled=user.totp_enabled,
+        sso=await is_linked(db, user.id),
         grants=await list_grants(db, user.id),
         tokens=tuple(token_row(token, user) for token in tokens),
         activity=tuple(
