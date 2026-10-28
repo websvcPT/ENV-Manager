@@ -200,6 +200,21 @@ test.describe('control sizes', () => {
     await expectOneHeight(page, 3);
   });
 
+  test('the single sign-on form: fields, a mapping row, the copy and the action buttons', async ({
+    page,
+  }) => {
+    await page.goto('/settings/sso');
+    const form = page.locator('#sso');
+    await form.getByRole('button', { name: 'Add mapping' }).click();
+    await expect(page.locator('#sso-mappings tr[data-fragment="sso-mapping-row"]')).toHaveCount(1);
+    await expectOneLine(page, [
+      page.locator('#sso-redirect-uri'),
+      form.locator('[data-js="copy"]'),
+    ]);
+    expect((await size(form.locator('button[type="submit"]'))).height).toBe(controlHeight(page));
+    await expectOneHeight(page, 10);
+  });
+
   test('a form page: the deployment fields', async ({ page, browser }) => {
     const id = await deploymentId(browser, 'Fancy Proj. Name', 'staging');
     await page.goto(`/deployments/${id}/edit`);

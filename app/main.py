@@ -83,6 +83,7 @@ from app.web.settings_notifications import router as settings_notifications_rout
 from app.web.settings_paths import router as settings_paths_router
 from app.web.settings_registries import router as settings_registries_router
 from app.web.settings_smtp import router as settings_smtp_router
+from app.web.settings_sso import router as settings_sso_router
 from app.web.tokens import router as tokens_router
 from app.web.users import router as users_router
 
@@ -275,6 +276,7 @@ def create_app() -> FastAPI:
     application.include_router(settings_backup_router)
     application.include_router(settings_git_router)
     application.include_router(settings_smtp_router)
+    application.include_router(settings_sso_router)
     application.include_router(settings_notifications_router)
     application.include_router(settings_router)
     application.include_router(api_router)

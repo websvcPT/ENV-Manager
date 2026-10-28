@@ -13,6 +13,7 @@ SETTINGS_TABS: tuple[tuple[str, str], ...] = (
     ("git", "Git"),
     ("backup", "Backup"),
     ("security", "Security"),
+    ("sso", "Single sign-on"),
     ("post-deploy", "Post-deploy"),
     ("registries", "Registries"),
     ("notifications", "Notifications"),

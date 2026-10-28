@@ -14,6 +14,7 @@ secret, trusted proxies and allowed sources stay in environment variables (see
 | --- | --- |
 | Allowed paths | The list with mounted and writable status and the deployments under each entry, add with a live check, remove behind a confirm dialog. |
 | Security | Idle and absolute session timeouts, failed logins before lockout per user, per address and for the API per address, lockout duration, minimum password length, and the two-factor policy (Optional, shown read-only). |
+| Single sign-on | Sign in through an OpenID Connect provider: issuer, client ID and secret, account management URL, roles claim, the redirect URI to register, the group mapping rows, whether accounts are created or linked at sign in, and Test discovery. |
 | Post-deploy | The Docker socket status and the switch for post-deploy commands. |
 | Registries | The Docker registry logins post-deploy commands pull private images with (host, username, token): add, edit and remove in dialogs, and Test login. |
 | General | Time zone and date format, audit retention, the defaults of a new deployment, and the read-only diagnostics. |
@@ -36,6 +37,39 @@ secret, trusted proxies and allowed sources stay in environment variables (see
   already open. The failure window (15 minutes) is not a setting. The sign-in limit per address
   can be fixed by `ENVMANAGER_LOGIN_IP_MAX_FAILURES` (development and testing only): while it is
   set its field shows that value and cannot be edited, and the stored value is kept.
+- **Single sign-on.** One form with three panels. **Identity provider:** the switch *Sign in with
+  SSO is on*, the issuer URL (an http or https address with no query or fragment, for example
+  `https://sso.example.com/realms/main`), the client ID, the client secret, the account
+  management URL, the roles claim and the read-only redirect URI. The client secret is sealed
+  with the master key like the other secrets, is never shown again (the field stays empty, an
+  empty field keeps the stored secret, and *Remove the stored client secret* deletes it) and is
+  never written to the audit log. The redirect URI is `ENVMANAGER_BASE_URL` followed by
+  `/login/sso/callback`, with a Copy button: register exactly that address in the provider's
+  client. The account management URL is where *Manage account in SSO* goes on the Account page;
+  left empty it is the issuer address followed by `/account`. The roles claim is the dotted path
+  of the roles in the ID token; left empty it reads the client roles of the client above
+  (`resource_access.<client id>.roles`). The two empty defaults are not stored, so they follow a
+  later change of the issuer or the client ID. **Group mapping:** rows of a role from the
+  provider and the ENV Manager group, Admin or Viewer (superadmin is never a choice). The rows
+  are tried in their order and the first one that matches a role the person has decides their
+  group at every sign in; with no match the sign in is refused. Add mapping and the remove
+  button of a row change the rows on the server and keep what else is typed. **Accounts:** whether
+  an account is created at the first sign in (with no grants) and whether an existing account is
+  linked by its email, which also needs the provider to say the email is verified. The sign in
+  itself is described under [Signing in with SSO](usage.md#signing-in-with-sso).
+  *Test discovery* fetches the discovery document and the signing keys of the issuer typed in the
+  field (the stored one when it is empty) and shows how many keys the provider publishes, or the
+  reason it failed: the provider could not be reached, it answered something that cannot be read,
+  or its document names a different issuer. It saves nothing and always asks the provider again.
+  A save is audited as `settings.update`; the issuer and the account management URL are recorded
+  as their scheme, host and port only.
+  Turning sign in on changes how people sign in, so switching it on from off asks for a
+  confirmation that says so: admins and viewers can then only sign in with SSO and their password
+  stops working, superadmins keep their password. The confirmation is offered only when the setup
+  is complete, and a save with sign in on is refused until the issuer, the client ID, the client
+  secret and at least one mapping row are set, so removing the secret or the last row while it is
+  on is refused too. Until all of it is set the sign-in card shows no SSO link and nobody is
+  locked out of the password form.
 - **Post-deploy.** The switch defaults to on. It can only be changed while Docker is usable. With
   it off the deploy engine skips a service's stored command, records Skipped with the reason
   "Post-deploy commands are switched off in settings.", and the deploy dialog preview and the

@@ -20,6 +20,7 @@ TABS = (
     "git",
     "backup",
     "security",
+    "sso",
     "post-deploy",
     "registries",
     "notifications",

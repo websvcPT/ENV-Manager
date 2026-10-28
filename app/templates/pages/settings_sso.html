@@ -1,0 +1,9 @@
+{#- The Single sign-on tab: the identity provider, the group mapping and the accounts rules in one
+    form, and the dialog that confirms turning sign in on (loaded when it opens). Context: the
+    settings tab context and what fragments/settings_sso.html needs. -#}
+{% extends "layouts/settings.html" %}
+{% from "macros/dialogs.html" import loaded_dialog %}
+{% block tab %}
+{% include "fragments/settings_sso.html" %}
+{{ loaded_dialog("sso-enable", "Turn on single sign-on", width="560") }}
+{% endblock %}

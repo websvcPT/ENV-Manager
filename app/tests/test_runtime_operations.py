@@ -143,6 +143,7 @@ PAGE_LIMITS = (
     ("drift page", "/environments/{environment}/drift", 21),
     ("dist report", "/environments/{environment}/dist", 21),
     ("smtp tab", "/settings/smtp", 6),
+    ("sso tab", "/settings/sso", 6),
     ("git tab", "/settings/git", 6),
     ("notifications tab", "/settings/notifications", 6),
     ("registries tab", "/settings/registries", 7),

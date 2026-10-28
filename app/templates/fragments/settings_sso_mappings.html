@@ -1,0 +1,39 @@
+{#- The mapping rows: one row per role of the provider with the group it gives, in the order the
+    first match is looked for. Add and remove answer this block only, so what else is typed in the
+    form stays. Context: rows (role and group pairs), group_options (value and label pairs), error
+    (the refusal of the rows, or none) and can_add. -#}
+{% from "macros/buttons.html" import button %}
+{% from "macros/forms.html" import field_message %}
+{% from "macros/row_actions.html" import row_actions %}
+{% set head = "bg-head px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-head-ink md:px-4" %}
+<div id="sso-mappings" data-fragment="sso-mappings" class="flex flex-col gap-3 pb-1">
+{%- if rows %}
+<div class="relative overflow-x-auto"><table class="w-full text-left"><caption class="sr-only">Group mapping rows</caption><thead><tr>
+<th scope="col" class="{{ head }}"><span aria-hidden="true" class="md:hidden">#</span><span class="max-md:sr-only">Order</span></th>
+<th scope="col" class="{{ head }}">Role from the provider</th>
+<th scope="col" class="{{ head }}">ENV Manager group</th>
+<th scope="col" class="{{ head }} text-right"><span class="sr-only">Actions</span></th>
+</tr></thead><tbody>
+{%- for role, group in rows %}
+{%- set position = loop.index0 %}
+<tr data-fragment="sso-mapping-row"><th scope="row" class="border-t border-line px-3 py-3 text-left font-semibold md:px-4">{{ loop.index }}</th>
+<td class="border-t border-line px-3 py-3 md:px-4"><input name="mapping_role" value="{{ role }}" aria-label="Role from the provider, row {{ loop.index }}" autocomplete="off" spellcheck="false" class="h-11 md:h-ctl w-full min-w-0 rounded-ctl border border-line-strong bg-surface px-3 font-mono text-[13px] text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus placeholder:text-ink3"></td>
+<td class="border-t border-line px-3 py-3 md:px-4"><select name="mapping_group" aria-label="ENV Manager group, row {{ loop.index }}" class="h-11 md:h-ctl w-28 rounded-ctl border border-line-strong bg-surface px-3 text-sm text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus md:w-48">{% for value, label in group_options %}<option value="{{ value }}"{% if value == group %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></td>
+<td class="border-t border-line px-3 py-3 text-right whitespace-nowrap md:px-4">{%- set request_attrs = {"hx_post": "/settings/sso/mappings", "hx_target": "#sso-mappings", "hx_swap": "outerHTML", "hx_sync": "this:drop"} %}
+{{ row_actions("sso-row-" ~ loop.index, "row " ~ loop.index, [
+  {"key": "up", "label": "Move up", "icon": "arrow-up", "attrs": dict(request_attrs, hx_vals=({"row_action": "up:" ~ position} | tojson | forceescape))},
+  {"key": "down", "label": "Move down", "icon": "arrow-down", "attrs": dict(request_attrs, hx_vals=({"row_action": "down:" ~ position} | tojson | forceescape))},
+  {"key": "remove", "label": "Remove", "icon": "trash", "danger": true, "attrs": dict(request_attrs, hx_vals=({"row_action": "remove:" ~ position} | tojson | forceescape))}
+]) }}</td></tr>
+{%- endfor %}
+</tbody></table></div>
+{%- else %}
+<p class="px-4 text-[13px] text-ink2 md:px-5">No rows yet. Add one to let people sign in.</p>
+{%- endif %}
+<div class="flex flex-col gap-2 px-4 md:px-5">
+{{ field_message("sso-mappings", none, error) }}
+{%- if can_add %}
+<div>{{ button("Add mapping", icon_name="plus", icon_stroke="2.2", hx_post="/settings/sso/mappings", hx_vals=({"row_action": "add"} | tojson | forceescape), hx_target="#sso-mappings", hx_swap="outerHTML", hx_sync="this:drop") }}</div>
+{%- endif %}
+</div>
+</div>

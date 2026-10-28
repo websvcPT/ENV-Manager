@@ -189,15 +189,16 @@ class SsoProvider:
             raise SsoRefusal(PROVIDER_INVALID)
         return document
 
-    async def metadata(self, issuer: str) -> ProviderMetadata:
-        """The metadata of the issuer, from the cache while it is fresh.
+    async def metadata(self, issuer: str, *, refresh: bool = False) -> ProviderMetadata:
+        """The metadata of the issuer, from the cache while it is fresh unless asked to fetch it
+        again.
 
         The document's own issuer must equal the configured one exactly, so a provider cannot be
         taken for another by serving its address.
         """
         moment = self._clock()
         cached = self._metadata.get(issuer)
-        if cached is not None and moment - cached[0] < self._ttl:
+        if not refresh and cached is not None and moment - cached[0] < self._ttl:
             return cached[1]
         document = await self._document(f"{issuer.rstrip('/')}{DISCOVERY_PATH}")
         found = _metadata_from(document, issuer)

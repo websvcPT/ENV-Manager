@@ -1,0 +1,9 @@
+{#- The result of a discovery test, swapped into the live region next to the button. A working
+    provider is the success badge with the number of signing keys and the issuer; a failure is the
+    failed badge and the reason under it. Context: check (a DiscoveryCheck: ok, message, issuer). -#}
+{% from "macros/badges.html" import badge %}
+{%- if check.ok -%}
+{{ badge("deployed", check.message) }}<p class="mt-1.5 max-w-md text-xs text-ink2">Issuer <span class="font-mono wrap-anywhere">{{ check.issuer }}</span></p>
+{%- else -%}
+{{ badge("failed", "Discovery failed") }}<p class="mt-1.5 max-w-md text-xs text-ink2">{{ check.message }}</p>
+{%- endif -%}

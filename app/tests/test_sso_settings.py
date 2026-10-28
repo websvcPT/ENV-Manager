@@ -20,7 +20,23 @@ from app.services.app_settings import (
     read_section,
 )
 from app.services.audit import AuditActor
-from app.services.sso_settings import SsoForm, SsoFormError, save_sso, validate_sso
+from app.services.sso_provider import SsoProvider
+from app.services.sso_refusal import (
+    ISSUER_MISMATCH,
+    MESSAGES,
+    PROVIDER_INVALID,
+    PROVIDER_UNAVAILABLE,
+)
+from app.services.sso_settings import (
+    DiscoveryCheck,
+    SsoForm,
+    SsoFormError,
+    check_discovery,
+    review_sso,
+    save_sso,
+    validate_sso,
+)
+from app.tests.sso_helpers import ISSUER, FakeIdp, ec_key, rsa_key
 
 SECRET = "the-client-secret-0123456789"
 
@@ -285,3 +301,92 @@ async def test_saving_the_same_settings_again_writes_no_audit_entry(
     async with factory() as db:
         entries = (await db.execute(select(AuditEntry))).scalars().all()
     assert len(entries) == 1
+
+
+def reviewed(
+    *, secret_stored: bool = False, was_on: bool = False, confirmed: bool = True, **changes: object
+) -> dict[str, str]:
+    """The messages by field for a form that review_sso refuses."""
+    with pytest.raises(SsoFormError) as error:
+        review_sso(form(**changes), secret_stored=secret_stored, was_on=was_on, confirmed=confirmed)
+    return error.value.errors
+
+
+def test_switching_on_needs_a_secret_typed_or_stored_and_not_removed() -> None:
+    complete = "Complete the settings below before turning single sign-on on."
+    assert reviewed() == {"client_secret": "Enter the client secret.", "enabled": complete}
+    assert reviewed(secret_stored=True, remove_secret=True) == {
+        "client_secret": "Enter the client secret.",
+        "enabled": complete,
+    }
+    assert review_sso(form(), secret_stored=True, was_on=False, confirmed=True).settings.enabled
+    assert review_sso(
+        form(client_secret=SECRET), secret_stored=False, was_on=False, confirmed=True
+    ).settings.enabled
+
+
+def test_switching_on_needs_a_mapping_row_and_a_stored_off_form_needs_none() -> None:
+    assert reviewed(secret_stored=True, mappings=())["mappings"] == "Add at least one mapping row."
+    off = review_sso(
+        form(enabled=False, mappings=()), secret_stored=False, was_on=False, confirmed=False
+    )
+    assert off.settings.mappings == () and not off.settings.enabled
+
+
+def test_a_save_that_keeps_sign_in_on_is_checked_like_switching_it_on() -> None:
+    assert "client_secret" in reviewed(was_on=True, secret_stored=False)
+    assert "mappings" in reviewed(was_on=True, secret_stored=True, mappings=())
+
+
+def test_the_first_bad_field_message_is_kept_beside_the_enabled_one() -> None:
+    errors = reviewed(secret_stored=True, issuer="", mappings=(("", "viewer"),))
+    assert errors["issuer"] == "Enter the issuer address of the provider."
+    assert errors["mappings"].startswith("Row 1: enter the role")
+    assert errors["enabled"].startswith("Complete the settings")
+
+
+def test_switching_on_from_off_needs_the_confirmation() -> None:
+    errors = reviewed(secret_stored=True, confirmed=False)
+    assert errors == {"enabled": "Turning single sign-on on needs a confirmation."}
+    assert review_sso(form(), secret_stored=True, was_on=True, confirmed=False).settings.enabled
+
+
+async def test_a_discovery_test_counts_the_signing_keys_and_stores_nothing() -> None:
+    idp = FakeIdp(keys=[rsa_key("key-1"), ec_key("key-2")])
+    check = await check_discovery(SsoProvider(idp.transport()), f" {ISSUER} ")
+    assert check == DiscoveryCheck(True, "Discovery worked: 2 signing keys.", ISSUER, 2)
+    one = await check_discovery(SsoProvider(FakeIdp().transport()), ISSUER)
+    assert one.message == "Discovery worked: 1 signing key."
+
+
+async def test_a_discovery_test_fetches_again_instead_of_answering_from_the_cache() -> None:
+    idp = FakeIdp()
+    provider = SsoProvider(idp.transport())
+    assert (await check_discovery(provider, ISSUER)).ok
+    idp.down = True
+    check = await check_discovery(provider, ISSUER)
+    assert (check.ok, check.message) == (False, MESSAGES[PROVIDER_UNAVAILABLE])
+
+
+@pytest.mark.parametrize(
+    ("changes", "reason"),
+    [
+        ({"down": True}, PROVIDER_UNAVAILABLE),
+        ({"discovery_issuer": "https://other.example.test"}, ISSUER_MISMATCH),
+        ({"keys": []}, PROVIDER_INVALID),
+    ],
+)
+async def test_a_failed_discovery_test_is_one_fixed_sentence(
+    changes: dict[str, object], reason: str
+) -> None:
+    check = await check_discovery(SsoProvider(FakeIdp(**changes).transport()), ISSUER)  # type: ignore[arg-type]
+    assert (check.ok, check.message, check.issuer) == (False, MESSAGES[reason], ISSUER)
+
+
+async def test_a_discovery_test_refuses_an_empty_or_malformed_issuer_without_a_request() -> None:
+    idp = FakeIdp()
+    provider = SsoProvider(idp.transport())
+    assert (await check_discovery(provider, "  ")).message == "Enter the issuer address first."
+    bad = await check_discovery(provider, "ftp://idp.example.test")
+    assert not bad.ok and bad.message == "Enter an http or https address that names a host."
+    assert idp.seen == []

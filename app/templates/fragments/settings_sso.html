@@ -1,0 +1,75 @@
+{#- The single sign-on form: the identity provider, the group mapping and the accounts rules. A
+    refused save swaps this again with the reasons next to the fields (422); a stored save swaps
+    it with a toast. The client secret field is never filled: an empty field keeps the stored
+    secret. While sign in is not on, a checked "on" box swaps the Save button for the one that opens
+    the confirmation. Context: form (SsoForm), errors (messages by field), saved (none, or tone,
+    title and message of a toast), secret_stored, sso_on, defaults (what an empty roles claim and
+    account address stand for), redirect_uri and what fragments/settings_sso_mappings.html needs. -#}
+{% from "macros/buttons.html" import button %}
+{% from "macros/feedback.html" import note %}
+{% from "macros/forms.html" import checkbox, field, field_message, save_button, saved_toast %}
+{% from "macros/icons.html" import icon %}
+{% from "macros/panels.html" import panel %}
+<form id="sso" data-fragment="sso" hx-post="/settings/sso" hx-target="this" hx-swap="outerHTML" class="group/sso flex flex-col gap-5 md:gap-6">
+{% call panel("Identity provider", "sso-provider-title", fragment="sso-provider") %}
+<div class="flex flex-col gap-4 px-4 pb-5 md:px-5">
+<div class="flex flex-col gap-1.5">
+{{ checkbox("enabled", "Sign in with SSO is on", checked=form.enabled, id="sso-enabled") }}
+{{ field_message("sso-enabled", "While it is on, admins and viewers sign in only with SSO. Superadmins keep their password.", errors.get("enabled")) }}
+</div>
+<div class="grid gap-4 md:grid-cols-2">
+{{ field("sso-issuer", "Issuer URL", name="issuer", value=form.issuer, mono=true, hint="The address of the realm, for example https://sso.example.com/realms/main.", error=errors.get("issuer"), autocomplete="off", spellcheck="false") }}
+{{ field("sso-client-id", "Client ID", name="client_id", value=form.client_id, mono=true, error=errors.get("client_id"), autocomplete="off", spellcheck="false") }}
+</div>
+<div class="grid gap-4 md:grid-cols-2">
+<div class="flex flex-col gap-3">
+{{ field("sso-secret", "Client secret", name="client_secret", type="password", placeholder=("••••••••" if secret_stored else ""), hint=("Stored encrypted. Leave empty to keep it." if secret_stored else "Stored encrypted."), error=errors.get("client_secret"), autocomplete="new-password") }}
+{%- if secret_stored %}
+{{ checkbox("remove_client_secret", "Remove the stored client secret", checked=form.remove_secret) }}
+{%- endif %}
+</div>
+{{ field("sso-account-url", "Account management URL", name="account_url", value=form.account_url, placeholder=defaults.account_url, hint="Where Manage account in SSO goes. Empty uses the issuer address followed by /account, which is Keycloak's.", error=errors.get("account_url"), autocomplete="off", spellcheck="false") }}
+</div>
+<div class="grid gap-4 md:grid-cols-2">
+{{ field("sso-roles-claim", "Roles claim", name="roles_claim", value=form.roles_claim, mono=true, placeholder=defaults.roles_claim, hint="The dotted path of the roles in the ID token. Empty reads the client roles of the client above, as Keycloak sends them.", error=errors.get("roles_claim"), autocomplete="off", spellcheck="false") }}
+<div class="flex flex-col gap-1.5">
+<label for="sso-redirect-uri" class="text-[13px] font-semibold">Redirect URI</label>
+<div class="flex gap-2"><input id="sso-redirect-uri" readonly value="{{ redirect_uri }}" aria-describedby="sso-redirect-uri-h" autocomplete="off" class="h-11 md:h-ctl w-full rounded-ctl border border-line-strong bg-surface2 px-3 font-mono text-[13px] text-ink select-all focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"><button type="button" data-js="copy" data-target="sso-redirect-uri" class="inline-flex h-11 md:h-ctl items-center justify-center gap-2 rounded-btn border border-line-strong bg-surface px-4 text-sm font-semibold text-ink hover:bg-surface2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">{{ icon("copy", "size-4", "2.2") }}<span data-copy-label>Copy</span></button></div>
+<p id="sso-redirect-uri-h" class="text-xs text-ink2">Built from ENVMANAGER_BASE_URL. Register it in the client.</p>
+</div>
+</div>
+<div class="flex flex-wrap items-center gap-3 border-t border-line pt-4">
+{{ button("Test discovery", hx_post="/settings/sso/test", hx_include="#sso-issuer", hx_target="#sso-test", hx_sync="this:drop") }}
+<div id="sso-test" aria-live="polite"></div>
+<p class="basis-full text-xs text-ink2">The test reads the provider's discovery document and signing keys for the issuer typed above and saves nothing.</p>
+</div>
+</div>
+{% endcall %}
+{% call panel("Group mapping", "sso-mapping-title", fragment="sso-mapping") %}
+<p class="px-4 pb-3 text-[13px] text-ink2 md:px-5">Each row maps a role from the provider to the ENV Manager group Admin or Viewer. The first row that matches one of a person's roles decides their group at every sign in. When no row matches, the sign in is refused.</p>
+{% include "fragments/settings_sso_mappings.html" %}
+<p class="px-4 pb-5 pt-3 text-[13px] text-ink2 md:px-5">Superadmin is set only in ENV Manager: a superadmin can sign in with SSO and stays superadmin.</p>
+{% endcall %}
+{% call panel("Accounts", "sso-accounts-title", fragment="sso-accounts") %}
+<div class="flex flex-col gap-4 px-4 pb-5 md:px-5">
+<div class="flex flex-col gap-1.5">
+{{ checkbox("create_users", "Create the account at the first sign in", checked=form.create_users) }}
+<p class="pl-7 text-xs text-ink2">Name, email and group come from SSO. The new account has no grants yet: it sees an empty project list until a superadmin grants access.</p>
+</div>
+<div class="flex flex-col gap-1.5">
+{{ checkbox("link_by_email", "Link an existing account by its email", checked=form.link_by_email) }}
+<p class="pl-7 text-xs text-ink2">Only when the provider says the email is verified. The account keeps its grants and its password.</p>
+</div>
+{{ note("While SSO is on, password sign in is kept for superadmins only. SSO accounts skip ENV Manager two-factor and use the SSO second factor. Signing out ends the ENV Manager session only. API tokens are not affected.") }}
+</div>
+{% endcall %}
+<div class="flex flex-wrap items-center gap-3">
+{%- if sso_on %}
+{{ save_button() }}
+{%- else %}
+<span class="inline-flex group-has-[#sso-enabled:checked]/sso:hidden">{{ save_button() }}</span>
+<span class="hidden group-has-[#sso-enabled:checked]/sso:inline-flex">{{ button("Save and turn on", kind="primary-sm", data_js="dialog-open", data_target="sso-enable", aria_haspopup="dialog", hx_post="/settings/sso/enable", hx_target="#sso-enable", hx_swap="innerHTML", hx_sync="this:drop") }}</span>
+{%- endif %}
+</div>
+{{ saved_toast(saved) }}
+</form>

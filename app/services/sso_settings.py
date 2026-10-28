@@ -21,6 +21,8 @@ from app.services.app_settings import (
     write_secret,
 )
 from app.services.audit import AuditActor
+from app.services.sso_provider import SsoProvider
+from app.services.sso_refusal import SsoRefusal
 
 MAX_ADDRESS_LENGTH = 2048
 MAX_TEXT_LENGTH = 255
@@ -112,7 +114,8 @@ def _mapping_rows(
     for number, (role, group) in enumerate(rows, start=1):
         role = role.strip()
         if not role or len(role) > MAX_TEXT_LENGTH or not role.isprintable():
-            errors["mappings"] = f"Row {number}: enter the role, up to {MAX_TEXT_LENGTH} characters"
+            limit = f"up to {MAX_TEXT_LENGTH} characters"
+            errors["mappings"] = f"Row {number}: enter the role, {limit}."
             return ()
         if group not in SSO_GROUPS:
             errors["mappings"] = f"Row {number}: choose admin or viewer."
@@ -171,6 +174,69 @@ def validate_sso(form: SsoForm) -> CleanSso:
         secret,
         form.remove_secret,
     )
+
+
+@dataclass(frozen=True)
+class DiscoveryCheck:
+    """The outcome of a discovery test: whether it worked and a sentence that says what happened,
+    with the issuer tested and how many signing keys it published."""
+
+    ok: bool
+    message: str
+    issuer: str = ""
+    keys: int = 0
+
+
+async def check_discovery(provider: SsoProvider, issuer: str) -> DiscoveryCheck:
+    """Fetch the discovery document and the signing keys of the issuer, fresh from the provider.
+
+    Nothing is stored. A failure is one of the provider's fixed sentences, never the provider's
+    own text.
+    """
+    issuer = issuer.strip()
+    if not issuer:
+        return DiscoveryCheck(False, "Enter the issuer address first.")
+    if problem := address_problem(issuer, plain=True):
+        return DiscoveryCheck(False, problem, issuer)
+    try:
+        metadata = await provider.metadata(issuer, refresh=True)
+        keys = await provider.signing_keys(metadata, refresh=True)
+    except SsoRefusal as refusal:
+        return DiscoveryCheck(False, refusal.message, issuer)
+    count = len(keys.keys)
+    plural = "signing key" if count == 1 else "signing keys"
+    return DiscoveryCheck(True, f"Discovery worked: {count} {plural}.", issuer, count)
+
+
+def review_sso(
+    form: SsoForm, *, secret_stored: bool, was_on: bool, confirmed: bool = False
+) -> CleanSso:
+    """The settings the form stands for, checked for what a save needs.
+
+    Everything ``validate_sso`` checks, and with sign in switched on also the things that make it
+    work: a client secret (typed, or stored and not being removed) and at least one mapping row.
+    Switching it on when it is not on now (``was_on`` false) also needs ``confirmed``. A refusal
+    names the field, and the ``enabled`` choice itself says why it cannot be on yet.
+    """
+    errors: dict[str, str] = {}
+    clean: CleanSso | None = None
+    try:
+        clean = validate_sso(form)
+    except SsoFormError as error:
+        errors = dict(error.errors)
+    if form.enabled:
+        has_secret = bool(form.client_secret) or (secret_stored and not form.remove_secret)
+        if not has_secret:
+            errors.setdefault("client_secret", "Enter the client secret.")
+        if not form.mappings:
+            errors.setdefault("mappings", "Add at least one mapping row.")
+        if any(name in errors for name in ("issuer", "client_id", "client_secret", "mappings")):
+            errors["enabled"] = "Complete the settings below before turning single sign-on on."
+        elif not was_on and not confirmed and not errors:
+            errors["enabled"] = "Turning single sign-on on needs a confirmation."
+    if errors or clean is None:
+        raise SsoFormError(errors)
+    return clean
 
 
 async def save_sso(

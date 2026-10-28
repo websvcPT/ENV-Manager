@@ -244,7 +244,7 @@ class StoredSettings:
 
 
 # Settings whose value is an address that can carry a token in its path or query.
-URL_SETTINGS: frozenset[str] = frozenset({"git.url"})
+URL_SETTINGS: frozenset[str] = frozenset({"git.url", "sso.issuer", "sso.account_url"})
 _SCP_LIKE = re.compile(r"^(?:[^@/\s]+@)?(?P<host>\[[0-9a-fA-F:]+\]|[A-Za-z0-9.-]+):(?!//)")
 
 

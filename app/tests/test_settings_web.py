@@ -99,10 +99,8 @@ async def test_the_settings_address_opens_the_first_tab(root: httpx.AsyncClient)
 
 
 @pytest.mark.parametrize("tab", TABS)
-async def test_every_tab_has_the_header_and_the_nine_tabs(
-    root: httpx.AsyncClient, tab: str
-) -> None:
-    """Each tab shows the Settings header, all nine tab links and marks its own."""
+async def test_every_tab_has_the_header_and_the_ten_tabs(root: httpx.AsyncClient, tab: str) -> None:
+    """Each tab shows the Settings header, all ten tab links and marks its own."""
     response = await root.get(f"/settings/{tab}")
     assert response.status_code == 200
     assert_never_cached(response)

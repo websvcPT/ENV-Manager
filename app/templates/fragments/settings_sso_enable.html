@@ -1,0 +1,9 @@
+{#- The confirmation of turning single sign-on on: what changes for the people who sign in, Cancel
+    and the button that saves the form with sign in on. Shown only when the settings are complete.
+    No context. -#}
+{% from "macros/dialogs.html" import confirm_footer, confirm_message, dialog_body, dialog_head %}
+<div data-fragment="sso-enable">
+{{ dialog_head("sso-enable", "Turn on single sign-on") }}
+{% call dialog_body() %}{% call confirm_message(ink=false) %}Admins and viewers can then sign in only with SSO, and their ENV Manager password stops working. Superadmins keep password sign in and can also use SSO. This saves the settings in the form and takes effect at once.{% endcall %}{% endcall %}
+{{ confirm_footer("Save and turn on", hx_post="/settings/sso", hx_include="#sso", hx_vals=({"confirm_enable": "1"} | tojson | forceescape), hx_target="#sso", hx_swap="outerHTML", hx_sync="this:drop") }}
+</div>

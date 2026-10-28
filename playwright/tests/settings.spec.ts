@@ -16,6 +16,7 @@ const TABS = [
   ['git', 'Git'],
   ['backup', 'Backup'],
   ['security', 'Security'],
+  ['sso', 'Single sign-on'],
   ['post-deploy', 'Post-deploy'],
   ['registries', 'Registries'],
   ['notifications', 'Notifications'],
@@ -59,7 +60,7 @@ function pathRow(page: Page, path: string): Locator {
 }
 
 test.describe('layout and tabs', () => {
-  test('the sidebar opens the first tab with the header and all nine tabs', async ({ page }) => {
+  test('the sidebar opens the first tab with the header and all ten tabs', async ({ page }) => {
     await page.goto('/projects');
     if (isWide(page)) {
       await sidebarLink(page).click();
