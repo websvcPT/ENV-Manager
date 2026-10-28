@@ -34,6 +34,7 @@ from app.services.permissions import (
 from app.services.sessions import resolve_session
 from app.services.settings_events import SettingsNotifier
 from app.services.shell_banners import load_shell_banners
+from app.services.sso_provider import SsoProvider
 from app.services.webhook import WebhookTransport
 
 
@@ -116,6 +117,12 @@ def get_webhook_transport(request: Request) -> WebhookTransport:
     """The application's webhook transport."""
     transport: WebhookTransport = request.app.state.webhook_transport
     return transport
+
+
+def get_sso_provider(request: Request) -> SsoProvider:
+    """The application's connection to the single sign-on provider, with its caches."""
+    provider: SsoProvider = request.app.state.sso_provider
+    return provider
 
 
 async def get_stored_settings(

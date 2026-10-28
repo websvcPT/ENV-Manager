@@ -14,7 +14,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.passwords import generate_password, hash_password
+from app.core.passwords import UNUSABLE_PASSWORD_HASH, generate_password, hash_password
 from app.models import (
     AuditResult,
     LoginCounter,
@@ -129,6 +129,52 @@ def validate_identity(name: str, email: str) -> tuple[str, str]:
     return name, email
 
 
+async def _add_user(
+    db: AsyncSession, name: str, email: str, group: UserGroup, password_hash: str
+) -> User:
+    """Insert an active user, refusing an email address that is taken. The caller commits."""
+    user = User(name=name, email=email, password_hash=password_hash, group=group)
+    db.add(user)
+    try:
+        await db.flush()
+    except IntegrityError as error:
+        await db.rollback()
+        raise UserExistsError("Another user already has this email address.", "email") from error
+    return user
+
+
+async def _audit_created(
+    db: AsyncSession, actor: AuditActor, user: User, details: dict[str, object]
+) -> None:
+    """Audit the creation of an account."""
+    await record_actor_audit(
+        db,
+        actor,
+        action="user.create",
+        result=AuditResult.SUCCESS,
+        target_type="user",
+        target_id=user.id,
+        target_name=user.name,
+        details=details,
+    )
+
+
+async def create_sso_user(
+    db: AsyncSession, *, name: str, email: str, group: UserGroup, actor: AuditActor
+) -> User:
+    """Create the account of someone signing in through a provider for the first time.
+
+    The account has no password (it can only sign in through the provider) and no grants, and
+    the audit entry says it was created that way. The caller commits and announces it.
+    """
+    name, email = validate_identity(name, email)
+    if await find_user_by_email(db, email) is not None:
+        raise UserExistsError("Another user already has this email address.", "email")
+    user = await _add_user(db, name, email, group, UNUSABLE_PASSWORD_HASH)
+    await _audit_created(db, actor, user, {"group": group.value, "grants": 0, "via": "sso"})
+    return user
+
+
 async def create_user(
     db: AsyncSession,
     *,
@@ -151,23 +197,8 @@ async def create_user(
     chosen = [] if group is UserGroup.SUPERADMIN else sorted(set(grants))
     labels = await require_existing(db, chosen)
     password = generate_password()
-    user = User(name=name, email=email, password_hash=hash_password(password), group=group)
-    db.add(user)
-    try:
-        await db.flush()
-    except IntegrityError as error:
-        await db.rollback()
-        raise UserExistsError("Another user already has this email address.", "email") from error
-    await record_actor_audit(
-        db,
-        actor,
-        action="user.create",
-        result=AuditResult.SUCCESS,
-        target_type="user",
-        target_id=user.id,
-        target_name=user.name,
-        details={"group": group.value, "grants": len(chosen)},
-    )
+    user = await _add_user(db, name, email, group, hash_password(password))
+    await _audit_created(db, actor, user, {"group": group.value, "grants": len(chosen)})
     for target in chosen:
         add_grant_row(db, user, target)
         await record_grant_change(db, actor, user, "grant.add", target, labels[target])

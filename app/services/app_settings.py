@@ -38,10 +38,18 @@ WEBHOOK_SECRET_KEY = "notifications.webhook_secret"  # noqa: S105
 WEBHOOK_URL_KEY = "notifications.webhook_url"
 GIT_DEPLOY_KEY_KEY = "git.deploy_key"
 GIT_TOKEN_KEY = "git.token"  # noqa: S105
+SSO_CLIENT_SECRET_KEY = "sso.client_secret"  # noqa: S105
 
 # Names of settings whose value is a secret. Each feature that stores one adds its name here.
 SECRET_KEYS: frozenset[str] = frozenset(
-    {SMTP_PASSWORD_KEY, WEBHOOK_SECRET_KEY, WEBHOOK_URL_KEY, GIT_DEPLOY_KEY_KEY, GIT_TOKEN_KEY}
+    {
+        SMTP_PASSWORD_KEY,
+        WEBHOOK_SECRET_KEY,
+        WEBHOOK_URL_KEY,
+        GIT_DEPLOY_KEY_KEY,
+        GIT_TOKEN_KEY,
+        SSO_CLIENT_SECRET_KEY,
+    }
 )
 
 
@@ -169,6 +177,46 @@ class GitSettings:
         return bool(self.url)
 
 
+SSO_GROUPS = ("admin", "viewer")
+
+
+@dataclass(frozen=True)
+class SsoSettings:
+    """Sign in through an OpenID Connect provider. The client secret is a secret kept apart.
+
+    ``mappings`` are rows of (role value, group): the first row whose role the person has at the
+    provider decides the group, ``admin`` or ``viewer``. The superadmin group is never a choice.
+    An empty ``roles_claim`` reads the client roles of this client (``resource_access`` then the
+    client id then ``roles``) and an empty ``account_url`` is the ``/account`` page of the issuer;
+    both are dotted paths and addresses that follow the other settings, so they are derived here
+    and never stored.
+    """
+
+    enabled: bool = False
+    issuer: str = ""
+    client_id: str = ""
+    roles_claim: str = ""
+    account_url: str = ""
+    create_users: bool = True
+    link_by_email: bool = True
+    mappings: tuple[tuple[str, str], ...] = ()
+
+    @property
+    def configured(self) -> bool:
+        """Whether sign in can start: switched on, with an issuer and a client id."""
+        return bool(self.enabled and self.issuer and self.client_id)
+
+    @property
+    def effective_roles_claim(self) -> str:
+        """The dotted path the roles are read from."""
+        return self.roles_claim or f"resource_access.{self.client_id}.roles"
+
+    @property
+    def effective_account_url(self) -> str:
+        """Where a person manages their account at the provider."""
+        return self.account_url or f"{self.issuer.rstrip('/')}/account"
+
+
 @dataclass(frozen=True)
 class StoredSettings:
     """Every typed section, as stored now, and the names of the secrets that are stored.
@@ -184,6 +232,7 @@ class StoredSettings:
     smtp: SmtpSettings = field(default_factory=SmtpSettings)
     notifications: NotificationSettings = field(default_factory=NotificationSettings)
     git: GitSettings = field(default_factory=GitSettings)
+    sso: SsoSettings = field(default_factory=SsoSettings)
     secrets: frozenset[str] = frozenset()
 
 
@@ -252,11 +301,25 @@ def _decode(raw: str, default: object) -> object | None:
     except ValueError:
         return None
     expected = type(default)
+    if expected is tuple:
+        return _decode_rows(value)
     if expected is bool:
         return value if isinstance(value, bool) else None
     if expected is int:
         return value if isinstance(value, int) and not isinstance(value, bool) else None
     return value if isinstance(value, expected) else None
+
+
+def _decode_rows(value: object) -> tuple[tuple[str, str], ...] | None:
+    """A stored list of two-text rows as a tuple of pairs, None when it is not one."""
+    if not isinstance(value, list):
+        return None
+    rows: list[tuple[str, str]] = []
+    for row in value:
+        if not (isinstance(row, list) and len(row) == 2 and all(isinstance(t, str) for t in row)):
+            return None
+        rows.append((row[0], row[1]))
+    return tuple(rows)
 
 
 def read_section[SectionT](
@@ -293,6 +356,7 @@ async def load_stored_settings(db: AsyncSession) -> StoredSettings:
         smtp=read_section("smtp", SmtpSettings, stored),
         notifications=read_section("notifications", NotificationSettings, stored),
         git=read_section("git", GitSettings, stored),
+        sso=read_section("sso", SsoSettings, stored),
         secrets=frozenset(key for key in stored if key in SECRET_KEYS),
     )
 

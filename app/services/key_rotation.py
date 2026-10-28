@@ -19,7 +19,9 @@ What is sealed or keyed by the master key is listed here and nowhere else:
 * the client addresses a user signed in from (keyed, the addresses themselves are not stored):
   cleared, so each user learns their next address silently,
 * the watermark of git sync (keyed): progress is reset, so the next run pushes the export again
-  under the new key.
+  under the new key,
+* the single sign-on attempts in progress (the code verifier is sealed, bound to its row): they
+  last five minutes, so they are removed and the people in the middle of one start again.
 
 A test scans every table of a populated database for a value sealed under the old key, so a
 column added later that is not handled here fails there.
@@ -44,6 +46,7 @@ from app.models import (
     DockerRegistry,
     EnvironmentVersion,
     GitSyncState,
+    SsoLogin,
     User,
     UserSeenAddress,
 )
@@ -247,6 +250,11 @@ async def _forget_signed_in_addresses(db: AsyncSession) -> int:
     return int(result.rowcount)  # type: ignore[attr-defined]
 
 
+async def _forget_sso_logins(db: AsyncSession) -> None:
+    """Delete the single sign-on attempts in progress, whose verifier the old key sealed."""
+    await db.execute(delete(SsoLogin))
+
+
 async def _reset_git_progress(db: AsyncSession) -> bool:
     """Make the next git push send the whole export again, if git sync has ever run."""
     state = await db.get(GitSyncState, SYNC_STATE_ID)
@@ -301,6 +309,7 @@ async def rekey_database(db: AsyncSession, old: CryptoService, new: CryptoServic
     registry_tokens = await _rekey_registries(db, old, new)
     recomputed, dropped = await _rekey_deploy_hashes(db, hashes)
     cleared = await _forget_signed_in_addresses(db)
+    await _forget_sso_logins(db)
     reset = await _reset_git_progress(db)
     await _verify(db, new)
     return RekeyReport(

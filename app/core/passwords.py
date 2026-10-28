@@ -9,6 +9,10 @@ from pwdlib.hashers.argon2 import Argon2Hasher
 
 _HASHER = PasswordHash((Argon2Hasher(),))
 
+# Stored for an account that signs in through a provider and has no password. It is not the
+# output of any hash function, so no password verifies against it.
+UNUSABLE_PASSWORD_HASH = "!"  # noqa: S105
+
 
 class PasswordPolicyError(ValueError):
     """A user-chosen password does not meet the password rules."""

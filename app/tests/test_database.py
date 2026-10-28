@@ -830,6 +830,74 @@ async def test_the_compose_project_column_is_added_and_removed_in_place_and_keep
         await engine.dispose()
 
 
+async def test_single_sign_on_tables_are_added_and_removed_and_keep_the_users(
+    database_path: Path, backup_dir: Path
+) -> None:
+    """Migration 0024 adds the identity links, one per user and one user per identity with the
+    link removed with its user, and the sign in attempts with a unique state; the way back drops
+    both tables and keeps the users."""
+    engine = create_engine(database_path)
+    try:
+        await _migrate(engine, "0023")
+        async with engine.begin() as connection:
+            for statement in TREE_STATEMENTS:
+                await connection.execute(text(statement))
+            await connection.execute(
+                text(
+                    'INSERT INTO users (id, name, email, password_hash, "group", is_active,'
+                    " totp_enabled, created_at, updated_at) VALUES (2, 'v', 'v@example.test',"
+                    " '!', 'viewer', 1, 0, '2026-01-01', '2026-01-01')"
+                )
+            )
+        await migrate_database(engine, database_path, backup_dir)
+        link = (
+            "INSERT INTO user_identities (user_id, issuer, subject, linked_at)"
+            " VALUES ({user}, '{issuer}', '{subject}', '2026-01-01')"
+        )
+        attempt = (
+            "INSERT INTO sso_logins (state_hash, binding_hash, nonce, code_verifier_encrypted,"
+            " created_at, expires_at) VALUES ('{state}', 'b', 'n', 'v', '2026-01-01',"
+            " '2026-01-01')"
+        )
+        async with engine.begin() as connection:
+            await connection.execute(text(link.format(user=1, issuer="i", subject="s")))
+            await connection.execute(text(attempt.format(state="one")))
+        for statement in (
+            link.format(user=2, issuer="i", subject="s"),
+            link.format(user=1, issuer="i", subject="another"),
+            attempt.format(state="one"),
+        ):
+            with pytest.raises(IntegrityError):
+                async with engine.begin() as connection:
+                    await connection.execute(text(statement))
+        async with engine.begin() as connection:
+            await connection.execute(text(link.format(user=2, issuer="i", subject="t")))
+            await connection.execute(text("DELETE FROM users WHERE id = 2"))
+            remaining = await connection.execute(text("SELECT user_id FROM user_identities"))
+            assert [row[0] for row in remaining.all()] == [1]
+            violations = (await connection.execute(text("PRAGMA foreign_key_check"))).all()
+            assert violations == []
+        await _migrate(engine, "0023", down=True)
+        async with engine.connect() as connection:
+            tables = (
+                await connection.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))
+            ).scalars()
+            names = set(tables)
+            kept = (await connection.execute(text("SELECT id, name FROM users"))).all()
+        assert not names & {"user_identities", "sso_logins"}
+        assert [tuple(row) for row in kept] == [(1, "u")]
+        await _migrate(engine, "head")
+        async with engine.connect() as connection:
+            for statement in (
+                "SELECT count(*) FROM user_identities",
+                "SELECT count(*) FROM sso_logins",
+            ):
+                count = await connection.execute(text(statement))
+                assert count.scalar_one() == 0
+    finally:
+        await engine.dispose()
+
+
 async def test_deployment_names_become_unique_ignoring_case_and_the_way_back_drops_the_index(
     database_path: Path, backup_dir: Path
 ) -> None:

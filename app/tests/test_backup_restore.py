@@ -2,7 +2,7 @@
 
 import sqlite3
 from contextlib import closing
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -22,8 +22,10 @@ from app.models import (
     Backup,
     BackupStatus,
     BackupTrigger,
+    SsoLogin,
     UserSession,
 )
+from app.models.types import utc_now
 from app.services.audit import AuditActor
 from app.services.backup import backup_file_name
 from app.services.backup_inspect import RestoreProblem, RestoreRefusedError
@@ -96,6 +98,27 @@ def leftovers(locations: BackupLocations) -> list[str]:
         for entry in locations.database_path.parent.iterdir()
         if entry.name.startswith(".restore-")
     ]
+
+
+async def test_a_restore_drops_single_sign_on_attempts_in_progress(web_app: FastAPI) -> None:
+    """An attempt in a backup was started under the old data and is not carried over."""
+    now = utc_now()
+    async with app_session_factory(web_app)() as db:
+        db.add(
+            SsoLogin(
+                state_hash="s" * 64,
+                binding_hash="b" * 64,
+                nonce="n",
+                code_verifier_encrypted="v",
+                created_at=now,
+                expires_at=now + timedelta(minutes=5),
+            )
+        )
+        await db.commit()
+    backup = await take_backup(web_app)
+    await restore(web_app, backup)
+    async with app_session_factory(web_app)() as db:
+        assert (await db.execute(select(func.count()).select_from(SsoLogin))).scalar_one() == 0
 
 
 async def test_a_restore_brings_the_data_back_and_ends_every_session(

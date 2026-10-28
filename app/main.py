@@ -49,6 +49,7 @@ from app.services.server_lock import (
     ServerLockUnavailableError,
     acquire_server_lock,
 )
+from app.services.sso_provider import SsoProvider
 from app.services.webhook import HttpxWebhookTransport
 from app.services.webhook_url_upgrade import seal_plain_webhook_url
 from app.web.access_grid import router as access_grid_router
@@ -158,6 +159,7 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         )
         application.state.mail_transport = transport
         application.state.webhook_transport = webhook_transport
+        application.state.sso_provider = SsoProvider()
         application.state.notifier = notifier
         application.state.settings_notifier = notifier
         application.state.docker_cli = DockerCli(socket_path=settings.docker_socket)

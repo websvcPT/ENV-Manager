@@ -21,6 +21,7 @@ from app.models import (
     DriftState,
     EnvironmentVersion,
     GitSyncState,
+    SsoLogin,
     User,
     UserSeenAddress,
 )
@@ -41,6 +42,7 @@ from app.services.registries import (
     registry_context,
 )
 from app.services.seen_addresses import note_sign_in_address
+from app.services.sso_logins import create_sso_login
 from app.services.versions import create_version
 from app.tests.deploy_helpers import Harness, audit_of
 from app.tests.key_helpers import dump_database, sealed_values, text_values
@@ -114,6 +116,7 @@ async def build_world(h: Harness, master_key: str) -> World:
         registry_tokens[registry.id] = token
     for user in (h.seed.users.admin, h.seed.users.viewer):
         await note_sign_in_address(db, h.crypto, user.id, "203.0.113.7", utc_now())
+    await create_sso_login(db, h.crypto)
     state = await load_state(db)
     state.watermark = h.crypto.keyed_hash("git-mark", "marker")
     state.failures = 2
@@ -170,6 +173,7 @@ async def test_the_world_holds_every_kind_of_value_a_rotation_must_move(world: W
     results = (await db.execute(select(DeployResult))).scalars().all()
     assert any(result.written_hash for result in results)
     assert any(result.target_hash_before for result in results)
+    await create_sso_login(db, h.crypto)
     state = await load_state(db)
     assert state.watermark and state.failures == 2
     kinds = {table for table, column in KEYED_COLUMNS}
@@ -458,3 +462,13 @@ async def test_a_second_rotation_back_to_the_first_key_round_trips(world: World)
     for version in (await h.db.execute(select(EnvironmentVersion))).scalars():
         assert world.old.decrypt_text(version.content_encrypted) == world.versions[version.id]
         assert version.content_hash == world.old.content_hash(world.versions[version.id])
+
+
+async def test_single_sign_on_attempts_in_progress_are_removed_by_a_rotation(
+    world: World,
+) -> None:
+    h = world.harness
+    assert len((await h.db.execute(select(SsoLogin))).scalars().all()) == 1
+    await world.rotate()
+    h.db.expire_all()
+    assert (await h.db.execute(select(SsoLogin))).scalars().all() == []

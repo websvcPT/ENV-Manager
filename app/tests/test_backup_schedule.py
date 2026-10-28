@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.core.db import create_session_factory
 from app.core.display_time import DisplayTime
-from app.models import AuditActorType, BackupStatus, BackupTrigger, PendingLogin
+from app.models import AuditActorType, BackupStatus, BackupTrigger, PendingLogin, SsoLogin
 from app.seeds import SeedData
 from app.services.app_settings import (
     BackupSettings,
@@ -248,3 +248,27 @@ async def test_the_defaults_are_daily_at_two_and_keep_fourteen(engine: AsyncEngi
     assert stored == BackupSettings(
         schedule="daily", retention_count=14, retention_days=0, extra_destination=""
     )
+
+
+async def test_the_housekeeping_job_removes_expired_single_sign_on_attempts(
+    scheduler: BackupScheduler, factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Expired attempts go, a live one stays."""
+    now = datetime.now(UTC)
+    async with factory() as db:
+        for index, expires in enumerate((now - timedelta(minutes=1), now + timedelta(minutes=3))):
+            db.add(
+                SsoLogin(
+                    state_hash=f"{index:064d}",
+                    binding_hash="b",
+                    nonce="n",
+                    code_verifier_encrypted="v",
+                    created_at=now - timedelta(minutes=6),
+                    expires_at=expires,
+                )
+            )
+        await db.commit()
+    await scheduler.purge_pending_logins()
+    async with factory() as db:
+        remaining = (await db.execute(select(SsoLogin.state_hash))).scalars().all()
+    assert remaining == [f"{1:064d}"]

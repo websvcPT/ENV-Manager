@@ -134,7 +134,7 @@ async def authenticate(
             pending_token = await create_pending_login(db, user, policy, now=moment)
             await db.commit()
             return LoginResult(LoginStatus.TOTP_REQUIRED, pending_token=pending_token)
-        return await _succeed(
+        return await finish_login(
             db, crypto, policy, user, ip_address, user_agent, subject, moment, notifier
         )
     if user is not None and matched:
@@ -184,7 +184,7 @@ async def complete_totp_login(
     step = totp.matching_step(user, code, crypto, now=moment)
     if step is not None:
         if await totp.claim_step(db, user, step):
-            return await _succeed(
+            return await finish_login(
                 db, crypto, policy, user, ip_address, user_agent, subject, moment, notifier
             )
         reason = "reused_totp_code"
@@ -228,7 +228,7 @@ async def _fail(
     return LoginResult(LoginStatus.INVALID)
 
 
-async def _succeed(
+async def finish_login(
     db: AsyncSession,
     crypto: CryptoService,
     policy: AuthPolicy,
@@ -238,10 +238,13 @@ async def _succeed(
     subject: str,
     now: datetime,
     notifier: EventNotifier,
+    details: dict[str, object] | None = None,
 ) -> LoginResult:
     """Reset the name counter, start the session and audit the login.
 
-    A sign-in from an address the user has not used before is announced after the commit.
+    Every way of signing in ends here, whatever checked the person; ``details`` goes into the
+    audit entry (the way of signing in, when it is not the password). A sign-in from an address
+    the user has not used before is announced after the commit.
     """
     counter = await get_counter(db, LoginCounterKind.USER, subject)
     if counter is not None:
@@ -257,6 +260,7 @@ async def _succeed(
         AuditActor.for_sign_in(user, ip_address),
         action="login.success",
         result=AuditResult.SUCCESS,
+        details=details,
     )
     new_address = await note_sign_in_address(db, crypto, user.id, ip_address, now)
     await db.commit()

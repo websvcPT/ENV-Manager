@@ -30,7 +30,7 @@ from app.core.crypto import CryptoService
 from app.core.db import create_engine, create_session_factory
 from app.core.log import get_logger
 from app.core.migrations import upgrade_to_head
-from app.models import AuditResult, Backup, PendingLogin, UserSession
+from app.models import AuditResult, Backup, PendingLogin, SsoLogin, UserSession
 from app.services.audit import AuditActor, record_audit, record_committed_audit
 from app.services.backup import (
     BUSY_TIMEOUT_SECONDS,
@@ -145,6 +145,7 @@ async def _prepare(
                 await rekey_database(session, *keys)
             await session.execute(delete(UserSession))
             await session.execute(delete(PendingLogin))
+            await session.execute(delete(SsoLogin))
             await merge_records(session, current.records, locations.backup_dir)
             await record_audit(
                 session,

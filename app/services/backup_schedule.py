@@ -35,6 +35,7 @@ from app.services.backup_lock import BackupBusyError
 from app.services.backup_records import latest_snapshot_time
 from app.services.backup_run import BackupLocations, run_backup
 from app.services.pending_logins import purge_expired_pending_logins
+from app.services.sso_logins import purge_expired_sso_logins
 
 log = get_logger("scheduler")
 
@@ -205,10 +206,11 @@ class BackupScheduler:
             log.error("purging old audit entries failed: %s", type(error).__name__)
 
     async def purge_pending_logins(self) -> None:
-        """Remove pending sign-ins that have expired."""
+        """Remove pending sign-ins and single sign-on attempts that have expired."""
         try:
             async with self._session_factory() as db:
                 await purge_expired_pending_logins(db)
+                await purge_expired_sso_logins(db)
                 await db.commit()
         except Exception as error:
             log.error("removing expired sign-in steps failed: %s", type(error).__name__)
