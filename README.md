@@ -26,64 +26,46 @@ https://www.buymeacoffee.com/websvc
 
 ## Features
 
-- **Versioned, encrypted config files.** Every save is a new version with author, comment and
-  time. Values are encrypted at rest with a master key you keep outside the data volume, shown
-  masked in the interface and revealed one at a time, with each reveal audited.
-- **Deploys to host paths.** Write a version to the folder a deployment reads, with the mode,
-  owner and group you set, atomically, and optionally run a post-deploy Docker command such as
-  recreating the Compose service.
-- **Private registry logins.** Store the logins of the Docker registries your images come from
-  (a pull-only bot account or a read-only token is best), sealed with the master key and never
-  shown again, and post-deploy commands can pull private images; each run gets a private Docker
-  config that is removed afterwards, and Test login checks a login against the registry.
-- **Import from Docker Compose.** Create the services and files of a new deployment from its
-  Compose files: the real `docker compose config` finds the `env_file`, secret, config and bind
-  mount files, you review them in a preview, and the files that exist become version 1 with the
-  drift check starting from them. The deployment `.env` goes to the deployment files, the Compose
-  files are linked to the deployment read only, and a post-deploy command per service and for the
-  deployment is offered, unticked and editable. Includes and extends that leave the deployment
-  folder are refused.
-- **Deployment files.** The files the whole stack reads, such as the `.env` beside the Compose
-  file, belong to the deployment, with their own deploy and post-deploy command.
-- **Compose files, read only.** Link a deployment's Compose files, by the import or later, and read
-  their current text from the Settings tab of the deployment; they stay in your repository and are never managed
-  or written.
-- **Detected stacks.** Creating a deployment starts from the Compose stacks of the host, found
-  through Docker and by scanning the allowed paths (read only): pick one and the form is filled
-  with its folder, Compose files and Compose project, and the import of its services follows.
-- **Stack overview.** A deployment's Overview shows its containers with state, health, uptime and
-  restarts, which files still need the container recreated to apply, and a Network panel with the
-  stack's networks, each service's addresses and published ports (all-interface binds flagged).
-  It never reads a container's environment variables.
-- **Container actions.** Start, stop, restart or recreate a service from the page, behind a
-  confirmation that shows the command, under the deploy lock and audited.
-- **Logs.** A Logs tab follows the output of the stack's containers with a service and text
-  filter and a download, masking the values of the deployment's own files (the newest and the
-  previous version), and records opening it in the audit log once per filter in ten minutes.
-- **Single sign-on.** Sign in through an OpenID Connect provider such as Keycloak, configured in
-  Settings: roles in the ID token set the Admin or Viewer group, accounts are created or linked at
-  the first sign in, and the password form stays for superadmins.
-- **Drift protection.** If the file on disk changed outside the app, the deploy halts. A drift
-  view compares the file on disk, the last deployed version and the managed version key by key
-  (line by line for a certificate), and lets you import the file or overwrite it deliberately.
-- **File types.** A file is an ENV file (edited key by key) or a certificate (PEM text, edited and
-  revealed as one value, compared line by line, with no dist file).
-- **Dist comparison.** Compare an ENV file against its dist template (such as `.env.api-dist`), or
-  create the file from that template, and block or warn on missing, extra or empty keys.
-- **Audit log.** Every sign-in, reveal, change, deploy and setting change is recorded, filterable
-  and exportable to CSV.
-- **Roles and scoped access.** Superadmin, admin and viewer groups, with grants down to a single
-  project, deployment, service or file, and an access grid that shows who can reach what.
-- **API tokens.** Scoped bearer tokens let CI deploy a service or read its last deployment, and
-  nothing else.
-- **Backups.** Scheduled and manual online backups with retention, an optional extra destination
-  and restore from the interface or the command line.
-- **Git sync.** Optionally push an encrypted export to a private git repository for an off-host
-  copy.
-- **Notifications.** Email about sign-ins from new addresses, lockouts, failed deploys, backups
-  and user changes, plus a signed webhook for every deploy result.
-- **Accounts.** Two-factor sign-in (for password sign in), active session management, lockouts and
-  a master key rotation command.
+**Config files**
+- Versioned `.env` files and certificates: every save is a new version with author, comment and
+  time, with history, diffs and restore.
+- Encrypted at rest with a master key kept outside the data volume; values are shown masked and
+  each reveal is audited.
+- ENV files edited key by key, certificates as one PEM value.
+- Dist comparison: check a file against its template (such as `.env.api-dist`) for missing, extra
+  or empty keys, or create the file from it.
+- Drift protection: a deploy halts when the file on disk was changed outside the app; compare it
+  key by key, then import it or overwrite it deliberately.
+
+**Deploys**
+- Deploy a version to the host path the stack reads, atomically, with the mode, owner and group
+  you set, after a dry-run pre-flight.
+- Post-deploy Docker commands, such as recreating the Compose service, with private registry
+  logins for private images.
+- Import a deployment's services and files from its Docker Compose files; the Compose files stay
+  linked read only.
+- Scoped API tokens let CI deploy one service and nothing else.
+
+**Docker stack**
+- Create a deployment from a Compose stack found on the host.
+- Overview of the running stack: container state, health, uptime and restarts, files waiting for
+  a recreate, networks, addresses and published ports.
+- Start, stop, restart or recreate a service, each behind a confirmation.
+- Follow container logs, with the values of the deployment's own files masked.
+
+**Access and security**
+- Superadmin, admin and viewer groups with grants down to a single project, deployment, service or
+  file, and an access grid that shows who reaches what.
+- Single sign-on through OpenID Connect (Keycloak and other providers).
+- Two-factor authentication, active sessions, lockouts and master key rotation.
+- Audit log of every sign in, reveal, change, deploy and setting, filterable and exportable to
+  CSV.
+
+**Operations**
+- One Docker image with an embedded SQLite database: no external database, queue or cache.
+- Scheduled and manual backups with retention and restore, and an optional encrypted push to a
+  private git repository.
+- Email notifications and a signed webhook for every deploy result.
 
 ## Screenshots
 
