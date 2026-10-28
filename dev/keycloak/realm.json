@@ -1,0 +1,111 @@
+{
+  "realm": "envmanager-dev",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "verifyEmail": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "roles": {
+    "client": {
+      "env-manager": [
+        { "name": "admin", "description": "ENV Manager admin" },
+        { "name": "viewer", "description": "ENV Manager viewer" }
+      ]
+    }
+  },
+  "clients": [
+    {
+      "clientId": "env-manager",
+      "name": "ENV Manager",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "dev-only-env-manager-client-secret",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "fullScopeAllowed": true,
+      "redirectUris": [
+        "${DEV_APP_URL}/login/sso/callback",
+        "${E2E_APP_URL}/login/sso/callback"
+      ],
+      "webOrigins": ["${DEV_APP_URL}", "${E2E_APP_URL}"],
+      "attributes": { "pkce.code.challenge.method": "S256" },
+      "defaultClientScopes": ["web-origins", "acr", "profile", "roles", "basic", "email"],
+      "optionalClientScopes": [],
+      "protocolMappers": [
+        {
+          "name": "client roles in the ID token",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-client-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "usermodel.clientRoleMapping.clientId": "env-manager",
+            "claim.name": "resource_access.${client_id}.roles",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "false",
+            "userinfo.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "sso-admin",
+      "enabled": true,
+      "firstName": "SSO",
+      "lastName": "Admin",
+      "email": "sso-admin@example.test",
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "dev-only-sso-admin", "temporary": false }],
+      "clientRoles": { "env-manager": ["admin"] }
+    },
+    {
+      "username": "sso-viewer",
+      "enabled": true,
+      "firstName": "SSO",
+      "lastName": "Viewer",
+      "email": "sso-viewer@example.test",
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "dev-only-sso-viewer", "temporary": false }],
+      "clientRoles": { "env-manager": ["viewer"] }
+    },
+    {
+      "username": "sso-root",
+      "enabled": true,
+      "firstName": "SSO",
+      "lastName": "Root",
+      "email": "root@example.test",
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "dev-only-sso-root", "temporary": false }],
+      "clientRoles": { "env-manager": ["admin"] }
+    },
+    {
+      "username": "sso-norole",
+      "enabled": true,
+      "firstName": "SSO",
+      "lastName": "Norole",
+      "email": "sso-norole@example.test",
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "dev-only-sso-norole", "temporary": false }]
+    },
+    {
+      "username": "sso-unverified",
+      "enabled": true,
+      "firstName": "SSO",
+      "lastName": "Unverified",
+      "email": "viewer@example.test",
+      "emailVerified": false,
+      "credentials": [
+        { "type": "password", "value": "dev-only-sso-unverified", "temporary": false }
+      ],
+      "clientRoles": { "env-manager": ["viewer"] }
+    }
+  ]
+}

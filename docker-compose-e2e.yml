@@ -9,6 +9,10 @@
 # demo folder of the host, which the specs use as a deployment root, and, from `make e2e-demo`,
 # the address and the test login of a local registry (E2E_DEMO_REGISTRY, E2E_DEMO_REGISTRY_USER
 # and E2E_DEMO_REGISTRY_PASSWORD, given with `run -e`).
+#
+# The playwright-sso service runs the specs in `playwright/sso-tests` for `make e2e-sso`. It joins the network
+# of the separate app and Keycloak that docker-compose-e2e-sso.yml starts (the sso network below),
+# never the development stack.
 name: env-manager-e2e
 
 x-browser: &browser
@@ -75,6 +79,25 @@ services:
       E2E_DEMO_ROOT: ${DEMO_ROOT:-}
     command: sh -c "npm ci --prefix / --no-audit --no-fund && /node_modules/.bin/playwright test -c playwright.docker.config.ts"
 
+
+  playwright-sso:
+    <<: *browser
+    networks:
+      - sso
+    environment:
+      HOME: /tmp
+      # The app instance and the Keycloak of docker-compose-e2e-sso.yml: the base URL is the one
+      # the browser and the realm's redirect address use, the issuer the one Keycloak reports.
+      E2E_BASE_URL: http://envmanager-sso:8080
+      E2E_ISSUER: http://keycloak:8080/realms/envmanager-dev
+      E2E_USER: root@example.test
+      E2E_PASSWORD: dev-only-password
+    # PLAYWRIGHT_ARGS (the ARGS of make e2e-sso) narrows the run, for example "--project=desktop".
+    command:
+      - sh
+      - -c
+      - npm ci --prefix / --no-audit --no-fund && eval "/node_modules/.bin/playwright test -c playwright.sso.config.ts $${PLAYWRIGHT_ARGS:-}"
+
 volumes:
   node-modules:
 
@@ -82,3 +105,6 @@ networks:
   default:
     external: true
     name: env-manager_default
+  sso:
+    external: true
+    name: ${E2E_SSO_NETWORK:-env-manager-e2e-sso_default}

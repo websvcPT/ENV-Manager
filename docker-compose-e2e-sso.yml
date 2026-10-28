@@ -1,0 +1,79 @@
+# Single sign-on browser proof (`make e2e-sso`): a second app instance with its own fresh seeded
+# data volume, a Keycloak with the committed dev realm and, from docker-compose-e2e.yml, a
+# Playwright runner, all on this project's network. The development stack and its database are
+# never touched: the data volume is removed with the project at the end of every run.
+#
+# Browser, app and Keycloak agree on two names. The issuer is http://keycloak:8080/realms/envmanager-dev
+# (KC_HOSTNAME), and the app answers to the base URL the browser uses, which is also what the
+# realm lists as a redirect address (E2E_APP_URL, the same value as in docker-compose.yml and as
+# E2E_BASE_URL of the runner). The Python environment is the development stack's volume, so the
+# development stack must have been started once (`make up-bg`).
+name: env-manager-e2e-sso
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      args:
+        APP_UID: ${APP_UID:-1000}
+        APP_GID: ${APP_GID:-1000}
+    hostname: app
+    environment:
+      TZ: Europe/Lisbon
+      ENVMANAGER_ENVIRONMENT: development
+      ENVMANAGER_BASE_URL: http://envmanager-sso:8080
+      ENVMANAGER_LOG_LEVEL: debug
+      ENVMANAGER_CSRF_SECRET: dev-not-secret-change-me-0123456789abcdef
+      # Development only key, not a secret.
+      ENVMANAGER_KEY: ZGV2LW9ubHktZW52LW1hbmFnZXIta2V5LTAxMjM0NTY=
+      ENVMANAGER_LOGIN_IP_MAX_FAILURES: "1000"
+    networks:
+      default:
+        aliases:
+          - envmanager-sso
+    volumes:
+      - ./:/app
+      - venv:/opt/venv:ro
+      - data:/data
+    command: sh /app/start.sh
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/healthz',timeout=2)
+      interval: 3s
+      timeout: 5s
+      retries: 40
+
+  keycloak:
+    image: keycloak/keycloak:26.8.1-1
+    hostname: keycloak
+    command: ["start-dev", "--import-realm"]
+    mem_limit: 1g
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: dev-only-keycloak-admin
+      KC_HOSTNAME: http://keycloak:8080
+      DEV_APP_URL: http://localhost:8080
+      E2E_APP_URL: http://envmanager-sso:8080
+    volumes:
+      - ./dev/keycloak/realm.json:/opt/keycloak/data/import/realm.json:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/8080 &&
+          printf 'GET /realms/envmanager-dev/.well-known/openid-configuration HTTP/1.0\r\nHost: localhost\r\n\r\n' >&3 &&
+          head -n 1 <&3 | grep -q ' 200 '
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 20s
+
+volumes:
+  data:
+  venv:
+    external: true
+    name: env-manager_venv

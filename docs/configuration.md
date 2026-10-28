@@ -106,6 +106,54 @@ secret, trusted proxies and allowed sources stay in environment variables (see
   (the host name only), the version, the environment, the trusted proxies, the allowed sources and
   the client address the application resolved for the request. No secret is shown.
 
+## Setting up Keycloak for single sign-on
+
+ENV Manager signs people in with OpenID Connect and was checked against Keycloak 26. It needs one
+confidential client in your realm and reads the roles from the ID token. Nothing in the realm
+defaults and no other client changes.
+
+In the Keycloak admin console, in the realm people already sign in to:
+
+1. **Clients, Create client.** Client type `OpenID Connect`, client ID `env-manager`. In the
+   capability step turn *Client authentication* on and leave only *Standard flow* checked (no
+   direct access grants, implicit flow or service accounts). Under *Advanced*, setting *Proof Key
+   for Code Exchange Code Challenge Method* to `S256` is optional: ENV Manager always sends a
+   PKCE challenge.
+2. **Redirect URI.** Valid redirect URIs: the *Redirect URI* the Single sign-on tab shows, which is
+   `ENVMANAGER_BASE_URL` followed by `/login/sso/callback` (for example
+   `https://env.example.com/login/sso/callback`). Keycloak compares it exactly. Add the address
+   as a web origin too if you restrict them.
+3. **Client roles.** On the client, *Roles*, create `admin` and `viewer` (the names are yours; the
+   mapping rows of ENV Manager use them). Assign them to users or groups on the *Role mapping* tab
+   of the user or the group, choosing the roles of the `env-manager` client.
+4. **Roles in the ID token.** ENV Manager reads the roles from the ID token, and Keycloak's
+   default client roles mapper writes them only into the access token. On the client, *Client
+   scopes*, open `env-manager-dedicated`, *Configure a new mapper*, choose *User Client Role* and
+   set: *Client ID* `env-manager`, *Multivalued* on, *Token Claim Name*
+   `resource_access.${client_id}.roles`, *Claim JSON Type* `String`, *Add to ID token* on (the
+   other two switches are not needed). Added to the client's dedicated scope, it affects no other
+   client.
+5. **Email and name.** The default `email` and `profile` scopes already send `email`,
+   `email_verified`, `name` and `preferred_username`. A person whose email is not verified in
+   Keycloak is never linked to an existing ENV Manager account, but an account is still created
+   for them when none has that address. So keep *Email verified* on for your users and
+   *User registration* off in the realm, so nobody can make themselves an account that a role
+   then lets in.
+
+Then, in ENV Manager as a superadmin, *Settings*, *Single sign-on*:
+
+| Field | Value |
+| --- | --- |
+| Issuer URL | `https://<keycloak host>/realms/<realm>`, exactly what `https://<keycloak host>/realms/<realm>/.well-known/openid-configuration` reports as `issuer`. Test discovery refuses an issuer that differs. |
+| Client ID | `env-manager` |
+| Client secret | The secret on the client's *Credentials* tab. |
+| Roles claim | Leave empty: it reads `resource_access.<client id>.roles`. |
+| Mapping rows | `admin` to Admin and `viewer` to Viewer. |
+
+Use *Test discovery* before turning the switch on. The issuer is one address that both the person's
+browser and the ENV Manager container must reach, so behind a reverse proxy use the public address
+of Keycloak that the container can resolve too.
+
 ## Observability and error reporting
 
 Error reporting (Sentry) and tracing (OpenTelemetry) are both off. Nothing is exported, no

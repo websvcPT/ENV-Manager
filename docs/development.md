@@ -25,6 +25,7 @@ for development and testing only.
 | `make migrate`, `make revision` | Run migrations up, or print the command that creates a new revision. |
 | `make tailwind-build`, `make tailwind-watch`, `make frontend-build` | Build the CSS once (minified, in a container), watch it, or build the whole bundle. |
 | `make static-fetch`, `make check-pins` | Re-download the pinned vendor assets, or fail when a tool version written in more than one file differs. |
+| `make sso-up`, `make sso-down`, `make e2e-sso` | The development Keycloak and the single sign-on browser proof, described below. |
 | `make demo-up`, `make demo-reset`, `make demo-workloads`, `make demo-down`, `make e2e-demo` | The demo deployment, described below. |
 
 ## Tests
@@ -112,6 +113,100 @@ stacks.
   `E2E_DEMO_REGISTRY_PASSWORD`. `make demo-registry-down` removes the containers that carry its
   label, and `make e2e-demo` runs it at the end whether or not the specs passed. The image itself
   stays in the local image cache like the other pinned images (`docker rmi` removes it).
+
+## Single sign-on in development
+
+A Keycloak of the same version as production (`keycloak/keycloak:26.8.1-1`, `start-dev`, plain
+http) is part of the development stack under the compose profile `sso`, so `make up` and
+`make up-bg` never start it. It imports the realm of `dev/keycloak/realm.json` when its container
+is created: realm `envmanager-dev` (*Require SSL* for external requests only, so plain http works
+from private addresses), the confidential client `env-manager` (standard flow only, PKCE `S256`
+required, a client secret that is a test-only value), the client roles `admin` and `viewer`, a
+*User Client Role* mapper on the client that writes them into the ID token as
+`resource_access.env-manager.roles`, and the test users below. Every credential in the realm and
+in the compose files (the users' passwords, the client secret, the bootstrap admin login
+`admin` / `dev-only-keycloak-admin`) is for development and testing only. The realm file holds the
+two application addresses it accepts as `${DEV_APP_URL}` and `${E2E_APP_URL}`, which Keycloak
+fills from the environment of its container.
+
+| Target | What it does |
+| --- | --- |
+| `make sso-up` | Starts Keycloak, waits until its realm answers, recreates the app container when `DEV_HOST` changed its base URL, and prints the issuer, the client ID, the test-only client secret to type in Settings, the mapping rows and the test users. It warns when `DEV_HOST` is `localhost`. |
+| `make sso-down` | Stops and removes the Keycloak container (a new one imports the realm again) and returns the app container to the `DEV_HOST` it is run with. |
+| `make e2e-sso` | The browser proof, described below. |
+
+### `DEV_HOST`
+
+One variable, read by the Makefile and by `docker-compose.yml`, decides the addresses: Keycloak's
+`KC_HOSTNAME` is `http://$DEV_HOST:8180`, so its issuer is
+`http://$DEV_HOST:8180/realms/envmanager-dev`; the realm accepts the redirect address
+`http://$DEV_HOST:8080/login/sso/callback`; and the development app's `ENVMANAGER_BASE_URL`
+becomes `http://$DEV_HOST:8080`. Left at its default, `localhost`, the base URL is
+`http://localhost:8080` as it always was, so `make e2e` and the other specs behave as before.
+
+The issuer has to be one address that both the browser and the app container reach, and inside
+the app container `localhost` is the container itself. For a manual sign in therefore set
+`DEV_HOST` to the machine's own address, the same one you type in the browser, for example
+`make sso-up DEV_HOST=192.168.10.181`, and open the app at `http://192.168.10.181:8080` (a
+different address in the browser makes the redirect address differ from the one the realm
+accepts). The container reaches the published Keycloak port through the host address. Then, as
+`root@example.test` in Settings, Single sign-on, fill what `make sso-up` printed and turn it on.
+Settings are stored in the development database, so after `make sso-down` sign in as the
+superadmin with the password and turn single sign-on off again. A sign in as `sso-root` also
+renames the seeded superadmin to the name the realm gives (SSO Root), since names follow the
+provider, and the other test users stay as accounts; `make dev-reset` puts the database back to a
+fresh seeded one.
+
+The test users, by username (the password is `dev-only-` followed by the username, for example
+`dev-only-sso-admin`):
+
+| User | Email | In the realm | What the app does |
+| --- | --- | --- | --- |
+| `sso-admin` | `sso-admin@example.test` | role `admin`, verified | creates an Admin account |
+| `sso-viewer` | `sso-viewer@example.test` | role `viewer`, verified | creates a Viewer account |
+| `sso-root` | `root@example.test` | role `admin`, verified | links to the seeded superadmin, who stays superadmin |
+| `sso-norole` | `sso-norole@example.test` | no role | refused: no role that may use ENV Manager |
+| `sso-unverified` | `viewer@example.test` | role `viewer`, not verified | refused: the address is not verified, so no link to the seeded Viewer |
+
+### Reaching the Keycloak from another machine over plain http
+
+Checked on this machine's own LAN address (`192.168.10.181`), not from a second physical machine:
+with `DEV_HOST` set to it, the browser (the Playwright container, which reaches the host through
+that address like any other machine on the network) opened the app and Keycloak at that address
+over plain http and signed in as every user above with the expected results (the 18 tests of the
+browser proof, both projects, passed against the development stack). Keycloak's cookies work over
+plain http: every cookie it sets on the sign in page and after the sign in (`AUTH_SESSION_ID`,
+`KC_AUTH_SESSION_HASH`, `KC_RESTART`, `KEYCLOAK_IDENTITY`, `KEYCLOAK_SESSION`) has `SameSite=Lax` and
+no `Secure` flag, which is enough because the sign in is a top-level redirect and a form post.
+No certificate is needed, so none is used. Not tried: a browser
+address that differs from `DEV_HOST` (the redirect address would not match what the realm
+accepts) and a client on a public address (with *Require SSL* on external requests the realm
+allows plain http only from localhost and the 10.x, 172.16-31.x and 192.168.x ranges).
+
+### Browser proof
+
+`make e2e-sso` proves the whole sign in in a real browser, desktop and phone, without touching the
+development database. `docker-compose-e2e-sso.yml` (project `env-manager-e2e-sso`) starts a second
+app instance with its own empty data volume that the target seeds, a Keycloak with the same realm
+file, and the specs run from the Playwright image of `docker-compose-e2e.yml` (service
+`playwright-sso`, config `playwright/playwright.sso.config.ts`, specs in `playwright/sso-tests/`).
+All three share one network, and the names are chosen so the browser, the app and Keycloak agree:
+the issuer is `http://keycloak:8080/realms/envmanager-dev` (`KC_HOSTNAME`), the app's
+`ENVMANAGER_BASE_URL` and the browser's base URL are both `http://envmanager-sso:8080`, and the
+realm lists that as a redirect address. The project, with its data volume, is removed at the end
+whether the specs pass or not (and once more before starting, in case a run was interrupted), so
+a failed run cannot leave password sign in off for `make e2e`. The Python environment is the
+development stack's volume, so the stack must have been started once (`make up-bg`); it does not
+have to be running. `ARGS="--project=desktop"` narrows the run.
+
+The spec signs in as the superadmin with the password and sets single sign-on up in the Settings
+tab (issuer, client ID, secret, the mapping of `admin` to Admin and `viewer` to Viewer, Test
+discovery, Save and turn on through its confirmation), then checks each test user above in a
+fresh browser context: the Admin and Viewer land on the projects page with the Account page
+managed by SSO, the user without a role and the unverified one are refused with the fixed
+messages, `sso-root` stays superadmin with a password and two-factor panel that still work,
+`admin@example.test` with the right password gets the wrong-password answer while SSO is on, the
+superadmin still signs in with the password, and the sign-in card never says "superadmin".
 
 ## Continuous integration
 

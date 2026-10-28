@@ -194,19 +194,24 @@ The start script of the image also reads `ENVMANAGER_HOST` (the address the serv
 `0.0.0.0` unless set). OpenTelemetry has its own standard variables, described in
 [Configuration and observability](docs/configuration.md).
 
+The development stack (`make` and `docker-compose.yml`, not the application) also reads
+`DEV_HOST`, default `localhost`: the address of the machine that both a browser and the app
+container reach, which builds the issuer of the development Keycloak and the development
+`ENVMANAGER_BASE_URL`. See [Development](docs/development.md#single-sign-on-in-development).
+
 ## Documentation
 
 - [Deployment and network configuration](docs/deployment.md): the production setup, file ownership,
   the Docker socket, upgrades, trusted proxies and allowed sources.
-- [Configuration and observability](docs/configuration.md): the Settings tabs, Sentry and
-  OpenTelemetry.
+- [Configuration and observability](docs/configuration.md): the Settings tabs, setting up Keycloak
+  for single sign-on, Sentry and OpenTelemetry.
 - [Operations](docs/operations.md): backup and restore, key rotation, the Docker scratch folder,
   git sync, email notifications and the deploy webhook.
 - [Using ENV Manager](docs/usage.md): deploying from the command line, the drift view, users,
   accounts and post-deploy commands.
 - [API tokens and the API](docs/api.md): creating tokens and calling the deploy API.
-- [Development](docs/development.md): the development stack, make targets, tests and the demo
-  deployment.
+- [Development](docs/development.md): the development stack, make targets, tests, the demo
+  deployment and the development Keycloak.
 
 ## Development
 

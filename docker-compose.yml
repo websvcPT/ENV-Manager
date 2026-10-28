@@ -17,6 +17,7 @@ services:
     environment:
       TZ: Europe/Lisbon
       ENVMANAGER_ENVIRONMENT: development
+      ENVMANAGER_BASE_URL: ${ENVMANAGER_BASE_URL:-http://${DEV_HOST:-localhost}:8080}
       ENVMANAGER_LOG_LEVEL: debug
       ENVMANAGER_CSRF_SECRET: dev-not-secret-change-me-0123456789abcdef
       ENVMANAGER_SERVE_DOCS: "true"
@@ -49,6 +50,42 @@ services:
     hostname: smtp4dev
     ports:
       - "5080:80"
+
+  # Development Keycloak for single sign-on (`make sso-up`, profile `sso`, so `make up` leaves it
+  # alone). It imports the realm of dev/keycloak/realm.json, whose ${...} placeholders Keycloak
+  # fills from the environment below, and keeps its data inside the container, so recreating the
+  # container (which `make sso-up` does when DEV_HOST changes) imports the realm again. The issuer
+  # is http://${DEV_HOST}:8180/realms/envmanager-dev and must be one address that both the browser
+  # and the app container reach, which is why DEV_HOST is the machine's own address and not
+  # localhost (inside the app container localhost is the container itself). The accounts, the
+  # client secret and the bootstrap admin are test-only values.
+  keycloak:
+    image: keycloak/keycloak:26.8.1-1
+    profiles: [sso]
+    hostname: keycloak
+    command: ["start-dev", "--import-realm"]
+    mem_limit: 1g
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: dev-only-keycloak-admin
+      KC_HOSTNAME: http://${DEV_HOST:-localhost}:8180
+      DEV_APP_URL: http://${DEV_HOST:-localhost}:8080
+      E2E_APP_URL: http://envmanager-sso:8080
+    ports:
+      - "8180:8080"
+    volumes:
+      - ./dev/keycloak/realm.json:/opt/keycloak/data/import/realm.json:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/8080 &&
+          printf 'GET /realms/envmanager-dev/.well-known/openid-configuration HTTP/1.0\r\nHost: localhost\r\n\r\n' >&3 &&
+          head -n 1 <&3 | grep -q ' 200 '
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 20s
 
 volumes:
   venv:

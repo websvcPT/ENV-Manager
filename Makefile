@@ -1,6 +1,7 @@
 .PHONY: up up-app upforce up-bg wait-app stop destroy logs app app-logs lint format tests \
 	tests-docker migrate revision seed dev-cleanup dev-reset check-pins e2e e2e-lock e2e-demo demo-up \
 	demo-down demo-reset demo-workloads demo-registry-down demo-root-scenarios frontend-build tailwind-download tailwind-build tailwind-watch \
+	sso-up sso-down e2e-sso \
 	static-fetch help
 
 # Extra arguments for `make tests` (pytest) and `make e2e` (playwright test); empty runs everything.
@@ -32,6 +33,20 @@ DEMO_COMPOSE := docker compose -f docker-compose.yml -f docker-compose-demo.yml
 DOCKER_SOCKET := /var/run/docker.sock
 # The label of the containers of the local test registry (LABEL in app/real_scenarios/registry.py).
 REGISTRY_LABEL := env-manager.test-registry
+
+# The address of this machine that both a browser and the app container reach, for the development
+# Keycloak (`make sso-up`). Docker Compose reads it too: it builds the issuer of the Keycloak
+# (http://$(DEV_HOST):8180/realms/envmanager-dev) and the realm's redirect address, and, only when
+# it is set, the development app's ENVMANAGER_BASE_URL (http://$(DEV_HOST):8080). It stays
+# localhost unless you set it, which leaves the development base URL as it always was, but then a
+# manual single sign-on sign in cannot work: inside the app container localhost is the container.
+DEV_HOST ?= localhost
+export DEV_HOST
+KEYCLOAK_PORT := 8180
+KEYCLOAK_REALM := envmanager-dev
+KEYCLOAK_ISSUER := http://$(DEV_HOST):$(KEYCLOAK_PORT)/realms/$(KEYCLOAK_REALM)
+# Single sign-on browser proof: the separate app and Keycloak, and the project that holds them.
+E2E_SSO_COMPOSE := docker compose -f docker-compose-e2e-sso.yml
 
 # --- Environment lifecycle ---
 up: dev-dirs $(TAILWIND_OUTPUT) ## Start environment
@@ -103,7 +118,10 @@ check-pins: ## Fail when a tool version written in more than one file differs be
 	@package=$$(sed -n 's/.*"@playwright\/test": *"\([^"]*\)".*/\1/p' playwright/package.json); \
 	compose=$$(grep -o 'PLAYWRIGHT_VERSION:-[0-9.]*' docker-compose-e2e.yml | sed 's/.*-//' | sort -u); \
 	dockerfile=$$(sed -n 's/^ARG TAILWIND_VERSION=//p' Dockerfile); \
+	keycloak_dev=$$(sed -n 's/^ *image: keycloak\/keycloak://p' docker-compose.yml); \
+	keycloak_sso=$$(sed -n 's/^ *image: keycloak\/keycloak://p' docker-compose-e2e-sso.yml); \
 	status=0; \
+	[ -n "$$keycloak_dev" ] && [ "$$keycloak_dev" = "$$keycloak_sso" ] || { echo "Keycloak: docker-compose.yml pins '$$keycloak_dev', docker-compose-e2e-sso.yml '$$keycloak_sso'"; status=1; }; \
 	[ "$$package" = "$(PLAYWRIGHT_VERSION)" ] || { echo "Playwright: playwright/package.json pins '$$package', the Makefile '$(PLAYWRIGHT_VERSION)'"; status=1; }; \
 	[ "$$compose" = "$(PLAYWRIGHT_VERSION)" ] || { echo "Playwright: docker-compose-e2e.yml defaults to '$$compose', the Makefile '$(PLAYWRIGHT_VERSION)'"; status=1; }; \
 	[ "$$dockerfile" = "$(TAILWIND_VERSION)" ] || { echo "Tailwind: the Dockerfile pins '$$dockerfile', the Makefile '$(TAILWIND_VERSION)'"; status=1; }; \
@@ -119,6 +137,57 @@ e2e-lock: ## Regenerate playwright/package-lock.json after changing playwright/p
 	docker run --rm --user $(USER_IDS) -e HOME=/tmp -v "$(CURDIR)/playwright":/e2e -w /e2e \
 		mcr.microsoft.com/playwright:v$(PLAYWRIGHT_VERSION)-noble \
 		npm install --package-lock-only --no-audit --no-fund
+
+# --- Single sign-on in development (opt-in, never part of the default stack) ---
+sso-up: ## Start the development Keycloak (profile sso), wait for its realm and print how to set up ENV Manager (DEV_HOST=<address> for a real sign in)
+	@docker compose ps --status running --services | grep -qx app \
+		|| { echo "the development stack is not running; run make up-bg"; exit 1; }
+	docker compose --profile sso up -d --wait keycloak
+	docker compose up -d --no-deps app
+	@$(MAKE) --no-print-directory wait-app
+	@echo ""
+	@echo "Keycloak is ready: admin console http://$(DEV_HOST):$(KEYCLOAK_PORT) (admin / dev-only-keycloak-admin)"
+	@echo ""
+	@echo "Settings, Single sign-on, as superadmin (root@example.test):"
+	@echo "  Issuer URL      $(KEYCLOAK_ISSUER)"
+	@echo "  Client ID       env-manager"
+	@echo "  Client secret   dev-only-env-manager-client-secret"
+	@echo "  Roles claim     resource_access.env-manager.roles (the default)"
+	@echo "  Mapping rows    admin -> Admin, viewer -> Viewer"
+	@echo "  Redirect URI    http://$(DEV_HOST):8080/login/sso/callback (shown read only there)"
+	@echo ""
+	@echo "Test users (username / password, all development and testing only):"
+	@echo "  sso-admin / dev-only-sso-admin             role admin, a new account is created"
+	@echo "  sso-viewer / dev-only-sso-viewer           role viewer, a new account is created"
+	@echo "  sso-root / dev-only-sso-root               role admin, email root@example.test: links to the seeded superadmin"
+	@echo "  sso-norole / dev-only-sso-norole           no role: refused"
+	@echo "  sso-unverified / dev-only-sso-unverified   viewer@example.test, not verified: refused linking"
+	@if [ "$(DEV_HOST)" = "localhost" ]; then \
+		echo ""; \
+		echo "WARNING: DEV_HOST is localhost. Inside the app container localhost is the container itself, so the"; \
+		echo "app cannot reach this Keycloak under that address and a sign in will fail. Run again with an address"; \
+		echo "that the browser and the app container both reach, for example: make sso-up DEV_HOST=192.168.10.181"; \
+	fi
+
+sso-down: ## Stop and remove the development Keycloak and return the app to the DEV_HOST it is started with
+	docker compose --profile sso rm --stop --force keycloak
+	@if docker compose ps --status running --services | grep -qx app; then \
+		docker compose up -d --no-deps app && $(MAKE) --no-print-directory wait-app; \
+	fi
+
+# The app instance has its own fresh seeded data volume, so the development database is never
+# touched and a run that fails cannot leave password sign in off for `make e2e`: the project, with
+# its volume, is removed in every case, first as well, to clear what an interrupted run left.
+e2e-sso: check-pins ## Prove single sign-on in a real browser against a dev Keycloak and a separate app instance (ARGS="--project=desktop" narrows the run)
+	@docker volume inspect env-manager_venv > /dev/null 2>&1 \
+		|| { echo "the development stack has not been started yet; run make up-bg once"; exit 1; }
+	@$(E2E_SSO_COMPOSE) down --volumes --remove-orphans > /dev/null 2>&1; \
+	status=0; \
+	{ $(E2E_SSO_COMPOSE) up -d --build --wait \
+		&& $(E2E_SSO_COMPOSE) exec -T app envmanager dev seed \
+		&& docker compose -f docker-compose-e2e.yml run --rm -e PLAYWRIGHT_ARGS="$$ARGS" playwright-sso; } || status=$$?; \
+	$(E2E_SSO_COMPOSE) down --volumes --remove-orphans || status=$$?; \
+	exit $$status
 
 # --- Demo deployment (opt-in, never part of the default stack) ---
 demo-up: dev-dirs $(TAILWIND_OUTPUT) ## Start the dev stack with the Docker socket and demo folder mounted, seed the demo project
