@@ -17,6 +17,17 @@ review, access control and traceability without adopting a full secrets platform
 It ships as a single Docker image (`websvcpt/env-manager`) with an embedded SQLite database. There
 is no external database, queue or cache to run.
 
+There are other tools out there much more capable than this, but this tool solves a specific problem others might not support in full.   
+It allows to manage environment files used on docker compose deployments without having to make changes to the deplpoyment itself.
+
+It allows the import/adoption of existing deployments and to interact with them.   
+When we define environment files as env file or as mount to a service, we are able to update these files from ENV-Manager.   
+It does not allow to add ENV vars to a deployment - This is out of scope.   
+The docker compose deployment should still handle the backup of it's configurations via git or other.   
+ENV-Manager is able to backup only what it was managing regarding the deployment.
+
+The day you want to bring ENV-Manager down, your deployment will continue to work as before, and you can still manage it manually.
+
 **Buy me a coffee**
 
 If you'd like to thank me, you can buy me a coffee. Coffee is never too much :)
