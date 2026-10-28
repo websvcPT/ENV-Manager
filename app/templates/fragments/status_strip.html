@@ -7,9 +7,9 @@
 {% set run = deployment.last_run %}
 {% set drift_badges = {"in_sync": ("deployed", "In sync"), "drift": ("drift", none), "missing": ("never", "Target missing")} %}
 {% macro cell(label) -%}
-<div class="flex min-w-48 flex-1 basis-48 flex-col gap-1.5 bg-surface p-4"><p class="text-xs font-bold uppercase tracking-wide text-ink3">{{ label }}</p><div class="flex flex-wrap items-center gap-2">{{ caller() }}</div></div>
+<div class="flex flex-col gap-1.5 bg-surface p-4 ring-1 ring-line"><p class="text-xs font-bold uppercase tracking-wide text-ink3">{{ label }}</p><div class="flex flex-wrap items-center gap-2">{{ caller() }}</div></div>
 {%- endmacro %}
-<section aria-label="Status" id="status-strip" data-fragment="status-strip"{% if oob | default(false) %} hx-swap-oob="true"{% endif %} class="flex flex-wrap gap-px overflow-hidden rounded-panel border border-line bg-line shadow-panel">
+<section aria-label="Status" id="status-strip" data-fragment="status-strip"{% if oob | default(false) %} hx-swap-oob="true"{% endif %} class="grid grid-cols-[repeat(auto-fit,minmax(12rem,1fr))] overflow-hidden rounded-panel border border-line bg-surface shadow-panel">
 {% call cell("State") %}{% if deployment.flags %}{% for flag in deployment.flags %}{{ deploy_status_badge(flag.value) }}{% endfor %}{% else %}<span class="inline-flex items-center gap-1.5 text-[13px] text-ink2">{{ icon("check", "size-3.5", "2.4") }}No flags</span>{% endif %}{% endcall %}
 {% if runtime_view and runtime_view.show_counts %}
 {% call cell("Containers") %}{{ badge("up" if runtime_view.running == runtime_view.total else "attention", runtime_view.running ~ " of " ~ runtime_view.total ~ " running") }}{% endcall %}

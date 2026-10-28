@@ -70,6 +70,11 @@ test.describe('Overview with a usable Docker', () => {
 
     await expect(cell(page, 'Containers')).toContainText('2 of 2 running');
     await expect(cell(page, 'Applied')).toBeVisible();
+    const stripWidths = await page
+      .locator('[data-fragment="status-strip"] > div')
+      .evaluateAll((cells) => cells.map((el) => el.getBoundingClientRect().width));
+    expect(stripWidths).toHaveLength(7);
+    expect(Math.max(...stripWidths) - Math.min(...stripWidths)).toBeLessThan(1);
 
     const network = page.locator(`[data-fragment="network-row"][data-network="${NETWORK}"]`);
     await expect(network).toContainText('bridge');
