@@ -1,6 +1,140 @@
 # CHANGELOG
 
 
+## v1.5.0 (2026-10-28)
+
+### Bug Fixes
+
+- Audit opening logs once per filter in ten minutes and mask the previous value too
+  ([`7f114d0`](https://github.com/websvcPT/ENV-Manager/commit/7f114d0ca1e6bfa0c63888862b8347be3e2ea92b))
+
+- Create an account at the first SSO sign in only for a verified email
+  ([`34c965c`](https://github.com/websvcPT/ENV-Manager/commit/34c965c84211798adf333b3d16447e0851897377))
+
+- Drop the Superadmin tags from tabs and page titles
+  ([`c89f98f`](https://github.com/websvcPT/ENV-Manager/commit/c89f98fa8f862b0b70d4a4d2b893ee4251844673))
+
+- Give Test login a lock icon and name what a pull reports once a login is removed
+  ([`f27d370`](https://github.com/websvcPT/ENV-Manager/commit/f27d3700a4fb61c3f2721a118583fba3cb9e7b5f))
+
+- Keep the last row of the status strip at the width of the other cells
+  ([`7b22213`](https://github.com/websvcPT/ENV-Manager/commit/7b2221309f134d212980064b774ff5fbfa1481c1))
+
+- Keep the line count, Following and download of the Logs toolbar on one row on a phone
+  ([`d6d91d8`](https://github.com/websvcPT/ENV-Manager/commit/d6d91d81717e30d7f9dad13cb1f0606aec0378a3))
+
+- Keep the login card from saying who may sign in with a password
+  ([`6d57241`](https://github.com/websvcPT/ENV-Manager/commit/6d572410b4255e3cd5412bede78a9ea66b2fca0e))
+
+- Land on Settings after creating a deployment and widen the phone tab targets
+  ([`42493af`](https://github.com/websvcPT/ENV-Manager/commit/42493af44bd8b0104765575efb9b533713f698f9))
+
+- Mark a container to recreate after any run that wrote a file
+  ([`1d10a01`](https://github.com/websvcPT/ENV-Manager/commit/1d10a01cccc24150343b3c04c7f4f1014afb1528))
+
+- Show the registry's own reason when Test login is refused
+  ([`844ecb6`](https://github.com/websvcPT/ENV-Manager/commit/844ecb62e1a471b749ba426aaf9279e1abcb07d7))
+
+- Stop the detected stacks table from squeezing the stack and Compose file names
+  ([`574e1ad`](https://github.com/websvcPT/ENV-Manager/commit/574e1add1222d4d78355fba573505d5983e6d362))
+
+- Stop the section tabs from overlapping when they scroll on a phone
+  ([`33462a1`](https://github.com/websvcPT/ENV-Manager/commit/33462a1df6c5cb1409a3664ecbeef84353ca3aaa))
+
+### Documentation
+
+- Capture the README screenshots from a neutral deployment path
+  ([`8365d7d`](https://github.com/websvcPT/ENV-Manager/commit/8365d7d687b8dffe1332a89a0a313b5fd6b2d649))
+
+- Describe Docker registry logins
+  ([`77fc1b9`](https://github.com/websvcPT/ENV-Manager/commit/77fc1b989a6f9129f066abbc553b68ee1b47dd02))
+
+- Describe the deployment tabs, stack runtime, logs and single sign-on
+  ([`fe8bbce`](https://github.com/websvcPT/ENV-Manager/commit/fe8bbcec97d96538d4d01302f46abb25423c2186))
+
+- List the features in groups in the README
+  ([`ea5e06c`](https://github.com/websvcPT/ENV-Manager/commit/ea5e06cc51906dba6adec470e34b312c5216c0f7))
+
+- Show the deployment overview and logs in the README screenshots
+  ([`483d6ab`](https://github.com/websvcPT/ENV-Manager/commit/483d6ab4b055b377ceb73a4e06fc38beeb6a9c60))
+
+- Update readme
+  ([`a186dc8`](https://github.com/websvcPT/ENV-Manager/commit/a186dc8456e4506d733ff0d23bd59d4eae6a29f2))
+
+### Features
+
+- Configure single sign-on in a Settings tab
+  ([`f601c22`](https://github.com/websvcPT/ENV-Manager/commit/f601c223bb2569c3c2200e6c933de2463a5f24d9))
+
+- Create a deployment from a stack found on the host
+  ([`d0ff8d2`](https://github.com/websvcPT/ENV-Manager/commit/d0ff8d2004c2349265fa27a5bf88ba4e605fd5bc))
+
+- Follow a deployment's container logs with its values masked
+  ([`4d7d8ff`](https://github.com/websvcPT/ENV-Manager/commit/4d7d8ffe12aaad8b7f319054303e30e22cceeb8b))
+
+- Manage Docker registry logins in Settings and test them
+  ([`0fb5b27`](https://github.com/websvcPT/ENV-Manager/commit/0fb5b27faa6ef2d8218d9d60fd1a9ad8011fdebb))
+
+- Name item types in the breadcrumb and drop the parent line from item headers
+  ([`dcf74a2`](https://github.com/websvcPT/ENV-Manager/commit/dcf74a2c70417e49bd19b87321deb5bfa40028d4))
+
+- Read the state, uptime and network of a deployment's containers
+  ([`6db59e7`](https://github.com/websvcPT/ENV-Manager/commit/6db59e7f6ccf2834c5d406bd17d5311827ca5738))
+
+- Run Keycloak in development and prove single sign-on in the browser
+  ([`e199da8`](https://github.com/websvcPT/ENV-Manager/commit/e199da84b25bc40f34bc451ae3b7a5fa467ce168))
+
+- Run post-deploy commands with the stored registry logins
+  ([`0af1e70`](https://github.com/websvcPT/ENV-Manager/commit/0af1e7098576b6800cf4e7b415414eee982b549a))
+
+- Show the containers, uptime and network of a deployment on its Overview
+  ([`44b542f`](https://github.com/websvcPT/ENV-Manager/commit/44b542f43303d49cd74e1b4913f56e8adfd3ad23))
+
+- Sign in through an OpenID Connect provider (service and storage)
+  ([`7c00dd4`](https://github.com/websvcPT/ENV-Manager/commit/7c00dd45fbe815b107af8b70ad5e2de971eea669))
+
+- Sign in with SSO from the login page and keep password sign in for superadmins
+  ([`1f3c162`](https://github.com/websvcPT/ENV-Manager/commit/1f3c1621ec72f744d3bc71197ab00de6a0ec954b))
+
+- Split the deployment page into Overview, Files, History and Settings tabs
+  ([`f251a4d`](https://github.com/websvcPT/ENV-Manager/commit/f251a4dd064d2a6a475417e8f78a27653efeee4c))
+
+- Start, stop, restart and recreate a service's container from the Overview
+  ([`af3fe4c`](https://github.com/websvcPT/ENV-Manager/commit/af3fe4c55654f33b939abb40460f7d739e4a7510))
+
+- Store Docker registry logins with sealed tokens
+  ([`126c25e`](https://github.com/websvcPT/ENV-Manager/commit/126c25e0c2e6b7f9b1c9589f1c274b705aa7894b))
+
+- Store the Compose project name and find stacks on the host
+  ([`db6b522`](https://github.com/websvcPT/ENV-Manager/commit/db6b522ea3c208a3c6e0706b6c85a19b8f9e3b0b))
+
+- Turn masking of the container logs on or off in Settings
+  ([`1baafb6`](https://github.com/websvcPT/ENV-Manager/commit/1baafb65f349b74b54eab59be7d933e94bad26a6))
+
+### Testing
+
+- Leave content digests and timestamps out of the text searched for leaked values
+  ([`1d31131`](https://github.com/websvcPT/ENV-Manager/commit/1d31131b499ab505607e66a272501413ad11a32f))
+
+- Match a leaked value as its own token so a short port is not found inside a timestamp
+  ([`4850141`](https://github.com/websvcPT/ENV-Manager/commit/48501419c1e59413a3a45014a75f0fb540dc12dc))
+
+- Pin the answers of the container action routes and cover a refused action in the browser
+  ([`84e2fcb`](https://github.com/websvcPT/ENV-Manager/commit/84e2fcbeef071dfa00f782db215ea08624eef928))
+
+- Pin the reason a malformed set of signing keys is refused with
+  ([`ee7698e`](https://github.com/websvcPT/ENV-Manager/commit/ee7698e497faab3c602cd4f466586eda98ed7155))
+
+- Prove registry logins against a local registry
+  ([`a6f99c1`](https://github.com/websvcPT/ENV-Manager/commit/a6f99c1e7166cfdc8af1db7e88e5cee3e5e05677))
+
+- Tolerate a process that exits while its status file is read
+  ([`e4b79dc`](https://github.com/websvcPT/ENV-Manager/commit/e4b79dc7bf72bea72649add2666bc91f51a329fe))
+
+- Wait for queued notifications before counting the statements of a request
+  ([`8d55118`](https://github.com/websvcPT/ENV-Manager/commit/8d55118a3034693bf75d68b8e26db358320072db))
+
+
 ## v1.4.0 (2026-10-21)
 
 ### Documentation
