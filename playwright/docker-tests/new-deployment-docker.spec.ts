@@ -1,3 +1,5 @@
+import type { Locator } from '@playwright/test';
+
 import { deploymentId } from '../deployments-api';
 import { actionControls } from '../tests/row-actions';
 import { expect, test } from '../tests/scratch-project';
@@ -39,6 +41,19 @@ test.describe('new deployment with a usable Docker', () => {
     await expect(link).toHaveText('Used by stack');
     await expect(actionControls(entry, 'use')).toHaveCount(0);
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+    if (isWide(page)) {
+      const lines = (locator: Locator): Promise<number> =>
+        locator.evaluate((el) => {
+          const range = document.createRange();
+          range.selectNodeContents(el);
+          return range.getClientRects().length;
+        });
+      expect(await lines(entry.locator('th')), 'the stack name stays on one line').toBe(1);
+      expect(
+        await lines(entry.locator('td').nth(1).locator('span')),
+        'the Compose file name stays on one line',
+      ).toBe(1);
+    }
 
     await link.click();
     await expect(page).toHaveURL(`/deployments/${used}`);

@@ -20,7 +20,7 @@
 {% macro action(row, prefix) -%}
 {%- if row.stack.used_by -%}{{ text_link("Used by " ~ row.stack.used_by.name, "/deployments/" ~ row.stack.used_by.id, data_stack_used=true) }}
 {%- elif row.use_href -%}{{ row_actions(prefix, row.stack.name, [{"key": "use", "label": "Use", "icon": "arrow-right", "primary": true, "attrs": {"aria_label": "Use " ~ row.stack.name, "hx_get": row.use_href, "hx_target": "#stack-form", "hx_swap": "innerHTML show:top showTarget:#stack-form"}}]) }}
-{%- else -%}<span data-stack-reason class="text-[13px] text-ink2">{{ row.stack.reason }}</span>
+{%- else -%}<span data-stack-reason class="inline-block max-w-56 whitespace-normal text-[13px] text-ink2">{{ row.stack.reason }}</span>
 {%- endif -%}
 {%- endmacro %}
 {% set rescan %}{{ button("Scan again", icon_name="restore", icon_stroke="2", id="detected-stacks-scan", hx_get=scan_href, hx_target="#detected-stacks", hx_swap="outerHTML", hx_disable="this") }}{% endset %}
@@ -31,9 +31,9 @@
 <div class="hidden md:block">
 {% call table("Detected stacks", ["Stack", "Folder", "Compose files", "Containers", "Found by", "Action"], right_columns=[5], min_width_class="min-w-[860px]") %}
 {%- for row in rows %}
-<tr data-fragment="stack-row" data-folder="{{ row.stack.folder }}"><th scope="row" class="border-t border-line px-4 py-3.5 text-left font-semibold">{{ row.stack.name }}</th>
+<tr data-fragment="stack-row" data-folder="{{ row.stack.folder }}"><th scope="row" class="min-w-40 border-t border-line px-4 py-3.5 text-left font-semibold">{{ row.stack.name }}</th>
 <td class="border-t border-line px-4 py-3.5"><span class="break-all font-mono text-[13px] text-ink2">{{ row.stack.folder }}</span></td>
-<td class="border-t border-line px-4 py-3.5">{% if row.stack.compose_files %}<span class="break-all font-mono text-[13px] text-ink2">{{ row.stack.compose_files | join(", ") }}</span>{% else %}<span class="text-ink3">None</span>{% endif %}</td>
+<td class="border-t border-line px-4 py-3.5">{% if row.stack.compose_files %}<span class="break-words font-mono text-[13px] text-ink2">{{ row.stack.compose_files | join(", ") }}</span>{% else %}<span class="text-ink3">None</span>{% endif %}</td>
 <td class="border-t border-line px-4 py-3.5 whitespace-nowrap">{{ containers(row.stack) }}</td>
 <td class="border-t border-line px-4 py-3.5 whitespace-nowrap text-[13px] text-ink2">{{ found_by[row.stack.source.value] }}</td>
 <td class="border-t border-line px-4 py-3.5 whitespace-nowrap text-right">{{ action(row, "stack-" ~ loop.index) }}</td></tr>

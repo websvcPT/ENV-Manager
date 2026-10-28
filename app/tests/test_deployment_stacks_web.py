@@ -215,6 +215,7 @@ async def test_the_stacks_fragment_lists_docker_and_folder_finds_with_their_acti
     away = row_of(page, outside)
     assert "The folder is outside the allowed paths." in text_of(away)
     assert 'data-row-action="use"' not in away and "0 of 1 running" in text_of(away)
+    assert "max-w-56" in away.split("data-stack-reason")[1][:80]
     assert page.count('data-fragment="stack-item"') == page.count('data-fragment="stack-row"')
 
 
