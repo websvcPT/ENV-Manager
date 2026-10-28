@@ -69,13 +69,15 @@ https://www.buymeacoffee.com/websvc
 
 ## Screenshots
 
-![Projects overview with the last deploy result and what needs attention](docs/images/projects-overview.png)
+![Deployment overview with the running containers, their uptime and the network](docs/images/deployment-overview.png)
+
+![Deployment logs following the containers, with a stored value masked](docs/images/deployment-logs.png)
 
 ![Environment editor with masked values, each reveal audited](docs/images/environment-editor-masked-values.png)
 
-![Audit log with filters and CSV export](docs/images/audit-log.png)
-
 ![Access grid showing who reaches which project, deployment, service and file](docs/images/access-grid.png)
+
+![Audit log with filters and CSV export](docs/images/audit-log.png)
 
 ## Quick start
 
