@@ -299,7 +299,7 @@ async def test_signing_keys_that_cannot_be_used_are_refused(
     world: World, answer: Callable[[], httpx.Response]
 ) -> None:
     world.idp.answers[world.idp.jwks_uri] = answer
-    assert await _refused(world) in {PROVIDER_INVALID, TOKEN_INVALID}
+    assert await _refused(world) == PROVIDER_INVALID
 
 
 async def test_the_cached_metadata_and_keys_expire_after_their_lifetime() -> None:
