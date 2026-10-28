@@ -113,6 +113,7 @@ async def save_security_route(
     api_ip_max_failures: Annotated[str, Form()] = "",
     lockout_minutes: Annotated[str, Form()] = "",
     min_password_length: Annotated[str, Form()] = "",
+    mask_container_logs: Annotated[str, Form()] = "",
 ) -> Response:
     """Save the security settings. A refused value answers the form again with the reasons (422).
 
@@ -126,6 +127,7 @@ async def save_security_route(
         api_ip_max_failures=api_ip_max_failures,
         lockout_minutes=lockout_minutes,
         min_password_length=min_password_length,
+        mask_container_logs=mask_container_logs.lower() in {"on", "true", "1", "yes"},
     )
     fixed = request.app.state.login_ip_max_failures is not None
     try:

@@ -1,5 +1,6 @@
 """The Settings screens: who may open them, every tab, saving and what a saved value changes."""
 
+import html
 import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -46,6 +47,7 @@ SECURITY_FORM = {
     "api_ip_max_failures": "10",
     "lockout_minutes": "15",
     "min_password_length": "12",
+    "mask_container_logs": "on",
 }
 GENERAL_FORM = {
     "time_zone": "UTC",
@@ -172,6 +174,61 @@ async def test_saving_nothing_new_says_so_and_writes_nothing(
     response = await post(root, "/settings/security", SECURITY_FORM)
     assert toast_of(response.text) == ("Nothing to save", "The settings are unchanged.")
     assert await settings_entries(web_app) == []
+
+
+def mask_switch_of(page: str) -> tuple[str, bool]:
+    """The label of the container log masking switch and whether it is checked."""
+    found = re.search(
+        r'<input type="checkbox" name="mask_container_logs"([^>]*)><span>([^<]+)</span>', page
+    )
+    assert found is not None
+    return html.unescape(found.group(2)), " checked" in found.group(1)
+
+
+async def test_the_security_tab_offers_the_masking_of_the_container_logs_on_by_default(
+    root: httpx.AsyncClient,
+) -> None:
+    """The switch is on for a fresh installation and its note says what turning it off shows."""
+    page = (await root.get("/settings/security")).text
+    assert mask_switch_of(page) == ("Mask stored values in container logs", True)
+    assert "as the containers printed them" in page
+
+
+async def test_turning_the_masking_of_the_container_logs_off_and_on_is_stored_and_audited(
+    root: httpx.AsyncClient, web_app: FastAPI
+) -> None:
+    """An unchecked switch posts nothing, which is off; each change is one audit entry."""
+    form = {name: value for name, value in SECURITY_FORM.items() if name != "mask_container_logs"}
+    response = await post(root, "/settings/security", form)
+    assert response.status_code == 200
+    assert toast_of(response.text) == ("Security settings saved", "They apply now.")
+    assert mask_switch_of(response.text)[1] is False
+    assert (await stored(web_app)).security.mask_container_logs is False
+    assert mask_switch_of((await root.get("/settings/security")).text)[1] is False
+    (entry,) = await settings_entries(web_app)
+    assert entry.action == "settings.update" and entry.actor_name == "root"
+    assert entry.details == {
+        "section": "security",
+        "changes": [{"setting": "security.mask_container_logs", "old": True, "new": False}],
+    }
+    again = await post(root, "/settings/security", SECURITY_FORM)
+    assert mask_switch_of(again.text)[1] is True
+    assert (await stored(web_app)).security.mask_container_logs is True
+    last = (await settings_entries(web_app))[-1]
+    assert changes_of(last) == [
+        {"setting": "security.mask_container_logs", "old": False, "new": True}
+    ]
+
+
+async def test_a_refused_security_save_shows_the_masking_switch_as_typed(
+    root: httpx.AsyncClient, web_app: FastAPI
+) -> None:
+    """A refused save keeps the unchecked switch in the form and stores nothing."""
+    form = {name: value for name, value in SECURITY_FORM.items() if name != "mask_container_logs"}
+    response = await post(root, "/settings/security", {**form, "idle_timeout_minutes": "soon"})
+    assert response.status_code == 422
+    assert mask_switch_of(response.text)[1] is False
+    assert await stored_rows(web_app) == {}
 
 
 @pytest.mark.parametrize(

@@ -275,17 +275,23 @@ secret that must stay out of the logs. The values are opened once per request th
 lines (two versions of each file at most) and kept in memory for it; a poll that finds nothing
 new opens none.
 
+Turning the setting **Mask stored values in container logs** off (Settings, Security tab, on by
+default) shows the lines exactly as the containers printed them, in the box and in the download:
+values are not replaced, the text filter finds them, nothing is decrypted to read the logs, and
+the note above the filters says the values are not masked. The output of container actions and of
+post-deploy commands stays masked.
+
 Download saves the lines of the current chip, filter and **Show** as `deployment-<id>-logs.txt`
 (`-<service>` when a chip is chosen), one `stamp service text` per line, with the same masking.
 It reads Docker again, so it is the latest lines, not a copy of the box.
 
 What is recorded: opening the logs is an audit entry `deployment.logs_view` on the deployment
-with the service filter, the number of lines asked for and whether it was a download, never the
-lines or the text filter. The first read of the tab writes one entry per user, deployment and
-service filter within 10 minutes: opening the same filter again inside that time, typing in the
-text filter, changing **Show** and the polls that follow write nothing, while a chip for another
-service is a new filter and writes an entry. Every download writes its own entry. Nothing is
-stored and no line is written to the application's own log.
+with the service filter, the number of lines asked for, whether it was a download and whether the
+values were masked, never the lines or the text filter. The first read of the tab writes one
+entry per user, deployment and service filter within 10 minutes: opening the same filter again
+inside that time, typing in the text filter, changing **Show** and the polls that follow write
+nothing, while a chip for another service is a new filter and writes an entry. Every download
+writes its own entry. Nothing is stored and no line is written to the application's own log.
 
 ## Choosing a deployment path
 

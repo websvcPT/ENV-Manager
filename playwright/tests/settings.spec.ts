@@ -465,6 +465,44 @@ test.describe('security', () => {
       await restoreTimeouts(page);
     }
   });
+
+  test('turns the masking of the container logs off and on and leaves it on', async ({
+    page,
+    settingsLock: _lock,
+  }) => {
+    const form = page.locator('#security');
+    const mask = page.locator('#sc');
+    try {
+      await page.goto('/settings/security');
+      await expect(form.locator('[data-mask-container-logs]')).toContainText(
+        'Mask stored values in container logs',
+      );
+      await expect(mask).toBeChecked();
+      await mask.uncheck();
+      await form.locator('button[type="submit"]').click();
+      await expect(toast(form)).toContainText('Security settings saved');
+      await expect(page.locator('#sc')).not.toBeChecked();
+      await page.goto('/settings/security');
+      await expect(page.locator('#sc')).not.toBeChecked();
+      await page.goto('/audit?action=settings.update');
+      const first = page.locator('#audit-results tr[data-fragment="audit-row"]').first();
+      const details = first.locator('xpath=following-sibling::tr[1]');
+      await expect(details).toContainText('security.mask_container_logs');
+      await page.goto('/settings/security');
+      await page.locator('#sc').check();
+      await form.locator('button[type="submit"]').click();
+      await expect(toast(form)).toContainText('Security settings saved');
+      await expect(page.locator('#sc')).toBeChecked();
+    } finally {
+      await page.goto('/settings/security');
+      if (!(await page.locator('#sc').isChecked())) {
+        await page.locator('#sc').check();
+        await form.locator('button[type="submit"]').click();
+        await expect(toast(form)).toBeVisible();
+      }
+      await expect(page.locator('#sc')).toBeChecked();
+    }
+  });
 });
 
 test.describe('post-deploy without a Docker socket', () => {

@@ -1,4 +1,5 @@
-"""Reading the logs of a deployment's containers for the Logs tab, with its own values masked.
+"""Reading the logs of a deployment's containers for the Logs tab, with its own values masked
+(unless masking is switched off in the security settings).
 
 One read runs ``docker compose -p <project> logs --timestamps --no-color --tail <n>`` (``--since
 <cursor>`` after the first read) through ``run_docker_query``, which keeps standard error apart
@@ -14,7 +15,8 @@ they carry, so no linked Compose file is needed and none is read.
 - Every value of the deployment's files is replaced by a mask character before the lines are
   filtered, shortened or rendered, so the text filter never finds a value and a cut never leaves
   half of one. The scrubber (the newest and the previous version of every file) is built once per
-  read, and not at all when nothing was read. The lines are never stored and never logged.
+  read, and not at all when nothing was read. With masking off nothing is decrypted and the
+  lines are shown as the containers printed them. The lines are never stored and never logged.
 - Hard caps: the lines of one answer, the characters of one line (a marker ends a cut line) and
   the bytes read from Docker.
 """
@@ -205,10 +207,11 @@ async def read_logs(
     service: str | None = None,
     query: str = "",
     services: Sequence[str] = (),
+    mask: bool = True,
 ) -> LogRead:
     """Read the lines of the project after ``cursor`` (the last ``tail`` lines of each container
-    when there is none), masked, filtered by ``query`` (case-insensitive, on the masked text) and
-    sorted by time.
+    when there is none), masked unless ``mask`` is False, filtered by ``query`` (case-insensitive,
+    on the shown text) and sorted by time.
 
     ``cursor`` stays what it was when nothing newer was read. Raises ``LogsUnavailableError``
     when the project or Docker cannot be used and ``DockerQueryError`` when the read fails.
@@ -236,16 +239,20 @@ async def read_logs(
     parsed.sort(key=lambda line: line[0])
     if not parsed:
         return LogRead((), cursor)
-    scrubber = await load_scrubber(db, crypto, deployment.id, depth=CONTAINER_SCRUB_DEPTH)
+    scrubber = None
+    if mask:
+        scrubber = await load_scrubber(db, crypto, deployment.id, depth=CONTAINER_SCRUB_DEPTH)
     newest = parsed[-1][0]
     needle = query.strip().lower()
     lines: list[LogLine] = []
     for moment, name, text in parsed:
-        masked = scrubber.scrub_text(text.replace(MASK, "\ufffd"), MASK)
-        masked = cut_text(masked)
-        if needle and needle not in masked.replace(MASK, MASK_TEXT).lower():
+        shown = text.replace(MASK, "\ufffd")
+        if scrubber is not None:
+            shown = scrubber.scrub_text(shown, MASK)
+        shown = cut_text(shown)
+        if needle and needle not in shown.replace(MASK, MASK_TEXT).lower():
             continue
-        lines.append(LogLine(moment, name, masked, level_of(masked)))
+        lines.append(LogLine(moment, name, shown, level_of(shown)))
     omitted = max(0, len(lines) - limit) if cursor is not None else 0
     return LogRead(tuple(lines[len(lines) - min(limit, len(lines)) :]), newest, omitted)
 

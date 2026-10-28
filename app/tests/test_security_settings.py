@@ -25,7 +25,7 @@ from app.services.sessions import create_session, resolve_session
 from app.tests.auth_helpers import make_user
 
 
-def form(**overrides: str) -> SecurityForm:
+def form(**overrides: str | bool) -> SecurityForm:
     """A form with the default values, some replaced."""
     values = {**SecurityForm.from_settings(SecuritySettings()).__dict__, **overrides}
     return SecurityForm(**values)
@@ -204,3 +204,38 @@ async def test_a_session_that_already_ran_out_stays_ended_when_the_limit_is_rais
     wide = AuthPolicy(idle_timeout=timedelta(days=2), absolute_timeout=timedelta(hours=24))
     async with factory() as db:
         assert await resolve_session(db, token, wide) is None
+
+
+def test_the_container_logs_are_masked_by_default() -> None:
+    """A fresh installation masks them, and the form shows the switch on."""
+    assert SecuritySettings().mask_container_logs is True
+    assert form().mask_container_logs is True
+
+
+def test_the_masking_switch_is_read_from_the_form_as_a_boolean() -> None:
+    """The switch is not a number: it passes through and is never refused."""
+    for wanted in (True, False):
+        clean = validate_security(
+            form(mask_container_logs=wanted), stored=SecuritySettings(), address_limit_fixed=False
+        )
+        assert clean.mask_container_logs is wanted
+
+
+async def test_turning_the_masking_off_is_one_audited_change_and_leaves_sessions_alone(
+    engine: AsyncEngine,
+) -> None:
+    """Only the changed field is written and audited, and no session expiry is recomputed."""
+    narrow = AuthPolicy(idle_timeout=timedelta(days=2), absolute_timeout=timedelta(hours=1))
+    await make_session(engine, 10, narrow)
+    factory = create_session_factory(engine)
+    async with factory() as db:
+        before = (await db.execute(select(UserSession.expires_at))).scalar_one()
+        changes = await save_security(
+            db, replace(SecuritySettings(), mask_container_logs=False), actor=AuditActor.cli()
+        )
+        assert [(c.setting, c.old, c.new) for c in changes] == [
+            ("security.mask_container_logs", True, False)
+        ]
+    async with factory() as db:
+        assert (await db.execute(select(UserSession.expires_at))).scalar_one() == before
+        assert (await load_stored_settings(db)).security.mask_container_logs is False

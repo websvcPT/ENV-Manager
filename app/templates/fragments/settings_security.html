@@ -2,8 +2,8 @@
     fields (422); a stored save swaps it with a toast. Context: form (SecurityForm), errors
     (messages by field), saved (none, or tone, title and message of a toast) and
     address_limit_fixed (the startup override sets the sign-in limit per address, so its field is
-    shown and not editable). -#}
-{% from "macros/forms.html" import field, form_actions %}
+    shown and not editable). The mask switch posts "on" when checked and nothing when not. -#}
+{% from "macros/forms.html" import checkbox, field, form_actions %}
 <form id="security" data-fragment="security" hx-post="/settings/security" hx-target="this" hx-swap="outerHTML" class="flex flex-col gap-4 px-4 pb-5 md:px-5">
 <div class="grid gap-4 md:grid-cols-2">
 {{ field("si", "Idle session timeout (minutes)", name="idle_timeout_minutes", value=form.idle_timeout_minutes, mono=true, error=errors.get("idle_timeout_minutes"), inputmode="numeric", autocomplete="off") }}
@@ -13,6 +13,10 @@
 {{ field("sk", "Failed API attempts per address before lockout", name="api_ip_max_failures", value=form.api_ip_max_failures, mono=true, error=errors.get("api_ip_max_failures"), inputmode="numeric", autocomplete="off") }}
 {{ field("sm", "Lockout duration (minutes)", name="lockout_minutes", value=form.lockout_minutes, mono=true, error=errors.get("lockout_minutes"), inputmode="numeric", autocomplete="off") }}
 {{ field("sp", "Minimum password length", name="min_password_length", value=form.min_password_length, mono=true, error=errors.get("min_password_length"), inputmode="numeric", autocomplete="off") }}
+</div>
+<div class="flex flex-col gap-1.5" data-mask-container-logs>
+{{ checkbox("mask_container_logs", "Mask stored values in container logs", checked=form.mask_container_logs, id="sc") }}
+<p class="pl-7 text-xs text-ink2">The Logs tab of a deployment and its download replace every value stored in the deployment's files with a mask. Off, they show the lines as the containers printed them, secrets included.</p>
 </div>
 <div class="min-w-0" data-two-factor-policy><p class="mb-1 text-[13px] font-semibold">Two-factor authentication policy</p><p class="font-semibold">Optional</p><p class="mt-1 text-xs text-ink2">Users can enable TOTP in their account.</p></div>
 {{ form_actions(saved) }}

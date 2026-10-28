@@ -31,6 +31,7 @@ from app.services.docker_query import FAILED_MESSAGE, TOO_LARGE_MESSAGE
 from app.tests.conftest import sign_in
 from app.tests.fake_docker import FakeDocker
 from app.tests.runtime_helpers import BEHAVIOR, LOGS_CASE, log_row, say_logs, serve, serve_logs
+from app.tests.settings_helpers import set_log_masking
 from app.tests.web_helpers import HTMX, add_version, environment_ids, stage_deployments
 
 PROJECT = "fancy"
@@ -196,11 +197,14 @@ def test_error_and_warning_lines_are_told_apart(text: str, level: str) -> None:
         ("ungranted_admin", 404),
     ],
 )
+@pytest.mark.parametrize("masked", [True, False])
 async def test_who_may_open_the_logs(
-    web_client: httpx.AsyncClient, logs: Logs, user: str, code: int
+    web_client: httpx.AsyncClient, logs: Logs, user: str, code: int, masked: bool
 ) -> None:
-    """A project or a deployment grant is needed: the admin who reaches the deployment through a
-    file only is refused, the viewer too, and a deployment the caller cannot see is not there."""
+    """A project or a deployment grant is needed, with the masking on or off: the admin who reaches
+    the deployment through a file only is refused, the viewer too, and a deployment the caller
+    cannot see is not there."""
+    await set_log_masking(logs.app, masked)
     logs.say(log_row("mysql-1", FIRST, "hello"))
     await sign_in(web_client, user)
     base = f"/deployments/{logs.prod}/logs"
@@ -316,7 +320,7 @@ async def test_the_first_read_asks_for_the_tail_of_each_container_and_is_audited
     assert 'id="log-follow"' in answered.text and 'id="log-download"' in answered.text
     (entry,) = await audited(logs.app)
     assert entry.result is AuditResult.SUCCESS and entry.deployment_id == logs.prod
-    assert entry.details == {"service": None, "tail": 200, "download": False}
+    assert entry.details == {"service": None, "tail": 200, "download": False, "masked": True}
 
 
 async def test_a_poll_asks_since_the_cursor_gets_only_newer_lines_and_is_not_audited(
@@ -406,7 +410,7 @@ async def test_a_service_filter_names_the_service_to_docker(
     assert logs.log_calls()[0][-1] == "web" and lines_of(answered.text) == ["only web"]
     assert 'name="service" value="web"' in answered.text
     (entry,) = await audited(logs.app)
-    assert entry.details == {"service": "web", "tail": 200, "download": False}
+    assert entry.details == {"service": "web", "tail": 200, "download": False, "masked": True}
 
 
 @pytest.mark.parametrize("service", ["-rf", "a b", "../x", "x;y", "--tail"])
@@ -666,7 +670,7 @@ async def test_the_download_is_a_masked_text_file_that_is_never_stored_by_a_cach
     assert SECRET not in answered.text and MASK not in answered.text
     assert "--tail" in logs.log_calls()[0] and "1000" in logs.log_calls()[0]
     (entry,) = await audited(logs.app)
-    assert entry.details == {"service": None, "tail": 1000, "download": True}
+    assert entry.details == {"service": None, "tail": 1000, "download": True, "masked": True}
 
 
 async def test_the_download_of_a_service_names_it_and_a_failed_read_is_a_409_with_no_entry(
@@ -783,7 +787,7 @@ async def test_a_text_filter_or_a_line_count_never_adds_an_entry(
         answered = await web_client.get(f"{logs.lines_url()}?{query}", headers=HTMX)
         assert answered.status_code == 200
     (entry,) = await audited(logs.app)
-    assert entry.details == {"service": None, "tail": 200, "download": False}
+    assert entry.details == {"service": None, "tail": 200, "download": False, "masked": True}
     assert len(logs.log_calls()) == 5
 
 
@@ -818,3 +822,67 @@ async def test_another_user_opening_the_same_filter_adds_an_entry_of_their_own(
     await web_client.get(logs.lines_url(), headers=HTMX)
     entries = await audited(logs.app)
     assert len(entries) == 2 and entries[0].actor_user_id != entries[1].actor_user_id
+
+
+async def test_with_masking_off_the_box_shows_the_lines_as_the_containers_printed_them(
+    web_client: httpx.AsyncClient, logs: Logs
+) -> None:
+    await add_version(logs.app, (await environment_ids(logs.app)).db, f"DB_PASSWORD={SECRET}\n")
+    logs.say(
+        log_row("mysql-1", FIRST, f"login {SECRET} and again {SECRET}!")
+        + log_row("web-1", SECOND, f"private use {MASK} character")
+    )
+    await set_log_masking(logs.app, False)
+    await sign_in(web_client, "root")
+    answered = await web_client.get(logs.lines_url(), headers=HTMX)
+    assert lines_of(answered.text) == [
+        f"login {SECRET} and again {SECRET}!",
+        "private use � character",
+    ]
+    assert "data-log-mask" not in answered.text and "[masked]" not in answered.text
+    found = await web_client.get(logs.lines_url(q=SECRET), headers=HTMX)
+    assert services_of(found.text) == ["mysql"]
+
+
+async def test_with_masking_off_the_download_is_in_the_clear_and_the_entry_says_so(
+    web_client: httpx.AsyncClient, logs: Logs
+) -> None:
+    await add_version(logs.app, (await environment_ids(logs.app)).db, f"DB_PASSWORD={SECRET}\n")
+    logs.say(log_row("web-1", SECOND, f"token {SECRET}") + log_row("web-1", THIRD, "bye"))
+    await set_log_masking(logs.app, False)
+    await sign_in(web_client, "root")
+    answered = await web_client.get(f"/deployments/{logs.prod}/logs/download")
+    assert answered.status_code == 200
+    assert answered.text == f"{SECOND} web token {SECRET}\n{THIRD} web bye\n"
+    assert answered.headers["cache-control"] == "no-store"
+    (entry,) = await audited(logs.app)
+    assert entry.details == {"service": None, "tail": 200, "download": True, "masked": False}
+
+
+async def test_with_masking_off_the_first_read_entry_says_so_and_holds_no_line(
+    web_client: httpx.AsyncClient, logs: Logs
+) -> None:
+    await add_version(logs.app, (await environment_ids(logs.app)).db, f"DB_PASSWORD={SECRET}\n")
+    logs.say(log_row("web-1", FIRST, f"secret line {SECRET}"))
+    await set_log_masking(logs.app, False)
+    await sign_in(web_client, "root")
+    first = await web_client.get(logs.lines_url(), headers=HTMX)
+    await web_client.get(logs.lines_url(cursor=cursor_of(first.text)), headers=HTMX)
+    (entry,) = await audited(logs.app)
+    assert entry.details == {"service": None, "tail": 200, "download": False, "masked": False}
+    assert SECRET not in f"{entry.details} {entry.target_name}"
+
+
+async def test_the_note_of_the_tab_says_whether_the_values_are_masked(
+    web_client: httpx.AsyncClient, logs: Logs
+) -> None:
+    await sign_in(web_client, "root")
+    masked = (await web_client.get(f"/deployments/{logs.prod}/logs")).text
+    assert "are masked in the output" in masked and "not masked" not in masked
+    await set_log_masking(logs.app, False)
+    clear = (await web_client.get(f"/deployments/{logs.prod}/logs")).text
+    assert "are not masked: the output shows the lines as the containers printed them." in clear
+    assert "are masked in the output" not in clear and "recorded in the audit log" in clear
+    await set_log_masking(logs.app, True)
+    again = (await web_client.get(f"/deployments/{logs.prod}/logs")).text
+    assert "are masked in the output" in again and "not masked" not in again

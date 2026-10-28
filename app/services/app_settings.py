@@ -55,7 +55,8 @@ SECRET_KEYS: frozenset[str] = frozenset(
 
 @dataclass(frozen=True)
 class SecuritySettings:
-    """Session timeouts, lockout limits and the password rule."""
+    """Session timeouts, lockout limits, the password rule and whether the container logs are
+    masked."""
 
     idle_timeout_minutes: int = 30
     absolute_timeout_hours: int = 12
@@ -64,6 +65,7 @@ class SecuritySettings:
     api_ip_max_failures: int = 10
     lockout_minutes: int = 15
     min_password_length: int = 12
+    mask_container_logs: bool = True
 
 
 @dataclass(frozen=True)

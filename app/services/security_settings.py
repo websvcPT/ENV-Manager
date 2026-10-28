@@ -59,6 +59,7 @@ class SecurityForm:
     api_ip_max_failures: str
     lockout_minutes: str
     min_password_length: str
+    mask_container_logs: bool
 
     @classmethod
     def from_settings(cls, settings: SecuritySettings) -> SecurityForm:
@@ -71,6 +72,7 @@ class SecurityForm:
             api_ip_max_failures=str(settings.api_ip_max_failures),
             lockout_minutes=str(settings.lockout_minutes),
             min_password_length=str(settings.min_password_length),
+            mask_container_logs=settings.mask_container_logs,
         )
 
 
@@ -118,7 +120,7 @@ def validate_security(
         errors["idle_timeout_minutes"] = IDLE_LONGER_MESSAGE
     if errors:
         raise SecurityFormError(errors)
-    return SecuritySettings(**values)
+    return SecuritySettings(**values, mask_container_logs=form.mask_container_logs)
 
 
 async def apply_absolute_timeout(

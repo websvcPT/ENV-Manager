@@ -28,6 +28,7 @@ from app.core.client_address import client_address
 from app.core.crypto import CryptoService
 from app.core.templating import render
 from app.models import AuditResult, Deployment
+from app.services.app_settings import StoredSettings
 from app.services.audit import AuditActor, record_actor_audit
 from app.services.container_logs import (
     DEFAULT_TAIL,
@@ -46,7 +47,13 @@ from app.services.docker_cli import DockerCli
 from app.services.docker_query import DockerQueryError
 from app.services.permissions import Capability
 from app.services.stack_runtime import RuntimeState, load_stack_runtime
-from app.web.dependencies import get_clock, get_crypto, get_db, get_docker_cli
+from app.web.dependencies import (
+    get_clock,
+    get_crypto,
+    get_db,
+    get_docker_cli,
+    get_stored_settings,
+)
 from app.web.deployments import DeploymentContext, deployment_access, page_context
 
 router = APIRouter()
@@ -55,6 +62,7 @@ PAGE = "pages/deployment_logs.html"
 LINES_FRAGMENT = "fragments/log_lines.html"
 READ_FAILED_PREFIX = "The logs could not be read: "
 Viewer = Annotated[DeploymentContext, Depends(deployment_access(Capability.VIEW_CONTAINER_LOGS))]
+Stored = Annotated[StoredSettings, Depends(get_stored_settings)]
 
 
 @dataclass(frozen=True)
@@ -112,10 +120,12 @@ async def _audit_view(
     params: LogParams,
     *,
     download: bool,
+    masked: bool,
     now: datetime,
 ) -> None:
-    """Record that the logs were opened: the service filter, the line count and whether it was a
-    download. The lines and the text filter are not recorded."""
+    """Record that the logs were opened: the service filter, the line count, whether it was a
+    download and whether the values were masked. The lines and the text filter are not
+    recorded."""
     await record_actor_audit(
         db,
         AuditActor.for_user(access.auth.user, client_address(request)),
@@ -126,7 +136,12 @@ async def _audit_view(
         target_name=deployment.name,
         project_id=deployment.project_id,
         deployment_id=deployment.id,
-        details={"service": params.service, "tail": params.tail, "download": download},
+        details={
+            "service": params.service,
+            "tail": params.tail,
+            "download": download,
+            "masked": masked,
+        },
         created_at=now,
     )
     await db.commit()
@@ -138,6 +153,7 @@ async def logs_tab(
     access: Viewer,
     db: Annotated[AsyncSession, Depends(get_db)],
     cli: Annotated[DockerCli, Depends(get_docker_cli)],
+    stored: Stored,
     service: str = "",
     q: str = "",
     tail: str = "",
@@ -166,6 +182,7 @@ async def logs_tab(
             services=services,
             params=params,
             tail_choices=TAIL_CHOICES,
+            masked=stored.security.mask_container_logs,
         ),
     )
 
@@ -178,6 +195,7 @@ async def log_lines(
     cli: Annotated[DockerCli, Depends(get_docker_cli)],
     crypto: Annotated[CryptoService, Depends(get_crypto)],
     clock: Annotated[Callable[[], datetime], Depends(get_clock)],
+    stored: Stored,
     service: str = "",
     q: str = "",
     tail: str = "",
@@ -191,6 +209,7 @@ async def log_lines(
     of line count does not write an entry of its own. A read that fails is a notice."""
     params = log_params(service, q, tail)
     moment = log_cursor(cursor)
+    masked = stored.security.mask_container_logs
     deployment = await _stored(db, access)
     notice = None
     read = LogRead((), moment)
@@ -204,6 +223,7 @@ async def log_lines(
             cursor=moment,
             service=params.service,
             query=params.query,
+            mask=masked,
         )
     except (LogsUnavailableError, DockerQueryError) as failed:
         notice = READ_FAILED_PREFIX + failed.message
@@ -212,7 +232,9 @@ async def log_lines(
         now = clock()
         user_id = access.auth.user.id
         if not await opened_recently(db, user_id, deployment.id, params.service, now):
-            await _audit_view(db, request, access, deployment, params, download=False, now=now)
+            await _audit_view(
+                db, request, access, deployment, params, download=False, masked=masked, now=now
+            )
     return render(
         request,
         LINES_FRAGMENT,
@@ -238,12 +260,14 @@ async def log_download(
     cli: Annotated[DockerCli, Depends(get_docker_cli)],
     crypto: Annotated[CryptoService, Depends(get_crypto)],
     clock: Annotated[Callable[[], datetime], Depends(get_clock)],
+    stored: Stored,
     service: str = "",
     q: str = "",
     tail: str = "",
 ) -> Response:
-    """The lines of the applied filter as a text file, masked like the box, always audited. A
-    read that fails is a 409 with the reason as text."""
+    """The lines of the applied filter as a text file, masked like the box (or as printed when
+    masking is off), always audited. A read that fails is a 409 with the reason as text."""
+    masked = stored.security.mask_container_logs
     params = log_params(service, q, tail)
     deployment = await _stored(db, access)
     headers = {"Cache-Control": "no-store", "Vary": "HX-Request"}
@@ -256,6 +280,7 @@ async def log_download(
             tail=params.tail,
             service=params.service,
             query=params.query,
+            mask=masked,
         )
     except (LogsUnavailableError, DockerQueryError) as failed:
         return Response(
@@ -264,7 +289,9 @@ async def log_download(
             media_type="text/plain",
             headers=headers,
         )
-    await _audit_view(db, request, access, deployment, params, download=True, now=clock())
+    await _audit_view(
+        db, request, access, deployment, params, download=True, masked=masked, now=clock()
+    )
     body = "".join(f"{line.stamp} {line.service} {line.plain}\n" for line in read.lines)
     suffix = f"-{params.service}" if params.service else ""
     name = f"deployment-{deployment.id}-logs{suffix}.txt"

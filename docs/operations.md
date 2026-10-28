@@ -246,7 +246,8 @@ they are unavailable, with the reason on the page, while the socket is not usabl
 The superadmin and admins whose grant covers the whole deployment may use the actions and the
 logs, every use is in the audit log (`container.*`, `deployment.logs_view`) and neither the output
 of an action nor a log line is ever stored. The values of a deployment's files, the newest and the
-previous version of each, are replaced in that output before it is shown.
+previous version of each, are replaced in that output before it is shown. The Logs tab can be
+set to show the lines as printed (Settings, Security tab); the output of the actions never is.
 
 ## Docker scratch folder
 

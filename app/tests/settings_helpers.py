@@ -4,6 +4,7 @@ import html
 import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from dataclasses import replace
 
 import httpx
 from fastapi import FastAPI
@@ -11,7 +12,8 @@ from sqlalchemy import select
 
 from app.models import AppSetting, AuditEntry
 from app.models.app_setting import KEY_CHECK_SETTING
-from app.services.app_settings import StoredSettings, load_stored_settings
+from app.services.app_settings import StoredSettings, load_stored_settings, save_section
+from app.services.audit import AuditActor
 from app.tests.conftest import sign_in
 
 TABS = (
@@ -124,3 +126,16 @@ async def stored_rows(web_app: FastAPI) -> dict[str, str]:
     async with web_app.state.session_factory() as db:
         rows = (await db.execute(select(AppSetting.key, AppSetting.value))).all()
     return {key: value for key, value in rows if key != KEY_CHECK_SETTING}
+
+
+async def set_log_masking(web_app: FastAPI, masked: bool) -> None:
+    """Store whether the container logs are masked, as the Security tab would."""
+    async with web_app.state.session_factory() as db:
+        current = (await load_stored_settings(db)).security
+        await save_section(
+            db,
+            "security",
+            replace(current, mask_container_logs=masked),
+            actor=AuditActor.system("test"),
+        )
+        await db.commit()

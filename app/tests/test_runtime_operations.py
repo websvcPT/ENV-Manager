@@ -46,6 +46,7 @@ from app.tests.dist_helpers import link_dist
 from app.tests.fake_docker import FakeDocker
 from app.tests.grant_helpers import count_statements
 from app.tests.runtime_helpers import BEHAVIOR, inspect_entry, log_row, ps_entry, serve, serve_logs
+from app.tests.settings_helpers import set_log_masking
 from app.tests.web_helpers import HTMX, post, stage_deployments
 
 STRUCTURE_LOAD = "SELECT projects.id, NULL AS anon_1"
@@ -580,3 +581,34 @@ async def test_the_logs_tab_and_its_lines_run_few_statements_and_open_each_value
     )
     assert status == 200 and len(quiet) <= LOGS_POLL_LIMIT, len(quiet)
     assert len(counting.opened) == 2 * opened
+
+
+async def test_the_lines_of_the_logs_decrypt_nothing_while_the_masking_is_off(
+    web_app: FastAPI, web_client: httpx.AsyncClient, ids: Ids, tmp_path: Path
+) -> None:
+    """With the masking off a first read, a poll and a download open no version at all, and the
+    settings are still read once per request."""
+    fake = FakeDocker(tmp_path / "fake-logs-clear")
+    serve_logs(fake, log_row("mysql-1", "2026-10-27T10:00:01.000000100Z", "hello"))
+    web_app.state.docker_cli = fake.cli()
+    counting = CountingCrypto(web_app.state.crypto)
+    web_app.state.crypto = counting
+    async with web_app.state.session_factory() as db:
+        deployment = await db.get(Deployment, ids.deployment)
+        assert deployment is not None
+        deployment.compose_project = "fancy"
+        await db.commit()
+    await set_log_masking(web_app, False)
+    await sign_in(web_client, "root")
+    url = f"/deployments/{ids.deployment}/logs"
+
+    status, first = await measure(web_app, web_client.get(f"{url}/lines", headers=HTMX))
+    assert status == 200 and len(first) <= LOGS_LINES_LIMIT, len(first)
+    assert settings_reads(first) <= 1
+    status, poll = await measure(
+        web_app, web_client.get(f"{url}/lines?cursor=2026-10-27T10:00:00Z", headers=HTMX)
+    )
+    assert status == 200 and len(poll) <= LOGS_POLL_LIMIT, len(poll)
+    assert settings_reads(poll) <= 1
+    assert (await web_client.get(f"{url}/download")).status_code == 200
+    assert counting.opened == []

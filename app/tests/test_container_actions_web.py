@@ -41,6 +41,7 @@ from app.services.versions import create_version
 from app.tests.conftest import sign_in
 from app.tests.fake_docker import CAPTURE_CONFIG, FakeDocker
 from app.tests.runtime_helpers import BEHAVIOR, inspect_entry, ps_entry, serve
+from app.tests.settings_helpers import set_log_masking
 from app.tests.web_helpers import HTMX, environment_ids, events_of, post, stage_deployments
 
 PROJECT = "fancy"
@@ -686,3 +687,27 @@ async def test_a_compose_service_without_a_stored_service_can_be_controlled_too(
     answered = await post(web_client, stack.path("redis", "restart"))
     assert answered.status_code == 200
     assert stack.action_calls() == [("compose", "-p", PROJECT, "restart", "redis")]
+
+
+async def test_the_output_of_a_failed_command_stays_masked_while_the_logs_masking_is_off(
+    web_client: httpx.AsyncClient, stack: Stack
+) -> None:
+    """The setting is for the Logs tab only: the failure output of an action is still scrubbed."""
+    async with stack.app.state.session_factory() as db:
+        admin = await db.scalar(select(User).where(User.name == "root"))
+        assert admin is not None
+        await create_version(
+            db,
+            stack.app.state.crypto,
+            (await environment_ids(stack.app)).db,
+            f"DB_PASSWORD={SECRET}\n",
+            author=admin,
+        )
+        await db.commit()
+    await set_log_masking(stack.app, False)
+    await link_files(stack)
+    behave(stack.fake, code=3, script=f'    echo "bad value {SECRET}" >&2\n')
+    await sign_in(web_client, "root")
+    answered = await post(web_client, stack.path("mysql", "recreate"))
+    assert "bad value ****" in text_of(answered.text)
+    assert SECRET not in answered.text

@@ -13,7 +13,7 @@ secret, trusted proxies and allowed sources stay in environment variables (see
 | Tab | Content |
 | --- | --- |
 | Allowed paths | The list with mounted and writable status and the deployments under each entry, add with a live check, remove behind a confirm dialog. |
-| Security | Idle and absolute session timeouts, failed logins before lockout per user, per address and for the API per address, lockout duration, minimum password length, and the two-factor policy (Optional, shown read-only). |
+| Security | Idle and absolute session timeouts, failed logins before lockout per user, per address and for the API per address, lockout duration, minimum password length, whether the container logs are masked, and the two-factor policy (Optional, shown read-only). |
 | Single sign-on | Sign in through an OpenID Connect provider: issuer, client ID and secret, account management URL, roles claim, the redirect URI to register, the group mapping rows, whether accounts are created or linked at sign in, and Test discovery. |
 | Post-deploy | The Docker socket status and the switch for post-deploy commands. |
 | Registries | The Docker registry logins post-deploy commands pull private images with (host, username, token): add, edit and remove in dialogs, and Test login. |
@@ -37,6 +37,12 @@ secret, trusted proxies and allowed sources stay in environment variables (see
   already open. The failure window (15 minutes) is not a setting. The sign-in limit per address
   can be fixed by `ENVMANAGER_LOGIN_IP_MAX_FAILURES` (development and testing only): while it is
   set its field shows that value and cannot be edited, and the stored value is kept.
+  *Mask stored values in container logs* (on by default) decides whether the Logs tab of a
+  deployment and its download replace the values of the deployment's files with a mask. Turned
+  off, they show the lines exactly as the containers printed them, secrets included, and no
+  version is decrypted to read them; the output of container actions and of post-deploy commands
+  is masked either way. It applies to the next read and is audited as `settings.update`. It sits
+  in this tab because it decides whether secrets may leave the application in clear text.
 - **Single sign-on.** One form with three panels. **Identity provider:** the switch *Sign in with
   SSO is on*, the issuer URL (an http or https address with no query or fragment, for example
   `https://sso.example.com/realms/main`), the client ID, the client secret, the account

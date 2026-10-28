@@ -3,7 +3,7 @@
     Following and Paused, Download) and the log box, which asks for its lines when the page is
     shown. Without a project, a usable Docker or a container the tab says so instead. Context:
     deployment (a DeploymentDetail), state, ready, reason, project, services, params (the applied
-    filter), tail_choices, can_manage_structure. -#}
+    filter), tail_choices, masked (whether the output is masked), can_manage_structure. -#}
 {% extends "layouts/deployment.html" %}
 {% from "macros/feedback.html" import empty_state, note %}
 {% from "macros/icons.html" import icon %}
@@ -18,7 +18,7 @@
 {%- elif state == "empty" %}
 <div class="overflow-hidden rounded-panel border border-line bg-surface shadow-panel" data-logs-state="empty">{{ empty_state("No containers yet" if not project else "No containers in " ~ project, "Docker has no container for this stack on this host. Their logs appear here once the stack is started.", "layers") }}</div>
 {%- else %}
-{{ note("Values stored in this deployment's files are masked in the output. Opening logs is recorded in the audit log.") }}
+{{ note(("Values stored in this deployment's files are masked in the output." if masked else "Values stored in this deployment's files are not masked: the output shows the lines as the containers printed them.") ~ " Opening logs is recorded in the audit log.") }}
 {% set control_classes = "h-11 md:h-ctl rounded-ctl border border-line-strong bg-surface px-3 text-sm text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus" %}
 <form id="log-form" action="/deployments/{{ deployment.id }}/logs" method="get" role="search" hx-get="/deployments/{{ deployment.id }}/logs/lines" hx-target="#log-poller" hx-swap="outerHTML" hx-trigger="input changed delay:400ms from:#log-q, change from:#log-chips, change from:#log-tail, submit" hx-sync="#log-poller:replace" class="flex flex-col gap-3">
 <fieldset id="log-chips" class="flex flex-wrap gap-2"><legend class="sr-only">Service</legend>
