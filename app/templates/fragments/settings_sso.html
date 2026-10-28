@@ -54,7 +54,7 @@
 <div class="flex flex-col gap-4 px-4 pb-5 md:px-5">
 <div class="flex flex-col gap-1.5">
 {{ checkbox("create_users", "Create the account at the first sign in", checked=form.create_users) }}
-<p class="pl-7 text-xs text-ink2">Name, email and group come from SSO. The new account has no grants yet: it sees an empty project list until a superadmin grants access.</p>
+<p class="pl-7 text-xs text-ink2">Only for an email the provider has verified. Name, email and group come from SSO. The new account has no grants yet: it sees an empty project list until a superadmin grants access.</p>
 </div>
 <div class="flex flex-col gap-1.5">
 {{ checkbox("link_by_email", "Link an existing account by its email", checked=form.link_by_email) }}

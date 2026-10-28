@@ -23,6 +23,7 @@ from app.services.notify_events import NotificationEvent, UserChange, UserChange
 from app.services.sso_refusal import (
     ALREADY_LINKED,
     CREATION_OFF,
+    CREATION_UNVERIFIED,
     EMAIL_COLLISION,
     EMAIL_MISSING,
     EMAIL_UNVERIFIED,
@@ -238,7 +239,17 @@ async def test_an_account_linked_to_another_identity_is_not_taken_over(world: Wo
     assert identity.subject == "somebody-else"
 
 
-async def test_an_unverified_email_creates_an_account_when_none_exists(world: World) -> None:
+async def test_an_unverified_email_never_creates_an_account(world: World) -> None:
+    for verified in (False, None, "true", 1):
+        assert await _refusal(world, changes={"email_verified": verified}) == CREATION_UNVERIFIED
+    assert await _user(world) is None and await _identities(world) == []
+    assert await _entries(world, "user.create") == []
+
+
+async def test_a_linked_account_signs_in_although_the_email_is_no_longer_verified(
+    world: World,
+) -> None:
+    await world.sign_in()
     result = await world.sign_in(changes={"email_verified": False})
     assert result.status is LoginStatus.SUCCESS
 

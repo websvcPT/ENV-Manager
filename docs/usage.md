@@ -487,12 +487,14 @@ the session starts exactly as after a password sign in. Two-factor of ENV Manage
 this path: the provider is the one that checks the person. Signing out ends the ENV Manager
 session only, not the one at the provider.
 
-An account is created at its first SSO sign in when the settings allow it, with no grants (a
-superadmin gives them afterwards); a person who has no role that maps to a group, or whose
-account is disabled here, is refused. The card then shows one fixed sentence for the reason, never
-text from the provider, and the audit log records the failed sign in with its reason. Refused SSO
-sign ins count on the same per client address lockout as wrong passwords: while the address is
-locked, the sign-in link and the callback both answer with the locked message.
+An account is created at its first SSO sign in when the settings allow it and the provider
+says the person's email is verified, with no grants (a superadmin gives them afterwards). A
+person whose email is not verified (no account is created and none is linked), who has no role
+that maps to a group, or whose account is disabled here, is refused. The card then shows
+one fixed sentence for the reason, never text from the provider, and the audit log records the
+failed sign in with its reason. Refused SSO sign ins count on the same per client address lockout
+as wrong passwords: while the address is locked, the sign-in link and the callback both answer
+with the locked message.
 
 **Password sign in** stays behind **Sign in with password** on the card and works for
 superadmin accounts only (with their ENV Manager two-factor, if on). The card does not say so,

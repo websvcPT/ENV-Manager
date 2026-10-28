@@ -326,6 +326,12 @@ async def _unverified(
     )
 
 
+async def _unverified_new(
+    http: httpx.AsyncClient, world: World, app: FastAPI, query: dict[str, list[str]]
+) -> httpx.Response:
+    return await come_back(http, world, query, changes={"email_verified": False})
+
+
 async def _no_linking(
     http: httpx.AsyncClient, world: World, app: FastAPI, query: dict[str, list[str]]
 ) -> httpx.Response:
@@ -359,6 +365,7 @@ REFUSALS: list[tuple[str, int, Scenario]] = [
     (reasons.USER_DISABLED, 401, _disabled),
     (reasons.CREATION_OFF, 401, _no_creation),
     (reasons.EMAIL_UNVERIFIED, 401, _unverified),
+    (reasons.CREATION_UNVERIFIED, 401, _unverified_new),
     (reasons.LINK_OFF, 401, _no_linking),
     (reasons.ALREADY_LINKED, 401, _linked_elsewhere),
     (reasons.EMAIL_COLLISION, 401, _email_taken),

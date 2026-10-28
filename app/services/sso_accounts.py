@@ -15,6 +15,7 @@ from app.services.sso_claims import FALLBACK_NAME, SsoClaims, group_for
 from app.services.sso_refusal import (
     ALREADY_LINKED,
     CREATION_OFF,
+    CREATION_UNVERIFIED,
     EMAIL_COLLISION,
     EMAIL_UNVERIFIED,
     LINK_OFF,
@@ -81,6 +82,8 @@ async def _account_to_sign_in(
         if user is None:
             if not settings.create_users:
                 raise SsoRefusal(CREATION_OFF)
+            if not claims.email_verified:
+                raise SsoRefusal(CREATION_UNVERIFIED)
         else:
             if not claims.email_verified:
                 raise SsoRefusal(EMAIL_UNVERIFIED)

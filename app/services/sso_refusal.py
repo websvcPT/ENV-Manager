@@ -20,6 +20,7 @@ NO_MATCHING_ROLE = "no_matching_role"
 USER_DISABLED = "user_disabled"
 CREATION_OFF = "creation_off"
 EMAIL_UNVERIFIED = "email_unverified"
+CREATION_UNVERIFIED = "creation_unverified"
 LINK_OFF = "link_off"
 ALREADY_LINKED = "already_linked"
 EMAIL_COLLISION = "email_collision"
@@ -41,6 +42,10 @@ MESSAGES: dict[str, str] = {
     EMAIL_UNVERIFIED: (
         "An account with your email address exists, but the identity provider has not "
         "verified the address."
+    ),
+    CREATION_UNVERIFIED: (
+        "No account exists for you here yet, and the identity provider has not verified your "
+        "email address, so one is not created."
     ),
     LINK_OFF: (
         "An account with your email address exists, but it is not linked to the identity provider."

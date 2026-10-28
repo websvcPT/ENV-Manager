@@ -54,8 +54,8 @@ secret, trusted proxies and allowed sources stay in environment variables (see
   are tried in their order and the first one that matches a role the person has decides their
   group at every sign in; with no match the sign in is refused. Add mapping and the remove
   button of a row change the rows on the server and keep what else is typed. **Accounts:** whether
-  an account is created at the first sign in (with no grants) and whether an existing account is
-  linked by its email, which also needs the provider to say the email is verified. The sign in
+  an account is created at the first sign in (with no grants, and only when the provider says the
+  email is verified) and whether an existing account is linked by its email, which also needs the provider to say the email is verified. The sign in
   itself is described under [Signing in with SSO](usage.md#signing-in-with-sso).
   *Test discovery* fetches the discovery document and the signing keys of the issuer typed in the
   field (the stored one when it is empty) and shows how many keys the provider publishes, or the
@@ -135,8 +135,8 @@ In the Keycloak admin console, in the realm people already sign in to:
    client.
 5. **Email and name.** The default `email` and `profile` scopes already send `email`,
    `email_verified`, `name` and `preferred_username`. A person whose email is not verified in
-   Keycloak is never linked to an existing ENV Manager account, but an account is still created
-   for them when none has that address. So keep *Email verified* on for your users and
+   Keycloak is neither linked to an existing ENV Manager account nor given a new one (the sign in
+   is refused with a fixed sentence). So keep *Email verified* on for your users and
    *User registration* off in the realm, so nobody can make themselves an account that a role
    then lets in.
 
