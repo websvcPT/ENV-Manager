@@ -13,8 +13,8 @@ they carry, so no linked Compose file is needed and none is read.
   interleaves the containers as they print, not in order.
 - Every value of the deployment's files is replaced by a mask character before the lines are
   filtered, shortened or rendered, so the text filter never finds a value and a cut never leaves
-  half of one. The scrubber is built once per read, and not at all when nothing was read. The
-  lines are never stored and never logged.
+  half of one. The scrubber (the newest and the previous version of every file) is built once per
+  read, and not at all when nothing was read. The lines are never stored and never logged.
 - Hard caps: the lines of one answer, the characters of one line (a marker ends a cut line) and
   the bytes read from Docker.
 """
@@ -23,16 +23,17 @@ import re
 import zlib
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.crypto import CryptoService
-from app.models import Deployment
+from app.models import AuditEntry, Deployment
 from app.services.compose_project import is_compose_project_name
 from app.services.docker_cli import DockerCli
 from app.services.docker_query import run_docker_query
-from app.services.scrub_values import load_scrubber
+from app.services.scrub_values import CONTAINER_SCRUB_DEPTH, load_scrubber
 from app.services.stack_discovery import NOT_USABLE_REASON
 
 MASK = "\ue000"
@@ -46,6 +47,9 @@ READ_BYTES = 4 * 1024 * 1024
 READ_TIMEOUT_SECONDS = 10.0
 CUT_MARKER = " [line cut]"
 TONE_COUNT = 5
+
+LOGS_VIEW_ACTION = "deployment.logs_view"
+VIEW_AUDIT_WINDOW = timedelta(minutes=10)
 
 NO_PROJECT_MESSAGE = (
     "This deployment has no Docker Compose project name, so its logs cannot be read."
@@ -232,7 +236,7 @@ async def read_logs(
     parsed.sort(key=lambda line: line[0])
     if not parsed:
         return LogRead((), cursor)
-    scrubber = await load_scrubber(db, crypto, deployment.id)
+    scrubber = await load_scrubber(db, crypto, deployment.id, depth=CONTAINER_SCRUB_DEPTH)
     newest = parsed[-1][0]
     needle = query.strip().lower()
     lines: list[LogLine] = []
@@ -244,3 +248,28 @@ async def read_logs(
         lines.append(LogLine(moment, name, masked, level_of(masked)))
     omitted = max(0, len(lines) - limit) if cursor is not None else 0
     return LogRead(tuple(lines[len(lines) - min(limit, len(lines)) :]), newest, omitted)
+
+
+async def opened_recently(
+    db: AsyncSession, user_id: int, deployment_id: int, service: str | None, now: datetime
+) -> bool:
+    """Whether the user already has an entry for opening these logs, with the same service
+    filter, within ``VIEW_AUDIT_WINDOW`` before ``now``. A download has its own entries and does
+    not count.
+
+    The audit table is the memory, so the answer holds after a restart. One query reads the
+    entries of the user for the deployment inside the window (the index on the time bounds it
+    to the last few minutes of the table); the service is compared on the few rows it returns.
+    """
+    rows = await db.execute(
+        select(AuditEntry.details).where(
+            AuditEntry.action == LOGS_VIEW_ACTION,
+            AuditEntry.actor_user_id == user_id,
+            AuditEntry.deployment_id == deployment_id,
+            AuditEntry.created_at > now - VIEW_AUDIT_WINDOW,
+        )
+    )
+    return any(
+        not details.get("download") and details.get("service") == service
+        for details in rows.scalars()
+    )

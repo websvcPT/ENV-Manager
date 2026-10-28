@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Protocol
 
@@ -61,6 +62,12 @@ def get_crypto(request: Request) -> CryptoService:
     """The application crypto service."""
     crypto: CryptoService = request.app.state.crypto
     return crypto
+
+
+def get_clock(request: Request) -> Callable[[], datetime]:
+    """The application clock, which tests replace to move time."""
+    clock: Callable[[], datetime] = request.app.state.clock
+    return clock
 
 
 def get_docker_cli(request: Request) -> DockerCli:

@@ -5,15 +5,18 @@ through a service or a file is refused (403) and one who cannot see it gets 404.
 
 The page shows the services and the filters and asks for the first lines as soon as it is shown.
 ``lines`` answers every request for lines. Without a cursor it is the first read (the last lines
-of each container, written to the audit log once, and the box is refilled); with one it is a poll
-that gives the lines after it. The answer is always the poller (the footer that carries the
-applied filter and the cursor and, while following, asks again after two seconds), with the lines
-appended to the box out of band. A read that fails is a notice in the footer, never an error
-page, and the box keeps what it shows. ``download`` answers the same lines as a text file.
+of each container, written to the audit log once per user, deployment and service filter in ten
+minutes, and the box is refilled); with one it is a poll that gives the lines after it. The answer
+is always the poller (the footer that carries the applied filter and the cursor and, while
+following, asks again after two seconds), with the lines appended to the box out of band. A read
+that fails is a notice in the footer, never an error page, and the box keeps what it shows.
+``download`` answers the same lines as a text file, always audited.
 Nothing is stored, and no line is logged.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Annotated
 from urllib.parse import urlencode
 
@@ -28,12 +31,14 @@ from app.models import AuditResult, Deployment
 from app.services.audit import AuditActor, record_actor_audit
 from app.services.container_logs import (
     DEFAULT_TAIL,
+    LOGS_VIEW_ACTION,
     MAX_FILTER_CHARACTERS,
     SERVICE_NAME,
     TAIL_CHOICES,
     LogRead,
     LogsUnavailableError,
     format_ns,
+    opened_recently,
     read_logs,
     timestamp_ns,
 )
@@ -41,7 +46,7 @@ from app.services.docker_cli import DockerCli
 from app.services.docker_query import DockerQueryError
 from app.services.permissions import Capability
 from app.services.stack_runtime import RuntimeState, load_stack_runtime
-from app.web.dependencies import get_crypto, get_db, get_docker_cli
+from app.web.dependencies import get_clock, get_crypto, get_db, get_docker_cli
 from app.web.deployments import DeploymentContext, deployment_access, page_context
 
 router = APIRouter()
@@ -107,13 +112,14 @@ async def _audit_view(
     params: LogParams,
     *,
     download: bool,
+    now: datetime,
 ) -> None:
     """Record that the logs were opened: the service filter, the line count and whether it was a
     download. The lines and the text filter are not recorded."""
     await record_actor_audit(
         db,
         AuditActor.for_user(access.auth.user, client_address(request)),
-        action="deployment.logs_view",
+        action=LOGS_VIEW_ACTION,
         result=AuditResult.SUCCESS,
         target_type="deployment",
         target_id=deployment.id,
@@ -121,6 +127,7 @@ async def _audit_view(
         project_id=deployment.project_id,
         deployment_id=deployment.id,
         details={"service": params.service, "tail": params.tail, "download": download},
+        created_at=now,
     )
     await db.commit()
 
@@ -170,6 +177,7 @@ async def log_lines(
     db: Annotated[AsyncSession, Depends(get_db)],
     cli: Annotated[DockerCli, Depends(get_docker_cli)],
     crypto: Annotated[CryptoService, Depends(get_crypto)],
+    clock: Annotated[Callable[[], datetime], Depends(get_clock)],
     service: str = "",
     q: str = "",
     tail: str = "",
@@ -178,7 +186,9 @@ async def log_lines(
     toggle: str = "",
 ) -> Response:
     """The poller with the lines after the cursor appended to the box (the first read refills
-    it). The first read that works is audited; a read that fails is a notice."""
+    it). The first read that works is audited unless the same user opened the same service
+    filter of this deployment in the last ten minutes, so a chip, a pause in typing or a change
+    of line count does not write an entry of its own. A read that fails is a notice."""
     params = log_params(service, q, tail)
     moment = log_cursor(cursor)
     deployment = await _stored(db, access)
@@ -199,7 +209,10 @@ async def log_lines(
         notice = READ_FAILED_PREFIX + failed.message
     first = moment is None
     if first and notice is None:
-        await _audit_view(db, request, access, deployment, params, download=False)
+        now = clock()
+        user_id = access.auth.user.id
+        if not await opened_recently(db, user_id, deployment.id, params.service, now):
+            await _audit_view(db, request, access, deployment, params, download=False, now=now)
     return render(
         request,
         LINES_FRAGMENT,
@@ -224,12 +237,13 @@ async def log_download(
     db: Annotated[AsyncSession, Depends(get_db)],
     cli: Annotated[DockerCli, Depends(get_docker_cli)],
     crypto: Annotated[CryptoService, Depends(get_crypto)],
+    clock: Annotated[Callable[[], datetime], Depends(get_clock)],
     service: str = "",
     q: str = "",
     tail: str = "",
 ) -> Response:
-    """The lines of the applied filter as a text file, masked like the box. A read that fails is
-    a 409 with the reason as text."""
+    """The lines of the applied filter as a text file, masked like the box, always audited. A
+    read that fails is a 409 with the reason as text."""
     params = log_params(service, q, tail)
     deployment = await _stored(db, access)
     headers = {"Cache-Control": "no-store", "Vary": "HX-Request"}
@@ -250,7 +264,7 @@ async def log_download(
             media_type="text/plain",
             headers=headers,
         )
-    await _audit_view(db, request, access, deployment, params, download=True)
+    await _audit_view(db, request, access, deployment, params, download=True, now=clock())
     body = "".join(f"{line.stamp} {line.service} {line.plain}\n" for line in read.lines)
     suffix = f"-{params.service}" if params.service else ""
     name = f"deployment-{deployment.id}-logs{suffix}.txt"

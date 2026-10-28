@@ -4,8 +4,10 @@ A post-deploy command runs in a Compose project, usually the deployment root, an
 can load the files of other services of the same deployment (``docker compose config`` prints
 all of them). So the scrubber of a deploy holds the values of the newest saved version of every
 environment of the deployment, including environments the deploying user cannot see, plus the
-versions the deploy wrote (which can be older than the newest). Decrypted text stays in memory
-for this call only; the scrubber keeps the values, never their names or the file text.
+versions the deploy wrote (which can be older than the newest). Container output can hold a value
+a container started with before it changed, so it asks for the previous version as well.
+Decrypted text stays in memory for this call only; the scrubber keeps the values, never their
+names or the file text.
 
 A file in env format contributes the value of each variable; any other text file contributes its
 whole text. A certificate contributes the base64 lines of each of its PEM blocks (the BEGIN and
@@ -16,7 +18,7 @@ without any detail.
 
 from collections.abc import Iterable
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.crypto import CryptoError, CryptoService
@@ -27,6 +29,8 @@ from app.services.file_types import pem_body_lines
 from app.services.output_scrub import OutputScrubber
 
 log = get_logger("scrub_values")
+
+CONTAINER_SCRUB_DEPTH = 2
 
 
 def secret_texts(text: str, file_type: FileType = FileType.ENV) -> list[str]:
@@ -49,33 +53,33 @@ def secret_texts(text: str, file_type: FileType = FileType.ENV) -> list[str]:
 
 
 async def _newest_versions(
-    db: AsyncSession, deployment_id: int
+    db: AsyncSession, deployment_id: int, depth: int = 1
 ) -> list[tuple[EnvironmentVersion, FileType]]:
-    """The newest saved version of every environment of the deployment, with its file type."""
+    """The ``depth`` newest saved versions of every environment of the deployment, each with the
+    file type of its environment."""
     environment_ids = (
         select(Environment.id)
         .join(Service, Service.id == Environment.service_id)
         .where(Service.deployment_id == deployment_id)
     )
-    newest = (
+    ranked = (
         select(
-            EnvironmentVersion.environment_id,
-            func.max(EnvironmentVersion.number).label("number"),
+            EnvironmentVersion.id.label("id"),
+            func.row_number()
+            .over(
+                partition_by=EnvironmentVersion.environment_id,
+                order_by=EnvironmentVersion.number.desc(),
+            )
+            .label("age"),
         )
         .where(EnvironmentVersion.environment_id.in_(environment_ids))
-        .group_by(EnvironmentVersion.environment_id)
         .subquery()
     )
     rows = await db.execute(
         select(EnvironmentVersion, Environment.file_type)
         .join(Environment, Environment.id == EnvironmentVersion.environment_id)
-        .join(
-            newest,
-            and_(
-                EnvironmentVersion.environment_id == newest.c.environment_id,
-                EnvironmentVersion.number == newest.c.number,
-            ),
-        )
+        .join(ranked, ranked.c.id == EnvironmentVersion.id)
+        .where(ranked.c.age <= depth)
     )
     return [(version, file_type) for version, file_type in rows.all()]
 
@@ -88,14 +92,20 @@ async def load_scrubber(
     *,
     opened: dict[int, str] | None = None,
     extra: Iterable[str] = (),
+    depth: int = 1,
 ) -> OutputScrubber:
     """The scrubber for a deployment: current versions of all its files plus ``written``.
+
+    ``depth`` is how many of the newest versions of each environment count as current. A deploy
+    and its commands use 1. Output that a container produced (its logs, the answer of an action)
+    uses 2, so a container that was not recreated after a value changed does not show the old
+    value in clear; a value from three versions back or older is not masked.
 
     ``opened`` maps version ids to text the caller's operation already decrypted: those versions
     are not decrypted again, and each one decrypted here is added to it. ``extra`` are further
     values to remove, such as the registry logins of the run.
     """
-    newest = await _newest_versions(db, deployment_id)
+    newest = await _newest_versions(db, deployment_id, depth)
     versions = {version.id: version for version, _file_type in newest}
     types = {version.environment_id: file_type for version, file_type in newest}
     for version in written:

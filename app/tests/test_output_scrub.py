@@ -6,9 +6,9 @@ from sqlalchemy import select
 from app.models import EnvironmentVersion, FileType
 from app.services.hook_process import OUTPUT_PART_BYTES, BoundedOutput
 from app.services.output_scrub import MIN_VALUE_LENGTH, OutputScrubber
-from app.services.scrub_values import load_scrubber, secret_texts
+from app.services.scrub_values import CONTAINER_SCRUB_DEPTH, load_scrubber, secret_texts
 from app.services.versions import create_version
-from app.tests.deploy_helpers import Harness
+from app.tests.deploy_helpers import CountingCrypto, Harness
 
 
 def test_every_occurrence_of_a_value_is_replaced() -> None:
@@ -193,6 +193,41 @@ async def test_a_version_that_cannot_be_read_is_skipped(harness: Harness) -> Non
     await h.db.commit()
     scrubber = await load_scrubber(h.db, h.crypto, h.seed.deployments.fancy_prod.id)
     assert scrubber.scrub_text("s=seed-secret p=3306") == "s=seed-secret p=****"
+
+
+async def test_a_depth_of_two_masks_the_previous_version_and_not_the_one_before_it(
+    harness: Harness,
+) -> None:
+    """Output a container produced can hold the value it started with, so it asks for the newest
+    and the previous version of every file; a value two versions back is not masked."""
+    h = harness
+    deployment_id = h.seed.deployments.fancy_prod.id
+    author = h.seed.users.superadmin
+    for text in ("P=4406\n", "P=5507\n", "P=6608\n"):
+        await create_version(h.db, h.crypto, h.seed.envs.db.id, text, author=author)
+    await h.db.commit()
+    newest_only = await load_scrubber(h.db, h.crypto, deployment_id)
+    container = await load_scrubber(h.db, h.crypto, deployment_id, depth=CONTAINER_SCRUB_DEPTH)
+    log = "P=4406 P=5507 P=6608"
+    assert newest_only.scrub_text(log) == "P=4406 P=5507 P=****"
+    assert container.scrub_text(log) == "P=4406 P=**** P=****"
+    assert container.scrub_text("s=seed-secret") == "s=****"
+
+
+async def test_a_depth_of_two_opens_at_most_two_versions_of_each_file(harness: Harness) -> None:
+    h = harness
+    deployment_id = h.seed.deployments.fancy_prod.id
+    author = h.seed.users.superadmin
+    for text in ("P=4406\n", "P=5507\n", "P=6608\n"):
+        await create_version(h.db, h.crypto, h.seed.envs.db.id, text, author=author)
+    await h.db.commit()
+    counting = CountingCrypto(h.crypto)
+    await load_scrubber(h.db, counting, deployment_id)
+    one_each = len(counting.opened)
+    counting.opened.clear()
+    await load_scrubber(h.db, counting, deployment_id, depth=CONTAINER_SCRUB_DEPTH)
+    assert one_each < len(counting.opened) <= 2 * one_each
+    assert counting.most_often_opened() == 1
 
 
 CERTIFICATE_TEXT = (

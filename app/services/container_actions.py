@@ -60,7 +60,7 @@ from app.services.registries import (
     login_secrets,
 )
 from app.services.run_config import RunConfigError, private_docker_config
-from app.services.scrub_values import load_scrubber
+from app.services.scrub_values import CONTAINER_SCRUB_DEPTH, load_scrubber
 from app.services.stack_discovery import NOT_USABLE_REASON
 from app.services.stack_runtime import (
     RuntimeState,
@@ -343,7 +343,9 @@ async def _execute(
     if ran.exit_code == 0 or not ran.started:
         return ran
     try:
-        scrubber = await load_scrubber(db, crypto, deployment.id, extra=login_secrets(logins))
+        scrubber = await load_scrubber(
+            db, crypto, deployment.id, extra=login_secrets(logins), depth=CONTAINER_SCRUB_DEPTH
+        )
     except Exception as error:
         log.error("output scrubbing values could not be loaded: %s", type(error).__name__)
         return _Ran(ran.exit_code, ran.timed_out, True, None, hidden=True)

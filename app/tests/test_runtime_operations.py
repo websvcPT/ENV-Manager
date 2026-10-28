@@ -60,9 +60,11 @@ CONTAINER_POST_FAILED_LIMIT = 19
 # The Logs tab loads the deployment row for its Compose project (one more than the other tabs); with
 # a project it also reads the containers and the deploys that mark them (the runtime of the page).
 LOGS_PAGE_LIMIT = 21
-# A read of lines loads the deployment row and the newest version of every environment (opened
-# once each, pinned below) and a first read writes its audit entry; a poll writes none.
-LOGS_LINES_LIMIT = 17
+# A read of lines loads the deployment row and the newest two versions of every environment (each
+# opened once, pinned below). A first read also asks the audit table whether the same filter was
+# opened in the last ten minutes (one more statement) and writes its entry when it was not; a poll
+# does neither.
+LOGS_LINES_LIMIT = 18
 LOGS_POLL_LIMIT = 17
 
 
@@ -531,9 +533,9 @@ async def test_the_container_dialog_and_post_run_few_statements_and_open_values_
 async def test_the_logs_tab_and_its_lines_run_few_statements_and_open_each_value_once_a_read(
     web_app: FastAPI, web_client: httpx.AsyncClient, ids: Ids, tmp_path: Path
 ) -> None:
-    """The page reads the containers once and decrypts nothing. A read of lines opens the newest
-    version of every file of the deployment once, to mask them, and a read that finds no line
-    opens none; polls never write the audit log."""
+    """The page reads the containers once and decrypts nothing. A read of lines opens the two
+    newest versions of every file of the deployment once, to mask them (never more than two per
+    file), and a read that finds no line opens none; polls never write the audit log."""
     fake = FakeDocker(tmp_path / "fake-logs")
     serve_logs(fake, log_row("mysql-1", "2026-10-27T10:00:01.000000100Z", "hello"))
     web_app.state.docker_cli = fake.cli()
@@ -556,7 +558,14 @@ async def test_the_logs_tab_and_its_lines_run_few_statements_and_open_each_value
     assert status == 200 and len(first) <= LOGS_LINES_LIMIT, len(first)
     assert settings_reads(first) <= 1 and structure_loads(first) <= 1
     assert counting.opened and counting.most_often_opened() == 1
+    async with web_app.state.session_factory() as db:
+        environments = await db.scalar(
+            select(func.count(Environment.id))
+            .join(Service, Service.id == Environment.service_id)
+            .where(Service.deployment_id == ids.deployment)
+        )
     opened = len(counting.opened)
+    assert environments and environments < opened <= 2 * environments
 
     status, poll = await measure(
         web_app, web_client.get(f"{url}/lines?cursor=2026-10-27T10:00:00Z", headers=HTMX)

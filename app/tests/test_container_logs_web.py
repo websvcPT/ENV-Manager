@@ -4,6 +4,7 @@ application with a fake Docker."""
 
 import re
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -12,6 +13,7 @@ from fastapi import FastAPI
 from sqlalchemy import select
 
 from app.models import AuditEntry, AuditResult, Deployment
+from app.models.types import utc_now
 from app.services.container_logs import (
     CUT_MARKER,
     MASK,
@@ -483,19 +485,20 @@ async def test_a_value_of_the_deployment_is_a_chip_and_never_in_the_clear(
     assert "data-log-mask" in answered.text and ">[masked]</span>" in answered.text
 
 
-async def test_the_chip_replaces_the_value_of_any_environment_and_only_the_newest_version(
+async def test_the_chip_replaces_the_value_of_any_environment_newest_and_previous_version(
     web_client: httpx.AsyncClient, logs: Logs
 ) -> None:
-    """The newest version of every file of the deployment counts, whichever service it belongs
-    to. A value only an older version held is not masked: a known limit, since a container that
-    was not recreated after a change can still print it."""
+    """The newest and the previous version of every file of the deployment count, whichever
+    service it belongs to, since a container not recreated after a change still prints the old
+    value. A value only an older version held is not masked: the documented limit."""
     ids = await environment_ids(logs.app)
-    await add_version(logs.app, ids.db, "OLD_ONE=old-value-1111\n")
-    await add_version(logs.app, ids.db, "NEW_ONE=new-value-2222\n")
-    logs.say(log_row("web-1", FIRST, "old-value-1111 new-value-2222"))
+    older, previous, newest = "old-value-1111", "prev-value-2222", "new-value-3333"
+    for value in (older, previous, newest):
+        await add_version(logs.app, ids.db, f"DB_PASSWORD={value}\n")
+    logs.say(log_row("web-1", FIRST, f"{older} {previous} {newest}"))
     await sign_in(web_client, "root")
     answered = await web_client.get(logs.lines_url(), headers=HTMX)
-    assert lines_of(answered.text) == ["old-value-1111 [masked]"]
+    assert lines_of(answered.text) == [f"{older} [masked] [masked]"]
 
 
 async def test_a_long_line_is_cut_with_a_marker_after_it_was_masked(
@@ -719,3 +722,99 @@ async def test_the_overview_rows_link_to_the_logs_of_their_service_for_those_who
     await sign_in(web_client, "root")
     down = (await web_client.get(f"/deployments/{logs.prod}/runtime", headers=HTMX)).text
     assert 'data-row-action="logs"' not in down
+
+
+class MovingClock:
+    """The application clock with an offset a test moves forward."""
+
+    def __init__(self) -> None:
+        """Start on the real time."""
+        self.offset = timedelta()
+
+    def __call__(self) -> datetime:
+        """The real time plus the offset."""
+        return utc_now() + self.offset
+
+    def pass_minutes(self, minutes: float) -> None:
+        """Move the clock forward."""
+        self.offset += timedelta(minutes=minutes)
+
+
+@pytest.fixture
+def clock(logs: Logs) -> MovingClock:
+    """The clock of the application, which the test moves."""
+    moving = MovingClock()
+    logs.app.state.clock = moving
+    return moving
+
+
+async def test_one_entry_per_user_deployment_and_service_filter_in_ten_minutes(
+    web_client: httpx.AsyncClient, logs: Logs, clock: MovingClock
+) -> None:
+    """The first open audits; the same filter inside ten minutes does not; another service does;
+    after ten minutes the same filter does again."""
+    logs.say(log_row("web-1", FIRST, "x"))
+    await sign_in(web_client, "root")
+    await web_client.get(logs.lines_url(), headers=HTMX)
+    assert len(await audited(logs.app)) == 1
+    clock.pass_minutes(9)
+    await web_client.get(logs.lines_url(), headers=HTMX)
+    assert len(await audited(logs.app)) == 1
+    await web_client.get(logs.lines_url(service="web"), headers=HTMX)
+    assert [entry.details["service"] for entry in await audited(logs.app)] == [None, "web"]
+    clock.pass_minutes(2)
+    await web_client.get(logs.lines_url(), headers=HTMX)
+    assert [entry.details["service"] for entry in await audited(logs.app)] == [None, "web", None]
+    await web_client.get(logs.lines_url(service="web"), headers=HTMX)
+    assert len(await audited(logs.app)) == 3
+    clock.pass_minutes(10)
+    await web_client.get(logs.lines_url(service="web"), headers=HTMX)
+    assert len(await audited(logs.app)) == 4
+
+
+async def test_a_text_filter_or_a_line_count_never_adds_an_entry(
+    web_client: httpx.AsyncClient, logs: Logs, clock: MovingClock
+) -> None:
+    logs.say(log_row("web-1", FIRST, "x"))
+    await sign_in(web_client, "root")
+    await web_client.get(logs.lines_url(), headers=HTMX)
+    for query in ("q=x", "q=xy", "tail=1000", "tail=1000&q=x"):
+        clock.pass_minutes(1)
+        answered = await web_client.get(f"{logs.lines_url()}?{query}", headers=HTMX)
+        assert answered.status_code == 200
+    (entry,) = await audited(logs.app)
+    assert entry.details == {"service": None, "tail": 200, "download": False}
+    assert len(logs.log_calls()) == 5
+
+
+async def test_a_download_always_adds_an_entry_and_does_not_stand_for_an_open(
+    web_client: httpx.AsyncClient, logs: Logs, clock: MovingClock
+) -> None:
+    logs.say(log_row("web-1", FIRST, "x"))
+    await sign_in(web_client, "root")
+    download = f"/deployments/{logs.prod}/logs/download"
+    await web_client.get(download)
+    await web_client.get(download)
+    assert [entry.details["download"] for entry in await audited(logs.app)] == [True, True]
+    await web_client.get(logs.lines_url(), headers=HTMX)
+    await web_client.get(download)
+    await web_client.get(logs.lines_url(), headers=HTMX)
+    assert [entry.details["download"] for entry in await audited(logs.app)] == [
+        True,
+        True,
+        False,
+        True,
+    ]
+
+
+async def test_another_user_opening_the_same_filter_adds_an_entry_of_their_own(
+    web_client: httpx.AsyncClient, logs: Logs, clock: MovingClock
+) -> None:
+    logs.say(log_row("web-1", FIRST, "x"))
+    await sign_in(web_client, "root")
+    await web_client.get(logs.lines_url(), headers=HTMX)
+    await sign_in(web_client, "project_admin")
+    await web_client.get(logs.lines_url(), headers=HTMX)
+    await web_client.get(logs.lines_url(), headers=HTMX)
+    entries = await audited(logs.app)
+    assert len(entries) == 2 and entries[0].actor_user_id != entries[1].actor_user_id

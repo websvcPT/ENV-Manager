@@ -29,6 +29,7 @@ from app.core.observability import (
     install_tracer_provider,
 )
 from app.core.trace_context import TraceGuardedFastAPI
+from app.models.types import utc_now
 from app.services.api_errors import ApiRefusal
 from app.services.backup_records import latest_snapshot_time
 from app.services.backup_run import BackupLocations, adopt_backups
@@ -164,6 +165,7 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         application.state.notifier = notifier
         application.state.settings_notifier = notifier
         application.state.docker_cli = DockerCli(socket_path=settings.docker_socket)
+        application.state.clock = utc_now
         application.state.lock_dir = settings.lock_path
         application.state.engine = engine
         application.state.session_factory = session_factory
