@@ -73,10 +73,8 @@ def _format_remaining(seconds: int) -> str:
 
 
 def _sso_context(stored: StoredSettings | None) -> dict[str, bool]:
-    """What the card needs of the single sign-on settings: whether it is on, and whether an
-    account is created at the first sign in."""
-    on = stored is not None and stored.sso_on
-    return {"sso": on, "sso_creates": on and stored is not None and stored.sso.create_users}
+    """What the card needs of the single sign-on settings: whether it is on."""
+    return {"sso": stored is not None and stored.sso_on}
 
 
 def _card(

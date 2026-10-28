@@ -469,10 +469,10 @@ text from the provider, and the audit log records the failed sign in with its re
 sign ins count on the same per client address lockout as wrong passwords: while the address is
 locked, the sign-in link and the callback both answer with the locked message.
 
-**Password sign in** stays behind **Superadmin sign in with password** on the card, for
-superadmin accounts only (with their ENV Manager two-factor, if on). Any other account that
-tries it gets exactly the answer of a wrong password, so the card does not say who is a
-superadmin; the audit entry records `password_sign_in_off`, and the attempt counts like a wrong
+**Password sign in** stays behind **Sign in with password** on the card and works for
+superadmin accounts only (with their ENV Manager two-factor, if on). The card does not say so,
+and any other account that tries it gets exactly the answer of a wrong password, so nobody can
+learn who is a superadmin; the audit entry records `password_sign_in_off`, and the attempt counts like a wrong
 password. With single sign-on off, nothing changes: every account signs in with email and
 password.
 

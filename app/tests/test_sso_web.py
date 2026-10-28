@@ -447,21 +447,22 @@ async def test_the_card_offers_the_link_and_keeps_the_password_form_for_superadm
     link_tag = re.search(r"<a [^>]*href=\"/login/sso\"[^>]*>", page)
     assert link_tag is not None
     assert "hx-" not in link_tag.group(0) and "<form" not in link_tag.group(0)
-    assert "<details" in page and "Superadmin sign in with password" in page
-    assert "For superadmin accounts only. Every other account signs in with SSO." in page
+    assert re.search(r"<summary[^>]*>Sign in with password<", page) is not None
     assert 'id="user"' in page and 'id="pw"' in page
     assert "<details" in page and " open" not in page.split("<details", 1)[1].split(">", 1)[0]
-    assert "Accounts are created at the first SSO sign in or by a superadmin." in page
-    assert "There is no password recovery." in page
+    card = page.split('id="login-card"', 1)[1]
+    assert "uperadmin" not in card
+    assert "There is no password recovery." not in card
 
 
-async def test_the_card_says_when_accounts_are_not_created_at_sign_in(
-    web_client: httpx.AsyncClient, world: World
+@pytest.mark.parametrize("create_users", [True, False])
+async def test_the_card_never_names_who_may_use_the_password_form(
+    web_client: httpx.AsyncClient, world: World, create_users: bool
 ) -> None:
-    await world.configure(create_users=False)
-    page = (await web_client.get("/login")).text
-    assert "Accounts are created by a superadmin." in page
-    assert "first SSO sign in" not in page
+    await world.configure(create_users=create_users)
+    card = (await web_client.get("/login")).text.split('id="login-card"', 1)[1]
+    assert "uperadmin" not in card
+    assert "Accounts are created" not in card
 
 
 async def test_the_card_is_unchanged_while_sign_in_is_off(
