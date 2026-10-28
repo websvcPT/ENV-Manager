@@ -5,6 +5,7 @@ values of files in and out of that user's scope.
 """
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -25,6 +26,11 @@ PRINTED = (
     f"editor {EDITOR_SECRET_VALUES[3]} {EDITOR_SECRET_VALUES[2]}"
 )
 SCRUBBED = "password **** port **** host db editor **** ****"
+
+
+def leaks(value: str, text: str) -> bool:
+    """Whether the value appears in the text as its own token, not inside a longer number or id."""
+    return re.search(rf"(?<![\w.]){re.escape(value)}(?![\w.])", text) is not None
 
 
 async def prepare_mysql(h: Harness, commands: str | None = "docker compose up -d") -> None:
@@ -60,7 +66,7 @@ async def test_values_of_files_the_user_cannot_see_never_reach_the_run_audit_or_
     assert entry.details["post_deploy_output"] == SCRUBBED
     everything = json.dumps(entry.details) + str(run.post_deploy_output) + repr(outcome)
     for value in ("seed-secret", "3306", EDITOR_SECRET_VALUES[2], EDITOR_SECRET_VALUES[3]):
-        assert value not in everything, value
+        assert not leaks(value, everything), value
 
 
 async def test_a_short_value_is_not_scrubbed(harness: Harness) -> None:
@@ -154,3 +160,8 @@ async def test_the_real_runner_output_is_scrubbed_end_to_end(
     (entry,) = await audit_of(h.db, "service.deploy")
     assert entry.details["post_deploy_output"] == "config: password=**** port=****\n"
     assert h.runner.requests == []
+
+
+def test_a_short_value_inside_a_longer_number_is_not_a_leak() -> None:
+    assert leaks("3306", "port 3306 host") and leaks("3306", "(3306,")
+    assert not leaks("3306", "started_at=0.33061 id=133067 run-3306x")
